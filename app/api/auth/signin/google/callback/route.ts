@@ -18,6 +18,7 @@ import crypto from 'crypto';
 import { cookies } from 'next/headers';
 import { query } from '@/lib/db/postgres';
 import { createSession, setSessionCookie } from '@/lib/auth/serverSessions';
+import { recordSignIn } from '@/lib/auth/recordSignIn';
 
 // Safe query wrapper
 async function safeQuery(
@@ -214,6 +215,7 @@ export async function GET(req: NextRequest) {
 
     // Set session cookie
     await setSessionCookie(session.sessionToken, session.expiresAt);
+    await recordSignIn(memberId, 'GoogleSignin');
 
     // Fetch member tier and roles for access control
     const tierResult = await safeQuery(

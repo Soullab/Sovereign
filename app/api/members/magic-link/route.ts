@@ -25,6 +25,7 @@ import {
   buildRateLimitHeaders
 } from '@/lib/auth/rateLimiter';
 import { createSession, revokeSession } from '@/lib/auth/serverSessions';
+import { recordSignIn } from '@/lib/auth/recordSignIn';
 import { getNextOnboardingStep } from '@/lib/onboarding/state';
 import { trackOnboarding } from '@/lib/onboarding/telemetry';
 
@@ -412,6 +413,7 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      await recordSignIn(memberId as string, 'MAGIC-LINK');
       return response;
 
     } else {
