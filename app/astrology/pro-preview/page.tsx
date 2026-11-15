@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { getMemberIdFromSessionToken } from '@/lib/auth/getMemberFromRequest';
 import { proMemberAllowed, proPreviewEnabled } from '@/lib/astrology/proAccess';
 import ProAstrologyExperience from './ProAstrologyExperience';
+import { proHelpEnabled } from '@/lib/astrology/proHelp';
 
 /**
  * Explicitly opt-in isolated preview, not an entitlement or a public Pro tier.
@@ -34,5 +35,5 @@ export default async function AstrologyProPreviewPage() {
     notFound();
   }
   if (!memberId || !(await proMemberAllowed(memberId, process.env))) notFound();
-  return <ProAstrologyExperience verifiedSessionMemberId={memberId} />;
+  return <ProAstrologyExperience verifiedSessionMemberId={memberId} helpEnabled={proHelpEnabled(process.env)} />;
 }

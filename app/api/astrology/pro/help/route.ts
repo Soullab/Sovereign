@@ -28,7 +28,7 @@ import { ASK_MAIA_MAX_QUESTION, plainAnswer } from '@/lib/astrology/proAskMaia';
 import {
   PRO_ASK_HISTORY_MAX, PRO_ASK_HISTORY_TURN_MAX, PRO_ASK_SAFETY_REPLY, thirdPersonConcern,
 } from '@/lib/astrology/proAskMaiaSections';
-import { PRO_HELP_KEYS, PRO_HELP_TURN_KEYS, proHelpSystemPrompt } from '@/lib/astrology/proHelp';
+import { PRO_HELP_KEYS, PRO_HELP_TURN_KEYS, proHelpEnabled, proHelpSystemPrompt } from '@/lib/astrology/proHelp';
 import { PRO_RESPONSE_HEADERS, proError, proOwnerStillCurrent, resolveProOwner } from '@/lib/astrology/proRouteAccess';
 
 // A short per-member limit (in memory) so a runaway loop cannot spend MAIA.
@@ -48,6 +48,9 @@ function allowed(memberId: string): boolean {
 const onlyKeys = (value: object, keys: readonly string[]) => Object.keys(value).every((k) => keys.includes(k));
 
 export async function POST(request: NextRequest) {
+  // Held off until the founder turns it on (see proHelpEnabled). Answers before
+  // any session, body or model work.
+  if (!proHelpEnabled(process.env)) return proError(404, 'not_found');
   const owner = await resolveProOwner(request, true);
   if (!owner.ok) return owner.response;
 
