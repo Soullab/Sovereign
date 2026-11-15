@@ -3,6 +3,7 @@
 // and offline (for measurement). Nothing starts a context; the caller does, after the member's own Play.
 import { soundscapeNeedsRebuild } from './focusSoundscape';
 import { GENERATED_OUTPUT_SCALE } from './listeningLevel';
+import { TONE_VOICE_GAIN, toneEffectiveLevel } from './toneLab';
 import type { RecordedLayerId, SoundscapeSpec, TickSpec } from './focusSoundscape';
 
 /** Loads one recorded loop. Returns null when it is unavailable; the soundscape then plays without it. */
@@ -46,7 +47,9 @@ export function buildSoundscape(
   const t0 = context.currentTime;
   const master = context.createGain();
   master.gain.setValueAtTime(0.0001, t0);
-  master.gain.exponentialRampToValueAtTime(Math.max(0.0001, level * SCALE), t0 + Math.max(1, spec.fadeInSec));
+  // Tone Lab plays at the shared level but never above its cap, so a turned-up level cannot make a pure tone loud.
+  const playLevel = (value: number) => (spec.tone ? toneEffectiveLevel(value * 100) / 100 : value);
+  master.gain.exponentialRampToValueAtTime(Math.max(0.0001, playLevel(level) * SCALE), t0 + Math.max(1, spec.fadeInSec));
   master.connect(destination);
 
   const filter = context.createBiquadFilter();
@@ -111,6 +114,44 @@ export function buildSoundscape(
     source.connect(noiseBand); noiseBand.connect(noiseGain); noiseGain.connect(master);
     source.start(t0); sweep.start(t0);
     extras.push(source, sweep);
+  }
+
+  // Tone Lab: one pure tone, with an optional slow pulse. Sound only: nothing here can flicker anything on screen.
+  // It joins the master directly (not the soft lowpass), so the pitch the member chose is the pitch they hear.
+  type ToneGraph = { base: OscillatorNode; second: OscillatorNode | null; lfo: OscillatorNode | null };
+  let toneGraph: ToneGraph | null = null;
+  if (spec.tone) {
+    const { hz, pulseMode, pulseHz } = spec.tone;
+    const toneBus = context.createGain();
+    toneBus.gain.value = TONE_VOICE_GAIN;
+    toneBus.connect(master);
+    const sine = (freq: number) => { const o = context.createOscillator(); o.type = 'sine'; o.frequency.value = freq; return o; };
+    const base = sine(hz);
+    let second: OscillatorNode | null = null;
+    let lfo: OscillatorNode | null = null;
+    if (pulseMode === 'binaural' && typeof context.createStereoPanner === 'function') {
+      second = sine(hz + pulseHz);
+      const left = context.createStereoPanner(); left.pan.value = -1;
+      const right = context.createStereoPanner(); right.pan.value = 1;
+      base.connect(left); left.connect(toneBus);
+      second.connect(right); right.connect(toneBus);
+    } else if (pulseMode === 'binaural' || pulseMode === 'monaural') {
+      second = sine(hz + pulseHz);
+      const a = context.createGain(); a.gain.value = 0.5;
+      const b = context.createGain(); b.gain.value = 0.5;
+      base.connect(a); a.connect(toneBus); second.connect(b); b.connect(toneBus);
+    } else if (pulseMode === 'isochronic') {
+      // A smooth swell between silence and full, never an on/off edge.
+      const swell = context.createGain(); swell.gain.value = 0.5;
+      lfo = sine(Math.max(0.0001, pulseHz));
+      const depth = context.createGain(); depth.gain.value = 0.5;
+      lfo.connect(depth); depth.connect(swell.gain);
+      base.connect(swell); swell.connect(toneBus);
+    } else {
+      base.connect(toneBus);
+    }
+    for (const node of [base, second, lfo]) if (node) { node.start(t0); extras.push(node); }
+    toneGraph = { base, second, lfo };
   }
 
   // Recorded nature layers: looped real recordings that follow the spec's mix. Everything goes through the master,
@@ -204,6 +245,11 @@ export function buildSoundscape(
       if (next.noise && noiseGain && noiseBand && sweepDepth) {
         gently(noiseGain.gain, next.noise.gain); gently(noiseBand.frequency, next.noise.bandHz);
         gently(noiseBand.Q, next.noise.q); gently(sweepDepth.gain, next.noise.bandHz * 0.4);
+      }
+      if (next.tone && toneGraph) {
+        gently(toneGraph.base.frequency, next.tone.hz);
+        if (toneGraph.second) gently(toneGraph.second.frequency, next.tone.hz + next.tone.pulseHz);
+        if (toneGraph.lfo) gently(toneGraph.lfo.frequency, Math.max(0.0001, next.tone.pulseHz));
       }
       applyRecorded(next.recorded);
       return true;

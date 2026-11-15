@@ -57,7 +57,7 @@ test('pure · generated gain follows the level and never reaches 0 (Web Audio ra
 test('generated sound · soundscapes start at, and are scaled by, the same output scale the control uses', () => {
   assert.match(engine, /import \{ GENERATED_OUTPUT_SCALE \} from '\.\/listeningLevel'/);
   assert.match(engine, /const SCALE = GENERATED_OUTPUT_SCALE;/);
-  assert.match(engine, /master\.gain\.exponentialRampToValueAtTime\(Math\.max\(0\.0001, level \* SCALE\)/);
+  assert.match(engine, /master\.gain\.exponentialRampToValueAtTime\(Math\.max\(0\.0001, playLevel\(level\) \* SCALE\)/); // playLevel is the identity except for a Tone Lab sound, which is capped
   // Every audible part of a soundscape (tones, noise, recorded nature, ticks) ends in the master the control sets.
   assert.match(engine, /filter\.connect\(master\)/);
   assert.match(engine, /noiseGain\.connect\(master\)/);
@@ -68,7 +68,7 @@ test('generated sound · soundscapes start at, and are scaled by, the same outpu
 
 test('every source · setVolume reaches the generated master gain and the one media element', () => {
   const body = fnBody(provider, 'setVolume');
-  assert.match(body, /master\.gain\.setTargetAtTime\(generatedGainForLevel\(next\)/);
+  assert.match(body, /master\.gain\.setTargetAtTime\(\s*generatedGainForLevel\(sketch\.current\.soundscape\?\.spec\.tone \? toneEffectiveLevel\(next\) : next\)/); // identity except Tone Lab (capped)
   assert.match(body, /media\.current\.volume = next \/ 100/);
 });
 
