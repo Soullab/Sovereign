@@ -1624,7 +1624,9 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       {craftNotice || props.editorialFailure ? <p role="status" className="p4r1-craft-notice">{craftNotice ?? props.editorialFailure}</p> : null}
       {props.work && !props.maiaRelationship && props.maiaRelationshipPhase === 'ready' ? (
         <div className="p4r1-craft-notice" role="group" aria-label="Begin with MAIA" data-craft-begin-with-maia>
-          <p>MAIA isn't sitting with this book yet. Start a conversation about it and MAIA can talk this passage through with you and suggest edits. You can keep writing here either way.</p>
+          <p data-maia-not-yet>{revisionsPaused
+            ? 'MAIA isn’t sitting with this Work yet. Start a conversation about it and MAIA can talk this passage through with you and ask questions. She won’t rewrite it: every sentence stays yours. You can keep writing here either way.'
+            : 'MAIA isn’t sitting with this Work yet. Start a conversation about it and MAIA can talk this passage through with you and suggest edits. You can keep writing here either way.'}</p>
           <button type="button" disabled={busy || props.maiaRelationshipBusy} onClick={props.onBeginMaiaRelationship}>
             {props.maiaRelationshipBusy ? 'Starting…' : 'Begin with MAIA'}
           </button>

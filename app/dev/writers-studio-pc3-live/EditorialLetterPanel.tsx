@@ -299,7 +299,7 @@ export function EditorialLetterPanel(props: {
     <p role="note" data-letter-run-ended={run.state} style={{ margin: '6px 0 0', fontSize: 12 }}>
       {run.state === 'failed' && (run.refusal ?? '').startsWith('synthesis') ? `I read all ${run.total} lenses of your Work, but I couldn’t gather them into a letter this time. My readings are kept, so trying again only redoes that last step.`
         : run.state === 'stopped' && run.refusal === 'sanctuary' ? 'I stopped reading because Sanctuary is on.'
-        : run.state === 'stopped' && run.refusal === 'permission_withdrawn' ? 'I stopped reading because you withdrew my permission to read the whole book.'
+        : run.state === 'stopped' && run.refusal === 'permission_withdrawn' ? 'I stopped reading because you withdrew my permission to read the whole Work.'
         : run.state === 'stopped' && run.refusal === 'draft_changed' ? 'I stopped because the Work changed while I was reading.'
         : `I couldn’t finish the ${run.lens ?? ''} reading (${run.done} of ${run.total} were done; they are kept).`}
       {' '}<button type="button" data-letter-continue="true" onClick={() => void read()} style={quiet}>{run.state === 'failed' && (run.refusal ?? '').startsWith('synthesis') ? 'Try the letter again' : 'Continue'}</button>
@@ -395,7 +395,7 @@ export function EditorialLetterPanel(props: {
       ) : pass.map.opening === null ? (
         /* Founder walk 2026-11-12: the opening was missing and nothing said so. A kept letter without its opening now says it. */
         <p role="note" data-letter-opening-missing={pass.map.openingRefusal ?? 'unknown'} style={{ margin: 0, fontSize: 12, opacity: .8 }}>
-          I couldn’t keep my opening to this letter, where I say what I think the Work is reaching for. The places below stand on their own. When you ask me to read the book again, I’ll try the opening again.
+          I couldn’t keep my opening to this letter, where I say what I think the Work is reaching for. The places below stand on their own. When you ask me to read the Work again, I’ll try the opening again.
         </p>
       ) : null}
       {places.length === 0 ? (

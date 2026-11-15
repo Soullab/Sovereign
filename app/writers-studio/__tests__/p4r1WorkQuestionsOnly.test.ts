@@ -165,3 +165,25 @@ describe('each Studio program speaks in its own words (founder 2026-11-15)', () 
     expect(css).toMatch(/\.fr-write-crumb \{ max-width: 50%; min-width: 0; overflow: hidden; \}/);
   });
 });
+
+describe('member-facing Studio wording says Work, not book, and never promises edits on a questions-only Work (review F4, 2026-11-15)', () => {
+  // Member-facing text only: comments are stripped first. Publish and cover tools produce a book and are out of scope.
+  const FILES = [
+    'app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx',
+    'app/dev/writers-studio-pc3-live/EditorialLetterPanel.tsx',
+    'app/dev/writers-studio-pc3-live/EditorialDancePanel.tsx',
+  ];
+  const stripComments = (src: string) => src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+  it.each(FILES)('%s has no member-facing "book"', (file) => {
+    const code = stripComments(read(file));
+    const hits = code.split('\n').filter((l) => /\bbook\b/i.test(l) && !/data-write-talk-book|data-[a-z-]*book/i.test(l));
+    expect(hits).toEqual([]);
+  });
+  it('the Write view\'s not-yet line promises questions, not edits, while revisions are paused; NEGATIVE: edits only when not paused', () => {
+    const view = read('app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx');
+    expect(view).toMatch(/<p data-maia-not-yet>\{revisionsPaused\s*\?\s*'[^']*ask questions\. She won’t rewrite it: every sentence stays yours\.[^']*'\s*:\s*'[^']*suggest edits\./);
+  });
+});
