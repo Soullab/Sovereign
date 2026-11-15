@@ -89,7 +89,7 @@ import {
   type ProposalPolicy,
 } from '../editorialScope/sequence';
 import { assembleEditorialCognition, type AssemblyRefusal } from './assembly';
-import { workPausesRevisions } from './workRevisionPause';
+import { workPausesRevisions, workQuestionsOnlyInstruction } from './workRevisionPause';
 import { persistMaiaEditorialOutcome, type MaiaOutcomeRefusal, type MaiaOutcomeResult } from './maiaOutcome';
 import { detectNoopAdjustment, type NoopAdjustmentReason } from './noopProposal';
 
@@ -407,9 +407,11 @@ export async function runEditorialTurn(
   const scope: EditorialScopeDeclaration = input.scope ?? DEFAULT_SCOPE_DECLARATION;
   /* ⭐ WORK-WIDE "MAIA asks, never rewrites" (founder authorization 2026-11-13,
      ledger #1938). The writer's own durable setting on the Work outranks any
-     per-turn declaration: a client cannot send 'allow' past it. ⛔ Read only when
-     it could change the answer, and it fails closed (see workRevisionPause.ts). */
-  const workPaused = !input.opening && (input.proposalPolicy ?? 'allow') !== 'reply_only'
+     per-turn declaration: a client cannot send 'allow' past it. Read on every
+     non-opening turn: it also decides MAIA's no-wording instruction, which a client
+     that already sent reply_only still needs (2026-11-15). Fails closed (see
+     workRevisionPause.ts). */
+  const workPaused = !input.opening
     && await workPausesRevisions(memberId, assembly.chainId, assembly.manuscriptId);
   const proposalPolicy: ProposalPolicy = input.opening || workPaused
     ? 'reply_only' : (input.proposalPolicy ?? 'allow');
@@ -489,6 +491,8 @@ export async function runEditorialTurn(
       latitudeInstruction(scope),
       sequenceInstruction(gated),
       proposalPolicyInstruction(proposalPolicy),
+      // Work-wide "MAIA asks, never rewrites": no wording in any channel (2026-11-15).
+      workPaused ? workQuestionsOnlyInstruction() : '',
       // Last, so the writer's own length choice outranks every default shape.
       input.replyLength ? replyLengthInstruction(input.replyLength) : '',
     ].filter(Boolean).join('\n\n'),
