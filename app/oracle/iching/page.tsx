@@ -32,7 +32,16 @@ import {
 import { apiFetch } from '@/lib/http/apiBase';
 import { castYarrowLine } from '@/lib/divination/iching/casting';
 import { EmbeddedMAIAChat } from '@/components/oracle/EmbeddedMAIAChat';
+import { LivingExplorer } from '@/components/oracle/iching/LivingExplorer';
+import { ConsultationStages } from '@/components/oracle/ConsultationStages';
 import { divinationType } from '@/lib/oracle/divinationTypography';
+
+const CONSULTATION_STAGES = [
+  { id: 'question', label: 'Ask' },
+  { id: 'casting', label: 'Cast' },
+  { id: 'reveal', label: 'Receive' },
+  { id: 'interpretation', label: 'Explore' },
+];
 
 /**
  * Bagua Symbol - Traditional 8-sided I Ching symbol
@@ -413,6 +422,10 @@ function IChingOracleContent() {
 
             <div className="w-24" /> {/* Spacer for centering */}
           </motion.div>
+
+          <div className="-mt-6 mb-10">
+            <ConsultationStages stages={CONSULTATION_STAGES} current={phase} />
+          </div>
 
           <AnimatePresence mode="wait">
             {/* Question Phase */}
@@ -808,6 +821,13 @@ function IChingOracleContent() {
                         </p>
                       </div>
                     )}
+
+                    {/* Living Explorer — history, metaphysics and commentary for this hexagram */}
+                    <LivingExplorer
+                      hexagramNumber={reading.hexagram.number}
+                      changingLines={reading.hexagram.changingLines}
+                      atlasHref={`/oracle/atlas/iching/${reading.hexagram.number}`}
+                    />
 
                     {/* Embedded MAIA Chat */}
                     <EmbeddedMAIAChat
