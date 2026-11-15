@@ -111,10 +111,20 @@ describe('Work-wide "MAIA asks, never rewrites"', () => {
     expect(fakePersist).not.toHaveBeenCalled();
   });
 
-  test('a client that already declared reply_only needs no lookup', async () => {
-    dbWithPause(false);
-    fakeStructured.mockResolvedValue(reply({ kind: 'reply_only', reply: 'Hmm.' }));
+  test('a client that already declared reply_only still gets the no-wording instruction on a paused Work', async () => {
+    dbWithPause(true);
+    fakeStructured.mockResolvedValue(reply({ kind: 'reply_only', reply: 'What do you want the reader to feel?' }));
     await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
-    expect(fakeQuery.mock.calls.some(c => c[0] === WORK_REVISION_PAUSE_SQL)).toBe(false);
+    const system = fakeStructured.mock.calls[0]![0].system as string;
+    expect(system).toContain('THE WRITER HAS CHOSEN "MAIA ASKS, NEVER REWRITES" FOR THIS WHOLE WORK');
+    expect(system).toContain('not even if the writer asks');
+  });
+
+  test('NEGATIVE: an unpaused Work never gets the no-wording instruction', async () => {
+    dbWithPause(false);
+    fakeStructured.mockResolvedValue(reply({ kind: 'reply_only', reply: 'Here is what I notice.' }));
+    await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
+    const system = fakeStructured.mock.calls[0]![0].system as string;
+    expect(system).not.toContain('MAIA ASKS, NEVER REWRITES');
   });
 });
