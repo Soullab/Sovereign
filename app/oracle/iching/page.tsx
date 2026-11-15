@@ -30,6 +30,7 @@ import {
   Zap
 } from 'lucide-react';
 import { apiFetch } from '@/lib/http/apiBase';
+import { castYarrowLine } from '@/lib/divination/iching/casting';
 import { EmbeddedMAIAChat } from '@/components/oracle/EmbeddedMAIAChat';
 import { divinationType } from '@/lib/oracle/divinationTypography';
 
@@ -157,8 +158,9 @@ function IChingOracleContent() {
       // Simulate yarrow stalk counting (takes time)
       await new Promise(resolve => setTimeout(resolve, 1800));
 
-      // Traditional I Ching values: 6, 7, 8, 9
-      const value = Math.floor(Math.random() * 4) + 6;
+      // Traditional I Ching values 6, 7, 8, 9 with the yarrow-stalk odds
+      // (1/16, 5/16, 7/16, 3/16) — not equal odds.
+      const value = castYarrowLine();
 
       const line: HexagramLine = {
         type: (value === 7 || value === 9) ? 'yang' : 'yin',
