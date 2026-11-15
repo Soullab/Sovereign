@@ -123,11 +123,15 @@ function typingTarget(target: EventTarget | null): boolean {
   return !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
 }
 
-export default function ProAstrologyExperience({ verifiedSessionMemberId }: { verifiedSessionMemberId: string }) {
-  return <MaiaDockProvider defaultOpen={false}><Cockpit verifiedSessionMemberId={verifiedSessionMemberId} /></MaiaDockProvider>;
+export default function ProAstrologyExperience({ verifiedSessionMemberId, helpEnabled = false }: {
+  verifiedSessionMemberId: string;
+  /** "How do I…?" is offered only when the server turns it on (proHelpEnabled). */
+  helpEnabled?: boolean;
+}) {
+  return <MaiaDockProvider defaultOpen={false}><Cockpit verifiedSessionMemberId={verifiedSessionMemberId} helpEnabled={helpEnabled} /></MaiaDockProvider>;
 }
 
-function Cockpit({ verifiedSessionMemberId }: { verifiedSessionMemberId: string }) {
+function Cockpit({ verifiedSessionMemberId, helpEnabled }: { verifiedSessionMemberId: string; helpEnabled: boolean }) {
   const dock = useMaiaDock();
   // The tools open beside the wheel, most recently opened first; `lead` is the one in hand.
   const [openTools, setOpenTools] = useState<ToolId[]>(['saved']);
@@ -979,11 +983,12 @@ function Cockpit({ verifiedSessionMemberId }: { verifiedSessionMemberId: string 
                 ? <>Talk with MAIA about <b>{inHand?.subjectLabel ?? 'this chart'}</b></>
                 : 'Ask MAIA how the workstation works'}
             </span>
-            <small>{privateChart ? 'Ask · Mentor · How do I…?' : 'How do I…? · no chart is read'}</small>
+            <small>{privateChart ? (helpEnabled ? 'Ask · Mentor · How do I…?' : 'Ask · Mentor · in depth') : (helpEnabled ? 'How do I…? · no chart is read' : 'Open a chart first')}</small>
           </button>
         )}
         <ProMaiaStage key={helpConversationScope({ memberId: verifiedSessionMemberId, chartOpen: !!privateChart, subjectId: savedSubject?.id ?? null, sourceRevision, houseSystem })}
           chartOpen={!!privateChart}
+          helpEnabled={helpEnabled}
           whereLabel={leadTab ? (leadTab.label === leadTool?.label ? leadTab.label : `${leadTool?.label} · ${leadTab.label}`) : privateChart ? 'the chart wheel' : null}
           preferSections={leadTab?.prefer ?? []} />
         </div>

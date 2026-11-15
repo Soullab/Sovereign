@@ -17,6 +17,18 @@
 import { proGuideInstruction } from './proGuide';
 
 /** The only fields the help endpoint accepts. Anything else is refused. */
+/**
+ * Production hold switch (founder decision 2026-11-15). "How do I…?" is merged but
+ * held: the R4.1 lane's review on #1893 records a production hold (session
+ * isolation on an eventless in-place session change, Class A shared-auth triage,
+ * Class B acceptance). Until the founder turns it on, the help route answers 404
+ * and the cockpit offers no help mode, so canonical can deploy for every lane.
+ * Only the exact string "true" turns it on.
+ */
+export function proHelpEnabled(env: Readonly<Record<string, string | undefined>>): boolean {
+  return env.ASTRO_PRO_HELP_ENABLED === 'true';
+}
+
 export const PRO_HELP_KEYS = ['question', 'history'] as const;
 /** The only fields of one earlier turn. */
 export const PRO_HELP_TURN_KEYS = ['q', 'a'] as const;
