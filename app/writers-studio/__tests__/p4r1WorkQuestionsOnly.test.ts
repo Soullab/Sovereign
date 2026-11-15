@@ -122,3 +122,10 @@ describe('Focus "More" menu closes and fits the window (live walk, 2026-11-13)',
     expect(css).toMatch(/\.p4r1-isolated-more-card\{ width:min\(380px, calc\(100vw - 24px\)\); max-height:calc\(100vh - 120px\); overflow-y:auto;/);
   });
 });
+
+describe('the "Start with MAIA" card tells the truth on a questions-only Work (2026-11-15)', () => {
+  const panel = read('app/dev/writers-studio-pc3-live/EditorialDancePanel.tsx');
+  it('promises questions, not edits, while revisions are paused; NEGATIVE: the edit promise only shows when not paused', () => {
+    expect(panel).toMatch(/props\.revisionsPaused\s*\?\s*'Start with me and I can talk this passage through with you and ask questions\. I won’t rewrite it: every sentence stays yours\.'\s*:\s*'Start with me and I can talk this passage through and suggest edits\./);
+  });
+});
