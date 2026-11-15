@@ -16,13 +16,20 @@
 #   8  re-applying the migration is safe.
 # Exit status 0 only if every check holds.
 set -euo pipefail
+# PostgreSQL 16 on macOS refuses to start without a valid locale ("postmaster became multithreaded during startup").
+# A fixed C locale for this throwaway cluster only; nothing here depends on collation.
+export LC_ALL=C LANG=C
 here="$(cd "$(dirname "$0")/../.." && pwd)"
 mig="$here/database/migrations/20261115000001_living_work_studio_path.sql"
 rb="$here/database/migrations/20261115000001_living_work_studio_path_rollback.rollback"
 tmp="$(mktemp -d)"; port=54329
 trap 'pg_ctl -D "$tmp/data" stop -m fast >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
 initdb -D "$tmp/data" -U proof -A trust >/dev/null
-pg_ctl -D "$tmp/data" -o "-p $port -k $tmp -c listen_addresses=''" -l "$tmp/log" -w start >/dev/null
+if ! pg_ctl -D "$tmp/data" -o "-p $port -k $tmp -c listen_addresses=''" -l "$tmp/log" -w start >/dev/null; then
+  echo "FAIL: the disposable server did not start. Its log (before cleanup):"
+  sed 's/^/  | /' "$tmp/log" 2>/dev/null | tail -20
+  exit 1
+fi
 q() { psql -h "$tmp" -p "$port" -U proof -d "$1" -v ON_ERROR_STOP=1 -q -At "${@:2}"; }
 fail() { echo "FAIL: $*"; exit 1; }
 expect_error() { local db=$1 sql=$2 pat=$3; if out=$(q "$db" -c "$sql" 2>&1); then fail "expected an error for: $sql"; fi; echo "$out" | grep -q "$pat" || fail "wrong error for: $sql -> $out"; }
