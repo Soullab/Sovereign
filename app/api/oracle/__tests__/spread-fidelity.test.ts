@@ -5,8 +5,11 @@
  *   - every Tarot spread the Tarot chamber offers returns that spread's card count
  *     (previously: the route passed the display name to a key lookup and threw)
  *   - every Rune spread the Runes chamber offers returns that spread's rune count
- *     and the exact position names the UI shows (previously: Elemental Cross and
- *     Week Ahead silently fell back to a single rune)
+ *     (previously: Elemental Cross and Week Ahead silently fell back to a single rune)
+ *   - Elemental Cross and Week Ahead return exactly the position names the UI shows
+ *   - Single and Norns return the backend's position names, which DIFFER from the
+ *     UI's ('Answer'; 'Past (Urd)' …). That divergence predates this change and is
+ *     pinned here as current behaviour, not as UI agreement.
  *   - the library's yarrow-stalk line odds are 1/16, 5/16, 7/16, 3/16
  *   - the I Ching chamber page uses the library's yarrow caster, not equal odds
  *
@@ -29,22 +32,27 @@ function post(url: string, body: unknown): NextRequest {
   });
 }
 
-// Spread IDs offered by app/oracle/tarot/page.tsx
+// Spread IDs offered by app/oracle/tarot/page.tsx (incl. the featured Spiralogic Draw)
 const TAROT_PAGE_IDS = [
-  'single', 'three-card', 'mind-body-spirit', 'elemental', 'relationship',
+  'single', 'three-card', 'mind-body-spirit', 'elemental', 'spiralogic', 'relationship',
   'decision', 'chakra', 'shadow-work', 'career', 'celtic-cross', 'year-ahead',
 ];
 
-// Spreads offered by app/oracle/runes/page.tsx
-const RUNE_PAGE_SPREADS: Array<{ id: string; positions: string[] }> = [
-  { id: 'single', positions: ['The Rune'] },
-  { id: 'norns', positions: ['Urd (Past)', 'Verdandi (Present)', 'Skuld (Future)'] },
+// Spreads offered by app/oracle/runes/page.tsx. `matchesUi` marks where the
+// backend labels equal the UI's labels; elsewhere `positions` pins the backend's
+// current labels (UI shows 'Answer' and 'Past (Urd)' / 'Present (Verdandi)' /
+// 'Future (Skuld)' — a pre-existing divergence, not fixed here).
+const RUNE_PAGE_SPREADS: Array<{ id: string; matchesUi: boolean; positions: string[] }> = [
+  { id: 'single', matchesUi: false, positions: ['The Rune'] },
+  { id: 'norns', matchesUi: false, positions: ['Urd (Past)', 'Verdandi (Present)', 'Skuld (Future)'] },
   {
     id: 'elements',
+    matchesUi: true,
     positions: ['Earth (Foundation)', 'Air (Mind)', 'Fire (Action)', 'Water (Emotion)', 'Spirit (Higher Self)'],
   },
   {
     id: 'week',
+    matchesUi: true,
     positions: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
   },
 ];
@@ -63,7 +71,7 @@ describe('Tarot route — every offered spread draws its own layout', () => {
 });
 
 describe('Rune route — every offered spread casts its own layout', () => {
-  it.each(RUNE_PAGE_SPREADS)('$id', async ({ id, positions }) => {
+  it.each(RUNE_PAGE_SPREADS)('$id (labels match UI: $matchesUi)', async ({ id, positions }) => {
     const res = await runesPOST(post('http://localhost/api/oracle/runes', { query: 'test question', spreadType: id }));
     expect(res.status).toBe(200);
     const json = (await res.json()) as { reading: { drawnRunes: Array<{ position: string }> } };
