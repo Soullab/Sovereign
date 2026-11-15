@@ -621,6 +621,61 @@ export function DevelopHoldings(props: {
   );
 }
 
+/** Beta walk 2026-11-15 (#1800, R3): the top of MAIA's column said "I haven't read this draft yet" and offered no way to ask her to —
+ *  the only read control sat in the stage toolbar. Until her reading is ready, the reading place in her column now says where she is and,
+ *  when she has not read it, offers the same act the toolbar offers (same handler, same checkpoint-first path; no new authority, nothing
+ *  read without the writer's click). One click per state: the button stands down after it is pressed until the reading's status moves,
+ *  so a double-click cannot ask twice. Keyed by the caller on status + chapter so the latch clears when either changes. */
+export function StageReadingInvitation(props: {
+  reading: StageReading;
+  needsCheckpoint: boolean;
+  onRead: () => void;
+  onCheckpointAndRead: () => void;
+}) {
+  const [asked, setAsked] = useState(false);
+  /* state alone is stale until the next render, so two clicks in one batch would both pass; the ref latches synchronously */
+  const askedNow = useRef(false);
+  /* if the handler declines silently (nothing to read yet), the status never moves: the button comes back rather than staying dead */
+  useEffect(() => {
+    if (!asked) return;
+    const t = window.setTimeout(() => { askedNow.current = false; setAsked(false); }, 4000);
+    return () => window.clearTimeout(t);
+  }, [asked]);
+  const r = props.reading;
+  if (r.status === 'ready') return null;
+  return (
+    <div data-develop-maia-reading-invitation={r.status}
+      style={{ flex: '0 0 auto', borderBottom: '1px solid color-mix(in srgb, currentColor 16%, transparent)', paddingBottom: 10, fontSize: 13, lineHeight: 1.5 }}>
+      {r.status === 'reading' ? (
+        <p role="status" aria-live="polite" style={{ margin: 0 }}>{r.progress ?? `MAIA is reading ${r.chapterLabel}…`}</p>
+      ) : (
+        <>
+          <p style={{ margin: '0 0 8px' }} role={r.status === 'error' ? 'status' : undefined}>
+            {r.status === 'error'
+              ? (r.error ?? 'MAIA could not finish this reading. Your writing is unchanged.')
+              : `MAIA does not have a completed reading of ${r.chapterLabel} here yet. Would you like her to read it?`}
+          </p>
+          {props.needsCheckpoint ? (
+            <p style={{ margin: '0 0 8px', opacity: 0.8, fontSize: 12 }}>Your current draft will be saved as a checkpoint before MAIA reads it.</p>
+          ) : null}
+          <button type="button" data-develop-maia-read-chapter="true" disabled={asked} aria-disabled={asked}
+            onClick={() => {
+              if (askedNow.current) return;
+              askedNow.current = true;
+              setAsked(true);
+              (props.needsCheckpoint ? props.onCheckpointAndRead : props.onRead)();
+            }}
+            style={{ font: 'inherit', fontSize: 13, color: 'inherit', cursor: asked ? 'default' : 'pointer', opacity: asked ? 0.6 : 1,
+              background: 'color-mix(in srgb, currentColor 10%, transparent)', border: '1px solid color-mix(in srgb, currentColor 25%, transparent)',
+              borderRadius: 8, padding: '8px 12px', textAlign: 'left' }}>
+            {props.needsCheckpoint ? 'Save checkpoint and read with MAIA' : 'Read this chapter with MAIA'}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** Beside the conversation, above it: what MAIA found in the chapter she read, then one question — what would you like to do?
  *  The four answers are the writer's. Nothing is chosen, opened or sent for them; "Leave it for now" folds the card to one line. The card
  *  never touches the conversation below it: an unsent message and an exchange in progress are left exactly as they are. */
