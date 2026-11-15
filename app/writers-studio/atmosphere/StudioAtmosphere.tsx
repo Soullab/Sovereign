@@ -37,7 +37,7 @@ import { CANVAS_MANUSCRIPT_PARAM } from '../canvasIdentity';
  * fetch lands it wins, including when it says the member never chose anything.
  *
  * ⛔ Nothing here infers. There is no time-of-day default, no system
- * colour-scheme sniffing, no "MAIA noticed". Absence of a choice is Atelier.
+ * colour-scheme sniffing, no "MAIA noticed". Absence of a choice is Evening (founder 2026-11-15).
  */
 
 const STORAGE_KEY = 'ws_atmosphere';

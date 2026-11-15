@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { apiFetch } from '@/lib/http/apiBase';
+import { studioPathById } from '@/lib/writersStudio/studioPaths';
 import { Shell } from '@/app/writers-studio/full-redesign/Shell';
 import { WriteManuscriptRail, WriteRoom, isWriteRoomReadbackCurrent, type WriteBlock, type WriteRoomReadback } from '@/app/writers-studio/full-redesign/WriteRoom';
 import { WRITE_COPY } from '@/app/writers-studio/full-redesign/fixtures';
@@ -778,6 +779,8 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
      durable setting on the Work, saved through the member's Work PATCH; the server
      enforces it on every editorial turn whatever this view sends. Here it only keeps
      the controls honest: while it is on, every passage behaves as paused. */
+  /* The Work's Studio program speaks in its own words (founder 2026-11-15). Null: the ordinary Studio. */
+  const workStudioCopy = studioPathById(props.work?.studioPath ?? null)?.studioCopy ?? null;
   const [workRevisionsPaused, setWorkRevisionsPaused] = useState(props.work?.maiaRevisionsPaused === true);
   const [workPauseSaving, setWorkPauseSaving] = useState(false);
   const [workPauseError, setWorkPauseError] = useState<string | null>(null);
@@ -1180,6 +1183,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       </header>
 
       <EditorialDancePanel
+        notYetCopy={workStudioCopy?.notYet}
         stage
         conversationChoices={props.conversationChoices ?? []}
         onChooseConversation={props.onChooseConversation}
@@ -1384,14 +1388,15 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
             ) : null}
             <div className="fr-say">
               <p>
-                Choose a chapter or section at left and I’ll orient to that place immediately.
-                Or select exact words in the manuscript for passage-level work.
+                {workStudioCopy
+                  ? workStudioCopy.orient
+                  : 'Choose a chapter or section at left and I’ll orient to that place immediately. Or select exact words in the manuscript for passage-level work.'}
               </p>
             </div>
             {/* Named for what it opens (the conversation about the whole Work), so it is never confused with the passage door's
                 "Talk with MAIA" now that this column is always beside the manuscript. */}
             <button type="button" className="p4r1-talk" data-write-talk-book="true" onClick={() => openWorkConversation('')}>
-              Talk about the whole book
+              {workStudioCopy ? workStudioCopy.whole : 'Talk about the whole Work'}
             </button>
           </>
         )}
@@ -1792,6 +1797,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       />
 
       <EditorialDancePanel
+        notYetCopy={workStudioCopy?.notYet}
         stage
         conversationChoices={props.conversationChoices ?? []}
         onChooseConversation={props.onChooseConversation}

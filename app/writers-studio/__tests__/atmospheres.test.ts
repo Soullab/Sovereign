@@ -53,8 +53,8 @@ describe('colour arithmetic', () => {
 });
 
 describe('REVERSIBLE — choosing nothing is exactly the Studio we already had', () => {
-  it('the default is Atelier', () => {
-    expect(DEFAULT_ATMOSPHERE).toBe('atelier');
+  it('the default is Evening (founder 2026-11-15)', () => {
+    expect(DEFAULT_ATMOSPHERE).toBe('evening');
   });
 
   it('⛔ Atelier is the existing palette, byte for byte', () => {

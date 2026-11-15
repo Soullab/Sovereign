@@ -59,7 +59,7 @@ describe('F19 · recommended settings only by the member’s own confirmation', 
   });
   it('confirmed at Begin: the setting is sent with the member’s title, through their own act', () => {
     expect(pathBeginPatch({ path: essay, title: 'College essay', revisionsPausedConfirmed: true, purpose: null }))
-      .toEqual({ title: 'College essay', maiaRevisionsPaused: true });
+      .toEqual({ title: 'College essay', maiaRevisionsPaused: true, studioPath: 'college-essay' });
   });
   it('unticked: the setting is not sent at all, so nothing is set for them', () => {
     const patch = pathBeginPatch({ path: essay, title: 'College essay', revisionsPausedConfirmed: false, purpose: null });

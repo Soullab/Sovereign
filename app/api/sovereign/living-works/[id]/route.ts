@@ -51,6 +51,7 @@ export const dynamic = 'force-dynamic';
  *     Work back. The independent R20 ledger is NOT sealed here (see that module).
  */
 
+import { studioPathById } from '@/lib/writersStudio/studioPaths';
 import { NextRequest, NextResponse } from 'next/server';
 import { query, transaction } from '@/lib/db/postgres';
 import { sweepVaultErasureQueue } from '@/lib/manuscript/source/eraseManuscript';
@@ -69,6 +70,7 @@ interface WorkRow {
   stage: string | null;
   manuscript_state: string | null;
   maia_revisions_paused?: boolean;
+  studio_path?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -145,9 +147,10 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       stage?: unknown;
       manuscriptState?: unknown;
       maiaRevisionsPaused?: unknown;
+      studioPath?: unknown;
     };
     if (!('title' in body) && !('purpose' in body) && !('form' in body) && !('stage' in body) && !('manuscriptState' in body)
-        && !('maiaRevisionsPaused' in body)) {
+        && !('maiaRevisionsPaused' in body) && !('studioPath' in body)) {
       return NextResponse.json({ error: 'nothing to change' }, { status: 400 });
     }
 
@@ -244,6 +247,16 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       maiaRevisionsPaused = body.maiaRevisionsPaused;
     }
 
+    /* The Studio program (path) this Work belongs to (founder 2026-11-15, ledger #1938). Member-declared through the
+       path door's Begin; only a registered path id or null is accepted, never free text. */
+    let studioPath: string | null = null;
+    if ('studioPath' in body) {
+      if (body.studioPath !== null && studioPathById(body.studioPath as string) === null) {
+        return NextResponse.json({ error: 'unknown_studio_path' }, { status: 400 });
+      }
+      studioPath = (body.studioPath as string | null) ?? null;
+    }
+
     // Only the fields the member actually addressed change; COALESCE-style
     // partial updates would silently keep a value the member tried to clear.
     const sets: string[] = [];
@@ -272,6 +285,10 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       params.push(maiaRevisionsPaused);
       sets.push(`maia_revisions_paused = $${params.length}`);
     }
+    if ('studioPath' in body) {
+      params.push(studioPath);
+      sets.push(`studio_path = $${params.length}`);
+    }
 
     // Member-scoped in the predicate, not after the fact: another member's id
     // cannot reach this row at all.
@@ -279,7 +296,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       `UPDATE living_works
           SET ${sets.join(', ')}, updated_at = now()
         WHERE id = $1 AND member_id = $2
-      RETURNING id, title, purpose, form, stage, manuscript_state, maia_revisions_paused, created_at, updated_at`,
+      RETURNING id, title, purpose, form, stage, manuscript_state, maia_revisions_paused, studio_path, created_at, updated_at`,
       params
     );
     if (updated.rows.length === 0) {
@@ -295,6 +312,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
         stage: r.stage,
         manuscriptState: r.manuscript_state,
         maiaRevisionsPaused: r.maia_revisions_paused === true,
+        studioPath: r.studio_path ?? null,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
       },

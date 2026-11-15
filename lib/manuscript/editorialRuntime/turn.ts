@@ -89,7 +89,8 @@ import {
   type ProposalPolicy,
 } from '../editorialScope/sequence';
 import { assembleEditorialCognition, type AssemblyRefusal } from './assembly';
-import { workPausesRevisions, workQuestionsOnlyInstruction } from './workRevisionPause';
+import { workPausesRevisions, workQuestionsOnlyInstruction, workStudioPath } from './workRevisionPause';
+import { studioPathById } from '@/lib/writersStudio/studioPaths';
 import { persistMaiaEditorialOutcome, type MaiaOutcomeRefusal, type MaiaOutcomeResult } from './maiaOutcome';
 import { detectNoopAdjustment, type NoopAdjustmentReason } from './noopProposal';
 
@@ -413,6 +414,9 @@ export async function runEditorialTurn(
      workRevisionPause.ts). */
   const workPaused = !input.opening
     && await workPausesRevisions(memberId, assembly.chainId, assembly.manuscriptId);
+  /* The Work's Studio program (2026-11-15): MAIA coaches in that program's posture, looked up by id. */
+  const workPath = input.opening ? null
+    : studioPathById(await workStudioPath(memberId, assembly.chainId, assembly.manuscriptId));
   const proposalPolicy: ProposalPolicy = input.opening || workPaused
     ? 'reply_only' : (input.proposalPolicy ?? 'allow');
 
@@ -493,6 +497,8 @@ export async function runEditorialTurn(
       proposalPolicyInstruction(proposalPolicy),
       // Work-wide "MAIA asks, never rewrites": no wording in any channel (2026-11-15).
       workPaused ? workQuestionsOnlyInstruction() : '',
+      // The Work's Studio program, in its own posture (registry by id; never client-supplied text).
+      workPath ? workPath.studioPosture : '',
       // Last, so the writer's own length choice outranks every default shape.
       input.replyLength ? replyLengthInstruction(input.replyLength) : '',
     ].filter(Boolean).join('\n\n'),

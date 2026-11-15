@@ -141,3 +141,27 @@ describe('a held-back example reads as care on a questions-only Work (live walk 
     expect(QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL).toContain('Ask her what to notice');
   });
 });
+
+describe('each Studio program speaks in its own words (founder 2026-11-15)', () => {
+  const { studioPathById, pathBeginPatch, STUDIO_PATHS } = jest.requireActual('@/lib/writersStudio/studioPaths');
+  const view = read('app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx');
+  it('the college essay program has its own Studio copy and MAIA posture, and never calls the essay a book', () => {
+    const p = studioPathById('college-essay');
+    expect(p.studioCopy.whole).toBe('Talk about the whole essay');
+    expect(p.studioCopy.orient).toContain('your essay');
+    expect(p.studioPosture).toContain('never a book, chapter or manuscript');
+  });
+  it('Begin records the program on the Work from the member\'s own act', () => {
+    const patch = pathBeginPatch({ path: STUDIO_PATHS[0], title: 'College essay', revisionsPausedConfirmed: true, purpose: null });
+    expect(patch.studioPath).toBe('college-essay');
+  });
+  it('NEGATIVE: an unknown or missing program falls back to the ordinary Studio words', () => {
+    expect(studioPathById('not-a-path')).toBeNull();
+    expect(studioPathById(null)).toBeNull();
+    expect(view).toMatch(/workStudioCopy \? workStudioCopy\.whole : 'Talk about the whole Work'/);
+  });
+  it('the breadcrumb yields to the save state', () => {
+    const css = read('app/dev/writers-studio-full-redesign-review/full-redesign-review.css');
+    expect(css).toMatch(/\.fr-write-crumb \{ max-width: 50%; min-width: 0; overflow: hidden; \}/);
+  });
+});

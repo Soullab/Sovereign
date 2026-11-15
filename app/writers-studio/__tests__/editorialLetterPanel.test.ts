@@ -78,7 +78,7 @@ describe('she reads by herself only with whole-Work permission', () => {
   it('⭐ no standing permission: she waits, and says why', async () => {
     await mount();
     expect(runPass).not.toHaveBeenCalled();
-    expect(q('[data-editorial-letter="none"]')?.textContent).toContain('I haven’t read this book yet');
+    expect(q('[data-editorial-letter="none"]')?.textContent).toContain('I haven’t read this Work yet');
     expect(q('[data-letter-read]')).not.toBeNull();
   });
   it('⭐ whole-Work permission, not in Sanctuary, no letter yet: she reads once', async () => {

@@ -313,7 +313,7 @@ export function EditorialLetterPanel(props: {
             ? 'I can’t establish your current draft safely just now, so I haven’t read it.'
             : run && run.done >= run.total
               ? 'I’ve read your book. My letter isn’t ready yet.'
-              : 'I haven’t read this book yet. When I have, I’ll bring you a short letter and we can go through it together, one place at a time.'}
+              : 'I haven’t read this Work yet. When I have, I’ll bring you a short letter and we can go through it together, one place at a time.'}
         </p>
         {error ? <p role="alert" style={{ margin: '6px 0 0', fontSize: 12 }}><ProMention message={error} /></p> : null}
         {runEnded}

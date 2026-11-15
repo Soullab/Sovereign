@@ -63,3 +63,30 @@ export function workQuestionsOnlyInstruction(): string {
     'Use quotation marks ONLY around the writer\'s own exact words from the passage. Never put any other wording in quotation marks.',
   ].join('\n');
 }
+
+/**
+ * The Studio program (path) of the Work this turn's manuscript belongs to (founder 2026-11-15, ledger #1938), so MAIA
+ * coaches in that program's own posture. Member-declared on the Work; looked up server-side by id; member-scoped.
+ * If several of the writer's Works hold the manuscript, the lowest path id wins, deterministically.
+ * Fails open to no program: an unreadable path only loses the program's tone, never a protection.
+ */
+export const WORK_STUDIO_PATH_SQL = `SELECT min(lw.studio_path) AS studio_path
+    FROM living_works lw
+   WHERE lw.member_id = $2
+     AND lw.studio_path IS NOT NULL
+     AND (lw.id IN (SELECT e.living_work_id FROM living_work_expressions e
+                     WHERE e.expression_type = 'manuscript' AND e.expression_id = $3)
+       OR lw.id IN (SELECT o.living_work_id FROM writer_editorial_chain_origins o
+                     WHERE o.proposal_chain_id = $1 AND o.member_id = $2))`;
+
+export async function workStudioPath(
+  memberId: string, chainId: string, manuscriptId: string,
+): Promise<string | null> {
+  try {
+    const r = await query<{ studio_path: string | null }>(WORK_STUDIO_PATH_SQL, [chainId, memberId, manuscriptId]);
+    return r.rows[0]?.studio_path ?? null;
+  } catch (error) {
+    console.error('[editorial] work studio path unreadable; using the ordinary Studio posture', error);
+    return null;
+  }
+}

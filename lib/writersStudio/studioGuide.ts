@@ -138,7 +138,7 @@ export const STUDIO_CONTROLS: readonly StudioControl[] = [
   { room: 'write', label: 'Why this?', where: 'on a revision mark in the manuscript', does: 'MAIA explains why she suggested that change' },
   { room: 'write', label: 'Change it', where: 'on a revision mark in the manuscript', does: 'the writer reworks the suggested change themselves' },
   { room: 'write', label: 'Talk about this place', where: 'the MAIA panel on the right in Write, after clicking a section in the manuscript list', does: 'opens the Work conversation about that section; beside it, Develop this place and Review this place jump to those rooms' },
-  { room: 'write', label: 'Talk about the whole book', where: 'the MAIA panel on the right in Write, when no section is picked', does: 'opens the Work conversation about the whole book' },
+  { room: 'write', label: 'Talk about the whole Work', where: 'the MAIA panel on the right in Write, when no section is picked', does: 'opens the Work conversation about the whole book' },
   { room: 'write', label: 'Begin relationship with MAIA', where: 'the MAIA panel, the first time on a Work', does: 'starts the MAIA relationship for this Work, which Studio conversations need' },
   { room: 'write', label: 'Leave relationship', where: 'the MAIA panel in Write, under Relationship with MAIA', does: 'ends the MAIA relationship for this Work; nothing is deleted' },
 
