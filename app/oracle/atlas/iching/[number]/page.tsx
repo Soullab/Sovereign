@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getHexagram } from '@/lib/divination/iching/hexagrams';
 import { LivingExplorer } from '@/components/oracle/iching/LivingExplorer';
+import { AskMaia } from '@/components/oracle/atlas/AskMaia';
 import { getExplorerEntry } from '@/lib/oracle/ichingExplorer';
 import styles from '../../atlas.module.css';
 
@@ -31,6 +32,7 @@ export default async function HexagramAtlasPage({ params }: { params: Promise<Pa
   const lower = entry?.lower;
   const prev = n === 1 ? 64 : n - 1;
   const next = n === 64 ? 1 : n + 1;
+  const subject = `Hexagram ${n} · ${h.chineseName ?? ''} ${h.englishName ?? h.name}`.replace(/\s+/g, ' ');
 
   return (
     <div className={styles.page}>
@@ -58,11 +60,21 @@ export default async function HexagramAtlasPage({ params }: { params: Promise<Pa
             {upper && <li>Upper trigram <b>{upper.symbol} {upper.image}</b></li>}
             {lower && <li>Lower trigram <b>{lower.symbol} {lower.image}</b></li>}
           </ul>
+          <AskMaia
+            prominent
+            tradition="I Ching"
+            subject={subject}
+            label={`Ask MAIA about ${h.englishName ?? h.name}`}
+            body={[
+              upper && lower ? `${upper.image} over ${lower.image}.` : '',
+              h.judgment ? `Judgment: ${h.judgment}` : '',
+            ].filter(Boolean).join('\n')}
+          />
         </div>
       </section>
 
       <section className={styles.section} aria-label="Explorer">
-        <LivingExplorer hexagramNumber={n} />
+        <LivingExplorer hexagramNumber={n} askMaia={{ subject }} />
       </section>
 
       <nav aria-label="Neighbouring hexagrams" className={styles.actions} style={{ justifyContent: 'space-between', marginTop: 32 }}>

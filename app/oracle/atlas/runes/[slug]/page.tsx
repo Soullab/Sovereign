@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getRuneAtlasEntry, listRunes } from '@/lib/oracle/atlas/runes';
 import { EvidenceLayer } from '@/components/oracle/atlas/EvidenceLayer';
+import { AskMaia } from '@/components/oracle/atlas/AskMaia';
 import styles from '../../atlas.module.css';
 
 type Params = { slug: string };
@@ -50,6 +51,12 @@ export default async function RuneEntryPage({ params }: { params: Promise<Params
             <li>Ætt <b>{e.aett} of 3</b></li>
             <li>In use <b>c. 150–750 CE</b></li>
           </ul>
+          <AskMaia
+            prominent
+            tradition="Runes"
+            subject={e.name}
+            body={`${e.symbol} ${e.name}, rune ${e.position} of 24 in the Elder Futhark (ætt ${e.aett}), sound "${e.transliteration}".`}
+          />
         </div>
       </section>
 
@@ -60,7 +67,7 @@ export default async function RuneEntryPage({ params }: { params: Promise<Params
         </div>
         <ol className={styles.layers}>
           {e.layers.map((layer, i) => (
-            <EvidenceLayer key={layer.id} layer={layer} index={i} />
+            <EvidenceLayer key={layer.id} layer={layer} index={i} ask={{ tradition: 'Runes', subject: e.name }} />
           ))}
         </ol>
         {!e.hasExemplarLayers && (

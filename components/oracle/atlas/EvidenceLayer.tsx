@@ -3,6 +3,8 @@
  * as four bars and a label. Strongest layers get the firmest border.
  */
 import { EVIDENCE, type AtlasLayer, type EvidenceClass } from '@/lib/oracle/atlas/evidence';
+import type { AtlasTradition } from '@/lib/oracle/atlas/askMaia';
+import { AskMaia } from './AskMaia';
 import styles from '@/app/oracle/atlas/atlas.module.css';
 
 export function EvidenceBadge({ kind }: { kind: EvidenceClass }) {
@@ -20,7 +22,16 @@ export function EvidenceBadge({ kind }: { kind: EvidenceClass }) {
   );
 }
 
-export function EvidenceLayer({ layer, index }: { layer: AtlasLayer; index: number }) {
+export function EvidenceLayer({
+  layer,
+  index,
+  ask,
+}: {
+  layer: AtlasLayer;
+  index: number;
+  /** When set, offers Ask MAIA about this layer. */
+  ask?: { tradition: AtlasTradition; subject: string };
+}) {
   const strength = EVIDENCE[layer.evidence].strength;
   return (
     <li className={styles.layer} data-strength={strength}>
@@ -40,6 +51,16 @@ export function EvidenceLayer({ layer, index }: { layer: AtlasLayer; index: numb
           </ul>
         )}
         {layer.source && <p className={styles.source}>{layer.source}</p>}
+        {ask && (
+          <AskMaia
+            tradition={ask.tradition}
+            subject={ask.subject}
+            aspect={layer.title}
+            evidence={layer.evidence}
+            body={layer.body}
+            label="Ask MAIA about this layer"
+          />
+        )}
       </div>
     </li>
   );

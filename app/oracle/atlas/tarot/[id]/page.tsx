@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ALL_CARDS, getTarotAtlasEntry } from '@/lib/oracle/atlas/tarot';
 import { EvidenceLayer } from '@/components/oracle/atlas/EvidenceLayer';
+import { AskMaia } from '@/components/oracle/atlas/AskMaia';
 import styles from '../../atlas.module.css';
 
 type Params = { id: string };
@@ -45,6 +46,12 @@ export default async function TarotCardPage({ params }: { params: Promise<Params
             A card’s place in the deck is centuries old; its esoteric correspondences are from the
             1880s; most of its divinatory meanings are modern. The layers below keep them apart.
           </p>
+          <AskMaia
+            prominent
+            tradition="Tarot"
+            subject={e.name}
+            body={e.arcana === 'major' ? `${e.name}, a trump of the Major Arcana.` : `${e.name}, a card of the suit of ${e.suit}.`}
+          />
         </div>
       </section>
 
@@ -55,7 +62,7 @@ export default async function TarotCardPage({ params }: { params: Promise<Params
         </div>
         <ol className={styles.layers}>
           {e.layers.map((layer, i) => (
-            <EvidenceLayer key={layer.id} layer={layer} index={i} />
+            <EvidenceLayer key={layer.id} layer={layer} index={i} ask={{ tradition: 'Tarot', subject: e.name }} />
           ))}
         </ol>
       </section>

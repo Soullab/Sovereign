@@ -5,8 +5,10 @@
  *
  * Shown after a reading. Five fields (text, history, metaphysics,
  * commentaries, practice), each claim labelled with its evidence class.
- * Purely presentational: it reads the local hexagram library and sends
- * nothing anywhere.
+ * It reads the local hexagram library and sends nothing on its own. On Atlas
+ * pages (askMaia set) each field offers Ask MAIA: the member reads and edits
+ * the field's public Atlas text before choosing to send it. In the chamber
+ * askMaia is not set, so no reading content can travel from here.
  */
 import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import Link from 'next/link';
@@ -18,6 +20,7 @@ import {
   getExplorerEntry,
   type EvidenceClass,
 } from '@/lib/oracle/ichingExplorer';
+import { AskMaia } from '@/components/oracle/atlas/AskMaia';
 
 const TABS = [
   { id: 'text', label: 'The Text' },
@@ -34,6 +37,43 @@ interface LivingExplorerProps {
   changingLines?: number[];
   /** When set, shows a link to this hexagram's full Atlas entry. */
   atlasHref?: string;
+  /** Atlas only: offers Ask MAIA on every field, naming the hexagram as `subject`. */
+  askMaia?: { subject: string };
+}
+
+type Entry = NonNullable<ReturnType<typeof getExplorerEntry>>;
+
+/** The public Atlas text of one field — exactly what the member is shown. */
+function explorerFieldText(entry: Entry, tab: TabId): { body: string; evidence?: EvidenceClass } {
+  switch (tab) {
+    case 'text':
+      return {
+        body: [entry.judgment && `Judgment: ${entry.judgment}`, entry.image && `The Image: ${entry.image}`]
+          .filter(Boolean)
+          .join('\n'),
+      };
+    case 'history':
+      return { body: ICHING_HISTORY.map((h) => `${h.period}: ${h.title}.`).join('\n') };
+    case 'metaphysics': {
+      const tri = entry.upper && entry.lower
+        ? `Upper trigram ${entry.upper.image} (${entry.upper.pinyin}, ${entry.upper.quality}); lower trigram ${entry.lower.image} (${entry.lower.pinyin}, ${entry.lower.quality}).`
+        : '';
+      const sov = entry.sovereign
+        ? `One of the twelve sovereign hexagrams, standing for lunar month ${entry.sovereign.month}.`
+        : '';
+      return { body: [tri, sov].filter(Boolean).join('\n'), evidence: 'traditional' };
+    }
+    case 'commentaries':
+      return entry.commentary
+        ? {
+            body: [entry.commentary.note, ...entry.commentary.readings.map((r) => `${r.author} (${r.dates}): ${r.heading}`)].join('\n'),
+          }
+        : { body: 'No sourced commentary for this hexagram is in the Atlas yet.' };
+    case 'practice':
+      return {
+        body: CASTING_ODDS.map((o) => `${o.value} ${o.label}: yarrow ${o.yarrow} in 16, coins ${o.coins} in 16.`).join('\n'),
+      };
+  }
 }
 
 function Evidence({ kind }: { kind: EvidenceClass }) {
@@ -44,7 +84,7 @@ function Evidence({ kind }: { kind: EvidenceClass }) {
   );
 }
 
-export function LivingExplorer({ hexagramNumber, changingLines = [], atlasHref }: LivingExplorerProps) {
+export function LivingExplorer({ hexagramNumber, changingLines = [], atlasHref, askMaia }: LivingExplorerProps) {
   const entry = getExplorerEntry(hexagramNumber);
   const [tab, setTab] = useState<TabId>('text');
   const baseId = useId();
@@ -286,6 +326,18 @@ export function LivingExplorer({ hexagramNumber, changingLines = [], atlasHref }
             <p className={`${divinationType.support} text-white/70`}>
               With yarrow, a changing yang line is three times as likely as a changing yin line. With coins they are equally likely.
             </p>
+          </div>
+        )}
+
+        {askMaia && (
+          <div className="mt-6 pt-2 border-t border-[#D4B896]/10">
+            <AskMaia
+              key={tab}
+              tradition="I Ching"
+              subject={askMaia.subject}
+              aspect={TABS.find((t) => t.id === tab)?.label}
+              {...explorerFieldText(entry, tab)}
+            />
           </div>
         )}
       </div>
