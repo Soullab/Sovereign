@@ -44,7 +44,7 @@ import { FOCUSED_INTENTS, guidedIntents } from './developStarterSets';
 import { PlaceStubNotice } from './PlaceStubNotice';
 import { findLongerSibling } from './stubSibling';
 import { CoverageLine } from './CoverageLine';
-import { DevelopStage, DevelopHoldings, DevelopCompanion, ChapterReadingPane, StageReadingCard, chapterWordCount, type StageReading, type StageEditorialPass } from './DevelopStage';
+import { DevelopStage, DevelopHoldings, DevelopCompanion, ChapterReadingPane, StageReadingCard, StageReadingInvitation, chapterWordCount, type StageReading, type StageEditorialPass } from './DevelopStage';
 import type { StudioAct } from '@/app/writers-studio/canvas/WorkConversation';
 import { setReadScope, getReadScope } from '@/lib/writersStudio/readScopeClient';
 import { settleDecisionNote } from '@/lib/writersStudio/decisionClient';
@@ -3500,8 +3500,14 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
           coverage={<CoverageLine manuscriptId={props.manuscriptId}
             refreshKey={`${props.chapterReview?.commissionedAt ?? ''}:${props.attentionMap?.commissionedAt ?? ''}`}
             labelOf={(id) => { const sec = props.sections.find((x) => x.draftSectionId === id); return sec ? (sec.heading?.trim() || `Section ${sec.position + 1}`) : 'a section'; }} />}
-          reading={<StageReadingCard key={stageReading.chapterLabel} reading={stageReading}
-            onWorkTowardRevision={() => makePlan(`Help me work toward a revision of ${stageChapterLabel}, starting from what you noticed when you read it.`)} />}
+          reading={stageReading.status === 'ready' ? (
+            <StageReadingCard key={stageReading.chapterLabel} reading={stageReading}
+              onWorkTowardRevision={() => makePlan(`Help me work toward a revision of ${stageChapterLabel}, starting from what you noticed when you read it.`)} />
+          ) : (
+            <StageReadingInvitation key={`${stageReading.status}:${stageReading.chapterLabel}`} reading={stageReading}
+              needsCheckpoint={props.chapterNeedsCheckpoint}
+              onRead={props.onReadChapter} onCheckpointAndRead={props.onCheckpointAndReadChapter} />
+          )}
           conversation={(
             <WorkConversation
               key="develop-stage-conversation"

@@ -34,6 +34,11 @@ describe('the coverage sentence says only what the record proves', () => {
     const t = coverageSentence(map(['read', 'changed', 'read']));
     expect(t).toBe('I’ve read 2 of 3 sections of this draft; 1 has changed since I read it.');
   });
+  it('one-section draft (a college essay): never "all 1 sections"', () => {
+    expect(coverageSentence(map(['read']))).toBe('I’ve read this draft.');
+    expect(coverageSentence(map(['changed']))).toBe('This draft has changed since I read it.');
+    expect(coverageSentence(map(['not_read']))).toBe('I haven’t read this draft yet.');
+  });
   it('nothing read yet', () => expect(coverageSentence(map(['not_read', 'position_only']))).toBe('I haven’t read this draft yet.'));
   it('⭐ position-only is counted as not read', () => {
     expect(coverageSentence(map(['read', 'position_only']))).toBe('I’ve read 1 of 2 sections of this draft; 1 I haven’t read.');
