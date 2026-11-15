@@ -650,14 +650,15 @@ export function StageReadingInvitation(props: {
         <p role="status" aria-live="polite" style={{ margin: 0 }}>{r.progress ?? `MAIA is reading ${r.chapterLabel}…`}</p>
       ) : (
         <>
+          {/* Walk 2026-11-15: the stage's checkpoint error names the toolbar's label ("Read this chapter with MAIA"), which is not the
+              button here. In the checkpoint case this column says it in its own words, once, beside its own button. */}
           <p style={{ margin: '0 0 8px' }} role={r.status === 'error' ? 'status' : undefined}>
-            {r.status === 'error'
-              ? (r.error ?? 'MAIA could not finish this reading. Your writing is unchanged.')
-              : `MAIA does not have a completed reading of ${r.chapterLabel} here yet. Would you like her to read it?`}
+            {props.needsCheckpoint
+              ? `Your latest changes to ${r.chapterLabel} aren’t saved yet. MAIA reads a saved draft, so this saves a checkpoint first, then she reads it.`
+              : r.status === 'error'
+                ? (r.error ?? 'MAIA could not finish this reading. Your writing is unchanged.')
+                : `MAIA does not have a completed reading of ${r.chapterLabel} here yet. Would you like her to read it?`}
           </p>
-          {props.needsCheckpoint ? (
-            <p style={{ margin: '0 0 8px', opacity: 0.8, fontSize: 12 }}>Your current draft will be saved as a checkpoint before MAIA reads it.</p>
-          ) : null}
           <button type="button" data-develop-maia-read-chapter="true" disabled={asked} aria-disabled={asked}
             onClick={() => {
               if (askedNow.current) return;

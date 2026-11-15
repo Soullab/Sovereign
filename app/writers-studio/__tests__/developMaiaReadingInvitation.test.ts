@@ -44,8 +44,10 @@ test('a double-click asks once; the button comes back if nothing moves', () => {
 });
 
 test('unsaved changes: the same checkpoint-first path as the toolbar, said before it happens', () => {
-  const h = mount(reading({ status: 'error', error: 'Your latest changes need saving as a checkpoint before MAIA can read this chapter.' }), true);
-  expect(host.textContent).toContain('Your current draft will be saved as a checkpoint before MAIA reads it.');
+  // the stage's own checkpoint error, verbatim from P4R1DevelopView: it names the toolbar's label, not this column's button
+  const h = mount(reading({ status: 'error', error: 'Your latest changes need saving as a checkpoint before MAIA can read this chapter. Choose “Read this chapter with MAIA” to save it and read.' }), true);
+  expect(host.textContent).toContain('Your latest changes to Section 1 aren’t saved yet. MAIA reads a saved draft, so this saves a checkpoint first, then she reads it.');
+  expect(host.textContent).not.toContain('Choose “Read this chapter with MAIA”');
   expect(btn()!.textContent).toBe('Save checkpoint and read with MAIA');
   act(() => btn()!.click());
   expect(h.onCheckpointAndRead).toHaveBeenCalledTimes(1); expect(h.onRead).not.toHaveBeenCalled();
