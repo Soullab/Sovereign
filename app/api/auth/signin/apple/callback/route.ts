@@ -18,6 +18,7 @@ import crypto from 'crypto';
 import { cookies } from 'next/headers';
 import { query } from '@/lib/db/postgres';
 import { createSession, setSessionCookie } from '@/lib/auth/serverSessions';
+import { recordSignIn } from '@/lib/auth/recordSignIn';
 import { SignJWT, jwtVerify, createRemoteJWKSet } from 'jose';
 
 // Apple's JWKS endpoint for verifying id_tokens
@@ -272,6 +273,7 @@ export async function POST(req: NextRequest) {
 
     // Set session cookie
     await setSessionCookie(session.sessionToken, session.expiresAt);
+    await recordSignIn(memberId, 'AppleSignin');
 
     // Fetch member tier and roles for access control
     const tierResult = await safeQuery(
