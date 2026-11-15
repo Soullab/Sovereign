@@ -1,5 +1,6 @@
 'use client';
 
+import { FREE_WORK_LIMIT_CODE, FREE_WORK_LIMIT_MESSAGE } from '@/lib/writersStudio/workLimitShared';
 import { revealHeldPassage } from '@/lib/writersStudio/revealHeldPassage';
 import type { TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
 import type { TurnShape } from '@/lib/writersStudio/conversationTurn';
@@ -11,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAtmosphere } from '@/app/writers-studio/atmosphere/StudioAtmosphere';
 import { apiFetch } from '@/lib/http/apiBase';
-import ContinuousDraftWayIn from '@/app/writers-studio/ContinuousDraftWayIn';
+import ContinuousDraftWayIn, { writeForwardFor } from '@/app/writers-studio/ContinuousDraftWayIn';
 import { readCurrentSanctuaryPosture, type CurrentPostureRead } from '@/lib/sanctuary/currentClientPosture';
 import { useLivingWorks } from '@/app/writers-studio/useLivingWorks';
 import { currentWork } from '@/app/writers-studio/workContext';
@@ -348,6 +349,11 @@ export default function FlagshipWriteEditController() {
         setPhase('error');
         setMessage('This manuscript is not section-addressable yet. The Studio will not guess at its structure.');
         setWayInId(manuscriptId);
+        /* A continuous draft goes straight to the Canvas, which opens it whole.
+           replace(), so Back does not return to this refusal and bounce again.
+           The way-in above stays rendered in case navigation does not happen. */
+        const forward = writeForwardFor(body.state, manuscriptId);
+        if (forward && typeof window !== 'undefined') window.location.replace(forward);
         return;
       }
       setContext(body);
@@ -2454,7 +2460,7 @@ export default function FlagshipWriteEditController() {
       const created = await create.json().catch(() => null);
       const workId = typeof created?.work?.id === 'string' ? created.work.id : null;
       if (!create.ok || !workId) {
-        setEditorialFailure('The Work could not be created just now. The manuscript has not changed.');
+        setEditorialFailure(created?.code === FREE_WORK_LIMIT_CODE ? FREE_WORK_LIMIT_MESSAGE : 'The Work could not be created just now. The manuscript has not changed.');
         return;
       }
 

@@ -181,3 +181,17 @@
 .reviewMine{list-style:none;padding:0;display:grid;gap:14px;font-size:13px}
 .reviewMine ul{margin:6px 0;padding-left:18px;color:#c9d3d4}
 @media (max-width:600px){.reviewTranscript li[data-role="reviewer"]{margin-left:10px}.reviewPanel{padding:20px}}
+.toneLab{display:grid;gap:12px;margin:0 0 22px;padding:22px 24px;border:1px solid rgba(226,216,194,.14);border-radius:14px;background:rgba(4,12,16,.34)}
+.toneLab h2{margin:0;font-family:Georgia,serif;font-size:24px;font-weight:400;color:#e9d3ae}
+.toneLab .play{justify-self:start;min-height:44px}
+.toneLab .ghost{justify-self:start;min-height:44px}
+.toneDial{display:grid;grid-template-columns:minmax(150px,220px) 1fr;gap:14px;align-items:end}
+.toneDial label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#ddd0bb}
+.toneDial input[type=number],.toneBed select{box-sizing:border-box;background:#071217;color:#f1efe7;border:1px solid #415258;border-radius:10px;padding:11px;min-height:44px;width:100%;min-width:0}
+.toneDial input[type=range]{width:100%;min-height:44px;accent-color:#e8d2af}
+.toneBed{display:flex;flex-direction:column;gap:6px;max-width:320px;font-size:13px;color:#ddd0bb}
+.toneNotes p{margin:0 0 6px;font-size:13px;line-height:1.6}
+.toneProvenance{margin:0;padding:12px 14px;border-left:2px solid #6e6153;color:#d9c7a6;font-size:14px;line-height:1.6}
+.toneHeading{margin:10px 0 0;font-family:Georgia,serif;font-size:16px;font-weight:400;color:#e9d3ae}
+.toneGroup h4{margin:8px 0 6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#9aafb0;font-weight:500}
+@media (max-width:640px){.toneDial{grid-template-columns:1fr}}
