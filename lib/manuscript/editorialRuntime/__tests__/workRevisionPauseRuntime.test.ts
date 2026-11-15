@@ -118,6 +118,8 @@ describe('Work-wide "MAIA asks, never rewrites"', () => {
     const system = fakeStructured.mock.calls[0]![0].system as string;
     expect(system).toContain('THE WRITER HAS CHOSEN "MAIA ASKS, NEVER REWRITES" FOR THIS WHOLE WORK');
     expect(system).toContain('not even if the writer asks');
+    expect(system).toContain('If the writer asks for an example sentence');
+    expect(system).toContain('Use quotation marks ONLY around the writer');
   });
 
   test('NEGATIVE: an unpaused Work never gets the no-wording instruction', async () => {

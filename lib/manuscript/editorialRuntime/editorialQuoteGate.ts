@@ -21,6 +21,13 @@ export const QUOTE_NOT_IN_TEXT_DETAIL =
   'MAIA quoted wording that is not in the text she was given, so nothing was shown or changed. '
   + 'Your own words are untouched. Try asking again, or point her to the exact passage.';
 
+/** The same refusal, read on a Work set to "MAIA asks, never rewrites" (live walk 2026-11-15): there, the quote that
+ *  was stopped is almost always wording MAIA should not have offered, so the writer is told why, kindly, and what
+ *  to ask instead. Client copy only; the server code is unchanged. */
+export const QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL =
+  'MAIA held back wording: this Work keeps every sentence yours, so she won’t write one, not even as an example. '
+  + 'Ask her what to notice in the moment, or what a reader might want to know, and the next sentence can come from you.';
+
 /** Flatten structured message content to the TEXT it carries, so escaped newlines and quotes cannot make a faithful quote unmatchable. */
 const contentOf = (c: unknown): string => {
   if (typeof c === 'string') return c;
