@@ -7,6 +7,7 @@
 //   task          → a small adjustment (verbal tasks keep events quieter and the tone softer)
 // This is a synthesized interpretation, not recorded music, and it makes no claim about any effect on attention,
 // mood or health. Nothing here plays sound: the engine does, and only after the member's own Play.
+import type { ToneSpec } from './toneLab';
 import type { FocusMusicalWorld, FocusNeed, FocusStimulation, FocusTaskKind } from './focusFieldSession';
 
 export type SoundscapeInput = {
@@ -34,6 +35,8 @@ export type SoundscapeSpec = {
   noise: NoiseSpec | null;
   tick: TickSpec | null;
   fadeInSec: number;
+  /** Tone Lab only: a pure tone (and optional pulse) carried by the same engine. Absent for every Focus soundscape. */
+  tone?: ToneSpec;
 };
 
 export const DEFAULT_SOUNDSCAPE_INPUT: SoundscapeInput =
@@ -143,5 +146,6 @@ export function soundscapeNeedsRebuild(a: SoundscapeSpec, b: SoundscapeSpec): bo
   return a.world !== b.world || a.voices.length !== b.voices.length ||
     (a.noise === null) !== (b.noise === null) ||
     (a.tick?.kind ?? null) !== (b.tick?.kind ?? null) ||
-    a.voices.some((voice, index) => voice.type !== b.voices[index]?.type);
+    a.voices.some((voice, index) => voice.type !== b.voices[index]?.type) ||
+    (a.tone === undefined) !== (b.tone === undefined) || a.tone?.pulseMode !== b.tone?.pulseMode;
 }
