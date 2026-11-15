@@ -9,6 +9,7 @@ import { FOCUS_SOUND_SKETCHES, focusSoundLabel } from '@/lib/listening/focusSoun
 import { DEFAULT_SOUNDSCAPE_INPUT, focusSoundscapeSpec } from '@/lib/listening/focusSoundscape';
 import type { SoundscapeInput, SoundscapeSpec } from '@/lib/listening/focusSoundscape';
 import { buildSoundscape } from '@/lib/listening/soundscapeEngine';
+import { TONE_FADE_OUT_SEC, toneEffectiveLevel } from '@/lib/listening/toneLab';
 import {
   DEFAULT_LISTENING_LEVEL, generatedGainForLevel, readStoredListeningLevel, writeStoredListeningLevel,
 } from '@/lib/listening/listeningLevel';
@@ -198,6 +199,22 @@ export function useListeningBoundaryStatus(): ListeningBoundaryStatus {
 
 function endSketch(sketch: Sketch | null): void {
   if (!sketch) return;
+  if (sketch.soundscape?.spec.tone) {
+    // Tone Lab never ends with a cut: a short fade, then the same teardown. Stop is still terminal: the player has
+    // already moved to idle and released the output; only this sketch's last fraction of a second is left to finish.
+    const { context, master } = sketch;
+    try {
+      const now = context.currentTime;
+      master.gain.cancelScheduledValues(now);
+      master.gain.setValueAtTime(Math.max(0.0001, master.gain.value), now);
+      master.gain.setTargetAtTime(0.0001, now, TONE_FADE_OUT_SEC / 4);
+    } catch {}
+    setTimeout(() => endSketchNow(sketch), TONE_FADE_OUT_SEC * 1000 + 100);
+    return;
+  }
+  endSketchNow(sketch);
+}
+function endSketchNow(sketch: Sketch): void {
   try { sketch.soundscape?.dispose(); } catch {}
   try { sketch.master.gain.setValueAtTime(0, sketch.context.currentTime); } catch {}
   for (const osc of [...sketch.oscillators,sketch.movement]) {
@@ -716,7 +733,8 @@ export function PersistentListeningProvider({
     saveVolume(next);
     if (sketch.current) {
       const { context, master } = sketch.current;
-      master.gain.setTargetAtTime(generatedGainForLevel(next),
+      master.gain.setTargetAtTime(
+        generatedGainForLevel(sketch.current.soundscape?.spec.tone ? toneEffectiveLevel(next) : next),
         context.currentTime, 0.06);
     }
     if (media.current) media.current.volume = next / 100;
@@ -862,11 +880,11 @@ export function PersistentListeningProvider({
       const elapsedMs = activeExperience ? experienceElapsed() : 0;
       setSnapshot({
         kind: 'sketch', playback: 'playing', mood,
-        title: soundscape ? 'Your soundscape' : activeExperience?.definition.title ?? {
+        title: soundscape ? (soundscape.tone ? 'Tone Lab' : 'Your soundscape') : activeExperience?.definition.title ?? {
           focus: 'Between the Tides', create: 'Velvet Current',
           drift: 'The Blue Hour', rest: 'Moonwater',
         }[mood],
-        subtitle: soundscape ? 'Built from your choices' : activeExperience?.definition.subtitle ?? '',
+        subtitle: soundscape ? (soundscape.tone ? `${Math.round(soundscape.tone.hz * 100) / 100} Hz${soundscape.tone.pulseMode === 'none' ? '' : ` · ${soundscape.tone.pulseMode} pulse ${Math.round(soundscape.tone.pulseHz * 100) / 100} Hz`}` : 'Built from your choices') : activeExperience?.definition.subtitle ?? '',
         experienceId: activeExperience?.definition.id ?? null,
         durationMs: activeExperience?.definition.durationMs ?? null,
         elapsedMs,
@@ -876,6 +894,7 @@ export function PersistentListeningProvider({
         fileFormat: null,
         message: activeExperience
           ? `${activeExperience.definition.title} · procedural review edition.`
+          : soundscape?.tone ? 'A tone you set, for listening and exploring · no effect is claimed · capped at a quiet level.'
           : soundscape ? (soundscape.recorded
             ? 'A soundscape built from your Focus choices, with recorded nature sound · it changes as you change them.'
             : 'A synthesized soundscape built from your Focus choices · it changes as you change them.')
@@ -1248,6 +1267,7 @@ export function PersistentListeningProvider({
   useEffect(() => {
     const active = sketch.current;
     if (!active?.soundscape || kind.current !== 'sketch') return;
+    if (active.soundscape.spec.tone) return; // a Tone Lab sound follows its own dial, never the Focus choices
     const next = focusSoundscapeSpec(liveSoundscapeInput);
     if (!active.soundscape.update(next) && snapshot.playback === 'playing') {
       void playSketch('focus', [110, 164.81, 220], undefined, next);
@@ -1281,7 +1301,8 @@ export function PersistentListeningProvider({
       void playExperienceMedia(reviewManifest.current); return;
     }
     if (snapshot.kind === 'sketch' && sketch.current?.soundscape) {
-      void playSketch('focus', [110, 164.81, 220], undefined, focusSoundscapeSpec(liveSoundscapeInput));
+      const resumed = sketch.current.soundscape.spec.tone ? sketch.current.soundscape.spec : focusSoundscapeSpec(liveSoundscapeInput);
+      void playSketch('focus', [110, 164.81, 220], undefined, resumed);
       return;
     }
     if (snapshot.kind === 'sketch') {
