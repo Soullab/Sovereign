@@ -185,7 +185,7 @@ async function generateRunesResponse(
       reading = nornsReading(query);
       break;
     case 'elements':
-      reading = castRunes(query, 'Elemental Cross');
+      reading = castRunes(query, 'elemental-cross');
       break;
     default:
       reading = dailyRuneDraw(query);
