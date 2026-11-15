@@ -204,6 +204,66 @@ export const AETT_SPREAD: RuneSpread = {
 };
 
 /**
+ * Elemental Cross — a contemporary spread (not an attested historical
+ * runic practice). Position names match the Runes chamber UI exactly.
+ */
+export const ELEMENTAL_CROSS_RUNE_SPREAD: RuneSpread = {
+  name: 'Elemental Cross',
+  description: 'Earth, Air, Fire, Water, and Spirit positions',
+  runeCount: 5,
+  positions: [
+    {
+      name: 'Earth (Foundation)',
+      description: 'What grounds and sustains the situation',
+      index: 0
+    },
+    {
+      name: 'Air (Mind)',
+      description: 'Thoughts, words, and understanding at work',
+      index: 1
+    },
+    {
+      name: 'Fire (Action)',
+      description: 'Will, drive, and what is ready to move',
+      index: 2
+    },
+    {
+      name: 'Water (Emotion)',
+      description: 'Feeling, relationship, and what flows beneath',
+      index: 3
+    },
+    {
+      name: 'Spirit (Higher Self)',
+      description: 'The deeper orientation the question opens toward',
+      index: 4
+    }
+  ],
+  purpose: 'Elemental view of a situation',
+  method: 'Draw five runes, one for each elemental position. A contemporary spread.'
+};
+
+/**
+ * Week Ahead — a contemporary spread (not an attested historical runic
+ * practice). Position names match the Runes chamber UI exactly.
+ */
+export const WEEK_AHEAD_RUNE_SPREAD: RuneSpread = {
+  name: 'Week Ahead',
+  description: 'Seven runes for the coming week',
+  runeCount: 7,
+  positions: [
+    { name: 'Sunday', description: 'The day ahead on Sunday', index: 0 },
+    { name: 'Monday', description: 'The day ahead on Monday', index: 1 },
+    { name: 'Tuesday', description: 'The day ahead on Tuesday', index: 2 },
+    { name: 'Wednesday', description: 'The day ahead on Wednesday', index: 3 },
+    { name: 'Thursday', description: 'The day ahead on Thursday', index: 4 },
+    { name: 'Friday', description: 'The day ahead on Friday', index: 5 },
+    { name: 'Saturday', description: 'The day ahead on Saturday', index: 6 }
+  ],
+  purpose: 'A rune for each day of the coming week',
+  method: 'Draw seven runes in order, Sunday through Saturday. A contemporary spread.'
+};
+
+/**
  * All available spreads
  */
 export const RUNE_SPREADS: Record<string, RuneSpread> = {
@@ -212,7 +272,9 @@ export const RUNE_SPREADS: Record<string, RuneSpread> = {
   'four-directions': FOUR_DIRECTIONS_SPREAD,
   'five-cross': FIVE_RUNE_CROSS,
   'compass': RUNIC_COMPASS,
-  'aett': AETT_SPREAD
+  'aett': AETT_SPREAD,
+  'elemental-cross': ELEMENTAL_CROSS_RUNE_SPREAD,
+  'week-ahead': WEEK_AHEAD_RUNE_SPREAD
 };
 
 /**
