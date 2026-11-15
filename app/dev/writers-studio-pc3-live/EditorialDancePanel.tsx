@@ -1,5 +1,6 @@
 'use client';
 
+import { MaiaRelationshipPromise } from './MaiaQuestionsOnlyCopy';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { chooseReplyLength } from '@/lib/writersStudio/replyLengthPreference';
 import { parseAnswerChoices } from '@/lib/writersStudio/answerChoices';
@@ -80,6 +81,8 @@ export interface EditorialDancePanelProps {
   deeper?: ReactNode;
   /** Step 5b: the writer paused MAIA's revisions for this passage (she keeps talking). */
   revisionsPaused?: boolean;
+  /** The Work's Studio program line for "not yet" (e.g. "I haven’t read your essay with you yet."). */
+  notYetCopy?: string;
   onDepth: (depth: EditorialDepth) => void;
   /** An act the writer asked for from outside the panel (the Write menu's
    *  "Teach me about this"). It goes through the same gates as a card. */
@@ -593,10 +596,8 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
       data-relationship-gate
     >
       <div>
-        <b>I haven’t read this book with you yet.</b>
-        <span data-relationship-promise>{props.revisionsPaused
-          ? 'Start with me and I can talk this passage through with you and ask questions. I won’t rewrite it: every sentence stays yours.'
-          : 'Start with me and I can talk this passage through and suggest edits. Your writing stays fully yours either way.'}</span>
+        <b>{props.notYetCopy ?? 'I haven’t read this Work with you yet.'}</b>
+        <MaiaRelationshipPromise paused={Boolean(props.revisionsPaused)} />
         {relationshipNudge ? (
           <span role="status" data-relationship-nudge>Start with me first, and I’ll pick this up. Nothing has been sent.</span>
         ) : null}

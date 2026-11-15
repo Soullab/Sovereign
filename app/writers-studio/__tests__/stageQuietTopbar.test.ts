@@ -7,7 +7,7 @@ const room = fs.readFileSync(path.join(process.cwd(), 'app/dev/writers-studio-pc
 const view = fs.readFileSync(path.join(process.cwd(), 'app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx'), 'utf8');
 
 test('in a conversation every secondary control lives under one More menu', () => {
-  expect(room).toMatch(/return stage \? \(\s*<details className="p4r1-isolated-menu p4r1-isolated-more" data-stage-more>/);
+  expect(room).toMatch(/return stage \? \(\s*<details (?:ref=\{moreRef\} )?className="p4r1-isolated-menu p4r1-isolated-more" data-stage-more>/);
   expect(room).toContain("{stage ? 'Back to the page' : 'Return to manuscript'}");
 });
 

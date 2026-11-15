@@ -1041,3 +1041,8 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
     max-width: none; overflow: visible;
   }
 }
+
+/* Beta walk 2026-11-15 (College Essay): with MAIA's column open the crumb ("College essay › Section 1") ran under the
+   save state ("Sectio●Saved"). The crumb now yields: it may take at most half the row and truncates with an ellipsis. */
+.fr-write-crumb { max-width: 50%; min-width: 0; overflow: hidden; }
+.fr-write-crumb > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

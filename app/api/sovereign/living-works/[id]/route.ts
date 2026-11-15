@@ -51,6 +51,7 @@ export const dynamic = 'force-dynamic';
  *     Work back. The independent R20 ledger is NOT sealed here (see that module).
  */
 
+import { studioPathById } from '@/lib/writersStudio/studioPaths';
 import { NextRequest, NextResponse } from 'next/server';
 import { query, transaction } from '@/lib/db/postgres';
 import { sweepVaultErasureQueue } from '@/lib/manuscript/source/eraseManuscript';
@@ -69,6 +70,7 @@ interface WorkRow {
   stage: string | null;
   manuscript_state: string | null;
   maia_revisions_paused?: boolean;
+  studio_path?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -145,9 +147,10 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       stage?: unknown;
       manuscriptState?: unknown;
       maiaRevisionsPaused?: unknown;
+      studioPath?: unknown;
     };
     if (!('title' in body) && !('purpose' in body) && !('form' in body) && !('stage' in body) && !('manuscriptState' in body)
-        && !('maiaRevisionsPaused' in body)) {
+        && !('maiaRevisionsPaused' in body) && !('studioPath' in body)) {
       return NextResponse.json({ error: 'nothing to change' }, { status: 400 });
     }
 
@@ -244,6 +247,30 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       maiaRevisionsPaused = body.maiaRevisionsPaused;
     }
 
+    /* The Studio program (path) this Work belongs to (ledger #1938). CONTRACT:
+       A Work's program is explicitly declared through an authenticated, authorized action by the member who owns that Work.
+       The declaration must identify a registered program. Once established, the program is immutable. No title, invitation,
+       system process, or inferred context may silently assign or change it. (Founder contract ACCEPT_F2_MEMBER_DECLARATION_ONCE_FIXED,
+       2026-11-15; supersedes earlier "Begin-only" wording, including this migration's header. The contract is member authorization,
+       not button provenance: existing session authorization and request-integrity protections apply, and the client submits an
+       explicit program selection, never an inferred one.)
+       Enforced here (owner-scoped Work, registered id only, set once: same id is a no-op, clear 400, change 409) and in
+       the database (FK to studio_programs, fixed-once trigger). */
+    let studioPath: string | null = null;
+    if ('studioPath' in body) {
+      if (typeof body.studioPath !== 'string' || studioPathById(body.studioPath) === null) {
+        return NextResponse.json({ error: 'unknown_studio_path' }, { status: 400 });
+      }
+      studioPath = body.studioPath;
+      const current = await query<{ studio_path: string | null }>(
+        `SELECT studio_path FROM living_works WHERE id = $1 AND member_id = $2`, [id, memberId]);
+      if (current.rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      const existing = current.rows[0].studio_path;
+      if (existing !== null && existing !== studioPath) {
+        return NextResponse.json({ error: 'studio_path_fixed' }, { status: 409 });
+      }
+    }
+
     // Only the fields the member actually addressed change; COALESCE-style
     // partial updates would silently keep a value the member tried to clear.
     const sets: string[] = [];
@@ -272,6 +299,10 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       params.push(maiaRevisionsPaused);
       sets.push(`maia_revisions_paused = $${params.length}`);
     }
+    if ('studioPath' in body) {
+      params.push(studioPath);
+      sets.push(`studio_path = $${params.length}`);
+    }
 
     // Member-scoped in the predicate, not after the fact: another member's id
     // cannot reach this row at all.
@@ -279,7 +310,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       `UPDATE living_works
           SET ${sets.join(', ')}, updated_at = now()
         WHERE id = $1 AND member_id = $2
-      RETURNING id, title, purpose, form, stage, manuscript_state, maia_revisions_paused, created_at, updated_at`,
+      RETURNING id, title, purpose, form, stage, manuscript_state, maia_revisions_paused, studio_path, created_at, updated_at`,
       params
     );
     if (updated.rows.length === 0) {
@@ -295,11 +326,17 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
         stage: r.stage,
         manuscriptState: r.manuscript_state,
         maiaRevisionsPaused: r.maia_revisions_paused === true,
+        studioPath: r.studio_path ?? null,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
       },
     });
   } catch (error) {
+    // A racing second program choice is refused by the database's fixed-once trigger: same answer as the pre-check.
+    if ((error as { code?: string; message?: string })?.code === '23514'
+        && String((error as { message?: string })?.message ?? '').includes('studio_path is fixed')) {
+      return NextResponse.json({ error: 'studio_path_fixed' }, { status: 409 });
+    }
     console.error('[living-works] name failed', error);
     return NextResponse.json({ error: 'Could not save that name' }, { status: 500 });
   }

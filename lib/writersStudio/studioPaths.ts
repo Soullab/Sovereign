@@ -44,6 +44,17 @@ export interface StudioPath {
   recommendedCopy: { maiaRevisionsPaused?: { label: string; hint: string } };
   /** How MAIA reflects at this path's door. Appended to the shared path frame. */
   reflectionGuide: string;
+  /** The program's own words in the Studio, once a Work belongs to this path (living_works.studio_path, 2026-11-15). */
+  studioCopy: {
+    /** MAIA's orientation line when nothing is picked. */
+    orient: string;
+    /** The button that opens the conversation about the whole Work. */
+    whole: string;
+    /** MAIA's line before the writer has started with her on this Work. */
+    notYet: string;
+  };
+  /** How MAIA coaches in this program's Work, on every editorial turn (server-side, by id; never client-supplied text). */
+  studioPosture: string;
 }
 
 export const STUDIO_PATHS: readonly StudioPath[] = [
@@ -72,6 +83,18 @@ export const STUDIO_PATHS: readonly StudioPath[] = [
       },
     },
     reflectionGuide: 'They are a student beginning a college application essay. Reflect the details they still notice: what they saw, heard, did. Stay with the moment itself. Do not tell them what the moment means, what it says about them, or how it would impress an admissions reader.',
+    studioCopy: {
+      orient: 'Pick a paragraph of your essay at left, or select exact words, and I’ll look at it with you.',
+      whole: 'Talk about the whole essay',
+      notYet: 'I haven’t read your essay with you yet.',
+    },
+    studioPosture: [
+      'PROGRAM: COLLEGE ESSAY. This Work is a student\'s personal essay for their college applications.',
+      'Call it their essay or their draft; never a book, chapter or manuscript.',
+      'Stay with concrete details: what they saw, heard, did, felt. Help them find the specific moment and their own voice.',
+      'Do not tell them what the moment means, what it says about them, or how it would impress an admissions reader. Do not optimise for admission.',
+      'Keep it warm, plain and brief: one or two observations and one question.',
+    ].join('\n'),
   },
 ];
 
@@ -90,6 +113,12 @@ export function pathFromParam(param: string | null | undefined): StudioPath | nu
  * MAIA's frame for a path's door, built from the registry by id (F20). It keeps the Spark door's law: reflect, don't
  * define, don't write, plain text, and check understanding before anything is held.
  */
+/** A registered path by its stored id (living_works.studio_path), or null. */
+export function studioPathById(id: string | null | undefined): StudioPath | null {
+  if (typeof id !== 'string') return null;
+  return STUDIO_PATHS.find((p) => p.id === id) ?? null;
+}
+
 export function pathFrameFor(id: string): string | null {
   const path = pathFromParam(id);
   if (!path) return null;
@@ -107,6 +136,14 @@ Plain text only: no asterisks, underscores, headings, bullets or lists. Be brief
 }
 
 /**
+ * Program declaration CONTRACT (ledger #1938):
+ * A Work's program is explicitly declared through an authenticated, authorized action by the member who owns that Work.
+ * The declaration must identify a registered program. Once established, the program is immutable. No title, invitation,
+ * system process, or inferred context may silently assign or change it. (Founder contract ACCEPT_F2_MEMBER_DECLARATION_ONCE_FIXED,
+ * 2026-11-15; supersedes earlier "Begin-only" wording, including this migration's header. The contract is member authorization,
+ * not button provenance: existing session authorization and request-integrity protections apply, and the client submits an
+ * explicit program selection, never an inferred one.)
+ *
  * What the member's Begin sends through the existing member-act PATCH (F19). The title is theirs exactly (empty = left
  * unnamed). The recommended setting is included ONLY when they kept it ticked. A spark is included only when they held one.
  */
@@ -115,8 +152,9 @@ export function pathBeginPatch(input: {
   title: string;
   revisionsPausedConfirmed: boolean;
   purpose: string | null;
-}): { title?: string; maiaRevisionsPaused?: true; purpose?: string } {
-  const patch: { title?: string; maiaRevisionsPaused?: true; purpose?: string } = {};
+}): { title?: string; maiaRevisionsPaused?: true; purpose?: string; studioPath: string } {
+  // The Work belongs to this program from the member's own Begin (2026-11-15), so the Studio can speak in its words.
+  const patch: { title?: string; maiaRevisionsPaused?: true; purpose?: string; studioPath: string } = { studioPath: input.path.id };
   if (input.title.trim().length > 0) patch.title = input.title;
   if (input.path.recommended.maiaRevisionsPaused === true && input.revisionsPausedConfirmed) patch.maiaRevisionsPaused = true;
   if (input.purpose !== null) patch.purpose = input.purpose;

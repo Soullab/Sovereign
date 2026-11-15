@@ -53,6 +53,8 @@ export interface LivingWork {
   manuscriptState: 'pre-manuscript' | 'partial-manuscript' | 'existing-manuscript' | null;
   /** The writer's own "MAIA asks, never rewrites" for this whole Work. Never set by the system. */
   maiaRevisionsPaused?: boolean;
+  /** The Studio program (path) this Work belongs to, member-declared at the path door's Begin. Null: ordinary Studio. */
+  studioPath?: string | null;
   createdAt: string;
   updatedAt: string;
   /** Only what the member declared in — never inferred, never system-placed. */
