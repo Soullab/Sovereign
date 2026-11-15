@@ -40,7 +40,9 @@ export function maiaSubjectInHand(
     ?? all[0];
 }
 
-export default function ProMaiaStage({ chartOpen, whereLabel, preferSections }: {
+export default function ProMaiaStage({ chartOpen, whereLabel, preferSections, helpEnabled = false }: {
+  /** "How do I…?" is offered only when the server turns it on (proHelpEnabled). */
+  helpEnabled?: boolean;
   /** False until a chart is open and verified: MAIA has nothing to read. */
   chartOpen: boolean;
   /** The view the astrologer has open, in their words: "Chart · Aspects". */
@@ -49,7 +51,8 @@ export default function ProMaiaStage({ chartOpen, whereLabel, preferSections }: 
   preferSections: readonly ProAskSection[];
 }) {
   const dock = useMaiaDock();
-  const [mode, setMode] = usePanelState<ProAskMode | 'help'>('dock.mode', 'ask');
+  const [storedMode, setMode] = usePanelState<ProAskMode | 'help'>('dock.mode', 'ask');
+  const mode = !helpEnabled && storedMode === 'help' ? 'ask' : storedMode;
   const [helpQuestion, setHelpQuestion] = useState('');
   const [helpExchanges, setHelpExchanges] = useState<HelpExchange[]>([]);
   if (!dock || !dock.open) return null;
@@ -70,8 +73,8 @@ export default function ProMaiaStage({ chartOpen, whereLabel, preferSections }: 
             title="Ask reads the chart with you">Ask</button>
           <button type="button" aria-pressed={mode === 'mentor'} onClick={() => setMode('mentor')}
             title="Mentor teaches the technique and uses this chart only as an example">Mentor</button>
-          <button type="button" aria-pressed={mode === 'help'} onClick={() => setMode('help')}
-            title="How do I…? answers questions about the workstation and reads no chart">How do I…?</button>
+          {helpEnabled && <button type="button" aria-pressed={mode === 'help'} onClick={() => setMode('help')}
+            title="How do I…? answers questions about the workstation and reads no chart">How do I…?</button>}
         </div>}
       </header>
 
@@ -81,9 +84,9 @@ export default function ProMaiaStage({ chartOpen, whereLabel, preferSections }: 
             Open a chart and MAIA can read it with you. Until then there is nothing for MAIA to see.
             Use “Open my chart” beside the wheel, or Saved charts on the rail.
           </p>
-          <div className={styles.maiaBody}>
+          {helpEnabled && <div className={styles.maiaBody}>
             <ProHelpConversation question={helpQuestion} setQuestion={setHelpQuestion} exchanges={helpExchanges} setExchanges={setHelpExchanges} />
-          </div>
+          </div>}
         </div>
       ) : mode === 'help' ? (
         <div className={styles.maiaColumn}>

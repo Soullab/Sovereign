@@ -594,7 +594,9 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
     >
       <div>
         <b>I haven’t read this book with you yet.</b>
-        <span>Start with me and I can talk this passage through and suggest edits. Your writing stays fully yours either way.</span>
+        <span data-relationship-promise>{props.revisionsPaused
+          ? 'Start with me and I can talk this passage through with you and ask questions. I won’t rewrite it: every sentence stays yours.'
+          : 'Start with me and I can talk this passage through and suggest edits. Your writing stays fully yours either way.'}</span>
         {relationshipNudge ? (
           <span role="status" data-relationship-nudge>Start with me first, and I’ll pick this up. Nothing has been sent.</span>
         ) : null}

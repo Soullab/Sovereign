@@ -12,6 +12,8 @@ export function coverageSentence(c: CoverageMap): string {
   const { read, changed, notRead, positionOnly, total } = c.whole;
   if (total === 0) return 'This draft has no sections yet.';
   if (read === 0 && changed === 0) return 'I haven’t read this draft yet.';
+  /* Walk 2026-11-15: a one-section draft (most college essays) read as "I've read all 1 sections". Say it of the draft instead. */
+  if (total === 1) return read === 1 ? 'I’ve read this draft.' : 'This draft has changed since I read it.';
   const parts = [read === total ? `I’ve read all ${total} sections of this draft` : `I’ve read ${read} of ${total} sections of this draft`];
   if (changed > 0) parts.push(`${changed} ${changed === 1 ? 'has' : 'have'} changed since I read ${changed === 1 ? 'it' : 'them'}`);
   if (notRead + positionOnly > 0 && read !== total) parts.push(`${notRead + positionOnly} I haven’t read`);
