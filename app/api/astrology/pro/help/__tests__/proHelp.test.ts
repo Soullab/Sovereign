@@ -10,7 +10,7 @@ import { getLLMProvider } from '@/lib/consciousness/LLMProvider';
 import { resolveProOwner } from '@/lib/astrology/proRouteAccess';
 import { PRO_ASK_SAFETY_REPLY } from '@/lib/astrology/proAskMaiaSections';
 import { proGuideInstruction } from '@/lib/astrology/proGuide';
-import { proHelpSystemPrompt, helpConversationScope, HelpRequestGate, PRO_HELP_PRIVACY_NOTICE } from '@/lib/astrology/proHelp';
+import { proHelpSystemPrompt, helpConversationScope, HelpRequestGate, PRO_HELP_PRIVACY_NOTICE, proHelpEnabled } from '@/lib/astrology/proHelp';
 import { loadSubjectBirth } from '@/lib/astrology/proSubjectBirth';
 import { loadMemberMemoryAtomsForPrompt } from '@/lib/maia/memoryAtomsLoader';
 import { POST } from '../route';
@@ -45,7 +45,14 @@ function help(body: unknown) {
 }
 
 let testMember = 0;
+// The route is held off by default (proHelpEnabled); these tests exercise it switched on.
+const HELP_FLAG = process.env.ASTRO_PRO_HELP_ENABLED;
+afterAll(() => {
+  if (HELP_FLAG === undefined) delete process.env.ASTRO_PRO_HELP_ENABLED;
+  else process.env.ASTRO_PRO_HELP_ENABLED = HELP_FLAG;
+});
 beforeEach(() => {
+  process.env.ASTRO_PRO_HELP_ENABLED = 'true';
   testMember += 1;
   const memberId = `member-${testMember}`;
   jest.mocked(resolveProOwner).mockReset().mockResolvedValue({ ok: true, memberId });
@@ -219,5 +226,23 @@ describe('Help scope and in-flight response regression', () => {
     expect(PRO_HELP_PRIVACY_NOTICE).toMatch(/including names or birth details/);
     expect(PRO_HELP_PRIVACY_NOTICE).toMatch(/does not automatically load a chart/);
     expect(PRO_HELP_PRIVACY_NOTICE).not.toContain('Nothing is kept');
+  });
+});
+
+describe('production hold: How do I…? is off unless the founder turns it on', () => {
+  it('only the exact string "true" turns it on', () => {
+    expect(proHelpEnabled({})).toBe(false);
+    for (const v of ['', 'false', '1', 'TRUE', 'yes', ' true']) expect(proHelpEnabled({ ASTRO_PRO_HELP_ENABLED: v })).toBe(false);
+    expect(proHelpEnabled({ ASTRO_PRO_HELP_ENABLED: 'true' })).toBe(true);
+  });
+
+  it('with the flag unset the route answers 404 before any session, body or model work', async () => {
+    delete process.env.ASTRO_PRO_HELP_ENABLED;
+    const res = await POST(new NextRequest('http://localhost/api/astrology/pro/help', {
+      method: 'POST', body: JSON.stringify({ question: 'Where is Saved charts?' }),
+    }));
+    expect(res.status).toBe(404);
+    expect(resolveProOwner).not.toHaveBeenCalled();
+    expect(generateSimple).not.toHaveBeenCalled();
   });
 });
