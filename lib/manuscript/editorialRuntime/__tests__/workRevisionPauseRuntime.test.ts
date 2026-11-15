@@ -145,4 +145,31 @@ describe('Work-wide "MAIA asks, never rewrites"', () => {
     await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
     expect(fakeStructured.mock.calls[0]![0].system).not.toContain('PROGRAM:');
   });
+
+  test('F3: Works in DIFFERENT programs are ambiguous: no program posture, the conservative instruction instead', async () => {
+    fakeQuery.mockImplementation((sql: string) => {
+      if (sql === WORK_REVISION_PAUSE_SQL) return Promise.resolve({ rows: [{ paused: true }] });
+      if (sql === WORK_STUDIO_PATH_SQL) return Promise.resolve({ rows: [{ studio_path: 'another-program' }, { studio_path: 'college-essay' }] });
+      return Promise.resolve({ rows: [{ body: 'Help me.' }] });
+    });
+    fakeStructured.mockResolvedValue(reply({ kind: 'reply_only', reply: 'What do you see?' }));
+    await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
+    const system = fakeStructured.mock.calls[0]![0].system as string;
+    expect(system).toContain('PROGRAM UNCERTAIN');
+    expect(system).not.toContain('PROGRAM: COLLEGE ESSAY');
+    expect(system).toContain('THE WRITER HAS CHOSEN "MAIA ASKS, NEVER REWRITES"');   // protection kept
+  });
+
+  test('F3: an unreadable program lookup gets the conservative instruction, and questions-only still holds', async () => {
+    fakeQuery.mockImplementation((sql: string) => {
+      if (sql === WORK_REVISION_PAUSE_SQL) return Promise.resolve({ rows: [{ paused: true }] });
+      if (sql === WORK_STUDIO_PATH_SQL) return Promise.reject(new Error('relation does not exist'));
+      return Promise.resolve({ rows: [{ body: 'Help me.' }] });
+    });
+    fakeStructured.mockResolvedValue(reply(PROPOSAL));
+    const r = await runEditorialTurn({ ...TURN, proposalPolicy: 'allow' });
+    expect(fakeStructured.mock.calls[0]![0].system).toContain('PROGRAM UNCERTAIN');
+    expect(r).toMatchObject({ ok: false, reason: 'proposal_policy_reply_only' });
+    expect(fakePersist).not.toHaveBeenCalled();
+  });
 });

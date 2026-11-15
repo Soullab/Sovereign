@@ -1,0 +1,101 @@
+/**
+ * PATCH /api/sovereign/living-works/[id] — the Work's Studio program (review findings F1/F2, 2026-11-15).
+ * Hermetic: no database. The migration's FK and fixed-once trigger are the database backstop; this pins the route.
+ *   - only a registered program id is accepted (never free text, never null);
+ *   - a program is chosen ONCE: the same id again is fine, a different id or clearing it is refused (409);
+ *   - a racing second choice refused by the trigger reads as the same 409.
+ */
+jest.mock('server-only', () => ({}), { virtual: true });
+jest.mock('@/lib/cabin/request', () => ({ cabinStore: jest.fn(), cabinMemberFromRequest: jest.fn(), setCabinSessionCookie: jest.fn() }));
+jest.mock('@/lib/db/postgres', () => ({ query: jest.fn(), transaction: jest.fn() }));
+jest.mock('@/lib/auth/getMemberFromRequest', () => ({ getMemberIdFromRequest: jest.fn() }));
+jest.mock('@/lib/manuscript/source/eraseManuscript', () => ({ sweepVaultErasureQueue: jest.fn() }));
+jest.mock('@/lib/recovery/r20DeletionLedger', () => ({ sealR20DeletionLedger: jest.fn(), r20LedgerErrorCode: jest.fn(() => 'R20_X') }));
+import { NextRequest } from 'next/server';
+import { query } from '@/lib/db/postgres';
+import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
+import { PATCH } from '../route';
+
+const q = query as jest.Mock;
+const member = getMemberIdFromRequest as jest.Mock;
+const MEMBER = '11111111-1111-4111-8111-111111111111';
+const WORK = 'a0000000-0000-4000-8000-00000000000a';
+const req = (body: unknown) => new NextRequest(`https://soullab.life/api/sovereign/living-works/${WORK}`, { method: 'PATCH', body: JSON.stringify(body) });
+const ctx = { params: Promise.resolve({ id: WORK }) };
+const row = (studio_path: string | null) => ({
+  id: WORK, title: 'College essay', purpose: null, form: null, stage: null, manuscript_state: null,
+  maia_revisions_paused: true, studio_path, created_at: 't', updated_at: 't',
+});
+const updates = () => q.mock.calls.filter(([sql]) => String(sql).includes('UPDATE living_works'));
+
+beforeEach(() => { jest.resetAllMocks(); member.mockResolvedValue(MEMBER); });
+
+function db(existing: string | null, updateError?: Error) {
+  q.mockImplementation(async (sql: string) => {
+    if (sql.includes('SELECT studio_path FROM living_works')) return { rows: [{ studio_path: existing }] };
+    if (sql.includes('UPDATE living_works')) {
+      if (updateError) throw updateError;
+      return { rows: [row('college-essay')] };
+    }
+    return { rows: [] };
+  });
+}
+
+it('a Work with no program may take a registered one, once, through the member\'s own act', async () => {
+  db(null);
+  const res = await PATCH(req({ studioPath: 'college-essay' }), ctx as never);
+  expect(res.status).toBe(200);
+  expect((await res.json()).work.studioPath).toBe('college-essay');
+  const [sql, params] = updates()[0]!;
+  expect(String(sql)).toContain('studio_path = $');
+  expect(params).toContain('college-essay');
+});
+
+it('the same program again is not a change', async () => {
+  db('college-essay');
+  expect((await PATCH(req({ studioPath: 'college-essay' }), ctx as never)).status).toBe(200);
+});
+
+it('NEGATIVE: an unregistered program is refused before anything is read or written', async () => {
+  db(null);
+  const res = await PATCH(req({ studioPath: 'grant-proposal' }), ctx as never);
+  expect(res.status).toBe(400);
+  expect((await res.json()).error).toBe('unknown_studio_path');
+  expect(updates()).toHaveLength(0);
+});
+
+it('NEGATIVE: a program cannot be cleared', async () => {
+  db('college-essay');
+  const res = await PATCH(req({ studioPath: null }), ctx as never);
+  expect(res.status).toBe(400);
+  expect(updates()).toHaveLength(0);
+});
+
+it('NEGATIVE: once chosen, a Work\'s program cannot be changed to another', async () => {
+  // A second registered program is simulated by a stored id the request does not match.
+  db('another-program');
+  const res = await PATCH(req({ studioPath: 'college-essay' }), ctx as never);
+  expect(res.status).toBe(409);
+  expect((await res.json()).error).toBe('studio_path_fixed');
+  expect(updates()).toHaveLength(0);
+});
+
+it('a racing second choice refused by the database trigger reads as the same 409', async () => {
+  const err = Object.assign(new Error('living_works.studio_path is fixed once chosen'), { code: '23514' });
+  db(null, err);
+  const res = await PATCH(req({ studioPath: 'college-essay' }), ctx as never);
+  expect(res.status).toBe(409);
+});
+
+it('every registered program is seeded in the database registry (F1: registry and database agree)', () => {
+  const fs = jest.requireActual('fs') as typeof import('fs');
+  const path = jest.requireActual('path') as typeof import('path');
+  const dir = path.join(process.cwd(), 'database/migrations');
+  const seeded = fs.readdirSync(dir).filter((f) => f.endsWith('.sql'))
+    .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
+    .join('\n');
+  const { STUDIO_PATHS } = jest.requireActual('@/lib/writersStudio/studioPaths');
+  for (const p of STUDIO_PATHS) {
+    expect(seeded).toMatch(new RegExp(`INSERT INTO studio_programs \\(id\\) VALUES \\('${p.id}'\\)`));
+  }
+});

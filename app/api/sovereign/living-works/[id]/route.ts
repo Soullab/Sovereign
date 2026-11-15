@@ -248,13 +248,22 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
     }
 
     /* The Studio program (path) this Work belongs to (founder 2026-11-15, ledger #1938). Member-declared through the
-       path door's Begin; only a registered path id or null is accepted, never free text. */
+       path door's Begin. Only a registered program id is accepted (never free text, never null), and only ONCE:
+       a Work's program is fixed after it is chosen (review F2). The database enforces both (FK to studio_programs,
+       fixed-once trigger); this answers the member plainly before anything is written. */
     let studioPath: string | null = null;
     if ('studioPath' in body) {
-      if (body.studioPath !== null && studioPathById(body.studioPath as string) === null) {
+      if (typeof body.studioPath !== 'string' || studioPathById(body.studioPath) === null) {
         return NextResponse.json({ error: 'unknown_studio_path' }, { status: 400 });
       }
-      studioPath = (body.studioPath as string | null) ?? null;
+      studioPath = body.studioPath;
+      const current = await query<{ studio_path: string | null }>(
+        `SELECT studio_path FROM living_works WHERE id = $1 AND member_id = $2`, [id, memberId]);
+      if (current.rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      const existing = current.rows[0].studio_path;
+      if (existing !== null && existing !== studioPath) {
+        return NextResponse.json({ error: 'studio_path_fixed' }, { status: 409 });
+      }
     }
 
     // Only the fields the member actually addressed change; COALESCE-style
@@ -318,6 +327,11 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       },
     });
   } catch (error) {
+    // A racing second program choice is refused by the database's fixed-once trigger: same answer as the pre-check.
+    if ((error as { code?: string; message?: string })?.code === '23514'
+        && String((error as { message?: string })?.message ?? '').includes('studio_path is fixed')) {
+      return NextResponse.json({ error: 'studio_path_fixed' }, { status: 409 });
+    }
     console.error('[living-works] name failed', error);
     return NextResponse.json({ error: 'Could not save that name' }, { status: 500 });
   }

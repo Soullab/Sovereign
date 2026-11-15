@@ -36,7 +36,7 @@ import {
 export interface LetterSection { draftSectionId: string; heading: string | null; position: number }
 export interface PassIssueTarget { sectionId: string; readingId: string; observationKey: string }
 
-const labelOf = (s: LetterSection | undefined) => (s ? (s.heading?.trim() || `Section ${s.position + 1}`) : 'your book');
+const labelOf = (s: LetterSection | undefined) => (s ? (s.heading?.trim() || `Section ${s.position + 1}`) : 'your Work');
 const hair = '1px solid color-mix(in srgb, currentColor 16%, transparent)';
 const btn = { font: 'inherit', fontSize: 12, cursor: 'pointer', color: 'inherit', background: 'none', border: hair, borderRadius: 8, padding: '5px 10px' } as const;
 const quiet = { ...btn, border: 'none', textDecoration: 'underline', padding: '2px 0' } as const;
@@ -132,7 +132,7 @@ export function EditorialLetterPanel(props: {
   const readOnServer = useCallback(async (): Promise<boolean> => {
     const out = await startPassRun(manuscriptId);
     if (!out.ok) {
-      if (out.refusal === 'daily_limit') { setError('I’ve already read this book as many times today as your setting allows. Try again tomorrow.'); return true; }
+      if (out.refusal === 'daily_limit') { setError('I’ve already read this Work as many times today as your setting allows. Try again tomorrow.'); return true; }
       if (out.refusal === 'sanctuary_not_kept' || out.refusal === 'posture_undeclared') { setError(keepRefusalCopy(out.refusal)); return true; }
       /* Free / Pro line: never fall back to reading from this page, which would start the paid readings the server just declined. */
       if (out.refusal === WHOLE_WORK_REFUSAL) { setError(WHOLE_WORK_MESSAGE); return true; }
@@ -146,7 +146,7 @@ export function EditorialLetterPanel(props: {
     if (busy || runActive || draftRevision === null) return;
     if (await readOnServer()) return;
     setBusy(true); setError(null); setNote(null);
-    setProgress('MAIA is reading your book…');
+    setProgress('MAIA is reading your Work…');
     const startedAt = Date.now();
     try {
       const out = await runEditorialPass({ manuscriptId, revisionNumber: draftRevision, sectionIds: sections.map((s) => s.draftSectionId), onProgress: setProgress, keepAsLetter: true });
@@ -185,7 +185,7 @@ export function EditorialLetterPanel(props: {
   }, [manuscriptId]);
   useEffect(() => {
     /* Off unless NEXT_PUBLIC_WS_AUTO_READ=1: reading the whole book is nine paid readings and a synthesis, so reading by herself
-       waits for a cost ceiling and owner review (review of #2215, 2026-11-11). Until then: "Read my book". */
+       waits for a cost ceiling and owner review (review of #2215, 2026-11-11). Until then: "Read my Work". */
     if (process.env.NEXT_PUBLIC_WS_AUTO_READ !== '1') return;
     if (!loaded || mayAutoRead !== true || autoAsked.current || busy || draftRevision === null || sections.length === 0) return;
     if (pass || loadSavedPass(manuscriptId)) return;
@@ -280,7 +280,7 @@ export function EditorialLetterPanel(props: {
   if (runActive && run) {
     return (
       <section data-editorial-letter="running" role="status" aria-live="polite" className="fr-say">
-        <p style={{ margin: 0 }}>I’m reading your book{run.done > 0 ? `: ${run.done} of ${run.total} readings done` : ''}{run.state === 'synthesizing' ? ', and gathering what I found' : ''}.</p>
+        <p style={{ margin: 0 }}>I’m reading your Work{run.done > 0 ? `: ${run.done} of ${run.total} readings done` : ''}{run.state === 'synthesizing' ? ', and gathering what I found' : ''}.</p>
         <p style={{ margin: '6px 0 0', fontSize: 12, opacity: .8 }}>Keep writing, or close this page; I’ll carry on and the letter will be here when you come back.</p>
         <button type="button" data-letter-cancel="true" onClick={() => { void cancelPassRun(manuscriptId).then(() => fetchRun(manuscriptId)).then((r) => { if (r !== undefined) setRun(r); stopWatching(); }); }}
           style={{ ...quiet, marginTop: 6 }}>Stop reading</button>
@@ -290,17 +290,17 @@ export function EditorialLetterPanel(props: {
   if (busy) {
     return (
       <section data-editorial-letter="reading" role="status" aria-live="polite" className="fr-say">
-        <p style={{ margin: 0 }}>I’m reading your book. {progress}</p>
+        <p style={{ margin: 0 }}>I’m reading your Work. {progress}</p>
         <p style={{ margin: '6px 0 0', fontSize: 12, opacity: .8 }}>Keep writing; I won’t interrupt. Keep this page open until I finish.</p>
       </section>
     );
   }
   const runEnded = run && (run.state === 'failed' || run.state === 'stopped') ? (
     <p role="note" data-letter-run-ended={run.state} style={{ margin: '6px 0 0', fontSize: 12 }}>
-      {run.state === 'failed' && (run.refusal ?? '').startsWith('synthesis') ? `I read all ${run.total} lenses of your book, but I couldn’t gather them into a letter this time. My readings are kept, so trying again only redoes that last step.`
+      {run.state === 'failed' && (run.refusal ?? '').startsWith('synthesis') ? `I read all ${run.total} lenses of your Work, but I couldn’t gather them into a letter this time. My readings are kept, so trying again only redoes that last step.`
         : run.state === 'stopped' && run.refusal === 'sanctuary' ? 'I stopped reading because Sanctuary is on.'
         : run.state === 'stopped' && run.refusal === 'permission_withdrawn' ? 'I stopped reading because you withdrew my permission to read the whole book.'
-        : run.state === 'stopped' && run.refusal === 'draft_changed' ? 'I stopped because the book changed while I was reading.'
+        : run.state === 'stopped' && run.refusal === 'draft_changed' ? 'I stopped because the Work changed while I was reading.'
         : `I couldn’t finish the ${run.lens ?? ''} reading (${run.done} of ${run.total} were done; they are kept).`}
       {' '}<button type="button" data-letter-continue="true" onClick={() => void read()} style={quiet}>{run.state === 'failed' && (run.refusal ?? '').startsWith('synthesis') ? 'Try the letter again' : 'Continue'}</button>
     </p>
@@ -312,12 +312,12 @@ export function EditorialLetterPanel(props: {
           {draftRevision === null
             ? 'I can’t establish your current draft safely just now, so I haven’t read it.'
             : run && run.done >= run.total
-              ? 'I’ve read your book. My letter isn’t ready yet.'
+              ? 'I’ve read your Work. My letter isn’t ready yet.'
               : 'I haven’t read this Work yet. When I have, I’ll bring you a short letter and we can go through it together, one place at a time.'}
         </p>
         {error ? <p role="alert" style={{ margin: '6px 0 0', fontSize: 12 }}><ProMention message={error} /></p> : null}
         {runEnded}
-        {draftRevision !== null ? <button type="button" data-letter-read="true" className="p4r1-talk" onClick={() => void read()} style={{ marginTop: 8 }}>Read my book</button> : null}
+        {draftRevision !== null ? <button type="button" data-letter-read="true" className="p4r1-talk" onClick={() => void read()} style={{ marginTop: 8 }}>Read my Work</button> : null}
       </section>
     );
   }
@@ -333,7 +333,7 @@ export function EditorialLetterPanel(props: {
           <span>Place {cursor + 1} of {places.length} · {labelOf(sec)}</span>
           <button type="button" data-letter-back="true" onClick={() => { setCursor(null); setNote(null); }} style={quiet}>The letter</button>
         </div>
-        {stale ? <p role="note" style={{ margin: 0, fontSize: 12 }}>From an earlier draft of your book; this place may have changed.</p> : null}
+        {stale ? <p role="note" style={{ margin: 0, fontSize: 12 }}>From an earlier draft of your Work; this place may have changed.</p> : null}
         <p style={{ margin: 0, lineHeight: 1.55 }}><strong style={{ fontWeight: 500 }}>{it.label}.</strong> {it.notice}</p>
         {it.whyItMatters ? <p style={{ margin: 0, fontSize: 12, opacity: .85 }}>Why it may matter: {it.whyItMatters}</p> : null}
         {it.uncertainty ? <p style={{ margin: 0, fontSize: 12, opacity: .75 }}>What I’m not sure of: {it.uncertainty}</p> : null}
@@ -358,13 +358,13 @@ export function EditorialLetterPanel(props: {
   /* ── the letter ── */
   const looked = places.filter((p) => decisions[p.id]).length;
   return (
-    <section data-editorial-letter="letter" aria-label="MAIA's letter about your book" style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+    <section data-editorial-letter="letter" aria-label="MAIA's letter about your Work" style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
       <p style={{ margin: 0, fontSize: 12, opacity: .8 }}>
-        This letter comes from my readings of {stale ? 'an earlier draft of your book' : 'this draft of your book'}.
+        This letter comes from my readings of {stale ? 'an earlier draft of your Work' : 'this draft of your Work'}.
       </p>
       {stale ? (
         <p role="note" data-letter-stale="true" style={{ margin: 0, fontSize: 12 }}>
-          You’ve changed the book since I read it. <button type="button" onClick={() => void read()} style={quiet}>Read it again</button>
+          You’ve changed the Work since I read it. <button type="button" onClick={() => void read()} style={quiet}>Read it again</button>
         </p>
       ) : null}
       {error ? <p role="alert" style={{ margin: 0, fontSize: 12 }}><ProMention message={error} /></p> : null}
@@ -375,7 +375,7 @@ export function EditorialLetterPanel(props: {
           {openingAnswer === null ? (
             <div role="group" aria-label="Is that right?" style={{ display: 'flex', gap: 6 }}>
               <button type="button" data-opening-yes="true" onClick={() => setOpeningAnswer('yes')} style={btn}>Yes</button>
-              <button type="button" data-opening-not-quite="true" onClick={() => { setOpeningAnswer('not_quite'); props.onTalk(`You read my book as reaching for this: “${pass.map.opening!.reachingFor}” Not quite. What I’m reaching for is `); }} style={btn}>Not quite</button>
+              <button type="button" data-opening-not-quite="true" onClick={() => { setOpeningAnswer('not_quite'); props.onTalk(`You read my Work as reaching for this: “${pass.map.opening!.reachingFor}” Not quite. What I’m reaching for is `); }} style={btn}>Not quite</button>
             </div>
           ) : <p role="status" style={{ margin: 0, fontSize: 12, opacity: .8 }}>{openingAnswer === 'yes' ? 'Good. I’ll read with that in mind.' : 'Tell me in your own words; I’ve opened our conversation.'}</p>}
           {pass.map.opening.working.length > 0 ? (
@@ -395,7 +395,7 @@ export function EditorialLetterPanel(props: {
       ) : pass.map.opening === null ? (
         /* Founder walk 2026-11-12: the opening was missing and nothing said so. A kept letter without its opening now says it. */
         <p role="note" data-letter-opening-missing={pass.map.openingRefusal ?? 'unknown'} style={{ margin: 0, fontSize: 12, opacity: .8 }}>
-          I couldn’t keep my opening to this letter, where I say what I think the book is reaching for. The places below stand on their own. When you ask me to read the book again, I’ll try the opening again.
+          I couldn’t keep my opening to this letter, where I say what I think the Work is reaching for. The places below stand on their own. When you ask me to read the book again, I’ll try the opening again.
         </p>
       ) : null}
       {places.length === 0 ? (
@@ -403,7 +403,7 @@ export function EditorialLetterPanel(props: {
       ) : (
         <>
           <p style={{ margin: 0, lineHeight: 1.55 }}>
-            I found {places.length} place{places.length === 1 ? '' : 's'} where an edit may help. Here they are in the order they come in your book.
+            I found {places.length} place{places.length === 1 ? '' : 's'} where an edit may help. Here they are in the order they come in your Work.
             {looked > 0 ? ` You’ve decided on ${looked} of them.` : ''}
           </p>
           <ol data-letter-places="true" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>

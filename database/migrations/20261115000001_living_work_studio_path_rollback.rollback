@@ -1,5 +1,8 @@
--- Rollback for living_works.studio_path. Roll back the code first: the target's Works routes select it.
+-- Rollback for living_works.studio_path and studio_programs. Roll back the code first: the target's Works routes select it.
 BEGIN;
-ALTER TABLE living_works DROP CONSTRAINT IF EXISTS living_works_studio_path_shape;
+DROP TRIGGER IF EXISTS living_works_studio_path_fixed ON living_works;
+DROP FUNCTION IF EXISTS living_works_studio_path_fixed();
+ALTER TABLE living_works DROP CONSTRAINT IF EXISTS living_works_studio_path_program_fk;
 ALTER TABLE living_works DROP COLUMN IF EXISTS studio_path;
+DROP TABLE IF EXISTS studio_programs;
 COMMIT;

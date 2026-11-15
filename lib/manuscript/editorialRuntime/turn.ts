@@ -89,7 +89,7 @@ import {
   type ProposalPolicy,
 } from '../editorialScope/sequence';
 import { assembleEditorialCognition, type AssemblyRefusal } from './assembly';
-import { workPausesRevisions, workQuestionsOnlyInstruction, workStudioPath } from './workRevisionPause';
+import { workPausesRevisions, workQuestionsOnlyInstruction, workStudioProgram, workProgramUncertainInstruction } from './workRevisionPause';
 import { studioPathById } from '@/lib/writersStudio/studioPaths';
 import { persistMaiaEditorialOutcome, type MaiaOutcomeRefusal, type MaiaOutcomeResult } from './maiaOutcome';
 import { detectNoopAdjustment, type NoopAdjustmentReason } from './noopProposal';
@@ -415,8 +415,12 @@ export async function runEditorialTurn(
   const workPaused = !input.opening
     && await workPausesRevisions(memberId, assembly.chainId, assembly.manuscriptId);
   /* The Work's Studio program (2026-11-15): MAIA coaches in that program's posture, looked up by id. */
-  const workPath = input.opening ? null
-    : studioPathById(await workStudioPath(memberId, assembly.chainId, assembly.manuscriptId));
+  const workProgram = input.opening ? { kind: 'none' as const }
+    : await workStudioProgram(memberId, assembly.chainId, assembly.manuscriptId);
+  const workPath = workProgram.kind === 'one' ? studioPathById(workProgram.id) : null;
+  /* Ambiguous, unreadable, or a stored id the registry no longer knows: the conservative common ground (review F3). */
+  const workProgramUncertain = workProgram.kind === 'ambiguous' || workProgram.kind === 'unknown'
+    || (workProgram.kind === 'one' && workPath === null);
   const proposalPolicy: ProposalPolicy = input.opening || workPaused
     ? 'reply_only' : (input.proposalPolicy ?? 'allow');
 
@@ -498,7 +502,7 @@ export async function runEditorialTurn(
       // Work-wide "MAIA asks, never rewrites": no wording in any channel (2026-11-15).
       workPaused ? workQuestionsOnlyInstruction() : '',
       // The Work's Studio program, in its own posture (registry by id; never client-supplied text).
-      workPath ? workPath.studioPosture : '',
+      workPath ? workPath.studioPosture : workProgramUncertain ? workProgramUncertainInstruction() : '',
       // Last, so the writer's own length choice outranks every default shape.
       input.replyLength ? replyLengthInstruction(input.replyLength) : '',
     ].filter(Boolean).join('\n\n'),
