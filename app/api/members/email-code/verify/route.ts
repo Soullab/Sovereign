@@ -7,6 +7,7 @@ import { query, transaction } from '@/lib/db/postgres';
 import { EmailCodeError, verifyEmailCode } from '@/lib/auth/emailCodeService';
 import { createSession, revokeSession, validateSession } from '@/lib/auth/serverSessions';
 import { setSessionCookies } from '@/lib/auth/setSessionCookies';
+import { recordSignIn } from '@/lib/auth/recordSignIn';
 import {
   AuthOriginError,
   normalizeReturnDestination,
@@ -141,6 +142,7 @@ export async function POST(request: NextRequest) {
         sessionToken: session.sessionToken,
       });
       console.log(`[EMAIL-CODE/verify] Verified session read back member=${memberRef(member.id)}`);
+      await recordSignIn(member.id, 'EMAIL-CODE/verify');
       return response;
     } catch {
       if (session) await revokeSession(session.id, 'session_readback_failed');
