@@ -136,6 +136,14 @@ Plain text only: no asterisks, underscores, headings, bullets or lists. Be brief
 }
 
 /**
+ * Program declaration CONTRACT (ledger #1938):
+ * A Work's program is explicitly declared through an authenticated, authorized action by the member who owns that Work.
+ * The declaration must identify a registered program. Once established, the program is immutable. No title, invitation,
+ * system process, or inferred context may silently assign or change it. (Founder contract ACCEPT_F2_MEMBER_DECLARATION_ONCE_FIXED,
+ * 2026-11-15; supersedes earlier "Begin-only" wording, including this migration's header. The contract is member authorization,
+ * not button provenance: existing session authorization and request-integrity protections apply, and the client submits an
+ * explicit program selection, never an inferred one.)
+ *
  * What the member's Begin sends through the existing member-act PATCH (F19). The title is theirs exactly (empty = left
  * unnamed). The recommended setting is included ONLY when they kept it ticked. A spark is included only when they held one.
  */

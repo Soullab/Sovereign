@@ -247,10 +247,15 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       maiaRevisionsPaused = body.maiaRevisionsPaused;
     }
 
-    /* The Studio program (path) this Work belongs to (founder 2026-11-15, ledger #1938). Member-declared through the
-       path door's Begin. Only a registered program id is accepted (never free text, never null), and only ONCE:
-       a Work's program is fixed after it is chosen (review F2). The database enforces both (FK to studio_programs,
-       fixed-once trigger); this answers the member plainly before anything is written. */
+    /* The Studio program (path) this Work belongs to (ledger #1938). CONTRACT:
+       A Work's program is explicitly declared through an authenticated, authorized action by the member who owns that Work.
+       The declaration must identify a registered program. Once established, the program is immutable. No title, invitation,
+       system process, or inferred context may silently assign or change it. (Founder contract ACCEPT_F2_MEMBER_DECLARATION_ONCE_FIXED,
+       2026-11-15; supersedes earlier "Begin-only" wording, including this migration's header. The contract is member authorization,
+       not button provenance: existing session authorization and request-integrity protections apply, and the client submits an
+       explicit program selection, never an inferred one.)
+       Enforced here (owner-scoped Work, registered id only, set once: same id is a no-op, clear 400, change 409) and in
+       the database (FK to studio_programs, fixed-once trigger). */
     let studioPath: string | null = null;
     if ('studioPath' in body) {
       if (typeof body.studioPath !== 'string' || studioPathById(body.studioPath) === null) {
