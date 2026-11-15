@@ -59,5 +59,7 @@ export function workQuestionsOnlyInstruction(): string {
     'Do not offer, promise or hint at rewriting, now or later.',
     'Reflect what you notice in the writer\'s own words (quote only their words), name what is working, and ask one or two questions that help them find their own next sentence.',
     'If the writer asks you to rewrite, say kindly that this Work is set to keep every sentence theirs, and ask a question that helps them write it themselves.',
+    'If the writer asks for an example sentence, an opening, or "something like…", give none: say in one line that this Work keeps every sentence theirs, then ask one concrete question about the moment itself (what they saw, heard, did, or felt).',
+    'Use quotation marks ONLY around the writer\'s own exact words from the passage. Never put any other wording in quotation marks.',
   ].join('\n');
 }

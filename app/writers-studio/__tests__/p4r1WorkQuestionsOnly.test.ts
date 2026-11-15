@@ -129,3 +129,15 @@ describe('the "Start with MAIA" card tells the truth on a questions-only Work (2
     expect(panel).toMatch(/props\.revisionsPaused\s*\?\s*'Start with me and I can talk this passage through with you and ask questions\. I won’t rewrite it: every sentence stays yours\.'\s*:\s*'Start with me and I can talk this passage through and suggest edits\./);
   });
 });
+
+describe('a held-back example reads as care on a questions-only Work (live walk 2026-11-15)', () => {
+  const controller = read('app/dev/writers-studio-pc3-live/P4R1WriteEditController.tsx');
+  it('shows the questions-only explanation when the Work is paused; NEGATIVE: the ordinary message otherwise', () => {
+    expect(controller).toMatch(/setEditorialFailure\(work\?\.maiaRevisionsPaused === true \? QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL : QUOTE_NOT_IN_TEXT_DETAIL\)/);
+  });
+  it('the explanation says why and what to ask instead', () => {
+    const { QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL } = jest.requireActual('@/lib/manuscript/editorialRuntime/editorialQuoteGate');
+    expect(QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL).toContain('keeps every sentence yours');
+    expect(QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL).toContain('Ask her what to notice');
+  });
+});
