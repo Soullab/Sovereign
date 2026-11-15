@@ -1,0 +1,266 @@
+/* Divination Atlas — shares the Divination room's ground, ink, gold rules and
+   violet accent (see ../divination-room.module.css). Readable sizes: body
+   text never below 15px, metadata never below 13px. */
+
+.page {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: clamp(40px, 5vw, 76px) clamp(20px, 4vw, 54px) 92px;
+  color: #efe7da;
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  color: #a99b88;
+  font: 13px/1.5 Arial, sans-serif;
+}
+.crumbs a {
+  color: #cfbdd8;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(169,154,182,.35);
+}
+.crumbs a:hover { color: #eee2f2; }
+
+.kicker {
+  margin: 0;
+  color: #bda58a;
+  font: 11px/1.5 Arial, sans-serif;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: clamp(28px, 5vw, 64px);
+  align-items: center;
+  margin-top: 28px;
+}
+.glyph {
+  aspect-ratio: 1 / 1.1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(213,183,140,.22);
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 45%, rgba(151,129,169,.16), transparent 70%),
+    linear-gradient(180deg, rgba(49,37,29,.34), rgba(21,16,13,.52));
+  color: #e9d9bd;
+  font-size: clamp(5rem, 10vw, 8.5rem);
+  line-height: 1;
+}
+.hero h1 {
+  margin: 10px 0 14px;
+  color: #f1eadf;
+  font-size: clamp(3rem, 6vw, 5.4rem);
+  font-weight: 300;
+  line-height: .95;
+  letter-spacing: -.02em;
+}
+.lead {
+  max-width: 680px;
+  margin: 0;
+  color: #d4c8b7;
+  font-size: clamp(1.15rem, 1.6vw, 1.4rem);
+  line-height: 1.55;
+}
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 26px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  color: #a99b88;
+  font: 13px/1.5 Arial, sans-serif;
+}
+.facts b { color: #e5dbcd; font-weight: 400; }
+
+.section {
+  margin-top: clamp(56px, 7vw, 96px);
+  padding-top: 30px;
+  border-top: 1px solid rgba(213,183,140,.22);
+}
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.sectionHead h2 {
+  margin: 0;
+  color: #dfd3c3;
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+  font-weight: 300;
+  line-height: 1.05;
+}
+.note {
+  margin: 0;
+  color: #a99b88;
+  font: 13px/1.55 Arial, sans-serif;
+}
+
+/* Layers of meaning */
+.layers { margin: 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+.layer {
+  display: grid;
+  grid-template-columns: minmax(170px, 230px) minmax(0, 1fr);
+  gap: 18px 28px;
+  padding: 22px 24px;
+  border-radius: 8px;
+  background: rgba(21,16,13,.5);
+  border: 1px solid rgba(213,183,140,.4);
+}
+.layer[data-strength='3'] { border-style: dashed; border-color: rgba(213,183,140,.36); }
+.layer[data-strength='2'] { border-style: dashed; border-color: rgba(213,183,140,.26); }
+.layer[data-strength='1'] { border-style: dotted; border-color: rgba(213,183,140,.3); background: rgba(15,12,10,.6); }
+.layerKey { display: flex; flex-direction: column; gap: 10px; }
+.layerTitle {
+  margin: 0;
+  color: #e5dbcd;
+  font-size: 1.25rem;
+}
+.layerTitle span {
+  color: #8f7b9f;
+  font: 12px/1 Arial, sans-serif;
+  letter-spacing: .12em;
+  margin-right: 6px;
+}
+.layerBody p { margin: 0; color: #d4c8b7; font-size: 1.08rem; line-height: 1.6; }
+.layerBody .source { margin-top: 10px; color: #a99b88; font: 13px/1.5 Arial, sans-serif; }
+
+.evidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #d9c3a2;
+  font: 11px/1.4 Arial, sans-serif;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.bars { display: inline-flex; gap: 3px; }
+.bars i { width: 13px; height: 5px; border-radius: 2px; background: #3a332c; }
+.bars i.barOn { background: #c9ad86; }
+
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; padding: 0; list-style: none; }
+.tags li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(169,154,182,.3);
+  color: #cfbdd8;
+  font: 13px/1.4 Arial, sans-serif;
+}
+
+/* Tradition history */
+.timeline { margin: 0; padding: 0; list-style: none; }
+.timeline li {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 8px 24px;
+  padding: 18px 0;
+  border-bottom: 1px solid rgba(213,183,140,.12);
+}
+.timeline li:last-child { border-bottom: 0; }
+.period { margin: 0; color: #e9d9bd; font-size: 1.15rem; }
+.timeline p { margin: 0; color: #d4c8b7; font-size: 1.05rem; line-height: 1.6; }
+.timeline b { color: #f0e6d8; font-weight: 400; }
+
+/* Index grids */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 112px;
+  padding: 16px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(213,183,140,.18);
+  background: linear-gradient(180deg, rgba(49,37,29,.3), rgba(21,16,13,.5));
+  color: inherit;
+  text-decoration: none;
+  transition: border-color .2s ease, transform .2s ease;
+}
+.tile:hover { border-color: rgba(169,154,182,.58); transform: translateY(-2px); }
+.tileGlyph { color: #e2cfb0; font-size: 1.9rem; line-height: 1.1; }
+.tileName { color: #f0e6d8; font-size: 1.1rem; }
+.tileMeta { color: #a99b88; font: 12px/1.4 Arial, sans-serif; letter-spacing: .04em; }
+
+.doors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(16px, 2vw, 25px);
+}
+.door {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 260px;
+  padding: 24px;
+  border-radius: 8px;
+  border: 1px solid rgba(213,183,140,.22);
+  background: linear-gradient(180deg, rgba(49,37,29,.34), rgba(21,16,13,.52));
+  color: inherit;
+  text-decoration: none;
+  transition: border-color .2s ease, transform .2s ease;
+}
+.door:hover { border-color: rgba(169,154,182,.58); transform: translateY(-3px); }
+.door h2, .door h3 { margin: 6px 0 0; color: #f0e6d8; font-size: 2rem; font-weight: 300; line-height: 1; }
+.door p { margin: 0; color: #c7b69f; font-size: 1.05rem; line-height: 1.55; }
+.door .kicker {
+  color: #8f7fa0;
+  font: 11px/1.5 Arial, sans-serif;
+  letter-spacing: .28em;
+}
+.doorGo { margin-top: auto !important; color: #cfbdd8 !important; font: 14px/1.4 Arial, sans-serif !important; }
+
+.panel {
+  padding: 26px 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(169,154,182,.27);
+  background: rgba(21,16,13,.45);
+}
+.panel p { margin: 0; color: #d4c8b7; font-size: 1.08rem; line-height: 1.6; }
+.panel p + p { margin-top: 10px; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 14px 24px; margin-top: 20px; }
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #cfbdd8;
+  font: 15px/1.4 'Divination Crimson', Georgia, serif;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(169,154,182,.45);
+}
+.link:hover { color: #eee2f2; border-bottom-color: rgba(198,177,210,.78); }
+
+.srOnly {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+@media (max-width: 800px) {
+  .hero { grid-template-columns: 1fr; }
+  .glyph { max-width: 220px; }
+  .layer { grid-template-columns: 1fr; }
+  .timeline li { grid-template-columns: 1fr; }
+  .doors { grid-template-columns: 1fr; }
+  .door { min-height: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tile, .door { transition: none; }
+  .tile:hover, .door:hover { transform: none; }
+}
