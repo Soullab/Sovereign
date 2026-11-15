@@ -331,3 +331,21 @@ describe('keptDuring', () => {
     expect(keptDuring({ draftRevision: 5, createdAt: 'now' }, 5, t)).toBe(false);
   });
 });
+
+describe('RENDERED: the letter on a questions-only Work (review F4, 2026-11-15)', () => {
+  beforeEach(() => savePass('m', { draftRevision: 5, map: MAP as any }));
+  it('⭐ questions-only ON: no "Show me options", places are "worth a closer look", "Talk about it" stays', async () => {
+    await mount({ revisionsPaused: true });
+    expect(host.textContent).toContain('worth a closer look');
+    expect(host.textContent).not.toContain('where an edit may help');
+    act(() => q('[data-letter-start]')!.click());
+    expect(q('[data-letter-act="options"]')).toBeNull();
+    expect(q('[data-letter-act="talk"]')).not.toBeNull();
+  });
+  it('NEGATIVE, questions-only OFF: "Show me options" and the edit framing are unchanged', async () => {
+    await mount();
+    expect(host.textContent).toContain('where an edit may help');
+    act(() => q('[data-letter-start]')!.click());
+    expect(q('[data-letter-act="options"]')).not.toBeNull();
+  });
+});

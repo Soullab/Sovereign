@@ -1,5 +1,6 @@
 'use client';
 
+import { MaiaRelationshipPromise } from './MaiaQuestionsOnlyCopy';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { chooseReplyLength } from '@/lib/writersStudio/replyLengthPreference';
 import { parseAnswerChoices } from '@/lib/writersStudio/answerChoices';
@@ -596,9 +597,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
     >
       <div>
         <b>{props.notYetCopy ?? 'I haven’t read this Work with you yet.'}</b>
-        <span data-relationship-promise>{props.revisionsPaused
-          ? 'Start with me and I can talk this passage through with you and ask questions. I won’t rewrite it: every sentence stays yours.'
-          : 'Start with me and I can talk this passage through and suggest edits. Your writing stays fully yours either way.'}</span>
+        <MaiaRelationshipPromise paused={Boolean(props.revisionsPaused)} />
         {relationshipNudge ? (
           <span role="status" data-relationship-nudge>Start with me first, and I’ll pick this up. Nothing has been sent.</span>
         ) : null}

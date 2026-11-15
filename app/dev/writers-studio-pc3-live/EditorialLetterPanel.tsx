@@ -62,6 +62,9 @@ export function EditorialLetterPanel(props: {
   onTalkPassage?: (target: PassIssueTarget) => void;
   /** she finished reading (so what she has read can be re-checked) */
   onRead?: () => void;
+  /** The Work is "MAIA asks, never rewrites" (review F4, 2026-11-15): no "Show me options", and no promise of edits.
+   *  "Talk about it" stays. The server refuses wording on such a Work regardless; this keeps the panel honest. */
+  revisionsPaused?: boolean;
 }) {
   const { manuscriptId, sections, draftRevision } = props;
   const [pass, setPass] = useState<SavedPass | null>(null);
@@ -341,7 +344,7 @@ export function EditorialLetterPanel(props: {
         {d ? <p data-letter-decision={d} role="status" style={{ margin: 0, fontSize: 12 }}>You said: {d === 'intended' ? 'it’s intended.' : 'later.'} <button type="button" onClick={() => void decide(it.id, null)} style={quiet}>Change</button></p> : null}
         <div role="group" aria-label="What would you like to do?" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {sec ? <button type="button" data-letter-act="where" disabled={resolving} onClick={() => void where(it, sec.draftSectionId)} style={btn}>Show me where</button> : null}
-          <button type="button" data-letter-act="options" disabled={resolving} onClick={() => void options(it)} style={btn}>{resolving ? 'Finding the words…' : 'Show me options'}</button>
+          {props.revisionsPaused ? null : <button type="button" data-letter-act="options" disabled={resolving} onClick={() => void options(it)} style={btn}>{resolving ? 'Finding the words…' : 'Show me options'}</button>}
           <button type="button" data-letter-act="talk" disabled={resolving} onClick={() => void talkAbout(it, `About “${it.label}” in ${labelOf(sec)}: you noticed: ${it.notice} `)} style={btn}>Talk about it</button>
           <button type="button" data-letter-act="intended" onClick={() => void decide(it.id, 'intended')} style={btn}>It’s intended</button>
           <button type="button" data-letter-act="later" onClick={() => void decide(it.id, 'later')} style={btn}>Later</button>
@@ -399,11 +402,13 @@ export function EditorialLetterPanel(props: {
         </p>
       ) : null}
       {places.length === 0 ? (
-        <p style={{ margin: 0 }}>I didn’t find a place I could support with evidence where an edit would clearly help.</p>
+        <p style={{ margin: 0 }}>{props.revisionsPaused
+          ? 'I didn’t find a place I could support with evidence where a closer look would clearly help.'
+          : 'I didn’t find a place I could support with evidence where an edit would clearly help.'}</p>
       ) : (
         <>
           <p style={{ margin: 0, lineHeight: 1.55 }}>
-            I found {places.length} place{places.length === 1 ? '' : 's'} where an edit may help. Here they are in the order they come in your Work.
+            I found {places.length} place{places.length === 1 ? '' : 's'} {props.revisionsPaused ? 'worth a closer look' : 'where an edit may help'}. Here they are in the order they come in your Work.
             {looked > 0 ? ` You’ve decided on ${looked} of them.` : ''}
           </p>
           <ol data-letter-places="true" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>

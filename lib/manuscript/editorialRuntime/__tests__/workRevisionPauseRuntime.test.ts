@@ -172,4 +172,34 @@ describe('Work-wide "MAIA asks, never rewrites"', () => {
     expect(r).toMatchObject({ ok: false, reason: 'proposal_policy_reply_only' });
     expect(fakePersist).not.toHaveBeenCalled();
   });
+
+  test('F3 shared manuscript: an ORDINARY Work and a College Essay Work holding the same manuscript is ambiguous, never the essay posture', async () => {
+    fakeQuery.mockImplementation((sql: string) => {
+      if (sql === WORK_REVISION_PAUSE_SQL) return Promise.resolve({ rows: [{ paused: false }] });
+      if (sql === WORK_STUDIO_PATH_SQL) return Promise.resolve({ rows: [{ studio_path: null }, { studio_path: 'college-essay' }] });
+      return Promise.resolve({ rows: [{ body: 'Help me.' }] });
+    });
+    fakeStructured.mockResolvedValue(reply({ kind: 'reply_only', reply: 'What do you see?' }));
+    await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
+    const system = fakeStructured.mock.calls[0]![0].system as string;
+    expect(system).toContain('PROGRAM UNCERTAIN');
+    expect(system).not.toContain('PROGRAM: COLLEGE ESSAY');
+  });
+
+  test('F3 shared manuscript: only ordinary Works means the ordinary Studio (no program, no uncertainty line)', async () => {
+    fakeQuery.mockImplementation((sql: string) => {
+      if (sql === WORK_REVISION_PAUSE_SQL) return Promise.resolve({ rows: [{ paused: false }] });
+      if (sql === WORK_STUDIO_PATH_SQL) return Promise.resolve({ rows: [{ studio_path: null }] });
+      return Promise.resolve({ rows: [{ body: 'Help me.' }] });
+    });
+    fakeStructured.mockResolvedValue(reply({ kind: 'reply_only', reply: 'What do you see?' }));
+    await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
+    const system = fakeStructured.mock.calls[0]![0].system as string;
+    expect(system).not.toContain('PROGRAM');
+  });
+
+  test('F3: the lookup counts ordinary Works (no NULL filter) and orders NULL first', () => {
+    expect(WORK_STUDIO_PATH_SQL).not.toMatch(/studio_path IS NOT NULL/);
+    expect(WORK_STUDIO_PATH_SQL).toMatch(/ORDER BY 1 NULLS FIRST\s+LIMIT 2/);
+  });
 });

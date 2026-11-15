@@ -124,9 +124,9 @@ describe('Focus "More" menu closes and fits the window (live walk, 2026-11-13)',
 });
 
 describe('the "Start with MAIA" card tells the truth on a questions-only Work (2026-11-15)', () => {
-  const panel = read('app/dev/writers-studio-pc3-live/EditorialDancePanel.tsx');
-  it('promises questions, not edits, while revisions are paused; NEGATIVE: the edit promise only shows when not paused', () => {
-    expect(panel).toMatch(/props\.revisionsPaused\s*\?\s*'Start with me and I can talk this passage through with you and ask questions\. I won’t rewrite it: every sentence stays yours\.'\s*:\s*'Start with me and I can talk this passage through and suggest edits\./);
+  it('the editorial panel renders the shared promise with the Work\'s pause state', () => {
+    const panel = read('app/dev/writers-studio-pc3-live/EditorialDancePanel.tsx');
+    expect(panel).toContain('<MaiaRelationshipPromise paused={Boolean(props.revisionsPaused)} />');
   });
 });
 
@@ -182,8 +182,35 @@ describe('member-facing Studio wording says Work, not book, and never promises e
     const hits = code.split('\n').filter((l) => /\bbook\b/i.test(l) && !/data-write-talk-book|data-[a-z-]*book/i.test(l));
     expect(hits).toEqual([]);
   });
-  it('the Write view\'s not-yet line promises questions, not edits, while revisions are paused; NEGATIVE: edits only when not paused', () => {
+  it('the Craft view renders the shared not-yet line with the Work\'s pause state', () => {
     const view = read('app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx');
-    expect(view).toMatch(/<p data-maia-not-yet>\{revisionsPaused\s*\?\s*'[^']*ask questions\. She won’t rewrite it: every sentence stays yours\.[^']*'\s*:\s*'[^']*suggest edits\./);
+    expect(view).toContain('<MaiaNotYetNote paused={revisionsPaused} />');
+  });
+});
+
+describe('RENDERED: what MAIA promises before the writer starts with her (review F4, 2026-11-15)', () => {
+  const { MaiaNotYetNote, MaiaRelationshipPromise } = jest.requireActual('@/app/dev/writers-studio-pc3-live/MaiaQuestionsOnlyCopy');
+  const render = (el: unknown) => { act(() => root.render(el as never)); return host.textContent ?? ''; };
+  it('questions-only ON: Craft promises questions and no rewrite, and never edits', () => {
+    const text = render(React.createElement(MaiaNotYetNote, { paused: true }));
+    expect(text).toContain('ask questions. She won’t rewrite it: every sentence stays yours.');
+    expect(text).not.toMatch(/suggest edits/);
+    expect(text).not.toMatch(/\bbook\b/i);
+  });
+  it('NEGATIVE, questions-only OFF: Craft offers edits, and still says Work', () => {
+    const text = render(React.createElement(MaiaNotYetNote, { paused: false }));
+    expect(text).toContain('suggest edits');
+    expect(text).not.toMatch(/won’t rewrite/);
+    expect(text).toContain('this Work');
+  });
+  it('questions-only ON: the relationship card promises questions and no rewrite', () => {
+    const text = render(React.createElement(MaiaRelationshipPromise, { paused: true }));
+    expect(text).toContain('I won’t rewrite it: every sentence stays yours.');
+    expect(text).not.toMatch(/suggest edits/);
+  });
+  it('NEGATIVE, questions-only OFF: the relationship card offers edits', () => {
+    const text = render(React.createElement(MaiaRelationshipPromise, { paused: false }));
+    expect(text).toContain('suggest edits');
+    expect(text).not.toMatch(/won’t rewrite/);
   });
 });

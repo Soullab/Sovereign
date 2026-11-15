@@ -71,7 +71,8 @@ export function workQuestionsOnlyInstruction(): string {
  * Review F3 (2026-11-15): the answer is explicit, never a silent pick.
  *   'one'        exactly one program among the writer's Works holding this manuscript;
  *   'none'       no program: the ordinary Studio;
- *   'ambiguous'  Works holding it belong to DIFFERENT programs: no program's posture is applied;
+ *   'ambiguous'  Works holding it belong to DIFFERENT programs, or to a program AND the ordinary Studio: no program's
+ *                posture is applied;
  *   'unknown'    the lookup failed.
  * 'ambiguous' and 'unknown' receive a conservative instruction (workProgramUncertainInstruction), never the ordinary
  * posture by default. The questions-only enforcement is a separate, fail-closed check and is never relaxed here.
@@ -79,12 +80,11 @@ export function workQuestionsOnlyInstruction(): string {
 export const WORK_STUDIO_PATH_SQL = `SELECT DISTINCT lw.studio_path AS studio_path
     FROM living_works lw
    WHERE lw.member_id = $2
-     AND lw.studio_path IS NOT NULL
      AND (lw.id IN (SELECT e.living_work_id FROM living_work_expressions e
                      WHERE e.expression_type = 'manuscript' AND e.expression_id = $3)
        OR lw.id IN (SELECT o.living_work_id FROM writer_editorial_chain_origins o
                      WHERE o.proposal_chain_id = $1 AND o.member_id = $2))
-   ORDER BY 1
+   ORDER BY 1 NULLS FIRST
    LIMIT 2`;
 
 export type WorkProgram =
@@ -98,10 +98,12 @@ export async function workStudioProgram(
 ): Promise<WorkProgram> {
   try {
     const r = await query<{ studio_path: string | null }>(WORK_STUDIO_PATH_SQL, [chainId, memberId, manuscriptId]);
-    const ids = r.rows.map((row) => row.studio_path).filter((v): v is string => typeof v === 'string');
-    if (ids.length === 0) return { kind: 'none' };
-    if (ids.length > 1) return { kind: 'ambiguous' };
-    return { kind: 'one', id: ids[0]! };
+    /* Review F3 (shared manuscripts): an ordinary Work (NULL) counts as an answer too. A manuscript held by an ordinary
+       Work AND a program's Work, or by two programs' Works, is ambiguous: no program is assumed for it. */
+    if (r.rows.length === 0) return { kind: 'none' };
+    if (r.rows.length > 1) return { kind: 'ambiguous' };
+    const only = r.rows[0]!.studio_path;
+    return typeof only === 'string' ? { kind: 'one', id: only } : { kind: 'none' };
   } catch (error) {
     console.error('[editorial] work studio program unreadable; holding the conservative program posture', error);
     return { kind: 'unknown' };
