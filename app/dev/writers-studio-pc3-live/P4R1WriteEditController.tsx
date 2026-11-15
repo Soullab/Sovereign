@@ -30,7 +30,7 @@ import {
 } from '@/app/writers-studio/canvasIdentity';
 import RebuildWritingBoundary from '@/app/writers-studio/rebuild/RebuildWritingBoundary';
 import KeepNotePrompt from './KeepNotePrompt';
-import { QUOTE_NOT_IN_TEXT_DETAIL } from '@/lib/manuscript/editorialRuntime/editorialQuoteGate';
+import { QUOTE_NOT_IN_TEXT_DETAIL, QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL } from '@/lib/manuscript/editorialRuntime/editorialQuoteGate';
 import type { SectionWriting } from '@/lib/writersStudio/useSectionWriting';
 import { chapterSpanFor, type RebuildSection } from '@/lib/writersStudio/rebuild/model';
 import { locationForSection, replacePlaceAddress, resolveInitialSection, SECTION_PARAM } from '@/lib/writersStudio/placeInWork';
@@ -1660,7 +1660,8 @@ export default function FlagshipWriteEditController() {
           setEditorialFailure('MAIA may have received the passage, but Soullab could not confirm the disclosure record. The response was withheld. Nothing was applied, and this request will not be retried automatically.');
         } else if (outcome.detail === 'quote_not_in_text') {
           // A CODE from the server, never prose: the copy below is this client's own.
-          setEditorialFailure(QUOTE_NOT_IN_TEXT_DETAIL);
+          // On a questions-only Work the stopped quote is wording MAIA should not have offered: say why, kindly.
+          setEditorialFailure(work?.maiaRevisionsPaused === true ? QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL : QUOTE_NOT_IN_TEXT_DETAIL);
         } else {
           // Server detail is for developers, never the writer (design pass 2026-11-05: a raw
           // "unknown field(s) … carry no standing here" reached the screen).
