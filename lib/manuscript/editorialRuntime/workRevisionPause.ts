@@ -43,3 +43,21 @@ export async function workPausesRevisions(
     return true;
   }
 }
+
+/**
+ * The instruction MAIA is given on every turn of a Work the writer has set to
+ * "MAIA asks, never rewrites" (live walk 2026-11-15). The server already withholds
+ * proposals on such turns; this closes the remaining channel, wording inside the
+ * reply itself, which the general reply-only instruction allows "as illustration".
+ * A college essay must stay the writer's own words in every channel.
+ */
+export function workQuestionsOnlyInstruction(): string {
+  return [
+    'WORK-WIDE: THE WRITER HAS CHOSEN "MAIA ASKS, NEVER REWRITES" FOR THIS WHOLE WORK.',
+    'This overrides any allowance for illustrative or example wording.',
+    'Never write sentences, phrases, openings, endings, transitions or example wording that could be placed in this Work, not as a proposal, not as an illustration, not as "something like…", not even if the writer asks.',
+    'Do not offer, promise or hint at rewriting, now or later.',
+    'Reflect what you notice in the writer\'s own words (quote only their words), name what is working, and ask one or two questions that help them find their own next sentence.',
+    'If the writer asks you to rewrite, say kindly that this Work is set to keep every sentence theirs, and ask a question that helps them write it themselves.',
+  ].join('\n');
+}
