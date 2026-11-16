@@ -85,6 +85,8 @@ import { transaction } from '@/lib/db/postgres';
 import { isExplanationDepth, type ExplanationDepth } from '@/lib/writersStudio/workingStyle';
 import { randomUUID } from 'node:crypto';
 import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
+import { conversationProgram, conversationProgramInstructions } from '@/lib/manuscript/editorialRuntime/workRevisionPause';
+import { studioPathById } from '@/lib/writersStudio/studioPaths';
 
 /** How long one authorization opportunity stays claimable. Continuity hygiene — ⛔ never authority. */
 const AUTHORIZATION_TTL_MINUTES = 30;
@@ -752,13 +754,21 @@ async function workTurn(input: {
   const locusMovedSinceEarlier = Boolean(existing && built.facts.locus
     && await (async () => { const was = (await loadEarlierLocusDigests(liveThreadId, memberId)).get(built.facts.locus!.sectionId);
       return was !== undefined && was !== digestOf(built.facts.locus!.body); })());
+  /* Case study F3 (founder 2026-11-16): the Work's own rules reach this conversation exactly as they reach the editorial turn —
+     "MAIA asks, never rewrites" (fail-closed) and the Studio program's posture, read server-side for THIS Work and any of the
+     writer's Works holding this manuscript. In Sanctuary too: a writer's limit on rewriting does not lapse in Sanctuary. */
+  const programInstructions = conversationProgramInstructions(
+    await conversationProgram(memberId, built.facts.work.id, built.facts.manuscript?.id ?? manuscriptId),
+    (id) => studioPathById(id)?.studioPosture ?? null,
+  );
   const workCtx = { kind: 'work' as const, anchor, facts: factsWithDecisions, staleness, standingRead, practiceOffer, carriedReadings, locusMovedSinceEarlier,
     /* Walk 2026-11-09: in Sanctuary she suggested granting reading permission. She is now told she is in Sanctuary (and what it refuses). */
     sanctuary: posture.sanctuary === true,
     /* WS-CRAFT-CONVENTIONS-01 · G-3: the writer's working style and a pressed Teach me reach the Work conversation, as they do the observation dialogue. */
     ...(responseStyle ? { responseStyle } : {}),
     ...(teachingAnchor ? { teachingAnchor } : {}),
-    ...(input.roomActs ? { roomActs: true } : {}) };
+    ...(input.roomActs ? { roomActs: true } : {}),
+    ...(programInstructions.length > 0 ? { programInstructions } : {}) };
   let outcome = await askMaia(workCtx, workHistory, question);
   /* ⭐ A2 · MECHANICAL QUOTE FIDELITY. A quotation must occur in text she was actually given this turn or in the
      conversation's own words. Regenerate ONCE with a correction; if still ungrounded, a plain "I can't point to that
