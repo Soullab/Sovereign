@@ -8,7 +8,7 @@
 --    living_works.stage on purpose: that is the Work's general maturity (capturing … sharing), a different vocabulary; mapping
 --    six essay stages onto five would collapse two (Meaning, Voice). The registry (lib/writersStudio/studioPaths.ts) is the
 --    authority on which ids exist; the route accepts only a stage of the Work's own program.
--- 2. studio_stage_notes — the writer's own notes for each stage of a program Work. PRIVATE BY DEFAULT: no MAIA path reads this
+-- 2. studio_stage_notes — the writer's own notes (and checklist ticks) for each stage of a program Work. PRIVATE BY DEFAULT: no MAIA path reads this
 --    table; a note reaches MAIA only when the writer sends it herself (as her own message). One note per Work and stage, editable.
 --    Removed with the Work or the member (R20).
 -- Additive: one nullable column, one new table. No existing row changes.
@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS studio_stage_notes (
   member_id       UUID        NOT NULL REFERENCES members(id) ON DELETE CASCADE,
   stage           TEXT        NOT NULL CHECK (stage ~ '^[a-z][a-z0-9-]{0,39}$'),
   body            TEXT        NOT NULL CHECK (char_length(body) <= 20000),
+  -- The writer's own ticks on a stage's checklist (e.g. Ready's readiness check): checklist item ids from the registry.
+  checks          TEXT[]      NOT NULL DEFAULT '{}' CHECK (cardinality(checks) <= 20),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (living_work_id, stage)

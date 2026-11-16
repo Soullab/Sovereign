@@ -46,6 +46,10 @@ export interface StudioStage {
   notesLabel?: string;
   /** How MAIA coaches in this stage (server-side; appended after the program posture). Never client-supplied. */
   posture?: string;
+  /** The writer's own checklist for this stage (e.g. Ready). Ticks are theirs; nothing is certified. */
+  checklist?: readonly { id: string; label: string }[];
+  /** Tools this stage offers beside the page: keep a version of my words; compare my own versions (Revision Mirror). */
+  tools?: readonly ('keep' | 'mirror')[];
 }
 
 export interface StudioPath {
@@ -130,6 +134,7 @@ export const STUDIO_PATHS: readonly StudioPath[] = [
         guidance: 'Only you can add, delete, or change your essay. All coaching appears outside the editor.',
         info: 'The standard Common App essay range is 250–650 words; verify requirements for your actual application. The count is informational and does not limit your writing.',
         notesLabel: 'My notes while drafting',
+        tools: ['keep'],
         posture: 'STAGE: DRAFT. They are writing the whole essay now. Encourage getting it down; ask about what is missing or unclear; never draft for them.' },
       { id: 'revise', stage: 'Revise', built: true,
         lead: 'Improve the writing without giving it away.',
@@ -137,11 +142,20 @@ export const STUDIO_PATHS: readonly StudioPath[] = [
         prompt: 'My revision intention',
         question: 'One change I want to consider',
         notesLabel: 'My revision intention',
+        tools: ['keep', 'mirror'],
         posture: 'STAGE: REVISE. Notice patterns in their draft, ask questions, and when asked, explain a technique in general terms. Never write the revision; the change is theirs.' },
       { id: 'ready', stage: 'Ready', built: true,
         lead: 'Readiness belongs to the writer.',
         guidance: 'These reminders help you review your work. They are not a certification or a promise of admission.',
         notesLabel: 'My own readiness notes',
+        info: 'This checklist cannot attest to authorship or submit to a college. It is yours.',
+        checklist: [
+          { id: 'wrote-myself', label: 'I wrote the substantive essay myself, using only support allowed by the colleges to which I am applying.' },
+          { id: 'checked-prompt', label: 'I personally checked the current prompt and word limit.' },
+          { id: 'read-aloud', label: 'I read it aloud and recognized my own voice.' },
+          { id: 'comfortable-sharing', label: 'I have chosen what I feel comfortable sharing.' },
+          { id: 'final-decisions', label: 'I made the final revision decisions myself.' },
+        ],
         posture: 'STAGE: READY. The writer decides when the essay is ready. Never certify it, grade it, or predict admission; help them check it is their own voice and their own choices.' },
     ],
     // The College Essay coaching arc's Discover prompt (Discover → Meaning → Voice → Draft → Revise → Ready), verbatim.

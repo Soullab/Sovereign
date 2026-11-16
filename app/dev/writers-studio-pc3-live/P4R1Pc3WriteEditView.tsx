@@ -1374,6 +1374,10 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
             draftWords={props.context.sections.filter((section) => section.editable)
               .reduce((n, section) => n + (props.writing.bodyOf(section.draftSectionId).trim().match(/\S+/g)?.length ?? 0), 0)}
             onShowMaia={(text) => openWorkConversation(text)}
+            manuscriptId={props.context.manuscriptId}
+            writing={props.writing}
+            currentText={props.context.sections.filter((section) => section.editable)
+              .map((section) => props.writing.bodyOf(section.draftSectionId)).join('\n\n')}
           />
         ) : null}
         {/* MAIA's letter and the walk: beside the manuscript, never instead of it. It stays mounted while the writer talks with

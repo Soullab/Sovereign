@@ -163,11 +163,64 @@ describe('the stage card as the writer meets it', () => {
     });
     await act(async () => { box.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); });
     await flush();
-    expect(JSON.parse(puts()[0]![1].body)).toEqual({ stage: 'voice', body: 'The kitchen floor, the flashlight.' });
+    expect(JSON.parse(puts()[0]![1].body)).toEqual({ stage: 'voice', body: 'The kitchen floor, the flashlight.', checks: [] });
   });
 
   test('the last stage offers no "Move on"', async () => {
     await mount('ready');
     expect(host.querySelector('[data-stage-next]')).toBeNull();
+  });
+});
+
+describe('Revise and Ready tools (PR 3 of the stages work)', () => {
+  let host: HTMLDivElement;
+  let root: Root;
+  async function flush() { for (let i = 0; i < 8; i++) await act(async () => { await Promise.resolve(); }); }
+  async function mountAt(stage: string, revisions: unknown[] = [], kept = '') {
+    apiFetch.mockImplementation(async (url: string, init?: { method?: string }) => {
+      const u = String(url);
+      if (u.endsWith('/stage-notes') && (!init || init.method === 'GET')) return { ok: true, json: async () => ({ notes: [{ stage: 'ready', body: '', checks: ['read-aloud'] }] }) };
+      if (u.endsWith('/draft/revisions')) return { ok: true, json: async () => ({ revisions }) };
+      if (/\/draft\/revisions\/\d+$/.test(u)) return { ok: true, json: async () => ({ content: kept }) };
+      return { ok: true, json: async () => ({}) };
+    });
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(React.createElement(StudioStageCard, { workId: 'w1', program: essay, declaredStage: stage, draftWords: 9, onShowMaia: jest.fn(),
+        manuscriptId: 'ms1', currentText: 'I was supposed to be the brave one.' }));
+    });
+    await flush();
+  }
+  beforeEach(() => apiFetch.mockReset());
+  afterEach(() => { act(() => root.unmount()); host.remove(); });
+
+  test('Ready shows the curriculum’s five readiness items, ticks are the writer’s own, and nothing is certified', async () => {
+    await mountAt('ready');
+    const boxes = [...host.querySelectorAll('[data-stage-checklist] input')] as HTMLInputElement[];
+    expect(boxes.map((b) => b.getAttribute('data-check'))).toEqual(['wrote-myself', 'checked-prompt', 'read-aloud', 'comfortable-sharing', 'final-decisions']);
+    expect(boxes.find((b) => b.getAttribute('data-check') === 'read-aloud')!.checked).toBe(true);
+    expect(host.textContent).toContain('This checklist cannot attest to authorship or submit to a college. It is yours.');
+    await act(async () => { boxes[0]!.click(); });
+    await flush();
+    const put = apiFetch.mock.calls.find(([, i]) => i?.method === 'PUT')!;
+    expect(JSON.parse(put[1].body)).toEqual({ stage: 'ready', body: '', checks: ['read-aloud', 'wrote-myself'] });
+  });
+
+  test('Revise: with no kept version, the Mirror says how to begin', async () => {
+    await mountAt('revise', []);
+    expect(host.querySelector('[data-mirror-empty]')).not.toBeNull();
+    expect(host.textContent).toContain('Revision Mirror · My changes, not AI’s');
+  });
+
+  test('Revise: comparing a kept version shows ONLY the exact differences between the writer’s own versions', async () => {
+    await mountAt('revise', [{ revisionNumber: 1, createdAt: '2026-11-16T00:00:00Z', note: null }], 'I was supposed to be brave.');
+    await act(async () => { (host.querySelector('[data-mirror-version="1"]') as HTMLButtonElement).click(); });
+    await flush();
+    expect(host.querySelector('[data-diff="earlier"]')!.textContent!.trim()).toBe('brave.');
+    expect(host.querySelector('[data-diff="current"]')!.textContent!.trim()).toBe('the brave one.');
+    // Nothing goes to MAIA, nothing is written: only reads happened.
+    expect(apiFetch.mock.calls.every(([u, i]) => !String(u).includes('/ask') && (!i?.method || i.method === 'GET'))).toBe(true);
   });
 });

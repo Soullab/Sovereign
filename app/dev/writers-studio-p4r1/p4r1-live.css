@@ -5371,3 +5371,11 @@
 .p4r1-stage-notes { width: 100%; min-height: 96px; resize: vertical; padding: 10px; border-radius: 8px; font: inherit; line-height: 1.5; box-sizing: border-box; }
 .p4r1-stage-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .p4r1-stage-actions button { min-height: 44px; }
+.p4r1-stage-checklist { border: 0; padding: 0; margin: 4px 0; display: flex; flex-direction: column; gap: 8px; }
+.p4r1-stage-checklist legend { font-weight: 600; margin-bottom: 4px; }
+.p4r1-stage-check { display: flex; gap: 10px; align-items: flex-start; line-height: 1.45; cursor: pointer; }
+.p4r1-stage-check input { width: 22px; height: 22px; flex: 0 0 auto; margin-top: 1px; }
+.p4r1-stage-mirror { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; border-top: 1px solid var(--fr-line, rgba(255,255,255,.12)); }
+.p4r1-stage-diff { margin: 0; line-height: 1.7; overflow-wrap: anywhere; }
+.p4r1-stage-diff del { opacity: .7; }
+.p4r1-stage-diff ins { text-decoration: underline; text-decoration-thickness: 2px; }
