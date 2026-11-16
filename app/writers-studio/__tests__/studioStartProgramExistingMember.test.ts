@@ -14,6 +14,10 @@ jest.mock('@/app/writers-studio/full-redesign/Shell', () => ({
 jest.mock('@/app/writers-studio/useWorkVisual', () => ({ useWorkVisual: () => ({ src: null }) }));
 jest.mock('@/app/dev/writers-studio-pc3-live/P4R1WorkMaterialsSummary', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/app/dev/writers-studio-pc3-live/P4R1ProducePanel', () => ({ __esModule: true, default: () => null }));
+// Founder ruling 2026-11-16 (#1900): the essay door first checks the member's age attestation. This member has given one.
+jest.mock('@/lib/http/apiBase', () => ({
+  apiFetch: jest.fn(async (url: string) => ({ ok: true, json: async () => (String(url).includes('age-attestation') ? { attested: 'adult' } : {}) })),
+}));
 
 import P4R1HomeView from '@/app/dev/writers-studio-pc3-live/P4R1HomeView';
 import { STUDIO_PATHS, studioPathById } from '@/lib/writersStudio/studioPaths';
@@ -65,8 +69,9 @@ test('every registered program offers its own start on Home for a member with Wo
   expect(host.textContent).toContain('Start a college essay');
 });
 
-test('an existing member on an essay link meets the essay door, not ordinary Home', () => {
+test('an existing member on an essay link meets the essay door, not ordinary Home', async () => {
   render({ ...cb(), studioPath: studioPathById('college-essay') });
+  for (let i = 0; i < 6; i++) await act(async () => { await Promise.resolve(); });
   expect(host.textContent?.toLowerCase()).toContain('college essay');
   expect(host.textContent).toContain(studioPathById('college-essay')!.firstPrompt);
   expect(host.querySelector('.fr-home-field')).toBeNull();

@@ -1,0 +1,24 @@
+-- Rollback for member_age_attestations.
+--
+-- ⭐ THE SUPPORTED ROLLBACK IS APP-ONLY: roll the image back and LEAVE THIS TABLE. The previous reader never reads or writes it,
+--    so attestations already given are preserved and honoured again when the gating reader returns.
+-- ⛔ This schema rollback is DESTRUCTIVE (it erases members' supervision attestations, the record that a minor's use was
+--    supervised). It therefore REFUSES while any attestation exists. It is only for removing the table before any use.
+BEGIN;
+DO $$
+DECLARE carried bigint;
+BEGIN
+  IF to_regclass('member_age_attestations') IS NOT NULL THEN
+    SELECT count(*) INTO carried FROM member_age_attestations;
+    IF carried > 0 THEN
+      RAISE EXCEPTION 'refusing destructive rollback: % age attestation(s) exist. Use the app-only rollback (image), which preserves them.', carried;
+    END IF;
+  END IF;
+END $$;
+DROP TRIGGER IF EXISTS member_age_attestations_no_truncate ON member_age_attestations;
+DROP TRIGGER IF EXISTS member_age_attestations_guard ON member_age_attestations;
+DROP INDEX IF EXISTS idx_member_age_attestations_member_latest;
+DROP TABLE IF EXISTS member_age_attestations;
+DROP FUNCTION IF EXISTS member_age_attestations_no_truncate();
+DROP FUNCTION IF EXISTS member_age_attestations_guard();
+COMMIT;

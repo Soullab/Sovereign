@@ -18,6 +18,11 @@ jest.mock('@/lib/writersStudio/betaAccessServer', () => ({
   admittedToStudio: (access: { admitted: boolean }) => access.admitted,
 }));
 jest.mock('@/lib/manuscript/ask/askReader', () => ({ askMaia: jest.fn() }));
+const latestAge = jest.fn();
+jest.mock('@/lib/studios/ageAttestationRead', () => ({
+  latestAgeAttestation: (...a: unknown[]) => latestAge(...a),
+  ageAttestationAdmits: jest.requireActual('@/lib/studios/ageAttestationRead').ageAttestationAdmits,
+}));
 
 const auth = getMemberIdFromRequest as jest.Mock;
 const access = writersStudioStanding as jest.Mock;
@@ -32,6 +37,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   auth.mockResolvedValue(ME);
   access.mockResolvedValue({ admitted: true, plan: 'pro', basis: 'active_beta_tester' });
+  latestAge.mockResolvedValue({ band: 'adult', supervised: false });
   ask.mockResolvedValue({
     ok: true, answer: 'I hear a garden. Am I hearing that right?', seen: 'x', seenForQuotes: 'x',
     provenance: { provider: 'anthropic', model: 'm', promptHash: 'h', askerVersion: 'v', answeredAt: 't' },
@@ -128,6 +134,23 @@ describe('F17/F20 · Studio paths: the member’s own path, framed by the regist
     }
     expect(ask).not.toHaveBeenCalled();
   });
+  it('founder ruling 2026-11-16 (#1900): at the college-essay door MAIA does not speak until the member has attested', async () => {
+    for (const a of [null, 'unknown', { band: 'minor', supervised: false }]) {
+      latestAge.mockResolvedValueOnce(a);
+      const res = await POST(post({ answer: 'x', path: 'college-essay' }));
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ refusal: 'age_attestation_required' });
+    }
+    expect(ask).not.toHaveBeenCalled();
+    latestAge.mockResolvedValueOnce({ band: 'minor', supervised: true });
+    expect((await POST(post({ answer: 'x', path: 'college-essay' }))).status).toBe(200);
+    expect(latestAge).toHaveBeenCalledWith(ME);
+  });
+  it('the generic door (no program) never asks for an age', async () => {
+    latestAge.mockClear();
+    expect((await POST(post({ answer: 'the kitchen at six in the morning' }))).status).toBe(200);
+    expect(latestAge).not.toHaveBeenCalled();
+  });
   it('a path is a door conversation, not a page reading: path with the first-page moment is refused', async () => {
     expect((await POST(post({ answer: 'x', path: 'college-essay', moment: 'first_page' }))).status).toBe(400);
     expect(ask).not.toHaveBeenCalled();
@@ -141,6 +164,8 @@ describe('F7 · the opening conversation is never kept (founder Q1)', () => {
     expect(imports.sort()).toEqual([
       '@/lib/auth/getMemberFromRequest',
       '@/lib/manuscript/ask/askReader',
+      // Founder ruling 2026-11-16 (#1900): the age-attestation READ (a single SELECT). It can never store: pinned below.
+      '@/lib/studios/ageAttestationRead',
       '@/lib/writersStudio/betaAccessServer',
       '@/lib/writersStudio/inspirationOpening',
       // Studio paths (2026-11-13): a pure, import-free registry; it reads and writes nothing.
@@ -148,5 +173,14 @@ describe('F7 · the opening conversation is never kept (founder Q1)', () => {
       'next/server',
     ]);
     expect(src).not.toMatch(/\bquery\s*\(|INSERT|UPDATE|console\.(log|info)\([^)]*answer/);
+  });
+
+  it('the one attestation import is read-only: a single SELECT, no write of any kind, no other import but the database', () => {
+    const read = fs.readFileSync(path.join(process.cwd(), 'lib/studios/ageAttestationRead.ts'), 'utf8');
+    const imports = [...read.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
+    expect(imports).toEqual(['@/lib/db/postgres']);
+    expect(read).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|UPSERT|MERGE)\b/i);
+    expect((read.match(/\bquery\s*[<(]/g) ?? []).length).toBe(1);
+    expect(read).toContain('SELECT age_band, supervision_attested');
   });
 });

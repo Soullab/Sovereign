@@ -21,6 +21,7 @@ import { admittedToStudio, writersStudioStanding } from '@/lib/writersStudio/bet
 import { askMaia } from '@/lib/manuscript/ask/askReader';
 import { MAX_FIRST_PAGE_CHARS, quotesVerified } from '@/lib/writersStudio/inspirationOpening';
 import { pathFromParam } from '@/lib/writersStudio/studioPaths';
+import { ageAttestationAdmits, latestAgeAttestation } from '@/lib/studios/ageAttestationRead';
 
 const MAX_ANSWER_CHARS = 2000;
 const MAX_HISTORY_TURNS = 20;
@@ -75,6 +76,11 @@ export async function POST(req: NextRequest) {
   const studioPath = 'path' in body ? pathFromParam(typeof body.path === 'string' ? body.path : null) : null;
   if ('path' in body && (!studioPath || body.moment !== undefined)) {
     return NextResponse.json({ refusal: 'malformed', detail: 'path' }, { status: 400, headers: privateHeaders });
+  }
+  // Founder ruling 2026-11-16 (#1900): at a program students may use, MAIA does not speak until the member has said they are
+  // 18+, or 13–17 with adult supervision (under-13 is turned away at the door and nothing is kept). Read-only check; fails closed.
+  if (studioPath?.requiresAgeAttestation && !ageAttestationAdmits(await latestAgeAttestation(memberId))) {
+    return NextResponse.json({ refusal: 'age_attestation_required' }, { status: 403, headers: privateHeaders });
   }
   // B (S3): the writer's first page, shown by their own act. One page, no conversation history.
   const firstPage = body.moment === 'first_page';
