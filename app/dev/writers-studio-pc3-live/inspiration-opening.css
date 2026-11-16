@@ -100,3 +100,9 @@
 .wsio-check input { margin-top: 4px; width: 16px; height: 16px; accent-color: #c9a43a; }
 .wsio-optional { font-size: 12.5px; opacity: .55; margin-left: 6px; }
 .wsio button:focus-visible { outline: 2px solid #c9a43a; outline-offset: 2px; }
+
+/* Age attestation at a program door (founder ruling 2026-11-16, #1900). Wraps on a phone; 44px tap targets. */
+.wsio-age .wsio-row { flex-wrap: wrap; }
+.wsio-age button { min-height: 44px; }
+.wsio-check { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0; line-height: 1.5; cursor: pointer; }
+.wsio-check input { width: 22px; height: 22px; margin-top: 2px; flex: 0 0 auto; }

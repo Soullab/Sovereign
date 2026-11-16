@@ -30,8 +30,12 @@ const updates = () => q.mock.calls.filter(([sql]) => String(sql).includes('UPDAT
 
 beforeEach(() => { jest.resetAllMocks(); member.mockResolvedValue(MEMBER); });
 
-function db(existing: string | null, updateError?: Error) {
+function db(existing: string | null, updateError?: Error, age: { age_band: string; supervision_attested: boolean } | null | 'throw' = { age_band: 'adult', supervision_attested: false }) {
   q.mockImplementation(async (sql: string) => {
+    if (sql.includes('FROM member_age_attestations')) {
+      if (age === 'throw') throw new Error('db down');
+      return { rows: age ? [age] : [] };
+    }
     if (sql.includes('SELECT studio_path FROM living_works')) return { rows: [{ studio_path: existing }] };
     if (sql.includes('UPDATE living_works')) {
       if (updateError) throw updateError;
@@ -133,5 +137,33 @@ describe('the writer moves their Work through its program’s stages (founder 20
     q.mockImplementation(async () => ({ rows: [] }));
     expect((await PATCH(req({ studioStage: 'voice' }), ctx as never)).status).toBe(404);
     expect(updates()).toHaveLength(0);
+  });
+});
+
+describe('founder ruling 2026-11-16 (#1900): a Work joins College Essay only after the member has attested', () => {
+  it.each([
+    ['no attestation', null],
+    ['an unreadable record (fails closed)', 'throw'],
+  ] as const)('%s → 403, and nothing is written', async (_label, age) => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    db(null, undefined, age as never);
+    const res = await PATCH(req({ studioPath: 'college-essay' }), ctx as never);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'age_attestation_required' });
+    expect(updates()).toHaveLength(0);
+  });
+
+  it('a supervised minor (13–17) may begin; an adult may begin', async () => {
+    db(null, undefined, { age_band: 'minor', supervision_attested: true });
+    expect((await PATCH(req({ studioPath: 'college-essay' }), ctx as never)).status).toBe(200);
+    db(null, undefined, { age_band: 'adult', supervision_attested: false });
+    expect((await PATCH(req({ studioPath: 'college-essay' }), ctx as never)).status).toBe(200);
+  });
+
+  it('the check reads only this member’s own attestation', async () => {
+    db(null);
+    await PATCH(req({ studioPath: 'college-essay' }), ctx as never);
+    const call = q.mock.calls.find(([sql]) => String(sql).includes('FROM member_age_attestations'))!;
+    expect(call[1]).toEqual([MEMBER]);
   });
 });

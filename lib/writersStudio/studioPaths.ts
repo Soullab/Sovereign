@@ -59,6 +59,11 @@ export interface StudioPath {
   name: string;
   /** The program's own offer on Studio Home, for a member who already has Works (e.g. "Start a college essay"). */
   startLabel: string;
+  /**
+   * Founder ruling 2026-11-16 (#1900): a program that students may use. Before MAIA speaks at its door, the member says
+   * they are 18+, or 13–17 with adult supervision; under-13 is turned away. Enforced server-side at the door and at Begin.
+   */
+  requiresAgeAttestation?: boolean;
   /** The arena this environment serves, in one plain sentence (shown at its door). */
   arena: string;
   /** The environment's journey. Only `built` stages may ever be shown to a member. */
@@ -103,6 +108,7 @@ export const STUDIO_PATHS: readonly StudioPath[] = [
     id: 'college-essay',
     name: 'College essay',
     startLabel: 'Start a college essay',
+    requiresAgeAttestation: true,
     arena: 'For the personal essay you’ll send with your college applications: written in your own voice, from your own life.',
     // The College Essay coaching arc, from the program's own curriculum (offline Studio v2.1, weeks 1–6), brought into the Studio
     // (founder 2026-11-16). Notes are private by default: MAIA reads one only when the writer sends it herself.
