@@ -22,9 +22,9 @@ export function pc3SaveState(statuses: readonly SectionStatus[]): string {
 export function pc3Paragraphs(body: string): string[] {
   return typesetParagraphs(body);
 }
-function exactDisplay(section: RebuildSection): Pick<WriteChapterView, 'label' | 'title'> {
+function exactDisplay(section: RebuildSection, unheaded: (position: number) => string): Pick<WriteChapterView, 'label' | 'title'> {
   const heading = section.heading?.trim();
-  if (!heading) return { label: `Section ${section.position + 1}` };
+  if (!heading) return { label: unheaded(section.position) };
   const m = heading.match(/^(Chapter\s+\S+)\s*[:—–-]\s*(.+)$/i);
   return m ? { label: m[1]!, title: m[2]! } : { label: heading };
 }
@@ -42,9 +42,17 @@ export function projectPc3LiveWrite(input: {
   statusOf: (sectionId: string) => SectionStatus;
   workTitle: string | null;
   manuscriptTitle: string | null;
+  /**
+   * A Studio program's own names (e.g. a college essay: "Your essay", "Your draft", "Part 2"). Absent for an ordinary Work,
+   * which keeps "Manuscript" and "Section n" exactly as before. Display only: no section heading is ever written.
+   */
+  names?: { heading: string; unheaded: (position: number, total: number) => string };
 }): Pc3WriteProjection | null {
   const ordered = [...input.sections].sort((a, b) => a.position - b.position);
   const navigable = ordered.filter((s) => s.editable);
+  const unheaded = (position: number) => input.names
+    ? input.names.unheaded(position, navigable.length)
+    : `Section ${position + 1}`;
   const active = input.activeId
     ? navigable.find((s) => s.draftSectionId === input.activeId) ?? null
     : null;
@@ -70,7 +78,7 @@ export function projectPc3LiveWrite(input: {
         : 'other';
     return {
       id: section.draftSectionId,
-      ...exactDisplay(section),
+      ...exactDisplay(section, (position) => unheaded(position)),
       role,
       depth: section.headingDepth === 1 || section.headingDepth === 2 || section.headingDepth === 3
         ? section.headingDepth : null,
@@ -80,14 +88,14 @@ export function projectPc3LiveWrite(input: {
 
   const statuses = ordered.map((s) => input.statusOf(s.draftSectionId));
   const identity = input.workTitle ?? input.manuscriptTitle ?? '';
-  const place = active.heading?.trim() || `Section ${active.position + 1}`;
+  const place = active.heading?.trim() || unheaded(active.position);
   const title = place;
   const canonicalBody = input.bodyOf(active.draftSectionId);
 
   return {
     data: {
       work: identity,
-      heading: 'Manuscript',
+      heading: input.names?.heading ?? 'Manuscript',
       chapters,
       currentChapterId: active.draftSectionId,
       place: place ?? '',

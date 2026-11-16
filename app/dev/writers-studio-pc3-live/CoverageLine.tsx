@@ -20,8 +20,39 @@ export function coverageSentence(c: CoverageMap): string {
   return `${parts.join('; ')}.`;
 }
 
+/**
+ * What MAIA read WITH the writer in this visit, which no durable reading records ("Show MAIA this page": her answer is not
+ * kept). 'current' = she read exactly the page as it is now; 'changed' = the page has been edited since. It may only ADD to an
+ * empty durable record; it never overrides what the server says she has read.
+ */
+export type SessionRead = 'current' | 'changed' | null;
+
+/** A visit's record of what MAIA was shown: the exact Work, manuscript, section and page text. */
+export type PageReadReceipt = { workId: string | null; manuscriptId: string; sectionId: string; page: string };
+
+/**
+ * The receipt applies only to the SAME Work, manuscript and shown section (two Works may share one manuscript, #2298; a change
+ * of Work never inherits the other's receipt). 'current' if the page is unchanged since, 'changed' if edited, else null.
+ */
+export function sessionReadFor(
+  receipt: PageReadReceipt | null,
+  now: { workId: string | null; manuscriptId: string; focusId: string | null | undefined; bodyOf: (sectionId: string) => string },
+): SessionRead {
+  if (!receipt) return null;
+  if (receipt.workId !== now.workId || receipt.manuscriptId !== now.manuscriptId || receipt.sectionId !== now.focusId) return null;
+  return now.bodyOf(receipt.sectionId) === receipt.page ? 'current' : 'changed';
+}
+
+export function sessionReadSentence(read: Exclude<SessionRead, null>): string {
+  return read === 'current'
+    ? 'I read this page with you just now. That reading isn’t kept.'
+    : 'This page has changed since I read it with you.';
+}
+
 export function CoverageLine(props: {
   manuscriptId: string;
+  /** See SessionRead. Applies only while the durable record says she has read nothing. */
+  sessionRead?: SessionRead;
   /** section id → the writer's label for it, for the detail list */
   labelOf: (sectionId: string) => string;
   /** change it to re-check (e.g. after a reading finishes) */
@@ -37,6 +68,9 @@ export function CoverageLine(props: {
   if (c === 'loading') return null;
   if (c === undefined) return <p data-coverage-line="unknown" role="status" style={small}>I couldn’t check what I’ve read of this draft just now.</p>;
   if (c === null) return <p data-coverage-line="unestablished" role="status" style={small}>I can’t establish your current draft, so I won’t say what I’ve read of it.</p>;
+  if (props.sessionRead && c.whole.read === 0 && c.whole.changed === 0 && c.whole.total > 0) {
+    return <p data-coverage-line="session" data-session-read={props.sessionRead} role="status" aria-live="polite" style={small}>{sessionReadSentence(props.sessionRead)}</p>;
+  }
   const changed = c.sections.filter((s) => s.state === 'changed');
   const unread = c.sections.filter((s) => s.state === 'not_read' || s.state === 'position_only');
   const hasDetail = changed.length + unread.length > 0;

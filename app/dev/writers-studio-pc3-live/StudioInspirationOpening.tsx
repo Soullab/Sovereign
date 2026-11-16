@@ -390,7 +390,9 @@ export default function StudioInspirationOpening(props: {
 
   return (
     <section className="wsio" data-inspiration-opening data-step={step} aria-label="The Spark">
-      <div className="wsio-top">{postureControl}</div>
+      {/* One Ordinary/Sanctuary control at a time (founder polish 2026-11-16): while MAIA asks the posture question in place
+          (an unreadable setting), that question carries the only control; otherwise the one control sits at the top. */}
+      {step === 'hold' && posture === 'unknown' ? null : <div className="wsio-top">{postureControl}</div>}
       <div className="wsio-body">{body}</div>
       {askError ? <p className="p4r1-error" role="alert">{askError}</p> : null}
       {props.error ? <p className="p4r1-error" role="alert">{props.error}</p> : null}

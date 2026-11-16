@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { apiFetch } from '@/lib/http/apiBase';
 import { MaiaNotYetNote } from './MaiaQuestionsOnlyCopy';
-import { studioPathById } from '@/lib/writersStudio/studioPaths';
+import { studioPathById, unheadedPlaceName } from '@/lib/writersStudio/studioPaths';
 import { Shell } from '@/app/writers-studio/full-redesign/Shell';
 import { WriteManuscriptRail, WriteRoom, isWriteRoomReadbackCurrent, type WriteBlock, type WriteRoomReadback } from '@/app/writers-studio/full-redesign/WriteRoom';
 import { WRITE_COPY } from '@/app/writers-studio/full-redesign/fixtures';
 import { WRITE_GEOMETRY, appearanceVars } from '@/app/writers-studio/full-redesign/tokens';
 import { EditorialLetterPanel, type PassIssueTarget } from './EditorialLetterPanel';
-import { CoverageLine } from './CoverageLine';
+import { CoverageLine, sessionReadFor, type PageReadReceipt, type SessionRead } from './CoverageLine';
 
 export const UNDO_RESTORED_MESSAGES = {
   complete: 'Undone. Your own wording is back.',
@@ -321,6 +321,8 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       ? previous : { scope: workConversationScope, open: false, starter: '' });
   }, [workConversationScope]);
   const [maiaRelationshipChooserOpen, setMaiaRelationshipChooserOpen] = useState(false);
+  /* "See options" belongs to ONE Work: opened for Work A, it is closed on first entry to Work B (review 2026-11-16). */
+  const [relationshipOptionsWorkId, setRelationshipOptionsWorkId] = useState<string | null>(null);
   const [blankArrivalDismissed, setBlankArrivalDismissed] = useState(false);
   const [selectionRect, setSelectionRect] = useState<DOMRect | null>(null);
   const [passageAsk, setPassageAsk] = useState('');
@@ -424,6 +426,10 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
     props.held?.text,
   ]);
 
+  /* A Studio program Work (e.g. a college essay) speaks in its own words; an ordinary Work keeps "Manuscript" / "Section n". */
+  const programCopy = studioPathById(props.work?.studioPath ?? null)?.studioCopy ?? null;
+  const editableCount = props.context.sections.filter((section) => section.editable).length;
+  const placeName = (position: number) => unheadedPlaceName(programCopy, position, editableCount);
   const projection = projectPc3LiveWrite({
     sections: props.context.sections,
     activeId: props.writing.activeId,
@@ -431,6 +437,9 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
     statusOf: props.writing.statusOf,
     workTitle: props.work?.title ?? null,
     manuscriptTitle: props.context.title,
+    names: programCopy
+      ? { heading: programCopy.railHeading, unheaded: (position, total) => unheadedPlaceName(programCopy, position, total) }
+      : undefined,
   });
   const proseSections = props.focusId
     ? (chapterSpanFor(props.context.sections, props.focusId)?.sections
@@ -602,6 +611,8 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
   const awaitingConversationChoice = (props.conversationChoices?.length ?? 0) > 1;
   const busy = (props.editorialBusy && !awaitingConversationChoice) || props.adoptionBusy || props.memberVersionBusy;
   const currentBody = props.focusId ? props.writing.bodyOf(props.focusId) : '';
+  /** The section whose body `currentBody` is: what MAIA is shown on a first page. */
+  const shownSectionId = props.focusId ?? null;
   const visibleUndoMessage = undoMessageForVisibleDraft(props.undoMessage, writeReadback, props.focusId, currentBody);
   const currentText = props.held?.draftSectionId === props.focusId
     ? props.held.text
@@ -781,7 +792,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
      enforces it on every editorial turn whatever this view sends. Here it only keeps
      the controls honest: while it is on, every passage behaves as paused. */
   /* The Work's Studio program speaks in its own words (founder 2026-11-15). Null: the ordinary Studio. */
-  const workStudioCopy = studioPathById(props.work?.studioPath ?? null)?.studioCopy ?? null;
+  const workStudioCopy = programCopy;
   const [workRevisionsPaused, setWorkRevisionsPaused] = useState(props.work?.maiaRevisionsPaused === true);
   const [workPauseSaving, setWorkPauseSaving] = useState(false);
   const [workPauseError, setWorkPauseError] = useState<string | null>(null);
@@ -933,7 +944,21 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
   ) : null;
 
 
-  const maiaRelationshipCard = props.work && !canvas ? (
+  /* First entry is quiet (founder polish 2026-11-16): with no relationship chosen, one plain line and one quiet button. Every
+     existing choice is still there behind "See options"; nothing begins on the writer's behalf. */
+  const relationshipUnchosen = !props.maiaRelationship
+    && props.maiaRelationshipPhase !== 'loading' && props.maiaRelationshipPhase !== 'unavailable';
+  const maiaRelationshipCard = props.work && !canvas && relationshipUnchosen && relationshipOptionsWorkId !== (props.work?.id ?? null) ? (
+    <section className="p4r1-maia-relationship p4r1-maia-relationship-quiet" data-p4r1-maia-relationship data-quiet="true" aria-label="Working with MAIA over time">
+      <p className="p4r1-empty">
+        You can write here on your own. A continuing thread with MAIA across this Work is optional, and only if you choose it.
+      </p>
+      <button type="button" className="wsio-link" data-relationship-options onClick={() => setRelationshipOptionsWorkId(props.work?.id ?? null)}>
+        See options
+      </button>
+      {props.maiaRelationshipMessage ? <p className="p4r1-empty" role="status">{props.maiaRelationshipMessage}</p> : null}
+    </section>
+  ) : props.work && !canvas ? (
     <section
       className="p4r1-context-card p4r1-maia-relationship"
       data-p4r1-maia-relationship
@@ -1300,10 +1325,22 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
     (section) => section.draftSectionId === (railSelectionId ?? props.focusId),
   ) ?? null;
   const railLabel = railSection
-    ? railSection.heading?.trim() || `Section ${railSection.position + 1}`
+    ? railSection.heading?.trim() || placeName(railSection.position)
     : 'this section';
 
   const [coverageEpoch, setCoverageEpoch] = useState(0);
+  /* What MAIA read with the writer in this visit (first page). Bound to this manuscript and page: a different Work or page says
+     nothing, and an edit since makes it 'changed'. Set only by a successful authorized reading. */
+  const [pageReadWithMaia, setPageReadWithMaia] = useState<PageReadReceipt | null>(null);
+  /* The receipt names the exact section MAIA was shown: the page sent is the FOCUSED section's body (currentBody), so the
+     receipt is keyed to props.focusId, never to the editor's active section, which can differ or be unset (review 2026-11-16). */
+  /* …and to the Work: two Works may share one manuscript (#2298), and a change of Work never inherits the other's receipt. */
+  const sessionRead: SessionRead = sessionReadFor(pageReadWithMaia, {
+    workId: props.work?.id ?? null,
+    manuscriptId: props.context.manuscriptId,
+    focusId: props.focusId,
+    bodyOf: props.writing.bodyOf,
+  });
   const writeMaia = props.work ? (
     <div className="fr-maia-inner p4r1-write-maia">
       <div className="fr-maia-head">
@@ -1319,8 +1356,9 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
         <div data-write-coverage="true" style={{ marginBottom: 10 }}>
           <CoverageLine
             manuscriptId={props.context.manuscriptId}
+            sessionRead={sessionRead}
             refreshKey={`${props.context.draftRevision ?? 'x'}:${coverageEpoch}`}
-            labelOf={(id) => { const sec = props.context.sections.find((x) => x.draftSectionId === id); return sec ? (sec.heading?.trim() || `Section ${sec.position + 1}`) : 'a section'; }}
+            labelOf={(id) => { const sec = props.context.sections.find((x) => x.draftSectionId === id); return sec ? (sec.heading?.trim() || placeName(sec.position)) : 'a section'; }}
           />
         </div>
         {/* MAIA's letter and the walk: beside the manuscript, never instead of it. It stays mounted while the writer talks with
@@ -1386,6 +1424,10 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
                 page={currentBody}
                 sanctuary={!props.sessionPosture.resolved || props.sessionPosture.sanctuary}
                 onAnswer={(starter) => openWorkConversation(starter)}
+                onRead={(page) => {
+                  // The section whose body was sent (currentBody = bodyOf(focusId)). No focused section: no receipt.
+                  if (shownSectionId) setPageReadWithMaia({ workId: props.work?.id ?? null, manuscriptId: props.context.manuscriptId, sectionId: shownSectionId, page });
+                }}
               />
             ) : null}
             <div className="fr-say">
@@ -1404,7 +1446,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
         )}
         {maiaRelationshipCard}
       </div>
-      <div className="fr-foot">The manuscript stays primary; support follows your attention.</div>
+      <div className="fr-foot">{programCopy ? programCopy.foot : 'The manuscript stays primary; support follows your attention.'}</div>
     </div>
   ) : undefined;
 

@@ -54,6 +54,14 @@ export interface StudioPath {
     whole: string;
     /** MAIA's line before the writer has started with her on this Work. */
     notYet: string;
+    /** The Write rail's heading in place of "Manuscript". */
+    railHeading: string;
+    /** An unheaded place when the Work has ONE (in place of "Section 1"). */
+    onlyPlace: string;
+    /** An unheaded place among several: `${part} ${n}` in place of "Section n". */
+    part: string;
+    /** The Write column's footer line in place of "The manuscript stays primary; …". */
+    foot: string;
   };
   /** How MAIA coaches in this program's Work, on every editorial turn (server-side, by id; never client-supplied text). */
   studioPosture: string;
@@ -90,6 +98,10 @@ export const STUDIO_PATHS: readonly StudioPath[] = [
       orient: 'Pick a paragraph of your essay at left, or select exact words, and I’ll look at it with you.',
       whole: 'Talk about the whole essay',
       notYet: 'I haven’t read your essay with you yet.',
+      railHeading: 'Your essay',
+      onlyPlace: 'Your draft',
+      part: 'Part',
+      foot: 'Your essay comes first. I follow where you put your attention.',
     },
     studioPosture: [
       'PROGRAM: COLLEGE ESSAY. This Work is a student\'s personal essay for their college applications.',
@@ -162,4 +174,14 @@ export function pathBeginPatch(input: {
   if (input.path.recommended.maiaRevisionsPaused === true && input.revisionsPausedConfirmed) patch.maiaRevisionsPaused = true;
   if (input.purpose !== null) patch.purpose = input.purpose;
   return patch;
+}
+
+/** The name of an unheaded place in a Work: the program's own words when it has them, else the ordinary "Section n". */
+export function unheadedPlaceName(
+  copy: Pick<StudioPath['studioCopy'], 'onlyPlace' | 'part'> | null | undefined,
+  position: number,
+  total: number,
+): string {
+  if (!copy) return `Section ${position + 1}`;
+  return total === 1 ? copy.onlyPlace : `${copy.part} ${position + 1}`;
 }
