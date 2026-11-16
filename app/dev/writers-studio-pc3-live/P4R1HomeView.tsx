@@ -27,7 +27,7 @@ import { DeletionNotice, DeletionSharedMaterial, DeletionUnconfirmed, deleteConf
 import P4R1ProducePanel from './P4R1ProducePanel';
 import type { Appearance } from '@/app/writers-studio/full-redesign/types';
 import StudioInspirationOpening from './StudioInspirationOpening';
-import type { StudioPath } from '@/lib/writersStudio/studioPaths';
+import { STUDIO_PATHS, type StudioPath } from '@/lib/writersStudio/studioPaths';
 import { INSPIRATION_COPY, LOOK_AROUND_COPY, MAX_SPARK_CHARS, returnGreeting, writtenFact } from '@/lib/writersStudio/inspirationOpening';
 
 function fixedDate(iso: string | null | undefined): string {
@@ -374,6 +374,10 @@ export interface P4R1HomeViewProps {
   studioPath?: StudioPath | null;
   /** The member's Begin on a path: their title, their confirmation of each recommended setting, and any spark they held. */
   onPathBegin?: (choice: { title: string; revisionsPausedConfirmed: boolean; purpose: string | null }) => void;
+  /** A member with Works chose a program on Home ("Start a college essay"): open that program's door. */
+  onStartPath?: (pathId: string) => void;
+  /** The member set the program door aside ("Look around first"): back to Home, the door closed. */
+  onLeavePath?: () => void;
   /** Q3: later new Works carry one optional line, "What's calling this one?". */
   onBeginWithSpark?: (title: string, spark: string) => void;
   onImport: () => void;
@@ -480,6 +484,10 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
           <button type="button" className="fr-home-primary" onClick={() => setBeginning(true)}>New Work</button>
           <button type="button" className="fr-home-quiet" onClick={props.onImport}>Import writing</button>
           <button type="button" className="fr-home-quiet" onClick={props.onSources}>Notes &amp; sources</button>
+          {props.onStartPath ? STUDIO_PATHS.map((path) => (
+            <button key={path.id} type="button" className="fr-home-quiet" data-start-path={path.id}
+              onClick={() => props.onStartPath?.(path.id)}>{path.startLabel}</button>
+          )) : null}
         </div>
       ) : (
         <div className="p4r1-home-begin-form">
@@ -783,6 +791,35 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
           {creationControls}
         </div>
       </div>
+    );
+  }
+
+  /* A program door for a member who already has Works (their own link, or "Start a college essay" on Home). The first-visit
+     door below already covers a member with nothing yet. Every Begin creates a NEW Work; existing Works are untouched. */
+  if (props.studioPath && props.onPathBegin && !props.inspirationDoor) {
+    return (
+      <Shell
+        mode="home"
+        appearance={props.appearance}
+        geometry={HOME_GEOMETRY}
+        memberInitial=""
+        threshold
+        work={
+          <StudioInspirationOpening
+            busy={props.busy}
+            error={props.error}
+            onBegin={(_destination, purpose) => {
+              // "Look around first": a spark the writer chose to hold is never dropped (the same rule as the first-visit door).
+              if (purpose !== null && props.onDoorLookWithSpark) props.onDoorLookWithSpark(purpose);
+              else props.onLeavePath?.();
+            }}
+            onJustWrite={() => props.onBegin('')}
+            onHavePages={props.onImport}
+            studioPath={props.studioPath}
+            onPathBegin={props.onPathBegin}
+          />
+        }
+      />
     );
   }
 
