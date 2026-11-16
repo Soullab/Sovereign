@@ -321,7 +321,8 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       ? previous : { scope: workConversationScope, open: false, starter: '' });
   }, [workConversationScope]);
   const [maiaRelationshipChooserOpen, setMaiaRelationshipChooserOpen] = useState(false);
-  const [maiaRelationshipOptionsOpen, setMaiaRelationshipOptionsOpen] = useState(false);
+  /* "See options" belongs to ONE Work: opened for Work A, it is closed on first entry to Work B (review 2026-11-16). */
+  const [relationshipOptionsWorkId, setRelationshipOptionsWorkId] = useState<string | null>(null);
   const [blankArrivalDismissed, setBlankArrivalDismissed] = useState(false);
   const [selectionRect, setSelectionRect] = useState<DOMRect | null>(null);
   const [passageAsk, setPassageAsk] = useState('');
@@ -610,6 +611,8 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
   const awaitingConversationChoice = (props.conversationChoices?.length ?? 0) > 1;
   const busy = (props.editorialBusy && !awaitingConversationChoice) || props.adoptionBusy || props.memberVersionBusy;
   const currentBody = props.focusId ? props.writing.bodyOf(props.focusId) : '';
+  /** The section whose body `currentBody` is: what MAIA is shown on a first page. */
+  const shownSectionId = props.focusId ?? null;
   const visibleUndoMessage = undoMessageForVisibleDraft(props.undoMessage, writeReadback, props.focusId, currentBody);
   const currentText = props.held?.draftSectionId === props.focusId
     ? props.held.text
@@ -945,12 +948,12 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
      existing choice is still there behind "See options"; nothing begins on the writer's behalf. */
   const relationshipUnchosen = !props.maiaRelationship
     && props.maiaRelationshipPhase !== 'loading' && props.maiaRelationshipPhase !== 'unavailable';
-  const maiaRelationshipCard = props.work && !canvas && relationshipUnchosen && !maiaRelationshipOptionsOpen ? (
+  const maiaRelationshipCard = props.work && !canvas && relationshipUnchosen && relationshipOptionsWorkId !== (props.work?.id ?? null) ? (
     <section className="p4r1-maia-relationship p4r1-maia-relationship-quiet" data-p4r1-maia-relationship data-quiet="true" aria-label="Working with MAIA over time">
       <p className="p4r1-empty">
         You can write here on your own. A continuing thread with MAIA across this Work is optional, and only if you choose it.
       </p>
-      <button type="button" className="wsio-link" data-relationship-options onClick={() => setMaiaRelationshipOptionsOpen(true)}>
+      <button type="button" className="wsio-link" data-relationship-options onClick={() => setRelationshipOptionsWorkId(props.work?.id ?? null)}>
         See options
       </button>
       {props.maiaRelationshipMessage ? <p className="p4r1-empty" role="status">{props.maiaRelationshipMessage}</p> : null}
@@ -1329,9 +1332,11 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
   /* What MAIA read with the writer in this visit (first page). Bound to this manuscript and page: a different Work or page says
      nothing, and an edit since makes it 'changed'. Set only by a successful authorized reading. */
   const [pageReadWithMaia, setPageReadWithMaia] = useState<{ manuscriptId: string; sectionId: string; page: string } | null>(null);
+  /* The receipt names the exact section MAIA was shown: the page sent is the FOCUSED section's body (currentBody), so the
+     receipt is keyed to props.focusId, never to the editor's active section, which can differ or be unset (review 2026-11-16). */
   const sessionRead: SessionRead = pageReadWithMaia
     && pageReadWithMaia.manuscriptId === props.context.manuscriptId
-    && pageReadWithMaia.sectionId === props.writing.activeId
+    && pageReadWithMaia.sectionId === props.focusId
     ? (props.writing.bodyOf(pageReadWithMaia.sectionId) === pageReadWithMaia.page ? 'current' : 'changed')
     : null;
   const writeMaia = props.work ? (
@@ -1418,7 +1423,8 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
                 sanctuary={!props.sessionPosture.resolved || props.sessionPosture.sanctuary}
                 onAnswer={(starter) => openWorkConversation(starter)}
                 onRead={(page) => {
-                  if (props.writing.activeId) setPageReadWithMaia({ manuscriptId: props.context.manuscriptId, sectionId: props.writing.activeId, page });
+                  // The section whose body was sent (currentBody = bodyOf(focusId)). No focused section: no receipt.
+                  if (shownSectionId) setPageReadWithMaia({ manuscriptId: props.context.manuscriptId, sectionId: shownSectionId, page });
                 }}
               />
             ) : null}

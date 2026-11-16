@@ -29,7 +29,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const res = await query<{ used_up: boolean; expired: boolean }>(
-      `SELECT (uses >= max_uses) AS used_up, (expires_at <= now()) AS expired FROM studio_doorway_invitations
+      // Expired mirrors CLAIM_INVITATION_SQL exactly: the code's own date, OR an attached beta grant that has already ended
+      // (registration refuses both, so the check must never call either one valid).
+      `SELECT (uses >= max_uses) AS used_up,
+              (expires_at <= now() OR (beta_grant_until IS NOT NULL AND beta_grant_until <= now())) AS expired
+         FROM studio_doorway_invitations
         WHERE code_hash = $1 AND studio = $2 AND revoked_at IS NULL
         LIMIT 1`,
       [hashInvitationCode(code), doorway.id],

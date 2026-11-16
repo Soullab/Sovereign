@@ -136,8 +136,20 @@ describe('2 · reading status', () => {
   test('the visit’s reading is bound to this manuscript and page (a change of Work says nothing)', () => {
     const view = read('app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx');
     expect(view).toContain('pageReadWithMaia.manuscriptId === props.context.manuscriptId');
-    expect(view).toContain('pageReadWithMaia.sectionId === props.writing.activeId');
     expect(view).toContain("=== pageReadWithMaia.page ? 'current' : 'changed'");
+  });
+
+  test('review 2026-11-16 #1: the receipt names the section whose body was SENT (focusId), never the editor’s active section', () => {
+    const view = read('app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx');
+    // The page MAIA is shown is the focused section's body …
+    expect(view).toContain("const currentBody = props.focusId ? props.writing.bodyOf(props.focusId) : '';");
+    expect(view).toContain('const shownSectionId = props.focusId ?? null;');
+    // … so the receipt is recorded for, and only matches, that same section.
+    expect(view).toContain('sectionId: shownSectionId, page');
+    expect(view).toContain('pageReadWithMaia.sectionId === props.focusId');
+    const receipt = view.slice(view.indexOf('const sessionRead: SessionRead'), view.indexOf(': null;', view.indexOf('const sessionRead: SessionRead')));
+    expect(receipt).not.toContain('activeId');
+    expect(view).not.toMatch(/setPageReadWithMaia\([^)]*activeId/);
   });
 });
 
@@ -152,6 +164,13 @@ describe('3 · relationship card', () => {
     expect(quiet).toContain('only if you choose it');
     expect(quiet).toContain('See options');
     expect(quiet).not.toContain('onBeginMaiaRelationship');
+  });
+
+  test('review 2026-11-16 #2: "See options" belongs to one Work and is closed on first entry to another', () => {
+    expect(view).toContain('useState<string | null>(null)');
+    expect(view).toContain("relationshipOptionsWorkId !== (props.work?.id ?? null)");
+    expect(view).toContain("setRelationshipOptionsWorkId(props.work?.id ?? null)");
+    expect(view).not.toMatch(/maiaRelationshipOptionsOpen/);
   });
 
   test('every existing choice is still reachable behind it, unchanged', () => {
@@ -218,10 +237,18 @@ describe('5 · invitation messages', () => {
     expect(invitationCheckAnswer({ used_up: false, expired: false })).toEqual({ valid: true });
   });
 
+  test('review 2026-11-16 #3: "expired" mirrors the registration claim, including an ended beta grant', () => {
+    const route = read('app/api/doorway/check/route.ts');
+    const claim = read('lib/studios/doorwayInvitations.ts');
+    expect(claim).toContain('AND (beta_grant_until IS NULL OR beta_grant_until > now())');
+    expect(claim).toContain('AND expires_at > now()');
+    expect(route).toContain('(expires_at <= now() OR (beta_grant_until IS NOT NULL AND beta_grant_until <= now())) AS expired');
+  });
+
   test('the route reads only open (unrevoked) invitations for this door and selects no account columns', () => {
     const route = read('app/api/doorway/check/route.ts');
     expect(route).toContain('WHERE code_hash = $1 AND studio = $2 AND revoked_at IS NULL');
-    expect(route).not.toMatch(/member_id|email|issuer|issued_by|note|cohort/);
+    expect(route).not.toMatch(/member_id|email|issuer|issued_by|\bnote\b|cohort/);
   });
 
   async function door(reason: string) {
