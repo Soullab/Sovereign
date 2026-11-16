@@ -22,6 +22,7 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
+import { ageGateForThread, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { randomUUID } from 'node:crypto';
 import { resolveCanonicalIdentity } from '@/lib/maia/canonical-turn';
 import { TurnPosture } from '@/lib/sanctuary/turnPosture';
@@ -341,6 +342,8 @@ async function postHandler(request: NextRequest) {
 
   const memberId = identity.memberId;
   bindMaiaMeter(memberId, { sanctuary: false });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForThread(memberId, parsed.threadId); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
 
   const relationship = await preflightEditorialRelationshipCarriage({
     memberId,

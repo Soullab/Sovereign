@@ -23,11 +23,17 @@ jest.mock('@/lib/studios/ageAttestationRead', () => ({
   latestAgeAttestation: (...a: unknown[]) => latestAge(...a),
   ageAttestationAdmits: jest.requireActual('@/lib/studios/ageAttestationRead').ageAttestationAdmits,
 }));
+const workGate = jest.fn();
+jest.mock('@/lib/studios/workAgeGate', () => ({
+  ageGateForWork: (...a: unknown[]) => workGate(...a),
+  ageGateRefusal: jest.requireActual('@/lib/studios/workAgeGate').ageGateRefusal,
+}));
 
 const auth = getMemberIdFromRequest as jest.Mock;
 const access = writersStudioStanding as jest.Mock;
 const ask = askMaia as jest.Mock;
 const ME = '11111111-1111-4111-8111-111111111111';
+const WORK = '22222222-2222-4222-8222-222222222222';
 const URL_BASE = 'http://localhost/api/sovereign/writers-studio/arrival';
 const post = (body: unknown) => new NextRequest(URL_BASE, {
   method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' },
@@ -38,6 +44,7 @@ beforeEach(() => {
   auth.mockResolvedValue(ME);
   access.mockResolvedValue({ admitted: true, plan: 'pro', basis: 'active_beta_tester' });
   latestAge.mockResolvedValue({ band: 'adult', supervised: false });
+  workGate.mockResolvedValue({ ok: true });
   ask.mockResolvedValue({
     ok: true, answer: 'I hear a garden. Am I hearing that right?', seen: 'x', seenForQuotes: 'x',
     provenance: { provider: 'anthropic', model: 'm', promptHash: 'h', askerVersion: 'v', answeredAt: 't' },
@@ -101,7 +108,7 @@ describe('F12/F13 · B: "Show MAIA this page"', () => {
   const PAGE = 'She talked to the tomatoes like they owed her an apology. After the funeral nobody went out there.';
   it('reads only the page, through askMaia with the first-page moment, and returns a reply that quotes it exactly', async () => {
     ask.mockResolvedValue({ ok: true, answer: 'This line stopped me: “She talked to the tomatoes like they owed her an apology.” Is this the start of something?', seen: 'x', seenForQuotes: 'x', provenance: {} });
-    const res = await POST(post({ answer: PAGE, moment: 'first_page' }));
+    const res = await POST(post({ answer: PAGE, moment: 'first_page', work: WORK }));
     expect(res.status).toBe(200);
     expect(ask.mock.calls[0][0]).toEqual({ kind: 'arrival', sanctuary: false, moment: 'first_page' });
     expect(ask.mock.calls[0][1]).toEqual([]);
@@ -109,16 +116,32 @@ describe('F12/F13 · B: "Show MAIA this page"', () => {
   });
   it('never shows a reply that misquotes the writer', async () => {
     ask.mockResolvedValue({ ok: true, answer: 'This stopped me: “She whispered to the tomatoes every morning.”', seen: 'x', seenForQuotes: 'x', provenance: {} });
-    const res = await POST(post({ answer: PAGE, moment: 'first_page' }));
+    const res = await POST(post({ answer: PAGE, moment: 'first_page', work: WORK }));
     expect(res.status).toBe(502);
     const body = await res.json();
     expect(body.reply).toBeUndefined();
     expect(body.refusal).toBe('quote_unverified');
   });
   it('takes no history for a page, accepts a page up to the first-page size, and refuses an unknown moment', async () => {
-    expect((await POST(post({ answer: PAGE, moment: 'first_page', history: [{ speaker: 'author', body: 'x' }] }))).status).toBe(400);
+    expect((await POST(post({ answer: PAGE, moment: 'first_page', work: WORK, history: [{ speaker: 'author', body: 'x' }] }))).status).toBe(400);
     expect((await POST(post({ answer: PAGE, moment: 'chapter' }))).status).toBe(400);
-    expect((await POST(post({ answer: 'a'.repeat(12001), moment: 'first_page' }))).status).toBe(413);
+    expect((await POST(post({ answer: 'a'.repeat(12001), moment: 'first_page', work: WORK }))).status).toBe(413);
+  });
+  it('⭐ walk 2026-11-16: a first page names its Work, and only a first page may', async () => {
+    expect((await POST(post({ answer: PAGE, moment: 'first_page' }))).status).toBe(400);
+    expect((await POST(post({ answer: PAGE, moment: 'first_page', work: 7 }))).status).toBe(400);
+    expect((await POST(post({ answer: 'a garden', work: WORK }))).status).toBe(400);
+    expect(ask).not.toHaveBeenCalled();
+  });
+  it('⭐ walk 2026-11-16 (#1900): MAIA does not read a page of a Work whose recorded program needs the age attestation, until it is given', async () => {
+    workGate.mockResolvedValueOnce({ ok: false, refusal: 'age_attestation_required' });
+    const res = await POST(post({ answer: PAGE, moment: 'first_page', work: WORK }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'age_attestation_required', refusal: 'age_attestation_required' });
+    expect(workGate).toHaveBeenCalledWith(ME, WORK);
+    workGate.mockResolvedValueOnce({ ok: false, refusal: 'age_check_unavailable' });
+    expect((await POST(post({ answer: PAGE, moment: 'first_page', work: WORK }))).status).toBe(503);
+    expect(ask).not.toHaveBeenCalled();
   });
 });
 
@@ -166,6 +189,8 @@ describe('F7 · the opening conversation is never kept (founder Q1)', () => {
       '@/lib/manuscript/ask/askReader',
       // Founder ruling 2026-11-16 (#1900): the age-attestation READ (a single SELECT). It can never store: pinned below.
       '@/lib/studios/ageAttestationRead',
+      // Walk 2026-11-16 (#1900): the age gate by the Work's RECORDED program (SELECTs only). It can never store: pinned below.
+      '@/lib/studios/workAgeGate',
       '@/lib/writersStudio/betaAccessServer',
       '@/lib/writersStudio/inspirationOpening',
       // Studio paths (2026-11-13): a pure, import-free registry; it reads and writes nothing.
@@ -182,5 +207,14 @@ describe('F7 · the opening conversation is never kept (founder Q1)', () => {
     expect(read).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|UPSERT|MERGE)\b/i);
     expect((read.match(/\bquery\s*[<(]/g) ?? []).length).toBe(1);
     expect(read).toContain('SELECT age_band, supervision_attested');
+  });
+
+  it('the Work age gate is read-only: SELECTs only, no write of any kind, and only the database, the registry and the attestation read', () => {
+    const gate = fs.readFileSync(path.join(process.cwd(), 'lib/studios/workAgeGate.ts'), 'utf8');
+    const imports = [...gate.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
+    expect(imports.sort()).toEqual(['./ageAttestationRead', '@/lib/db/postgres', '@/lib/writersStudio/studioPaths']);
+    const code = gate.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|UPSERT|MERGE)\b/i);
+    for (const sql of code.match(/`[^`]*`/g) ?? []) expect(sql.trim()).toMatch(/^`\s*SELECT\b/);
   });
 });

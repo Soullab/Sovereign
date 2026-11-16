@@ -4,6 +4,12 @@ const runTurn = jest.fn();
 const preflightRelationship = jest.fn();
 const resolveCarry = jest.fn();
 
+// The age gate by the Work's recorded program (#1900) is tested in lib/studios/__tests__/workAgeGate.test.ts; here it admits,
+// so this suite's stubbed database sees only the route's own queries.
+jest.mock('@/lib/studios/workAgeGate', () => ({
+  ageGateForWork: async () => ({ ok: true }), ageGateForManuscript: async () => ({ ok: true }), ageGateForThread: async () => ({ ok: true }),
+  ageGateRefusal: jest.requireActual('@/lib/studios/workAgeGate').ageGateRefusal,
+}));
 jest.mock('@/lib/maia/canonical-turn', () => ({
   resolveCanonicalIdentity: (...a: unknown[]) => resolveIdentity(...a),
 }));

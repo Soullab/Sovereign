@@ -12,6 +12,7 @@ import P4R1BetaFeedback from './P4R1BetaFeedback';
 import P4R1BetaJourney from './P4R1BetaJourney';
 import { ConstellationArrival } from '../../writers-studio/ConstellationArrival';
 import { unifiedModeFrom, type UnifiedStudioMode } from './studioMode';
+import StudioWorkAgeGate from '../writers-studio-pc3-live/StudioWorkAgeGate';
 
 export default function P4R1StudioHost({
   defaultMode = 'write',
@@ -34,7 +35,8 @@ export default function P4R1StudioHost({
       <P4R1BetaFeedback mode={mode} />
       <P4R1BetaJourney />
       {mode === 'home' && <ConstellationArrival />}
-      {room}
+      {/* Founder ruling 2026-11-16 (#1900): a Work whose recorded program requires it asks the age question before any room opens. */}
+      {mode === 'home' ? room : <StudioWorkAgeGate key={params?.get('work') ?? ''} workId={params?.get('work') ?? null}>{room}</StudioWorkAgeGate>}
     </>
   );
 }

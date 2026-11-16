@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
@@ -86,6 +87,8 @@ async function postHandler(
     return NextResponse.json({ refusal: 'sanctuary_unavailable' }, { status: 409 });
   }
   bindMaiaMeter(memberId, { sanctuary: false });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, manuscriptId); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
   const posture = TurnPosture.resolve({ sanctuary: body.sanctuary });
   /* Sanctuary closure: the store refuses any write without this; `body.sanctuary` is the checked, explicit `false` above. */
   const keep = KeepWitness.fromDeclaration(body.sanctuary) as KeepWitness;

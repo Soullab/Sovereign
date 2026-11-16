@@ -6,6 +6,7 @@
  * The run itself advances on the server after this response; closing the page does not stop it.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { keepGate } from '@/lib/sanctuary/keepGate';
 import { advanceRun, cancelRun, startRun, viewRun } from '@/lib/writersStudio/studio/passRun';
@@ -27,6 +28,8 @@ async function getHandler(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!memberId) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
   if (!UUID.test(id)) return NextResponse.json({ refusal: 'not_found' }, { status: 404 });
   bindMaiaMeter(memberId, { sanctuary: false });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, id); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
   const run = await viewRun(memberId, id);
   /* An unfinished run whose server process stopped (a restart) carries on when anyone asks about it. advanceRun never doubles. */
   if (run && !FINAL.has(run.state)) void advanceRun(memberId, id).catch(() => undefined);
@@ -43,6 +46,8 @@ async function postHandler(req: NextRequest, { params }: { params: Promise<{ id:
   const gate = await keepGate(memberId, body);
   if (gate) return gate;
   bindMaiaMeter(memberId, { sanctuary: false });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, id); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
   const out = await startRun(memberId, id);
   if (!out.ok) {
     const status = out.refusal === 'daily_limit' ? 429 : out.refusal === WHOLE_WORK_REFUSAL ? 403 : 409;

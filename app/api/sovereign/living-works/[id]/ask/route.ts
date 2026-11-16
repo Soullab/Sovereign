@@ -10,6 +10,7 @@
  */
 import { isPostureDeclaration, resolveStudioPosture, type KeepWitness } from '@/lib/sanctuary/studioPosture';
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForWork, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import {
   appendTurn,
@@ -98,6 +99,8 @@ async function postHandler(
   const studioPosture = await resolveStudioPosture(memberId, body);
   const storing = studioPosture.keep;
   bindMaiaMeter(memberId, { sanctuary: studioPosture.sanctuary === true });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForWork(memberId, workId); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
   /* The store refuses any write without this witness; it exists only when storing is true. */
   const keep = studioPosture.witness as KeepWitness;
 

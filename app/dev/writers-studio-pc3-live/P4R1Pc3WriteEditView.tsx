@@ -1441,9 +1441,10 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
         ) : (
           <>
             {/* B · The First Page: on a Work's first page, MAIA waits to be shown it (S3). */}
-            {firstPageEligible({ sections: props.context.sections.length, body: currentBody }) ? (
+            {props.work?.id && firstPageEligible({ sections: props.context.sections.length, body: currentBody }) ? (
               <StudioFirstPageMaia
                 page={currentBody}
+                workId={props.work.id}
                 sanctuary={!props.sessionPosture.resolved || props.sessionPosture.sanctuary}
                 onAnswer={(starter) => openWorkConversation(starter)}
                 onRead={(page) => {

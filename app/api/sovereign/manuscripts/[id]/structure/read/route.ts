@@ -31,6 +31,7 @@
 
 import { keepGate } from '@/lib/sanctuary/keepGate';
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { query } from '@/lib/db/postgres';
 import { gatherEvidence, sectionTopologyHash } from '@/lib/manuscript/structure/evidence';
@@ -61,6 +62,8 @@ async function postHandler(
   /* Sanctuary closure (founder ruling 2026-11-09): this records something MAIA keeps, so it needs a declared ordinary posture. */
   { const refused = await keepGate(memberId, await req.json().catch(() => ({}))); if (refused) return refused; }
   bindMaiaMeter(memberId, { sanctuary: false });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, manuscriptId); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
 
   /* Ownership is enforced IN the query, not checked beside it. A row reaches
      this code only if it belongs to the authenticated member; a manuscript that

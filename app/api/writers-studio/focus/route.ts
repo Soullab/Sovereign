@@ -16,6 +16,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { randomUUID } from 'crypto';
 import { resolveCanonicalIdentity } from '@/lib/maia/canonical-turn';
 import { TurnPosture } from '@/lib/sanctuary/turnPosture';
@@ -71,6 +72,8 @@ export async function POST(request: NextRequest) {
   if (typeof (body as Record<string, unknown>).focusText === 'string') {
     return NextResponse.json({ error: 'Work text is read server-side, never supplied' }, { status: 400 });
   }
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, workRef); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
 
   // ⭐ ONE identity, minted here at the boundary and carried through consent,
   // receipt and cognition. Never regenerated downstream.
