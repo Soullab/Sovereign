@@ -51,7 +51,7 @@ export const dynamic = 'force-dynamic';
  *     Work back. The independent R20 ledger is NOT sealed here (see that module).
  */
 
-import { studioPathById } from '@/lib/writersStudio/studioPaths';
+import { stageById, studioPathById } from '@/lib/writersStudio/studioPaths';
 import { ageAttestationAdmits, latestAgeAttestation } from '@/lib/studios/ageAttestationRead';
 import { NextRequest, NextResponse } from 'next/server';
 import { query, transaction } from '@/lib/db/postgres';
@@ -72,6 +72,7 @@ interface WorkRow {
   manuscript_state: string | null;
   maia_revisions_paused?: boolean;
   studio_path?: string | null;
+  studio_stage?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -149,9 +150,10 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       manuscriptState?: unknown;
       maiaRevisionsPaused?: unknown;
       studioPath?: unknown;
+      studioStage?: unknown;
     };
     if (!('title' in body) && !('purpose' in body) && !('form' in body) && !('stage' in body) && !('manuscriptState' in body)
-        && !('maiaRevisionsPaused' in body) && !('studioPath' in body)) {
+        && !('maiaRevisionsPaused' in body) && !('studioPath' in body) && !('studioStage' in body)) {
       return NextResponse.json({ error: 'nothing to change' }, { status: 400 });
     }
 
@@ -277,6 +279,25 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       }
     }
 
+    /* Where in its program's arc the writer puts this Work (founder 2026-11-16: all College Essay stages). The writer's own
+       "Move to …" only; never inferred, never advanced by the system. Only a built stage of THIS Work's program is accepted
+       (the program being chosen in this same request, or the one the Work already has); a Work with no program has no stage. */
+    let studioStage: string | null = null;
+    if ('studioStage' in body) {
+      let programId = studioPath;
+      if (programId === null) {
+        const cur = await query<{ studio_path: string | null }>(
+          `SELECT studio_path FROM living_works WHERE id = $1 AND member_id = $2`, [id, memberId]);
+        if (cur.rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+        programId = cur.rows[0].studio_path;
+      }
+      const program = studioPathById(programId);
+      if (!program) return NextResponse.json({ error: 'no_studio_program' }, { status: 400 });
+      const stage = stageById(program, body.studioStage);
+      if (!stage) return NextResponse.json({ error: 'unknown_studio_stage' }, { status: 400 });
+      studioStage = stage.id;
+    }
+
     // Only the fields the member actually addressed change; COALESCE-style
     // partial updates would silently keep a value the member tried to clear.
     const sets: string[] = [];
@@ -309,6 +330,10 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       params.push(studioPath);
       sets.push(`studio_path = $${params.length}`);
     }
+    if ('studioStage' in body) {
+      params.push(studioStage);
+      sets.push(`studio_stage = $${params.length}`);
+    }
 
     // Member-scoped in the predicate, not after the fact: another member's id
     // cannot reach this row at all.
@@ -316,7 +341,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       `UPDATE living_works
           SET ${sets.join(', ')}, updated_at = now()
         WHERE id = $1 AND member_id = $2
-      RETURNING id, title, purpose, form, stage, manuscript_state, maia_revisions_paused, studio_path, created_at, updated_at`,
+      RETURNING id, title, purpose, form, stage, manuscript_state, maia_revisions_paused, studio_path, studio_stage, created_at, updated_at`,
       params
     );
     if (updated.rows.length === 0) {
@@ -333,6 +358,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
         manuscriptState: r.manuscript_state,
         maiaRevisionsPaused: r.maia_revisions_paused === true,
         studioPath: r.studio_path ?? null,
+        studioStage: r.studio_stage ?? null,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
       },

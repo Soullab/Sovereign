@@ -1,0 +1,26 @@
+-- Rollback for living_works.studio_stage and studio_stage_notes.
+--
+-- ⭐ THE SUPPORTED ROLLBACK IS APP-ONLY: roll the image back and LEAVE THIS SCHEMA. The previous reader never reads or writes
+--    studio_stage or studio_stage_notes, so writers' stages and private notes are preserved and return with the reader.
+-- ⛔ This schema rollback is DESTRUCTIVE (it erases writers' own notes and their stage choices). It REFUSES while any note
+--    exists or any Work carries a stage. It is only for removing the schema before any use.
+BEGIN;
+DO $$
+DECLARE notes bigint := 0; staged bigint := 0;
+BEGIN
+  IF to_regclass('studio_stage_notes') IS NOT NULL THEN
+    SELECT count(*) INTO notes FROM studio_stage_notes;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'living_works' AND column_name = 'studio_stage') THEN
+    SELECT count(*) INTO staged FROM living_works WHERE studio_stage IS NOT NULL;
+  END IF;
+  IF notes > 0 OR staged > 0 THEN
+    RAISE EXCEPTION 'refusing destructive rollback: % stage note(s) and % staged Work(s) exist. Use the app-only rollback (image), which preserves them.', notes, staged;
+  END IF;
+END $$;
+DROP INDEX IF EXISTS idx_studio_stage_notes_member;
+DROP TABLE IF EXISTS studio_stage_notes;
+ALTER TABLE living_works DROP CONSTRAINT IF EXISTS living_works_studio_stage_needs_program;
+ALTER TABLE living_works DROP CONSTRAINT IF EXISTS living_works_studio_stage_format;
+ALTER TABLE living_works DROP COLUMN IF EXISTS studio_stage;
+COMMIT;

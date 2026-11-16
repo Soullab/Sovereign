@@ -47,8 +47,13 @@ describe('F21 · each path is its own environment, and shows only what exists to
       expect(p.arc.length).toBeGreaterThan(0);
     }
   });
-  it('unbuilt stages are never shown: the essay path shows only Discover today', () => {
-    expect(visibleArc(pathFromParam('college-essay')!)).toEqual(['Discover']);
+  it('unbuilt stages are never shown; since 2026-11-16 all six essay stages exist (founder: "all phases … ready to test")', () => {
+    expect(visibleArc(pathFromParam('college-essay')!)).toEqual(['Discover', 'Meaning', 'Voice', 'Draft', 'Revise', 'Ready']);
+  });
+  it('claim discipline: a stage marked built has its real content (lead, guidance, MAIA coaching), never a placeholder', () => {
+    for (const s of pathFromParam('college-essay')!.arc.filter((x) => x.built)) {
+      expect(s.lead && s.guidance && s.posture).toBeTruthy();
+    }
   });
 });
 

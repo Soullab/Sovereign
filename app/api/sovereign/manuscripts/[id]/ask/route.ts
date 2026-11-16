@@ -86,7 +86,7 @@ import { isExplanationDepth, type ExplanationDepth } from '@/lib/writersStudio/w
 import { randomUUID } from 'node:crypto';
 import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
 import { conversationProgram, conversationProgramInstructions } from '@/lib/manuscript/editorialRuntime/workRevisionPause';
-import { studioPathById } from '@/lib/writersStudio/studioPaths';
+import { currentStage, studioPathById } from '@/lib/writersStudio/studioPaths';
 
 /** How long one authorization opportunity stays claimable. Continuity hygiene — ⛔ never authority. */
 const AUTHORIZATION_TTL_MINUTES = 30;
@@ -760,6 +760,7 @@ async function workTurn(input: {
   const programInstructions = conversationProgramInstructions(
     await conversationProgram(memberId, built.facts.work.id, built.facts.manuscript?.id ?? manuscriptId),
     (id) => studioPathById(id)?.studioPosture ?? null,
+    (programId, stageId) => { const p = studioPathById(programId); return p ? currentStage(p, stageId).posture ?? null : null; },
   );
   const workCtx = { kind: 'work' as const, anchor, facts: factsWithDecisions, staleness, standingRead, practiceOffer, carriedReadings, locusMovedSinceEarlier,
     /* Walk 2026-11-09: in Sanctuary she suggested granting reading permission. She is now told she is in Sanctuary (and what it refuses). */

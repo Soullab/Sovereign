@@ -27,7 +27,7 @@ import { DeletionNotice, DeletionSharedMaterial, DeletionUnconfirmed, deleteConf
 import P4R1ProducePanel from './P4R1ProducePanel';
 import type { Appearance } from '@/app/writers-studio/full-redesign/types';
 import StudioInspirationOpening from './StudioInspirationOpening';
-import { STUDIO_PATHS, studioPathById, type StudioPath } from '@/lib/writersStudio/studioPaths';
+import { STUDIO_PATHS, currentStage, studioPathById, type StudioPath } from '@/lib/writersStudio/studioPaths';
 import { INSPIRATION_COPY, LOOK_AROUND_COPY, MAX_SPARK_CHARS, returnGreeting, writtenFact } from '@/lib/writersStudio/inspirationOpening';
 
 function fixedDate(iso: string | null | undefined): string {
@@ -49,8 +49,11 @@ function wordsFromChars(chars: number): number {
 
 /** What kind of Work this is, as the writer sees it on Home: its Studio program's own name first (e.g. "College essay"),
  *  then the form they gave it, then "Work" (case study F4, 2026-11-16). */
-export function workKind(work: Pick<LivingWork, 'form' | 'studioPath'>): string {
-  return studioPathById(work.studioPath ?? null)?.name ?? (work.form?.trim() || 'Work');
+export function workKind(work: Pick<LivingWork, 'form' | 'studioPath' | 'studioStage'>): string {
+  const program = studioPathById(work.studioPath ?? null);
+  // A program Work also says where the writer has put it in the arc (founder 2026-11-16), e.g. "College essay · Meaning".
+  if (program) return `${program.name} · ${currentStage(program, work.studioStage).stage}`;
+  return work.form?.trim() || 'Work';
 }
 
 function workFacts(work: LivingWork, manuscripts: readonly CurrentManuscript[]): { extent: string; written: string } {

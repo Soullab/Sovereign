@@ -55,6 +55,8 @@ export interface LivingWork {
   maiaRevisionsPaused?: boolean;
   /** The Studio program (path) this Work belongs to, member-declared at the path door's Begin. Null: ordinary Studio. */
   studioPath?: string | null;
+  /** Where in its program's arc the writer has put this Work (null = the first stage). */
+  studioStage?: string | null;
   createdAt: string;
   updatedAt: string;
   /** Only what the member declared in — never inferred, never system-placed. */

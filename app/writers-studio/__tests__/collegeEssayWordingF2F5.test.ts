@@ -37,9 +37,9 @@ describe('F2 · the conversation names the whole Work in the program’s words',
 });
 
 describe('F4 · Home names a program Work by its program', () => {
-  test('a college-essay Work is "College essay" on Home', () => {
-    expect(workKind({ form: null, studioPath: 'college-essay' } as never)).toBe('College essay');
-    expect(workKind({ form: 'Book', studioPath: 'college-essay' } as never)).toBe('College essay');
+  test('a college-essay Work is "College essay" on Home, with the stage the writer has put it at', () => {
+    expect(workKind({ form: null, studioPath: 'college-essay' } as never)).toBe('College essay · Discover');
+    expect(workKind({ form: 'Book', studioPath: 'college-essay', studioStage: 'revise' } as never)).toBe('College essay · Revise');
   });
   test('an ordinary Work is unchanged: its form, else "Work"', () => {
     expect(workKind({ form: 'Memoir', studioPath: null } as never)).toBe('Memoir');
@@ -71,7 +71,7 @@ describe('F5 · no "Which ones?" on a one-part draft', () => {
   }
   test('one part, unread: the sentence alone, no toggle', async () => {
     const { toggle, text } = await line(1, 0);
-    expect(text).toBe('I haven’t read this draft yet.');
+    expect(text).toBe('No saved reading of this draft yet.');
     expect(toggle).toBeNull();
   });
   test('several parts, some unread: "Which ones?" is still offered', async () => {

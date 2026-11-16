@@ -93,7 +93,8 @@ export interface SectionWritingSurfaceProps {
 const SETTLE_TIMEOUT_MS = 4000;
 const SETTLE_POLL_MS = 50;
 
-function KeepAVersion({
+/** Exported for the College Essay stage card (Draft, Revise): the same gesture, the same server-truth checkpoint. */
+export function KeepAVersion({
   writing, manuscriptId, onCheckpointed,
 }: {
   writing: SectionWriting;

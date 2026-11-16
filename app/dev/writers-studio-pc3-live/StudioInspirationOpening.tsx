@@ -26,7 +26,7 @@ import {
   type HeardAnswer,
   type HoldChoice,
 } from '@/lib/writersStudio/inspirationOpening';
-import { visibleArc, type StudioPath } from '@/lib/writersStudio/studioPaths';
+import { builtStages, type StudioPath } from '@/lib/writersStudio/studioPaths';
 // Styles: inspiration-opening.css, imported by the Studio pages beside the other Studio stylesheets.
 
 export type DoorDestination = 'write' | 'import' | 'look';
@@ -240,7 +240,7 @@ export default function StudioInspirationOpening(props: {
             <p className="wsio-path-name">{studioPath.name} · in Writer’s Studio</p>
             <p className="wsio-note">{studioPath.arena}</p>
             {/* Claim discipline: only stages that exist in the Studio today are shown. */}
-            <p className="wsio-path-stage">You’re at: {visibleArc(studioPath).join(' · ')}</p>
+            <p className="wsio-path-stage">You’re at: {builtStages(studioPath)[0]?.stage}</p>
           </div>
         ) : null}
         <p className="wsio-who">MAIA</p>
