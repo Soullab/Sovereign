@@ -5,13 +5,21 @@
 -- ⛔ This schema rollback is DESTRUCTIVE (it erases writers' own notes and their stage choices). It REFUSES while any note
 --    exists or any Work carries a stage. It is only for removing the schema before any use.
 BEGIN;
+SET LOCAL lock_timeout = '5s';
+-- Review F3 (2026-11-16): lock before counting, so no note or stage can be committed between the count and the DROP.
+DO $$ BEGIN
+  IF to_regclass('public.studio_stage_notes') IS NOT NULL THEN
+    LOCK TABLE public.studio_stage_notes IN ACCESS EXCLUSIVE MODE;
+  END IF;
+  LOCK TABLE public.living_works IN ACCESS EXCLUSIVE MODE;
+END $$;
 DO $$
 DECLARE notes bigint := 0; staged bigint := 0;
 BEGIN
   IF to_regclass('studio_stage_notes') IS NOT NULL THEN
     SELECT count(*) INTO notes FROM studio_stage_notes;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'living_works' AND column_name = 'studio_stage') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'living_works' AND column_name = 'studio_stage') THEN
     SELECT count(*) INTO staged FROM living_works WHERE studio_stage IS NOT NULL;
   END IF;
   IF notes > 0 OR staged > 0 THEN
