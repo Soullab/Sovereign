@@ -79,6 +79,12 @@ export function DoorwayJoin({
       if (res.ok && body.success) {
         try {
           localStorage.setItem('beta_user', JSON.stringify({ ...body.member, onboarded: true }));
+          // The new account's session replaces any earlier member's header token on this browser (Safari/iOS
+          // send it as x-session-token). A stale token for someone else beside the new cookie is a credential
+          // conflict, which the server refuses: the new member would land on "Sign in" (witnessed 2026-11-16).
+          const token = body.session?.token;
+          if (typeof token === 'string' && token) localStorage.setItem('maia_session_token', token);
+          else localStorage.removeItem('maia_session_token');
         } catch { /* storage unavailable: the server session still holds */ }
         window.location.assign(body.next || returnPath);
         return;
