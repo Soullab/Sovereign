@@ -82,6 +82,12 @@ export default function StudioInspirationOpening(props: {
   const [posture, setPosture] = useState<Posture>('unknown');
 
   useEffect(() => {
+    // Ordinary is the default (founder ruling 2026-11-16, "we should have Ordinary as default"; Sanctuary invariant 5,
+    // "Default off: Sanctuary is an explicit opt-in"). A browser with NO session setting yet starts in Ordinary, shown
+    // pressed, with Sanctuary one tap away. Only the absent case: a setting that exists but cannot be read, or storage
+    // that cannot be read, stays 'unknown' and keeps nothing (fail-closed), exactly as before.
+    const first = readCurrentSanctuaryPosture();
+    if (!first.resolved && first.reason === 'no_live_settings') applySessionSanctuary(false);
     setPosture(readPosture());
     const onChange = () => setPosture(readPosture());
     window.addEventListener('maia-settings-changed', onChange);
@@ -92,7 +98,7 @@ export default function StudioInspirationOpening(props: {
     };
   }, []);
 
-  /* The writer's own act, exactly like the Quick Settings toggle: never a default applied on their behalf. */
+  /* The writer's own act, exactly like the Quick Settings toggle. The only default is Ordinary when nothing is set. */
   const choosePosture = (sanctuary: boolean) => {
     applySessionSanctuary(sanctuary);
     setPosture(readPosture());
