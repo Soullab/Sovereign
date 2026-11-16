@@ -11,12 +11,14 @@ import { fetchCoverage } from '@/lib/writersStudio/coverageClient';
 export function coverageSentence(c: CoverageMap): string {
   const { read, changed, notRead, positionOnly, total } = c.whole;
   if (total === 0) return 'This draft has no sections yet.';
-  if (read === 0 && changed === 0) return 'I haven’t read this draft yet.';
+  /* Beta 2026-11-16: this counts saved readings only. "I haven't read" sat above MAIA quoting the page (her first-page
+     reading is unkept by design) and saying she had its text in conversation. Claim only what is counted. */
+  if (read === 0 && changed === 0) return 'No saved reading of this draft yet.';
   /* Walk 2026-11-15: a one-section draft (most college essays) read as "I've read all 1 sections". Say it of the draft instead. */
   if (total === 1) return read === 1 ? 'I’ve read this draft.' : 'This draft has changed since I read it.';
   const parts = [read === total ? `I’ve read all ${total} sections of this draft` : `I’ve read ${read} of ${total} sections of this draft`];
   if (changed > 0) parts.push(`${changed} ${changed === 1 ? 'has' : 'have'} changed since I read ${changed === 1 ? 'it' : 'them'}`);
-  if (notRead + positionOnly > 0 && read !== total) parts.push(`${notRead + positionOnly} I haven’t read`);
+  if (notRead + positionOnly > 0 && read !== total) parts.push(`${notRead + positionOnly} ${notRead + positionOnly === 1 ? 'has' : 'have'} no saved reading`);
   return `${parts.join('; ')}.`;
 }
 
@@ -86,7 +88,7 @@ export function CoverageLine(props: {
       {open ? (
         <div data-coverage-detail="true" style={{ fontSize: 11, opacity: .85, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {changed.length > 0 ? <span data-coverage-changed="true">Changed since I read them: {list(changed)}</span> : null}
-          {unread.length > 0 ? <span data-coverage-unread="true">Not read: {list(unread)}</span> : null}
+          {unread.length > 0 ? <span data-coverage-unread="true">No saved reading: {list(unread)}</span> : null}
         </div>
       ) : null}
     </div>
