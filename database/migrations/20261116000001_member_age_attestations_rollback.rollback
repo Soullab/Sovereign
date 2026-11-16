@@ -5,6 +5,13 @@
 -- ⛔ This schema rollback is DESTRUCTIVE (it erases members' supervision attestations, the record that a minor's use was
 --    supervised). It therefore REFUSES while any attestation exists. It is only for removing the table before any use.
 BEGIN;
+SET LOCAL lock_timeout = '5s';
+-- Review F3 (2026-11-16): lock before counting, so no attestation can be committed between the count and the DROP.
+DO $$ BEGIN
+  IF to_regclass('public.member_age_attestations') IS NOT NULL THEN
+    LOCK TABLE public.member_age_attestations IN ACCESS EXCLUSIVE MODE;
+  END IF;
+END $$;
 DO $$
 DECLARE carried bigint;
 BEGIN
