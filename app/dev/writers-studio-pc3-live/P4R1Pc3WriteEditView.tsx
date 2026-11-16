@@ -9,7 +9,7 @@ import { WriteManuscriptRail, WriteRoom, isWriteRoomReadbackCurrent, type WriteB
 import { WRITE_COPY } from '@/app/writers-studio/full-redesign/fixtures';
 import { WRITE_GEOMETRY, appearanceVars } from '@/app/writers-studio/full-redesign/tokens';
 import { EditorialLetterPanel, type PassIssueTarget } from './EditorialLetterPanel';
-import { CoverageLine, type SessionRead } from './CoverageLine';
+import { CoverageLine, sessionReadFor, type PageReadReceipt, type SessionRead } from './CoverageLine';
 
 export const UNDO_RESTORED_MESSAGES = {
   complete: 'Undone. Your own wording is back.',
@@ -1331,14 +1331,16 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
   const [coverageEpoch, setCoverageEpoch] = useState(0);
   /* What MAIA read with the writer in this visit (first page). Bound to this manuscript and page: a different Work or page says
      nothing, and an edit since makes it 'changed'. Set only by a successful authorized reading. */
-  const [pageReadWithMaia, setPageReadWithMaia] = useState<{ manuscriptId: string; sectionId: string; page: string } | null>(null);
+  const [pageReadWithMaia, setPageReadWithMaia] = useState<PageReadReceipt | null>(null);
   /* The receipt names the exact section MAIA was shown: the page sent is the FOCUSED section's body (currentBody), so the
      receipt is keyed to props.focusId, never to the editor's active section, which can differ or be unset (review 2026-11-16). */
-  const sessionRead: SessionRead = pageReadWithMaia
-    && pageReadWithMaia.manuscriptId === props.context.manuscriptId
-    && pageReadWithMaia.sectionId === props.focusId
-    ? (props.writing.bodyOf(pageReadWithMaia.sectionId) === pageReadWithMaia.page ? 'current' : 'changed')
-    : null;
+  /* …and to the Work: two Works may share one manuscript (#2298), and a change of Work never inherits the other's receipt. */
+  const sessionRead: SessionRead = sessionReadFor(pageReadWithMaia, {
+    workId: props.work?.id ?? null,
+    manuscriptId: props.context.manuscriptId,
+    focusId: props.focusId,
+    bodyOf: props.writing.bodyOf,
+  });
   const writeMaia = props.work ? (
     <div className="fr-maia-inner p4r1-write-maia">
       <div className="fr-maia-head">
@@ -1424,7 +1426,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
                 onAnswer={(starter) => openWorkConversation(starter)}
                 onRead={(page) => {
                   // The section whose body was sent (currentBody = bodyOf(focusId)). No focused section: no receipt.
-                  if (shownSectionId) setPageReadWithMaia({ manuscriptId: props.context.manuscriptId, sectionId: shownSectionId, page });
+                  if (shownSectionId) setPageReadWithMaia({ workId: props.work?.id ?? null, manuscriptId: props.context.manuscriptId, sectionId: shownSectionId, page });
                 }}
               />
             ) : null}

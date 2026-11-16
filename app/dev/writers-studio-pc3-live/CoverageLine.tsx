@@ -27,6 +27,22 @@ export function coverageSentence(c: CoverageMap): string {
  */
 export type SessionRead = 'current' | 'changed' | null;
 
+/** A visit's record of what MAIA was shown: the exact Work, manuscript, section and page text. */
+export type PageReadReceipt = { workId: string | null; manuscriptId: string; sectionId: string; page: string };
+
+/**
+ * The receipt applies only to the SAME Work, manuscript and shown section (two Works may share one manuscript, #2298; a change
+ * of Work never inherits the other's receipt). 'current' if the page is unchanged since, 'changed' if edited, else null.
+ */
+export function sessionReadFor(
+  receipt: PageReadReceipt | null,
+  now: { workId: string | null; manuscriptId: string; focusId: string | null | undefined; bodyOf: (sectionId: string) => string },
+): SessionRead {
+  if (!receipt) return null;
+  if (receipt.workId !== now.workId || receipt.manuscriptId !== now.manuscriptId || receipt.sectionId !== now.focusId) return null;
+  return now.bodyOf(receipt.sectionId) === receipt.page ? 'current' : 'changed';
+}
+
 export function sessionReadSentence(read: Exclude<SessionRead, null>): string {
   return read === 'current'
     ? 'I read this page with you just now. That reading isn’t kept.'

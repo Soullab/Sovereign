@@ -15,7 +15,7 @@ jest.mock('@/lib/writersStudio/coverageClient', () => ({ fetchCoverage: (...a: u
 
 import { projectPc3LiveWrite } from '@/app/writers-studio/full-redesign/liveWriteAdapter';
 import { studioPathById, unheadedPlaceName } from '@/lib/writersStudio/studioPaths';
-import { CoverageLine, sessionReadSentence } from '@/app/dev/writers-studio-pc3-live/CoverageLine';
+import { CoverageLine, sessionReadFor, sessionReadSentence } from '@/app/dev/writers-studio-pc3-live/CoverageLine';
 import StudioFirstPageMaia from '@/app/dev/writers-studio-pc3-live/StudioFirstPageMaia';
 import StudioInspirationOpening from '@/app/dev/writers-studio-pc3-live/StudioInspirationOpening';
 import { invitationCheckAnswer } from '@/lib/studios/doorwayInvitations';
@@ -133,10 +133,25 @@ describe('2 · reading status', () => {
     expect(onRead).toHaveBeenCalledWith('The cold wrench.');
   });
 
-  test('the visit’s reading is bound to this manuscript and page (a change of Work says nothing)', () => {
+  test('the visit’s reading is bound to this Work, manuscript and shown section, and tracks edits', () => {
+    const receipt = { workId: 'work-A', manuscriptId: 'm-shared', sectionId: 's0', page: 'The cold wrench.' };
+    const here = { workId: 'work-A', manuscriptId: 'm-shared', focusId: 's0', bodyOf: () => 'The cold wrench.' };
+    expect(sessionReadFor(receipt, here)).toBe('current');
+    expect(sessionReadFor(receipt, { ...here, bodyOf: () => 'The cold wrench, and the rain.' })).toBe('changed');
+    expect(sessionReadFor(receipt, { ...here, manuscriptId: 'm-other' })).toBeNull();
+    expect(sessionReadFor(receipt, { ...here, focusId: 's1' })).toBeNull();
+    expect(sessionReadFor(receipt, { ...here, focusId: null })).toBeNull();
+    expect(sessionReadFor(null, here)).toBeNull();
+  });
+
+  test('review 2026-11-16 (reassessment): two Works sharing ONE manuscript never share a reading receipt', () => {
+    const receipt = { workId: 'work-A', manuscriptId: 'm-shared', sectionId: 's0', page: 'The cold wrench.' };
+    // Same manuscript, same section, same unchanged text — only the Work differs.
+    expect(sessionReadFor(receipt, { workId: 'work-B', manuscriptId: 'm-shared', focusId: 's0', bodyOf: () => 'The cold wrench.' })).toBeNull();
+    expect(sessionReadFor(receipt, { workId: null, manuscriptId: 'm-shared', focusId: 's0', bodyOf: () => 'The cold wrench.' })).toBeNull();
     const view = read('app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx');
-    expect(view).toContain('pageReadWithMaia.manuscriptId === props.context.manuscriptId');
-    expect(view).toContain("=== pageReadWithMaia.page ? 'current' : 'changed'");
+    expect(view).toContain('sessionReadFor(pageReadWithMaia, {');
+    expect(view).toContain('workId: props.work?.id ?? null, manuscriptId: props.context.manuscriptId, sectionId: shownSectionId, page');
   });
 
   test('review 2026-11-16 #1: the receipt names the section whose body was SENT (focusId), never the editor’s active section', () => {
@@ -146,8 +161,8 @@ describe('2 · reading status', () => {
     expect(view).toContain('const shownSectionId = props.focusId ?? null;');
     // … so the receipt is recorded for, and only matches, that same section.
     expect(view).toContain('sectionId: shownSectionId, page');
-    expect(view).toContain('pageReadWithMaia.sectionId === props.focusId');
-    const receipt = view.slice(view.indexOf('const sessionRead: SessionRead'), view.indexOf(': null;', view.indexOf('const sessionRead: SessionRead')));
+    expect(view).toContain('focusId: props.focusId,');
+    const receipt = view.slice(view.indexOf('const sessionRead: SessionRead'), view.indexOf('});', view.indexOf('const sessionRead: SessionRead')));
     expect(receipt).not.toContain('activeId');
     expect(view).not.toMatch(/setPageReadWithMaia\([^)]*activeId/);
   });
