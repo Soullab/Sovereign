@@ -172,6 +172,12 @@ export interface WorkConversationProps {
   sectionId: string | null;
   /** Optional member-facing starter held in the composer. Never auto-sent. */
   initialDraft?: string;
+  /**
+   * The draft opens a NEW topic the writer brought from elsewhere (e.g. "Show MAIA this note" from a College Essay stage). When the
+   * Work has several conversations, begin a new one instead of asking which to continue, so Send never silently waits (live walk
+   * 2026-11-16). One existing conversation is still continued, exactly as before. Never sends anything by itself.
+   */
+  startFresh?: boolean;
   /** Place words into the EXISTING composer (a starter, or the writer's selected words) without re-creating the conversation.
    *  A new `n` places `text` once: into an empty composer it replaces; after the writer's own unsent text it is added below, never
    *  replacing it. Never sent. (Founder P0 direction 2026-11-11: a late or placed text must not reset the conversation or clear
@@ -225,7 +231,7 @@ export default function WorkConversation(props: WorkConversationProps) {
 }
 
 function ScopedWorkConversation({
-  work, manuscriptId, sectionId, initialDraft = '', placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity,
+  work, manuscriptId, sectionId, initialDraft = '', placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity, startFresh: freshForNewTopic = false,
 }: WorkConversationProps & { identity: ReturnType<typeof useMemberIdentity> }) {
   /* A program Work (e.g. a college essay) names its whole-Work scope in its own words; an ordinary Work keeps "the whole book". */
   const wholeScope = studioPathById(work.studioPath ?? null)?.studioCopy.wholeScope ?? 'the whole book';
@@ -399,12 +405,13 @@ function ScopedWorkConversation({
         : await threadsOnLivingWorkAsk(work.id);
       if (cancelled) return;
       const d = resumeDecision(discovery);
-      setDecision(d);
+      // A new topic brought by the writer (startFresh) begins its own conversation rather than waiting on a choice.
+      setDecision(freshForNewTopic && d.kind === 'choose' ? { kind: 'fresh' } : d);
       /* ⭐ One relationship is not a choice. Adopting it writes nothing. */
       if (d.kind === 'resume') await adopt(d.threadId);
     })();
     return () => { cancelled = true; };
-  }, [manuscriptId, work.id, adopt]);
+  }, [manuscriptId, work.id, adopt, freshForNewTopic]);
 
   const mode = sendMode(decision, threadId);
   // Only a deliberately phrased request is recognized. There is NO model

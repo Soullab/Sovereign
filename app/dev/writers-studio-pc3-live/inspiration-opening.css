@@ -106,3 +106,6 @@
 .wsio-age button { min-height: 44px; }
 .wsio-check { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0; line-height: 1.5; cursor: pointer; }
 .wsio-check input { width: 22px; height: 22px; margin-top: 2px; flex: 0 0 auto; }
+
+/* A disabled button must look disabled (live walk 2026-11-16: the 13–17 Continue looked clickable before the supervision tick). */
+.wsio button:disabled, .wsio-age button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; filter: saturate(.4); }
