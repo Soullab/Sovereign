@@ -29,6 +29,7 @@ import { readCurrentSanctuaryPosture } from '@/lib/sanctuary/currentClientPostur
 import { CARRY_COPY, shouldShowInspirationDoor } from '@/lib/writersStudio/inspirationOpening';
 import { pathBeginPatch, pathFromParam } from '@/lib/writersStudio/studioPaths';
 import StudioInspirationOpening from './StudioInspirationOpening';
+import StudioSignedOut from './StudioSignedOut';
 
 function idFrom(payload: Record<string, unknown>): string | null {
   const direct = typeof payload.id === 'string' ? payload.id : null;
@@ -409,7 +410,7 @@ export default function P4R1HomeController() {
   }
 
   if (worksPhase === 'unauthorized' || manuscriptPhase === 'unauthorized') {
-    return <main className="fr-root"><div style={{ padding: 32 }}>Sign in to open your Writer’s Studio.</div></main>;
+    return <StudioSignedOut />;
   }
 
   if (importRequested) {

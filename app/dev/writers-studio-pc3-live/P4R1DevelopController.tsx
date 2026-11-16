@@ -60,6 +60,7 @@ import {
 } from '@/lib/writersStudio/intellectualLineageChapter';
 import { requestDevelopmentalOrientation } from '@/lib/writersStudio/developmentalOrientationClient';
 import type { DevelopmentalOrientation } from '@/lib/writersStudio/developmentalOrientation';
+import StudioSignedOut from './StudioSignedOut';
 import P4R1DevelopView, {
   DEVELOP_FIELDS,
   type DevelopField,
@@ -1702,12 +1703,12 @@ export default function P4R1DevelopController() {
     };
   }, [currentChapter]);
 
+  if (phase === 'unauthorized') return <StudioSignedOut what="Develop" />;
   if (phase !== 'ready' || !context) {
     return (
       <main className="fr-root" data-p4r1-develop-phase={phase}>
         <div style={{ padding: 32 }}>
           {phase === 'loading' ? 'Opening Develop…' : null}
-          {phase === 'unauthorized' ? 'Sign in to open Develop.' : null}
           {phase === 'error' && wayInId ? <ContinuousDraftWayIn manuscriptId={wayInId} room="Develop" /> : null}
           {phase === 'error' && !wayInId ? (message ?? 'Develop could not be opened.') : null}
         </div>
