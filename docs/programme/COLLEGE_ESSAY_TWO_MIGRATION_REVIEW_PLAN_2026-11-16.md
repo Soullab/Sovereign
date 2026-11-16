@@ -1,7 +1,14 @@
 # Deploy 2026-11-16: review plan for the exact two pending migrations (College Essay age attestation and stages)
 
 **Date:** 2026-11-16
-**Status:** BOUNDED INDEPENDENT REVIEW PLAN. NO DEPLOYMENT AUTHORITY BY ITSELF.
+**Status:** BOUNDED INDEPENDENT REVIEW PLAN, **revision 2**. NO DEPLOYMENT AUTHORITY BY ITSELF.
+
+**Revision 2 (2026-11-16):** the first review of target `aae004356` returned **REVISE**. Its compatibility verdict was COMPATIBLE and ALL_PREFIXES_COMPATIBLE. Its findings were dispositioned:
+- **F1 (medium):** the Delete and Remove confirmations did not name the writer's stage notes, which cascade with the Work, and `removalCopyDrift` failed. **Fixed in #2315**: both goes-lists now say "your stage notes" and the guard records the table.
+- **F3 (low):** the guarded rollbacks did not lock before counting. **Fixed in #2315**: they now set `lock_timeout`, take ACCESS EXCLUSIVE locks first, and filter by schema.
+- **F2 (low):** Works that joined the program before this deploy are not asked the age question. **Founder ruling: accepted (grandfathered).** Kelly replied "Merge #2315" to *"Merge #2315 (and accept grandfathering your one pre-existing essay Work)?"*. That is exactly one Work in production, the founder's own case-study test Work. Every essay Work begun after the deploy goes through the gate.
+
+**The migrations themselves are unchanged (same sha256 as revision 1).**
 
 **Live old reader:** supplied by the harness through `MIGRATION_COMPATIBILITY_CONTEXT.json`. The reviewer establishes it
 from the bundle, and the deploy lane re-witnesses it before mutation.
@@ -11,7 +18,7 @@ from the bundle, and the deploy lane re-witnesses it before mutation.
 - Stages: "We want all phases of writing process for College essay ready to test", with notes "Yes, private by default".
 - "Yes, merge and deploy", in reply to *"Merge #2309 and #2310 and deploy, through the migration review?"*.
 
-Also in the target beyond #2309 and #2310:
+Also in the target beyond #2309, #2310 and #2315:
 - #2311 (another lane; coverage-line wording only, code only);
 - #2312 (another lane's plan for migration 1 alone).
 
