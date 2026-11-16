@@ -11,6 +11,7 @@ import { DeletionNotice, DeletionSharedMaterial, DeletionUnconfirmed, deleteConf
 import { WritingDeleteConfirm } from './WritingDeleteConfirm';
 import { writingDeleteKindFor } from './useWorkDeleteDoor';
 import { NoticeList, useNoticeStack, type NoticeStack } from './useNoticeStack';
+import StudioSignedOut from './StudioSignedOut';
 
 /** The route's own ceiling (MAX_LIMIT in /api/sovereign/studio/history). */
 export const FULL_HISTORY_LIMIT = 300;
@@ -78,7 +79,7 @@ export function P4R1HistoryPage(props: P4R1HistoryPageProps) {
   if (props.phase === 'loading') {
     body = <p className="fr-home-facts">Opening your history…</p>;
   } else if (props.phase === 'unauthorized') {
-    body = <p className="fr-home-facts">Sign in to see your history.</p>;
+    return <StudioSignedOut what="your history" />;
   } else if (props.phase === 'error') {
     body = (
       <p className="fr-home-facts" role="alert">
