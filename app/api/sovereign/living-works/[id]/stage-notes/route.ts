@@ -14,8 +14,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db/postgres';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { stageById, studioPathById } from '@/lib/writersStudio/studioPaths';
+import { admittedToStudio, writersStudioStanding } from '@/lib/writersStudio/betaAccessServer';
 
 const privateHeaders = { 'Cache-Control': 'private, no-store' };
+
+/* Review follow-up 2026-11-16: the same gates as the Studio's other server surfaces (e.g. the arrival route): no static build,
+   a signed-in member, and Studio admission. Returns a response to send, or null to proceed. */
+async function gate(req: NextRequest): Promise<{ memberId: string } | NextResponse> {
+  if (process.env.CAPACITOR_BUILD) return NextResponse.json({ error: 'Not available in static build' }, { status: 501 });
+  const memberId = await getMemberIdFromRequest(req);
+  if (!memberId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: privateHeaders });
+  if (!admittedToStudio(await writersStudioStanding(memberId))) {
+    return NextResponse.json({ refusal: 'not_in_beta_pilot' }, { status: 403, headers: privateHeaders });
+  }
+  return { memberId };
+}
 const MAX_STAGE_NOTE_CHARS = 20000;
 
 async function ownedProgram(workId: string, memberId: string) {
@@ -26,8 +39,9 @@ async function ownedProgram(workId: string, memberId: string) {
 }
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const memberId = await getMemberIdFromRequest(req);
-  if (!memberId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: privateHeaders });
+  const g = await gate(req);
+  if (g instanceof NextResponse) return g;
+  const { memberId } = g;
   const { id } = await ctx.params;
   try {
     const owned = await ownedProgram(id, memberId);
@@ -44,8 +58,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 }
 
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const memberId = await getMemberIdFromRequest(req);
-  if (!memberId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: privateHeaders });
+  const g = await gate(req);
+  if (g instanceof NextResponse) return g;
+  const { memberId } = g;
   const { id } = await ctx.params;
   const body = await req.json().catch(() => null) as { stage?: unknown; body?: unknown; checks?: unknown } | null;
   if (!body || typeof body.body !== 'string' || body.body.length > MAX_STAGE_NOTE_CHARS) {

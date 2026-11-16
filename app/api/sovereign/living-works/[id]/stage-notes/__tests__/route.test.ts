@@ -7,6 +7,11 @@ const query = jest.fn();
 jest.mock('@/lib/db/postgres', () => ({ query: (...a: unknown[]) => query(...a) }));
 const member = jest.fn();
 jest.mock('@/lib/auth/getMemberFromRequest', () => ({ getMemberIdFromRequest: (...a: unknown[]) => member(...a) }));
+const standing = jest.fn();
+jest.mock('@/lib/writersStudio/betaAccessServer', () => ({
+  writersStudioStanding: (...a: unknown[]) => standing(...a),
+  admittedToStudio: (access: { admitted: boolean }) => access.admitted,
+}));
 import { NextRequest } from 'next/server';
 import { GET, PUT } from '../route';
 
@@ -24,7 +29,7 @@ function db(program: string | null | 'none') {
     return { rows: [] };
   });
 }
-beforeEach(() => { jest.clearAllMocks(); member.mockResolvedValue(ME); jest.spyOn(console, 'error').mockImplementation(() => {}); });
+beforeEach(() => { jest.clearAllMocks(); member.mockResolvedValue(ME); standing.mockResolvedValue({ admitted: true }); jest.spyOn(console, 'error').mockImplementation(() => {}); });
 afterEach(() => jest.restoreAllMocks());
 
 it('unauthenticated: 401; another member’s Work: 404; nothing written', async () => {
@@ -85,4 +90,12 @@ it('Ready’s checklist ticks: only that stage’s own item ids, each once; stor
   const res = await PUT(put({ stage: 'ready', body: '', checks: ['read-aloud'] }), ctx);
   expect(res.status).toBe(200);
   expect(writes()[0]![1]).toEqual([WORK, ME, 'ready', '', ['read-aloud']]);
+});
+
+it('review follow-up 2026-11-16: a member not admitted to the Studio is refused (403) on read and write, nothing touched', async () => {
+  db('college-essay');
+  standing.mockResolvedValue({ admitted: false });
+  expect((await GET(get(), ctx)).status).toBe(403);
+  expect((await PUT(put({ stage: 'meaning', body: 'x' }), ctx)).status).toBe(403);
+  expect(query).not.toHaveBeenCalled();
 });

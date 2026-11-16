@@ -265,17 +265,19 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
         return NextResponse.json({ error: 'unknown_studio_path' }, { status: 400 });
       }
       studioPath = body.studioPath;
-      /* Founder ruling 2026-11-16 (#1900): a Work can join a program students may use only after the member has said they
-         are 18+, or 13–17 with adult supervision. Fails closed (an unreadable record never admits). */
-      if (studioPathById(studioPath)?.requiresAgeAttestation && !ageAttestationAdmits(await latestAgeAttestation(memberId))) {
-        return NextResponse.json({ error: 'age_attestation_required' }, { status: 403 });
-      }
       const current = await query<{ studio_path: string | null }>(
         `SELECT studio_path FROM living_works WHERE id = $1 AND member_id = $2`, [id, memberId]);
       if (current.rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       const existing = current.rows[0].studio_path;
       if (existing !== null && existing !== studioPath) {
         return NextResponse.json({ error: 'studio_path_fixed' }, { status: 409 });
+      }
+      /* Founder ruling 2026-11-16 (#1900): a Work can JOIN a program students may use only after the member has said they are
+         18+, or 13–17 with adult supervision. Fails closed (an unreadable record never admits). Re-sending the program a Work
+         already has is a no-op, not a join, so it is not asked again (review follow-up 2026-11-16: a grandfathered Work got 403). */
+      if (existing === null && studioPathById(studioPath)?.requiresAgeAttestation
+          && !ageAttestationAdmits(await latestAgeAttestation(memberId))) {
+        return NextResponse.json({ error: 'age_attestation_required' }, { status: 403 });
       }
     }
 
