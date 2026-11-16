@@ -48,3 +48,36 @@ describe('the attestation route', () => {
   });
 });
 
+
+describe('GET ?work=: whether THIS member’s Work needs the answer (walk 2026-11-16)', () => {
+  const { GET } = require('../route') as typeof import('../route');
+  const get = (q = '') => new NextRequest(`https://soullab.life/api/sovereign/writers-studio/age-attestation${q}`, { method: 'GET' } as never);
+  const answer = (sql: string, studioPath: string | null, attestation: unknown) =>
+    query.mockImplementation(async (s: string) => (String(s).includes('FROM living_works') ? { rows: studioPath === undefined ? [] : [{ studio_path: studioPath }] }
+      : String(s).includes('FROM member_age_attestations') ? { rows: attestation ? [attestation] : [] } : { rows: [] }));
+
+  test('a College Essay Work with no attestation: required, not attested; the program is read for THIS member', async () => {
+    member.mockResolvedValue(ME);
+    answer('', 'college-essay', null);
+    const res = await GET(get('?work=w1'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ attested: null, required: true });
+    const workRead = query.mock.calls.find(([s]) => String(s).includes('FROM living_works'))!;
+    expect(workRead[1]).toEqual(['w1', ME]);
+  });
+  test('an ordinary Work: not required; an attested adult: attested', async () => {
+    member.mockResolvedValue(ME);
+    answer('', null, { age_band: 'adult', supervision_attested: false });
+    expect(await (await GET(get('?work=w2'))).json()).toEqual({ attested: 'adult', required: false });
+  });
+  test('without ?work the answer is unchanged (the door’s own check)', async () => {
+    member.mockResolvedValue(ME);
+    answer('', 'college-essay', null);
+    expect(await (await GET(get())).json()).toEqual({ attested: null });
+  });
+  test('an unreadable program is 503, never "not required"', async () => {
+    member.mockResolvedValue(ME);
+    query.mockImplementation(async (s: string) => { if (String(s).includes('FROM living_works')) throw new Error('down'); return { rows: [] }; });
+    expect((await GET(get('?work=w3'))).status).toBe(503);
+  });
+});

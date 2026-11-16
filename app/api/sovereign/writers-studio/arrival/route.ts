@@ -22,6 +22,7 @@ import { askMaia } from '@/lib/manuscript/ask/askReader';
 import { MAX_FIRST_PAGE_CHARS, quotesVerified } from '@/lib/writersStudio/inspirationOpening';
 import { pathFromParam } from '@/lib/writersStudio/studioPaths';
 import { ageAttestationAdmits, latestAgeAttestation } from '@/lib/studios/ageAttestationRead';
+import { ageGateForWork, ageGateRefusal } from '@/lib/studios/workAgeGate';
 
 const MAX_ANSWER_CHARS = 2000;
 const MAX_HISTORY_TURNS = 20;
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ refusal: 'malformed' }, { status: 400, headers: privateHeaders });
   }
   const body = raw as Record<string, unknown>;
-  const allowed = new Set(['answer', 'history', 'sanctuary', 'moment', 'path']);
+  const allowed = new Set(['answer', 'history', 'sanctuary', 'moment', 'path', 'work']);
   if (Object.keys(body).some((key) => !allowed.has(key))) {
     return NextResponse.json({ refusal: 'malformed', detail: 'unknown field' }, { status: 400, headers: privateHeaders });
   }
@@ -84,6 +85,16 @@ export async function POST(req: NextRequest) {
   }
   // B (S3): the writer's first page, shown by their own act. One page, no conversation history.
   const firstPage = body.moment === 'first_page';
+  // A first page belongs to a Work, and that Work's recorded program decides the age gate (production walk 2026-11-16:
+  // MAIA read a College Essay page with no attestation, because this request never named its program). `work` is required
+  // for a first page and allowed nowhere else; the program is read from the database, never taken from the request.
+  if (firstPage !== ('work' in body) || ('work' in body && typeof body.work !== 'string')) {
+    return NextResponse.json({ refusal: 'malformed', detail: 'work' }, { status: 400, headers: privateHeaders });
+  }
+  if (firstPage) {
+    const age = await ageGateForWork(memberId, body.work as string);
+    if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status, headers: privateHeaders }); }
+  }
   if (typeof body.answer !== 'string' || !body.answer.trim()) {
     return NextResponse.json({ refusal: 'malformed', detail: 'answer' }, { status: 400, headers: privateHeaders });
   }

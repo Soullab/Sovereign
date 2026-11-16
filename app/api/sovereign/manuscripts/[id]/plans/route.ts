@@ -6,6 +6,7 @@
  */
 import { keepGate } from '@/lib/sanctuary/keepGate';
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { randomUUID } from 'crypto';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { livingWorkIdForManuscript } from '@/lib/manuscript/ask/workOfManuscript';
@@ -64,6 +65,8 @@ async function postHandler(req: NextRequest, { params }: { params: Promise<{ id:
   /* A plan reads your saved work and is kept: Sanctuary or an undeclared posture refuses (founder ruling 2026-11-09). */
   { const refused = await keepGate(memberId, b); if (refused) return refused; }
   bindMaiaMeter(memberId, { sanctuary: false });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, id); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
 
   const grant = await loadActiveGrant(memberId, workId);
   if (!grant || grant.level !== 'work') {

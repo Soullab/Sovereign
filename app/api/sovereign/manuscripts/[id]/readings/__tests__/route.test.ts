@@ -6,6 +6,12 @@
  * itself is 07C's and is mocked here; its own gates prove it.
  */
 
+// The age gate by the Work's recorded program (#1900) is tested in lib/studios/__tests__/workAgeGate.test.ts; here it admits,
+// so this suite's stubbed database sees only the route's own queries.
+jest.mock('@/lib/studios/workAgeGate', () => ({
+  ageGateForWork: async () => ({ ok: true }), ageGateForManuscript: async () => ({ ok: true }), ageGateForThread: async () => ({ ok: true }),
+  ageGateRefusal: jest.requireActual('@/lib/studios/workAgeGate').ageGateRefusal,
+}));
 import { NextRequest } from 'next/server';
 
 jest.mock('@/lib/auth/getMemberFromRequest', () => ({ getMemberIdFromRequest: jest.fn() }));

@@ -44,6 +44,7 @@
 
 import { isTeachingAnchor, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { checkAnchor, type AskAnchor, type AnchorRefusal } from '@/lib/manuscript/ask/anchor';
 import { buildWorkContext } from '@/lib/manuscript/ask/workContext';
@@ -350,6 +351,8 @@ async function postHandler(
     return NextResponse.json({ refusal: turnPosture.sanctuary ? 'sanctuary_not_kept' : 'posture_undeclared' }, { status: 409 });
   }
   bindMaiaMeter(memberId, { sanctuary: turnPosture.sanctuary });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, id); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
 
   if (effectiveAnchor.on === 'observation') {
     return developmentalTurn({

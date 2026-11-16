@@ -16,6 +16,8 @@ type Phase = 'idle' | 'confirming' | 'reading' | 'reply';
 
 export default function StudioFirstPageMaia(props: {
   page: string;
+  /** The Work this page belongs to. The server reads its program (and so the age gate) from it. */
+  workId: string;
   sanctuary: boolean;
   onAnswer: (starter: string) => void;
   /** Called ONLY after MAIA's authorized reading of exactly `page` succeeded (never on a refusal or failure). */
@@ -32,10 +34,15 @@ export default function StudioFirstPageMaia(props: {
       const response = await apiFetch('/api/sovereign/writers-studio/arrival', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ answer: props.page, moment: 'first_page', sanctuary: props.sanctuary }),
+        body: JSON.stringify({ answer: props.page, moment: 'first_page', sanctuary: props.sanctuary, work: props.workId }),
       });
       const body = await response.json().catch(() => null) as { reply?: unknown; refusal?: unknown } | null;
       if (body?.refusal === 'quote_unverified') { setError(C.unverified); setPhase('idle'); return; }
+      if (body?.refusal === 'age_attestation_required') {
+        setError('MAIA reads this Work once you’ve answered the age question for this Studio. Nothing was read or kept.');
+        setPhase('idle');
+        return;
+      }
       if (!response.ok || typeof body?.reply !== 'string') throw new Error(String(response.status));
       setReply(body.reply);
       setPhase('reply');

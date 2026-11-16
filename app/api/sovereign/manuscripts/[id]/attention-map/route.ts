@@ -1,6 +1,7 @@
 import { keepRefusal } from '@/lib/sanctuary/studioPosture';
 import { saveLetter } from '@/lib/writersStudio/letter/letterStore';
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { synthesizeAttentionMap } from '@/lib/writersStudio/studio/synthesizeAttentionMap';
 import { composeOpening, openingFields } from '@/lib/writersStudio/studio/letterOpening';
@@ -29,6 +30,8 @@ async function postHandler(
   }
   // Posture is not established before the model call (only the optional letter is keep-gated, after); cannot tell -> true (records nothing).
   bindMaiaMeter(memberId, { sanctuary: true });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, manuscriptId); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
   const synthesis = await synthesizeAttentionMap(memberId, manuscriptId, body.readingIds, body.request);
   if (!synthesis.ok) {
     return NextResponse.json(
