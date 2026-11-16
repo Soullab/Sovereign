@@ -119,3 +119,73 @@ export function workProgramUncertainInstruction(): string {
     'Keep it plain and brief: one or two observations and one question.',
   ].join('\n');
 }
+
+/* ── The Work conversation ("Talk about the whole essay", Ask) ─────────────────────────────────────────────────────────
+   Founder 2026-11-16 ("Yes, build it"), from the live College Essay case study (#2305, F3): the Work conversation routes
+   (/api/sovereign/manuscripts/[id]/ask and /api/sovereign/living-works/[id]/ask) applied neither "MAIA asks, never
+   rewrites" nor the Work's program posture; both were wired only into the editorial turn. These give the conversation
+   exactly the same two rules, with the same semantics:
+   - questions-only if the writer set it on THIS Work or on any of their Works holding this manuscript; unreadable ⇒ on;
+   - the program is 'one' / 'none' / 'ambiguous' / 'unknown' over this Work and any of their Works holding the manuscript,
+     and only 'one' with a registered id applies that program's posture; anything uncertain gets the conservative one.
+   ⛔ Member-scoped in every predicate. Read-only. Never inferred from a title, form or anything the writer wrote. */
+
+export const CONVERSATION_PAUSE_SQL = `SELECT EXISTS (
+    SELECT 1 FROM living_works lw
+     WHERE lw.member_id = $1
+       AND lw.maia_revisions_paused
+       AND (lw.id = $2::uuid
+         OR ($3::uuid IS NOT NULL AND lw.id IN (SELECT e.living_work_id FROM living_work_expressions e
+                                                 WHERE e.expression_type = 'manuscript' AND e.expression_id = $3::uuid)))
+  ) AS paused`;
+
+export const CONVERSATION_PROGRAM_SQL = `SELECT DISTINCT lw.studio_path AS studio_path
+    FROM living_works lw
+   WHERE lw.member_id = $1
+     AND (lw.id = $2::uuid
+       OR ($3::uuid IS NOT NULL AND lw.id IN (SELECT e.living_work_id FROM living_work_expressions e
+                                               WHERE e.expression_type = 'manuscript' AND e.expression_id = $3::uuid)))
+   ORDER BY 1 NULLS FIRST
+   LIMIT 2`;
+
+export type ConversationProgram = { questionsOnly: boolean; program: WorkProgram };
+
+export async function conversationProgram(
+  memberId: string, workId: string, manuscriptId: string | null,
+): Promise<ConversationProgram> {
+  let questionsOnly = true;
+  try {
+    const r = await query<{ paused: boolean }>(CONVERSATION_PAUSE_SQL, [memberId, workId, manuscriptId]);
+    questionsOnly = r.rows[0]?.paused === true;
+  } catch (error) {
+    /* ⛔ Fail closed, as on the editorial turn: an unreadable setting is never taken as lifted. */
+    console.error('[ask] work revision pause unreadable; holding questions-only', error);
+    questionsOnly = true;
+  }
+  let program: WorkProgram;
+  try {
+    const r = await query<{ studio_path: string | null }>(CONVERSATION_PROGRAM_SQL, [memberId, workId, manuscriptId]);
+    if (r.rows.length === 0) program = { kind: 'none' };
+    else if (r.rows.length > 1) program = { kind: 'ambiguous' };
+    else program = typeof r.rows[0]!.studio_path === 'string' ? { kind: 'one', id: r.rows[0]!.studio_path } : { kind: 'none' };
+  } catch (error) {
+    console.error('[ask] work studio program unreadable; holding the conservative program posture', error);
+    program = { kind: 'unknown' };
+  }
+  return { questionsOnly, program };
+}
+
+/**
+ * The instructions MAIA is given in the Work conversation, in order: questions-only (if on), then the program's posture
+ * (or the conservative one when the program is uncertain or not registered). Empty for an ordinary, unpaused Work.
+ */
+export function conversationProgramInstructions(
+  c: ConversationProgram,
+  postureOf: (id: string) => string | null,
+): string[] {
+  const out: string[] = [];
+  if (c.questionsOnly) out.push(workQuestionsOnlyInstruction());
+  if (c.program.kind === 'one') out.push(postureOf(c.program.id) ?? workProgramUncertainInstruction());
+  else if (c.program.kind === 'ambiguous' || c.program.kind === 'unknown') out.push(workProgramUncertainInstruction());
+  return out;
+}

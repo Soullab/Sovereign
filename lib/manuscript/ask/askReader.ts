@@ -168,13 +168,15 @@ Do not use headings, bullets or lists. Write to them in prose. Be brief: a few s
 
 ${WRITERS_CONSTELLATION_REFERRAL}`;
 
-export function workAskPromptHash(responseStyle?: ExplanationDepth, teachingAnchor?: TeachingAnchor, hasHistory = false): string {
+export function workAskPromptHash(responseStyle?: ExplanationDepth, teachingAnchor?: TeachingAnchor, hasHistory = false, programInstructions: readonly string[] = []): string {
   /* G-3: like developmentalAskPromptHash, the per-turn style and teaching shape are part of what the hash names.
      Independent review (2026-11-09): the integrity rules differ between a first turn and a later one, so the hash names
      whichever actually ran. */
   const style = responseStyle ? `\n${explanationInstruction(responseStyle)}` : '';
   const teaching = teachingAnchor ? `\n${teachingTurnInstruction(teachingAnchor)}` : '';
-  return createHash('sha256').update(`${WORK_STANDING}\n${WORK_LEVELS_RULES}\n${WORK_CONVENTION_RULES}\n${workIntegrityRules(hasHistory)}${style}${teaching}`).digest('hex');
+  /* Case study F3: the Work's own rules (questions-only, program posture) are part of what ran, so the hash names them. */
+  const program = programInstructions.length > 0 ? `\n${programInstructions.join('\n')}` : '';
+  return createHash('sha256').update(`${WORK_STANDING}\n${WORK_LEVELS_RULES}\n${WORK_CONVENTION_RULES}\n${workIntegrityRules(hasHistory)}${style}${teaching}${program}`).digest('hex');
 }
 
 /**
@@ -329,6 +331,12 @@ export interface ProposalContext {
 export interface WorkContext {
   readonly kind: 'work';
   anchor: AskAnchor;
+  /**
+   * Founder 2026-11-16 (case study F3): the Work's own rules for this conversation, computed SERVER-SIDE from the Work by id
+   * (conversationProgramInstructions): "MAIA asks, never rewrites" when the writer set it, and the Studio program's posture
+   * (or the conservative one). Never client-supplied text. Appended LAST so nothing generic after it can override it.
+   */
+  programInstructions?: readonly string[];
   facts: WorkContextFacts;
   staleness: StalenessState;
   /**
@@ -708,6 +716,9 @@ export async function askMaia(
        // Design 1B: only the Work conversation shows take-me-there buttons. Not in Sanctuary: "Read this chapter" keeps observations,
        // which Sanctuary refuses, so she is not told about the buttons at all there.
        ...(ctx.sanctuary ? [] : [studioActionsInstruction('work-conversation', { roomActs: ctx.roomActs === true })]),
+       /* The Work's own rules come after every general instruction above, so a general allowance (illustrative wording, "your
+          manuscript", the Studio guide's vocabulary) never outranks the writer's stated limit or the program's posture. */
+       ...((ctx.programInstructions ?? []).flatMap((p) => ['', p])),
        ...(opts.correction ? ['', opts.correction] : [])].join('\n')
     : [STANDING, '', '--- THE READING YOU MADE ---', readingSays(ctx), '',
        '--- WHAT THEY ARE POINTING AT ---', anchorSays(ctx), '',
@@ -755,7 +766,7 @@ export async function askMaia(
         provider: 'anthropic',
         model,
         promptHash: ctx.kind === 'arrival' ? arrivalAskPromptHash(history.length > 0, ctx.moment ?? 'spark', ctx.pathId)
-          : ctx.kind === 'work' ? workAskPromptHash(ctx.responseStyle, ctx.teachingAnchor, history.length > 0) : askPromptHash(),
+          : ctx.kind === 'work' ? workAskPromptHash(ctx.responseStyle, ctx.teachingAnchor, history.length > 0, ctx.programInstructions ?? []) : askPromptHash(),
         askerVersion: ASKER_VERSION,
         answeredAt: new Date().toISOString(),
         stopReason: outcome.result.stopReason,
