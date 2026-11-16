@@ -28,6 +28,8 @@ export interface StudioPath {
   id: string;
   /** What the member sees the path called. */
   name: string;
+  /** The program's own offer on Studio Home, for a member who already has Works (e.g. "Start a college essay"). */
+  startLabel: string;
   /** The arena this environment serves, in one plain sentence (shown at its door). */
   arena: string;
   /** The environment's journey. Only `built` stages may ever be shown to a member. */
@@ -61,6 +63,7 @@ export const STUDIO_PATHS: readonly StudioPath[] = [
   {
     id: 'college-essay',
     name: 'College essay',
+    startLabel: 'Start a college essay',
     arena: 'For the personal essay you’ll send with your college applications: written in your own voice, from your own life.',
     // The coaching arc built offline by the College Essay lane. Only Discover exists in the Studio today (this door).
     arc: [

@@ -120,6 +120,8 @@ export default function P4R1HomeController() {
     if (newImport) next.delete('from');
     next.set('mode', 'write');
     next.set('m', manuscriptId);
+    // A program door (`?path=`) is a threshold: once a Work opens, Home must not reopen the door.
+    next.delete('path');
     next.delete('publish');
     // Import is a threshold, not durable room state. Once a manuscript opens,
     // Home must mean Studio Home rather than reopening the completed threshold.
@@ -546,6 +548,17 @@ export default function P4R1HomeController() {
       onDoorLookWithSpark={(purpose) => void onDoorLookWithSpark(purpose)}
       studioPath={studioPath}
       onPathBegin={(choice) => void onPathBegin(choice)}
+      // A member who already has Works starts a program from Home, or arrives on a program link: the same door opens.
+      onStartPath={(id) => {
+        const next = new URLSearchParams(params?.toString() ?? '');
+        next.set('path', id);
+        router.push(pathname + '?' + next.toString());
+      }}
+      onLeavePath={() => {
+        const next = new URLSearchParams(params?.toString() ?? '');
+        next.delete('path');
+        router.replace(pathname + (next.toString() ? '?' + next.toString() : ''));
+      }}
       // Q3: the one-line spark on a later new Work is kept only in a readable Ordinary session, never in Sanctuary.
       onBeginWithSpark={(title, spark) => void onBegin(title, ordinaryNow() ? spark : null)}
       onSources={() => router.push('/writers-studio/sources')}
