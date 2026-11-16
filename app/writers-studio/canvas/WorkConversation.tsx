@@ -37,6 +37,7 @@ import {
 import { setStudioReadingSize } from '@/lib/writersStudio/readingSizePreference';
 import { CONVERSATION_DEPARTURE_EVENT, requestConversationDeparture } from '@/lib/writersStudio/conversationDeparture';
 import { WRITER_CORRECTION_KINDS, WRITER_CORRECTION_LABEL, type WriterCorrectionKind } from '@/lib/writersStudio/writerCorrections';
+import { studioPathById } from '@/lib/writersStudio/studioPaths';
 
 /**
  * MAIA-CONVERGENCE-01 · CANVAS — MAIA's ordinary conversation about the Work,
@@ -226,6 +227,8 @@ export default function WorkConversation(props: WorkConversationProps) {
 function ScopedWorkConversation({
   work, manuscriptId, sectionId, initialDraft = '', placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity,
 }: WorkConversationProps & { identity: ReturnType<typeof useMemberIdentity> }) {
+  /* A program Work (e.g. a college essay) names its whole-Work scope in its own words; an ordinary Work keeps "the whole book". */
+  const wholeScope = studioPathById(work.studioPath ?? null)?.studioCopy.wholeScope ?? 'the whole book';
   const { keeps } = useManuscriptKeeps(manuscriptId);
   const [showKeeps, setShowKeeps] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -1009,18 +1012,18 @@ function ScopedWorkConversation({
                   border: `1px solid ${carryScope === s ? INK.primary : RULE.soft}`,
                   background: carryScope === s ? GROUND.base : 'transparent', color: INK.primary,
                   fontWeight: carryScope === s ? 600 : 400 }}>
-                {s === 'here' ? 'where I am' : 'the whole book'}
+                {s === 'here' ? 'where I am' : wholeScope}
               </button>
             ))}
             {carryScope === 'whole_book' ? (
               <StudioText role="metadata" tone="quiet" as="span" data-whole-book-on="true">
-                Every question here is about the whole book until you choose “where I am”.
+                Every question here is about {wholeScope} until you choose “where I am”.
               </StudioText>
             ) : null}
             {offerWholeBook ? (
               <button type="button" data-whole-book-offer="true" onClick={() => setCarryScope('whole_book')}
                 style={{ fontSize: 12, padding: '2px 8px', border: 'none', background: 'transparent', color: INK.secondary, textDecoration: 'underline', cursor: 'pointer' }}>
-                Ask about the whole book?
+                Ask about {wholeScope}?
               </button>
             ) : null}
           </div>
