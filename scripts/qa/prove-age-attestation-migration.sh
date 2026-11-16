@@ -72,10 +72,11 @@ expect_error proof "$(cat "$rb")" "refusing destructive rollback"
 echo "PASS 8 the destructive schema rollback refuses while attestations exist; data intact"
 
 createdb -h "$tmp" -p "$port" -U proof clean
-q clean -c "CREATE TABLE members (id uuid PRIMARY KEY);"
+q clean -c "CREATE TABLE members (id uuid PRIMARY KEY); CREATE TABLE schema_migrations (filename text PRIMARY KEY); INSERT INTO schema_migrations VALUES ('20261116000001_member_age_attestations.sql');"
 q clean -f "$mig"; q clean -f "$rb"
 [ "$(q clean -c "SELECT to_regclass('member_age_attestations') IS NULL")" = t ] || fail "clean rollback left the table"
-echo "PASS 9 with no attestation, the schema rollback is clean"
+[ "$(q clean -c "SELECT count(*) FROM schema_migrations")" = 0 ] || fail "clean rollback left its ledger row"
+echo "PASS 9 with no attestation, the schema rollback is clean, and it removes its own ledger row"
 
 q proof -f "$mig" && echo "PASS 10 re-applying the migration is safe"
 echo "ALL PASS ($(postgres --version))"
