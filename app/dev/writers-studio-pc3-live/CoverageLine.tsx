@@ -73,7 +73,8 @@ export function CoverageLine(props: {
   }
   const changed = c.sections.filter((s) => s.state === 'changed');
   const unread = c.sections.filter((s) => s.state === 'not_read' || s.state === 'position_only');
-  const hasDetail = changed.length + unread.length > 0;
+  /* One place (most college essays): the sentence already says everything; there is nothing to choose between (case study F5). */
+  const hasDetail = c.whole.total > 1 && changed.length + unread.length > 0;
   const list = (xs: typeof changed) => `${xs.slice(0, 12).map((s) => props.labelOf(s.sectionId)).join(' · ')}${xs.length > 12 ? `, and ${xs.length - 12} more` : ''}`;
   return (
     <div data-coverage-line="known" role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

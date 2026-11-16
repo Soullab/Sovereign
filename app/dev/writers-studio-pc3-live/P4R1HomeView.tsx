@@ -27,7 +27,7 @@ import { DeletionNotice, DeletionSharedMaterial, DeletionUnconfirmed, deleteConf
 import P4R1ProducePanel from './P4R1ProducePanel';
 import type { Appearance } from '@/app/writers-studio/full-redesign/types';
 import StudioInspirationOpening from './StudioInspirationOpening';
-import { STUDIO_PATHS, type StudioPath } from '@/lib/writersStudio/studioPaths';
+import { STUDIO_PATHS, studioPathById, type StudioPath } from '@/lib/writersStudio/studioPaths';
 import { INSPIRATION_COPY, LOOK_AROUND_COPY, MAX_SPARK_CHARS, returnGreeting, writtenFact } from '@/lib/writersStudio/inspirationOpening';
 
 function fixedDate(iso: string | null | undefined): string {
@@ -45,6 +45,12 @@ function fixedDate(iso: string | null | undefined): string {
 
 function wordsFromChars(chars: number): number {
   return Math.max(0, Math.round(chars / 6));
+}
+
+/** What kind of Work this is, as the writer sees it on Home: its Studio program's own name first (e.g. "College essay"),
+ *  then the form they gave it, then "Work" (case study F4, 2026-11-16). */
+export function workKind(work: Pick<LivingWork, 'form' | 'studioPath'>): string {
+  return studioPathById(work.studioPath ?? null)?.name ?? (work.form?.trim() || 'Work');
 }
 
 function workFacts(work: LivingWork, manuscripts: readonly CurrentManuscript[]): { extent: string; written: string } {
@@ -144,7 +150,7 @@ function WorkAnchor({ work, allWorks, manuscripts, activity, onOpen, onStartWrit
         <div className="p4r1-home-work-copy">
           <span className="fr-home-chip fr-home-chip-work">Work</span>
           <h2>{title}</h2>
-          <p className="fr-home-kind">{work.form?.trim() || 'Work'}</p>
+          <p className="fr-home-kind" data-work-kind>{workKind(work)}</p>
           <p className="fr-home-facts">{facts.extent} <span className="fr-home-dot">·</span> {facts.written}</p>
           {work.purpose?.trim() ? <blockquote className="p4r1-home-purpose">“{work.purpose.trim()}”</blockquote> : null}
           {manuscript ? (
@@ -247,7 +253,7 @@ function WorkShelfCard({ work, allWorks, manuscripts, onOpen, onStartWriting, bu
       <div>
         <span className="fr-home-chip fr-home-chip-work">Work</span>
         <h3>{title}</h3>
-        <p className="fr-home-kind">{work.form?.trim() || 'Work'}</p>
+        <p className="fr-home-kind" data-work-kind>{workKind(work)}</p>
         <p className="fr-home-facts">{facts.extent}<br />{facts.written}</p>
         {manuscript ? (
           <button type="button" className="fr-home-link" onClick={() => onOpen(manuscript.id)}>Open</button>

@@ -62,6 +62,8 @@ export interface StudioPath {
     part: string;
     /** The Write column's footer line in place of "The manuscript stays primary; …". */
     foot: string;
+    /** The conversation's whole-Work scope, in place of "the whole book" ("About: where I am · the whole essay"). */
+    wholeScope: string;
   };
   /** How MAIA coaches in this program's Work, on every editorial turn (server-side, by id; never client-supplied text). */
   studioPosture: string;
@@ -102,6 +104,7 @@ export const STUDIO_PATHS: readonly StudioPath[] = [
       onlyPlace: 'Your draft',
       part: 'Part',
       foot: 'Your essay comes first. I follow where you put your attention.',
+      wholeScope: 'the whole essay',
     },
     studioPosture: [
       'PROGRAM: COLLEGE ESSAY. This Work is a student\'s personal essay for their college applications.',
