@@ -30,7 +30,7 @@ import {
 } from '@/app/writers-studio/canvasIdentity';
 import RebuildWritingBoundary from '@/app/writers-studio/rebuild/RebuildWritingBoundary';
 import KeepNotePrompt from './KeepNotePrompt';
-import { QUOTE_NOT_IN_TEXT_DETAIL } from '@/lib/manuscript/editorialRuntime/editorialQuoteGate';
+import { QUOTE_NOT_IN_TEXT_DETAIL, QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL } from '@/lib/manuscript/editorialRuntime/editorialQuoteGate';
 import type { SectionWriting } from '@/lib/writersStudio/useSectionWriting';
 import { chapterSpanFor, type RebuildSection } from '@/lib/writersStudio/rebuild/model';
 import { locationForSection, replacePlaceAddress, resolveInitialSection, SECTION_PARAM } from '@/lib/writersStudio/placeInWork';
@@ -92,6 +92,7 @@ async function sha256Hex(text: string): Promise<string> {
 import { decideHandoff, HANDOFF_REFUSAL_COPY, PLAN_HANDOFF_KEY, PLAN_HANDOFF_EVENT } from '@/lib/writersStudio/developmentPlan';
 import { decidePassageHandoff, decodePassageHandoff, PASSAGE_HANDOFF_EVENT, PASSAGE_HANDOFF_KEY, PASSAGE_HANDOFF_REFUSAL_COPY } from '@/lib/writersStudio/passageHandoff';
 import { P4R1Pc3WriteEditView, UNDO_RESTORED_MESSAGES, type Pc3HeldPassage } from './P4R1Pc3WriteEditView';
+import StudioSignedOut from './StudioSignedOut';
 
 interface ContextReady {
   state: 'section_aware';
@@ -1660,7 +1661,8 @@ export default function FlagshipWriteEditController() {
           setEditorialFailure('MAIA may have received the passage, but Soullab could not confirm the disclosure record. The response was withheld. Nothing was applied, and this request will not be retried automatically.');
         } else if (outcome.detail === 'quote_not_in_text') {
           // A CODE from the server, never prose: the copy below is this client's own.
-          setEditorialFailure(QUOTE_NOT_IN_TEXT_DETAIL);
+          // On a questions-only Work the stopped quote is wording MAIA should not have offered: say why, kindly.
+          setEditorialFailure(work?.maiaRevisionsPaused === true ? QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL : QUOTE_NOT_IN_TEXT_DETAIL);
         } else {
           // Server detail is for developers, never the writer (design pass 2026-11-05: a raw
           // "unknown field(s) … carry no standing here" reached the screen).
@@ -2551,11 +2553,11 @@ export default function FlagshipWriteEditController() {
     router.push(`${pathname}${query ? `?${query}` : ''}`);
   };
 
+  if (phase === 'unauthorized') return <StudioSignedOut />;
   if (phase !== 'ready' || !context) {
     return (
       <main className="fs-p4-opening">
         {phase === 'loading' ? 'Opening Writer’s Studio…' : null}
-        {phase === 'unauthorized' ? 'Sign in to open your Writer’s Studio.' : null}
         {phase === 'error' && wayInId ? <ContinuousDraftWayIn manuscriptId={wayInId} room="Write" /> : null}
         {phase === 'error' && !wayInId ? (message ?? 'The Studio could not be opened.') : null}
       </main>

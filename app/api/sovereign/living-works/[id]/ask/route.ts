@@ -23,6 +23,8 @@ import { buildLivingWorkOnlyContext } from '@/lib/manuscript/ask/workContext';
 import { isHeldRetry, historyFor } from '@/lib/manuscript/ask/retry';
 import { workContextFingerprint } from '@/lib/writersStudio/workContextFingerprint';
 import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
+import { conversationProgram, conversationProgramInstructions } from '@/lib/manuscript/editorialRuntime/workRevisionPause';
+import { studioPathById } from '@/lib/writersStudio/studioPaths';
 
 export const dynamic = 'force-dynamic';
 
@@ -147,12 +149,18 @@ async function postHandler(
     });
   }
 
+  /* Case study F3 (founder 2026-11-16): the same Work rules as the editorial turn and the manuscript conversation. */
+  const programInstructions = conversationProgramInstructions(
+    await conversationProgram(memberId, workId, built.facts.manuscript?.id ?? null),
+    (id) => studioPathById(id)?.studioPosture ?? null,
+  );
   const outcome = await askMaia(
     {
       kind: 'work',
       anchor: WORK_ANCHOR,
       facts: built.facts,
       staleness,
+      ...(programInstructions.length > 0 ? { programInstructions } : {}),
       /* Walk defect 5, Living Work path (independent review 2026-11-09): in Sanctuary she is told so, and is not given the Studio guide
          or the offers (reading permission, plan, keeping…), exactly as on the manuscript route. */
       sanctuary: studioPosture.sanctuary === true,

@@ -713,8 +713,11 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
 }
 @media (max-width: 720px) {
   .fr-shell[data-mode='write'] .fr-room { display: flex; flex-direction: column; gap: 0; padding: 0; }
+  /* The writer's page comes first, MAIA follows it, the place list last (case study F1, 2026-11-16: MAIA's column had no order,
+     so it defaulted to 0 and rendered ABOVE the page on a phone, contradicting "Your essay comes first"). */
   .fr-shell[data-mode='write'] .fr-work { order: 1; overflow: visible; }
-  .fr-shell[data-mode='write'] .fr-manuscript { order: 2; max-height: none; border-right: 0; border-top: 1px solid var(--fr-field-line); }
+  .fr-shell[data-mode='write'] .fr-maia { order: 2; }
+  .fr-shell[data-mode='write'] .fr-manuscript { order: 3; max-height: none; border-right: 0; border-top: 1px solid var(--fr-field-line); }
   .fr-write { height: auto; }
   .fr-write-scroll { overflow: visible; }
   .fr-write-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; height: auto; padding: 14px 16px 6px; }
@@ -1041,3 +1044,8 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
     max-width: none; overflow: visible;
   }
 }
+
+/* Beta walk 2026-11-15 (College Essay): with MAIA's column open the crumb ("College essay › Section 1") ran under the
+   save state ("Sectio●Saved"). The crumb now yields: it may take at most half the row and truncates with an ellipsis. */
+.fr-write-crumb { max-width: 50%; min-width: 0; overflow: hidden; }
+.fr-write-crumb > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

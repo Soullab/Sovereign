@@ -33,7 +33,7 @@ jest.mock('../assembly', () => ({ assembleEditorialCognition: (...a: unknown[]) 
 jest.mock('../maiaOutcome', () => ({ persistMaiaEditorialOutcome: (...a: unknown[]) => fakePersist(...a) }));
 
 import { runEditorialTurn } from '../turn';
-import { WORK_REVISION_PAUSE_SQL } from '../workRevisionPause';
+import { WORK_REVISION_PAUSE_SQL, WORK_STUDIO_PATH_SQL } from '../workRevisionPause';
 
 const TURN = {
   identity: { status: 'verified' as const, memberId: 'm1' },
@@ -118,6 +118,8 @@ describe('Work-wide "MAIA asks, never rewrites"', () => {
     const system = fakeStructured.mock.calls[0]![0].system as string;
     expect(system).toContain('THE WRITER HAS CHOSEN "MAIA ASKS, NEVER REWRITES" FOR THIS WHOLE WORK');
     expect(system).toContain('not even if the writer asks');
+    expect(system).toContain('If the writer asks for an example sentence');
+    expect(system).toContain('Use quotation marks ONLY around the writer');
   });
 
   test('NEGATIVE: an unpaused Work never gets the no-wording instruction', async () => {
@@ -126,5 +128,78 @@ describe('Work-wide "MAIA asks, never rewrites"', () => {
     await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
     const system = fakeStructured.mock.calls[0]![0].system as string;
     expect(system).not.toContain('MAIA ASKS, NEVER REWRITES');
+  });
+
+  test('a Work in the college essay program gets that program\'s posture; NEGATIVE: an ordinary Work does not', async () => {
+    fakeQuery.mockImplementation((sql: string) => {
+      if (sql === WORK_REVISION_PAUSE_SQL) return Promise.resolve({ rows: [{ paused: true }] });
+      if (sql === WORK_STUDIO_PATH_SQL) return Promise.resolve({ rows: [{ studio_path: 'college-essay' }] });
+      return Promise.resolve({ rows: [{ body: 'Help me with this.' }] });
+    });
+    fakeStructured.mockResolvedValue(reply({ kind: 'reply_only', reply: 'What did you see first?' }));
+    await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
+    expect(fakeStructured.mock.calls[0]![0].system).toContain('PROGRAM: COLLEGE ESSAY');
+    fakeStructured.mockClear();
+    dbWithPause(false);
+    fakeStructured.mockResolvedValue(reply({ kind: 'reply_only', reply: 'Here is what I notice.' }));
+    await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
+    expect(fakeStructured.mock.calls[0]![0].system).not.toContain('PROGRAM:');
+  });
+
+  test('F3: Works in DIFFERENT programs are ambiguous: no program posture, the conservative instruction instead', async () => {
+    fakeQuery.mockImplementation((sql: string) => {
+      if (sql === WORK_REVISION_PAUSE_SQL) return Promise.resolve({ rows: [{ paused: true }] });
+      if (sql === WORK_STUDIO_PATH_SQL) return Promise.resolve({ rows: [{ studio_path: 'another-program' }, { studio_path: 'college-essay' }] });
+      return Promise.resolve({ rows: [{ body: 'Help me.' }] });
+    });
+    fakeStructured.mockResolvedValue(reply({ kind: 'reply_only', reply: 'What do you see?' }));
+    await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
+    const system = fakeStructured.mock.calls[0]![0].system as string;
+    expect(system).toContain('PROGRAM UNCERTAIN');
+    expect(system).not.toContain('PROGRAM: COLLEGE ESSAY');
+    expect(system).toContain('THE WRITER HAS CHOSEN "MAIA ASKS, NEVER REWRITES"');   // protection kept
+  });
+
+  test('F3: an unreadable program lookup gets the conservative instruction, and questions-only still holds', async () => {
+    fakeQuery.mockImplementation((sql: string) => {
+      if (sql === WORK_REVISION_PAUSE_SQL) return Promise.resolve({ rows: [{ paused: true }] });
+      if (sql === WORK_STUDIO_PATH_SQL) return Promise.reject(new Error('relation does not exist'));
+      return Promise.resolve({ rows: [{ body: 'Help me.' }] });
+    });
+    fakeStructured.mockResolvedValue(reply(PROPOSAL));
+    const r = await runEditorialTurn({ ...TURN, proposalPolicy: 'allow' });
+    expect(fakeStructured.mock.calls[0]![0].system).toContain('PROGRAM UNCERTAIN');
+    expect(r).toMatchObject({ ok: false, reason: 'proposal_policy_reply_only' });
+    expect(fakePersist).not.toHaveBeenCalled();
+  });
+
+  test('F3 shared manuscript: an ORDINARY Work and a College Essay Work holding the same manuscript is ambiguous, never the essay posture', async () => {
+    fakeQuery.mockImplementation((sql: string) => {
+      if (sql === WORK_REVISION_PAUSE_SQL) return Promise.resolve({ rows: [{ paused: false }] });
+      if (sql === WORK_STUDIO_PATH_SQL) return Promise.resolve({ rows: [{ studio_path: null }, { studio_path: 'college-essay' }] });
+      return Promise.resolve({ rows: [{ body: 'Help me.' }] });
+    });
+    fakeStructured.mockResolvedValue(reply({ kind: 'reply_only', reply: 'What do you see?' }));
+    await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
+    const system = fakeStructured.mock.calls[0]![0].system as string;
+    expect(system).toContain('PROGRAM UNCERTAIN');
+    expect(system).not.toContain('PROGRAM: COLLEGE ESSAY');
+  });
+
+  test('F3 shared manuscript: only ordinary Works means the ordinary Studio (no program, no uncertainty line)', async () => {
+    fakeQuery.mockImplementation((sql: string) => {
+      if (sql === WORK_REVISION_PAUSE_SQL) return Promise.resolve({ rows: [{ paused: false }] });
+      if (sql === WORK_STUDIO_PATH_SQL) return Promise.resolve({ rows: [{ studio_path: null }] });
+      return Promise.resolve({ rows: [{ body: 'Help me.' }] });
+    });
+    fakeStructured.mockResolvedValue(reply({ kind: 'reply_only', reply: 'What do you see?' }));
+    await runEditorialTurn({ ...TURN, proposalPolicy: 'reply_only' });
+    const system = fakeStructured.mock.calls[0]![0].system as string;
+    expect(system).not.toContain('PROGRAM');
+  });
+
+  test('F3: the lookup counts ordinary Works (no NULL filter) and orders NULL first', () => {
+    expect(WORK_STUDIO_PATH_SQL).not.toMatch(/studio_path IS NOT NULL/);
+    expect(WORK_STUDIO_PATH_SQL).toMatch(/ORDER BY 1 NULLS FIRST\s+LIMIT 2/);
   });
 });

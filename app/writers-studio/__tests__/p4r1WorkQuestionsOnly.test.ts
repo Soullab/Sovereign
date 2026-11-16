@@ -124,8 +124,93 @@ describe('Focus "More" menu closes and fits the window (live walk, 2026-11-13)',
 });
 
 describe('the "Start with MAIA" card tells the truth on a questions-only Work (2026-11-15)', () => {
-  const panel = read('app/dev/writers-studio-pc3-live/EditorialDancePanel.tsx');
-  it('promises questions, not edits, while revisions are paused; NEGATIVE: the edit promise only shows when not paused', () => {
-    expect(panel).toMatch(/props\.revisionsPaused\s*\?\s*'Start with me and I can talk this passage through with you and ask questions\. I won’t rewrite it: every sentence stays yours\.'\s*:\s*'Start with me and I can talk this passage through and suggest edits\./);
+  it('the editorial panel renders the shared promise with the Work\'s pause state', () => {
+    const panel = read('app/dev/writers-studio-pc3-live/EditorialDancePanel.tsx');
+    expect(panel).toContain('<MaiaRelationshipPromise paused={Boolean(props.revisionsPaused)} />');
+  });
+});
+
+describe('a held-back example reads as care on a questions-only Work (live walk 2026-11-15)', () => {
+  const controller = read('app/dev/writers-studio-pc3-live/P4R1WriteEditController.tsx');
+  it('shows the questions-only explanation when the Work is paused; NEGATIVE: the ordinary message otherwise', () => {
+    expect(controller).toMatch(/setEditorialFailure\(work\?\.maiaRevisionsPaused === true \? QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL : QUOTE_NOT_IN_TEXT_DETAIL\)/);
+  });
+  it('the explanation says why and what to ask instead', () => {
+    const { QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL } = jest.requireActual('@/lib/manuscript/editorialRuntime/editorialQuoteGate');
+    expect(QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL).toContain('keeps every sentence yours');
+    expect(QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL).toContain('Ask her what to notice');
+  });
+});
+
+describe('each Studio program speaks in its own words (founder 2026-11-15)', () => {
+  const { studioPathById, pathBeginPatch, STUDIO_PATHS } = jest.requireActual('@/lib/writersStudio/studioPaths');
+  const view = read('app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx');
+  it('the college essay program has its own Studio copy and MAIA posture, and never calls the essay a book', () => {
+    const p = studioPathById('college-essay');
+    expect(p.studioCopy.whole).toBe('Talk about the whole essay');
+    expect(p.studioCopy.orient).toContain('your essay');
+    expect(p.studioPosture).toContain('never a book, chapter or manuscript');
+  });
+  it('Begin records the program on the Work from the member\'s own act', () => {
+    const patch = pathBeginPatch({ path: STUDIO_PATHS[0], title: 'College essay', revisionsPausedConfirmed: true, purpose: null });
+    expect(patch.studioPath).toBe('college-essay');
+  });
+  it('NEGATIVE: an unknown or missing program falls back to the ordinary Studio words', () => {
+    expect(studioPathById('not-a-path')).toBeNull();
+    expect(studioPathById(null)).toBeNull();
+    expect(view).toMatch(/workStudioCopy \? workStudioCopy\.whole : 'Talk about the whole Work'/);
+  });
+  it('the breadcrumb yields to the save state', () => {
+    const css = read('app/dev/writers-studio-full-redesign-review/full-redesign-review.css');
+    expect(css).toMatch(/\.fr-write-crumb \{ max-width: 50%; min-width: 0; overflow: hidden; \}/);
+  });
+});
+
+describe('member-facing Studio wording says Work, not book, and never promises edits on a questions-only Work (review F4, 2026-11-15)', () => {
+  // Member-facing text only: comments are stripped first. Publish and cover tools produce a book and are out of scope.
+  const FILES = [
+    'app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx',
+    'app/dev/writers-studio-pc3-live/EditorialLetterPanel.tsx',
+    'app/dev/writers-studio-pc3-live/EditorialDancePanel.tsx',
+  ];
+  const stripComments = (src: string) => src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+  it.each(FILES)('%s has no member-facing "book"', (file) => {
+    const code = stripComments(read(file));
+    const hits = code.split('\n').filter((l) => /\bbook\b/i.test(l) && !/data-write-talk-book|data-[a-z-]*book/i.test(l));
+    expect(hits).toEqual([]);
+  });
+  it('the Craft view renders the shared not-yet line with the Work\'s pause state', () => {
+    const view = read('app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx');
+    expect(view).toContain('<MaiaNotYetNote paused={revisionsPaused} />');
+  });
+});
+
+describe('RENDERED: what MAIA promises before the writer starts with her (review F4, 2026-11-15)', () => {
+  const { MaiaNotYetNote, MaiaRelationshipPromise } = jest.requireActual('@/app/dev/writers-studio-pc3-live/MaiaQuestionsOnlyCopy');
+  const render = (el: unknown) => { act(() => root.render(el as never)); return host.textContent ?? ''; };
+  it('questions-only ON: Craft promises questions and no rewrite, and never edits', () => {
+    const text = render(React.createElement(MaiaNotYetNote, { paused: true }));
+    expect(text).toContain('ask questions. She won’t rewrite it: every sentence stays yours.');
+    expect(text).not.toMatch(/suggest edits/);
+    expect(text).not.toMatch(/\bbook\b/i);
+  });
+  it('NEGATIVE, questions-only OFF: Craft offers edits, and still says Work', () => {
+    const text = render(React.createElement(MaiaNotYetNote, { paused: false }));
+    expect(text).toContain('suggest edits');
+    expect(text).not.toMatch(/won’t rewrite/);
+    expect(text).toContain('this Work');
+  });
+  it('questions-only ON: the relationship card promises questions and no rewrite', () => {
+    const text = render(React.createElement(MaiaRelationshipPromise, { paused: true }));
+    expect(text).toContain('I won’t rewrite it: every sentence stays yours.');
+    expect(text).not.toMatch(/suggest edits/);
+  });
+  it('NEGATIVE, questions-only OFF: the relationship card offers edits', () => {
+    const text = render(React.createElement(MaiaRelationshipPromise, { paused: false }));
+    expect(text).toContain('suggest edits');
+    expect(text).not.toMatch(/won’t rewrite/);
   });
 });

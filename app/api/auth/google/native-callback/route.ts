@@ -19,6 +19,7 @@ import crypto from 'crypto';
 import { cookies } from 'next/headers';
 import { query } from '@/lib/db/postgres';
 import { createSession, setSessionCookie } from '@/lib/auth/serverSessions';
+import { recordSignIn } from '@/lib/auth/recordSignIn';
 
 // Safe query wrapper (consistent with other auth routes)
 async function safeQuery(
@@ -202,6 +203,7 @@ export async function POST(req: NextRequest) {
 
     // Set cookies (best-effort — iOS WKWebView may block HttpOnly cookies cross-origin)
     await setSessionCookie(session.sessionToken, session.expiresAt);
+    await recordSignIn(memberId, 'GoogleNative');
 
     // Fetch tier and roles
     const tierResult = await safeQuery(

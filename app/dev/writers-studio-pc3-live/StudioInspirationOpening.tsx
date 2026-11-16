@@ -80,8 +80,46 @@ export default function StudioInspirationOpening(props: {
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
   const [posture, setPosture] = useState<Posture>('unknown');
+  /* Founder ruling 2026-11-16 (#1900): at a program students may use, MAIA does not speak until the member has said they are
+     18+, or 13–17 with a parent, guardian or teacher supervising. Under 13 is turned away and nothing is kept. The server
+     enforces the same at the door and at Begin; this is the member's way to say it. */
+  const needsAge = Boolean(studioPath?.requiresAgeAttestation);
+  const [age, setAge] = useState<'checking' | 'ask' | 'teen' | 'under13' | 'ok' | 'error'>(needsAge ? 'checking' : 'ok');
+  const [supervised, setSupervised] = useState(false);
+  const [ageBusy, setAgeBusy] = useState(false);
+  useEffect(() => {
+    if (!needsAge) return;
+    let live = true;
+    void (async () => {
+      try {
+        const r = await apiFetch('/api/sovereign/writers-studio/age-attestation', { method: 'GET' });
+        const b = await r.json().catch(() => null) as { attested?: unknown } | null;
+        if (!live) return;
+        if (r.ok && (b?.attested === 'adult' || b?.attested === 'minor')) setAge('ok');
+        else if (r.ok) setAge('ask');
+        else setAge('error');
+      } catch { if (live) setAge('error'); }
+    })();
+    return () => { live = false; };
+  }, [needsAge]);
+  const attest = async (band: 'adult' | 'minor') => {
+    setAgeBusy(true);
+    try {
+      const r = await apiFetch('/api/sovereign/writers-studio/age-attestation', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(band === 'adult' ? { band, path: studioPath?.id } : { band, supervised: true, path: studioPath?.id }),
+      });
+      setAge(r.ok ? 'ok' : 'error');
+    } catch { setAge('error'); } finally { setAgeBusy(false); }
+  };
 
   useEffect(() => {
+    // Ordinary is the default (founder ruling 2026-11-16, "we should have Ordinary as default"; Sanctuary invariant 5,
+    // "Default off: Sanctuary is an explicit opt-in"). A browser with NO session setting yet starts in Ordinary, shown
+    // pressed, with Sanctuary one tap away. Only the absent case: a setting that exists but cannot be read, or storage
+    // that cannot be read, stays 'unknown' and keeps nothing (fail-closed), exactly as before.
+    const first = readCurrentSanctuaryPosture();
+    if (!first.resolved && first.reason === 'no_live_settings') applySessionSanctuary(false);
     setPosture(readPosture());
     const onChange = () => setPosture(readPosture());
     window.addEventListener('maia-settings-changed', onChange);
@@ -92,7 +130,7 @@ export default function StudioInspirationOpening(props: {
     };
   }, []);
 
-  /* The writer's own act, exactly like the Quick Settings toggle: never a default applied on their behalf. */
+  /* The writer's own act, exactly like the Quick Settings toggle. The only default is Ordinary when nothing is set. */
   const choosePosture = (sanctuary: boolean) => {
     applySessionSanctuary(sanctuary);
     setPosture(readPosture());
@@ -382,9 +420,53 @@ export default function StudioInspirationOpening(props: {
     );
   }
 
+  if (needsAge && age !== 'ok') {
+    body = (
+      <div className="wsio-age" data-age-gate={age}>
+        {age === 'checking' ? <p className="wsio-note" role="status">One moment…</p> : null}
+        {age === 'ask' ? (
+          <>
+            <p className="wsio-maia wsio-small">Before we begin: how old are you?</p>
+            <p className="wsio-note">This Studio is for students working on their own college essay.</p>
+            <div className="wsio-row">
+              <button type="button" className="fr-home-quiet" disabled={ageBusy} onClick={() => void attest('adult')}>I’m 18 or older</button>
+              <button type="button" className="fr-home-quiet" disabled={ageBusy} onClick={() => setAge('teen')}>I’m 13 to 17</button>
+              <button type="button" className="fr-home-quiet" disabled={ageBusy} onClick={() => setAge('under13')}>I’m under 13</button>
+            </div>
+          </>
+        ) : null}
+        {age === 'teen' ? (
+          <>
+            <p className="wsio-maia wsio-small">You can use this Studio with an adult’s supervision.</p>
+            <label className="wsio-check">
+              <input type="checkbox" checked={supervised} onChange={(e) => setSupervised(e.target.checked)} data-age-supervised />
+              <span>A parent, guardian or teacher is supervising my use of this Studio.</span>
+            </label>
+            <div className="wsio-row">
+              <button type="button" className="fr-home-primary" disabled={!supervised || ageBusy} onClick={() => void attest('minor')}>Continue</button>
+              <button type="button" className="wsio-link" onClick={() => { setSupervised(false); setAge('ask'); }}>Back</button>
+            </div>
+          </>
+        ) : null}
+        {age === 'under13' ? (
+          <>
+            <p className="wsio-maia wsio-small">College Essay Studio is for students 13 and older.</p>
+            <p className="wsio-note">Nothing about you has been saved. A parent or teacher can help you find other ways to work on your writing.</p>
+            <button type="button" className="wsio-link" onClick={() => setAge('ask')}>Back</button>
+          </>
+        ) : null}
+        {age === 'error' ? (
+          <p className="p4r1-error" role="alert">This couldn’t be checked just now. Nothing was saved. Please try again in a moment.</p>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <section className="wsio" data-inspiration-opening data-step={step} aria-label="The Spark">
-      <div className="wsio-top">{postureControl}</div>
+      {/* One Ordinary/Sanctuary control at a time (founder polish 2026-11-16): while MAIA asks the posture question in place
+          (an unreadable setting), that question carries the only control; otherwise the one control sits at the top. */}
+      {step === 'hold' && posture === 'unknown' ? null : <div className="wsio-top">{postureControl}</div>}
       <div className="wsio-body">{body}</div>
       {askError ? <p className="p4r1-error" role="alert">{askError}</p> : null}
       {props.error ? <p className="p4r1-error" role="alert">{props.error}</p> : null}

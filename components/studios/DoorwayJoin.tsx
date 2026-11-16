@@ -41,6 +41,7 @@ export function DoorwayJoin({
   async function checkCode(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setSignIn(false);
     setBusy(true);
     try {
       const res = await fetch('/api/doorway/check', {
@@ -50,7 +51,13 @@ export function DoorwayJoin({
       });
       const body = await res.json().catch(() => ({}));
       if (res.ok && body.valid === true) setStep('account');
-      else if (res.ok) setError('That code doesn’t open this door. Check it with the person who invited you.');
+      else if (res.ok && body.reason === 'used') {
+        // The code made an account already. Point to sign-in; never say whose.
+        setError('This invitation has already been used. If you used it, sign in with the email and password you chose.');
+        setSignIn(true);
+      } else if (res.ok && body.reason === 'expired') {
+        setError('This invitation has expired. Ask the person who invited you for a new one.');
+      } else if (res.ok) setError('That code doesn’t open this door. Check it with the person who invited you.');
       else setError('Something went wrong on our side. Please try again.');
     } catch {
       setError('Something went wrong on our side. Please try again.');
@@ -79,6 +86,12 @@ export function DoorwayJoin({
       if (res.ok && body.success) {
         try {
           localStorage.setItem('beta_user', JSON.stringify({ ...body.member, onboarded: true }));
+          // The new account's session replaces any earlier member's header token on this browser (Safari/iOS
+          // send it as x-session-token). A stale token for someone else beside the new cookie is a credential
+          // conflict, which the server refuses: the new member would land on "Sign in" (witnessed 2026-11-16).
+          const token = body.session?.token;
+          if (typeof token === 'string' && token) localStorage.setItem('maia_session_token', token);
+          else localStorage.removeItem('maia_session_token');
         } catch { /* storage unavailable: the server session still holds */ }
         window.location.assign(body.next || returnPath);
         return;
@@ -124,7 +137,12 @@ export function DoorwayJoin({
             <label className="block text-slate-400 text-xs font-light" htmlFor="doorway-code">Invitation code</label>
             <input id="doorway-code" className={field} value={code} onChange={(e) => setCode(e.target.value)}
               autoComplete="off" autoCapitalize="characters" spellCheck={false} required />
-            {error && <p className="text-red-400 text-sm font-light" role="alert">{error}</p>}
+            {error && (
+              <p className="text-red-400 text-sm font-light" role="alert">
+                {error}{' '}
+                {signIn && <a className="underline text-amber-200/80" href={signInHref} data-doorway-used-signin>Sign in</a>}
+              </p>
+            )}
             <button type="submit" className={button} disabled={busy || code.trim().length < 6}>
               {busy ? 'Checking…' : 'Continue'}
             </button>

@@ -78,7 +78,7 @@ describe('she reads by herself only with whole-Work permission', () => {
   it('⭐ no standing permission: she waits, and says why', async () => {
     await mount();
     expect(runPass).not.toHaveBeenCalled();
-    expect(q('[data-editorial-letter="none"]')?.textContent).toContain('I haven’t read this book yet');
+    expect(q('[data-editorial-letter="none"]')?.textContent).toContain('I haven’t read this Work yet');
     expect(q('[data-letter-read]')).not.toBeNull();
   });
   it('⭐ whole-Work permission, not in Sanctuary, no letter yet: she reads once', async () => {
@@ -183,7 +183,7 @@ describe('the letter and the walk', () => {
   });
   it('⭐ a letter of an earlier draft says so, and rereading is the writer\'s choice', async () => {
     await mount({ draftRevision: 6 });
-    expect(q('[data-letter-stale]')?.textContent).toContain('You’ve changed the book since I read it');
+    expect(q('[data-letter-stale]')?.textContent).toContain('You’ve changed the Work since I read it');
     expect(runPass).not.toHaveBeenCalled();
   });
   it('the panel never scrolls or takes focus', () => {
@@ -315,8 +315,8 @@ describe('a letter that could not be gathered (EA walk 2026-11-12)', () => {
   it('⭐ says she read the book and the letter failed, not that the reading failed; offers to try the letter again', async () => {
     fetchRun.mockResolvedValue({ id: 'run1', draftRevision: 5, state: 'failed', done: 9, total: 9, lens: null, refusal: 'synthesis:attention_map_unbound_evidence', letterId: null, createdAt: 'now' });
     await mount();
-    expect(host.textContent).toContain('I’ve read your book. My letter isn’t ready yet.');
-    expect(host.textContent).toContain('I read all 9 lenses of your book, but I couldn’t gather them into a letter');
+    expect(host.textContent).toContain('I’ve read your Work. My letter isn’t ready yet.');
+    expect(host.textContent).toContain('I read all 9 lenses of your Work, but I couldn’t gather them into a letter');
     expect(host.textContent).not.toContain('I couldn’t finish the');
     expect(q('[data-letter-continue]')?.textContent).toBe('Try the letter again');
   });
@@ -329,5 +329,23 @@ describe('keptDuring', () => {
     expect(keptDuring({ draftRevision: 4, createdAt: '2026-11-13T00:55:10Z' }, 5, t)).toBe(false);
     expect(keptDuring({ draftRevision: 5, createdAt: '2026-11-12T23:00:00Z' }, 5, t)).toBe(false);
     expect(keptDuring({ draftRevision: 5, createdAt: 'now' }, 5, t)).toBe(false);
+  });
+});
+
+describe('RENDERED: the letter on a questions-only Work (review F4, 2026-11-15)', () => {
+  beforeEach(() => savePass('m', { draftRevision: 5, map: MAP as any }));
+  it('⭐ questions-only ON: no "Show me options", places are "worth a closer look", "Talk about it" stays', async () => {
+    await mount({ revisionsPaused: true });
+    expect(host.textContent).toContain('worth a closer look');
+    expect(host.textContent).not.toContain('where an edit may help');
+    act(() => q('[data-letter-start]')!.click());
+    expect(q('[data-letter-act="options"]')).toBeNull();
+    expect(q('[data-letter-act="talk"]')).not.toBeNull();
+  });
+  it('NEGATIVE, questions-only OFF: "Show me options" and the edit framing are unchanged', async () => {
+    await mount();
+    expect(host.textContent).toContain('where an edit may help');
+    act(() => q('[data-letter-start]')!.click());
+    expect(q('[data-letter-act="options"]')).not.toBeNull();
   });
 });

@@ -1,0 +1,28 @@
+-- Rollback for living_works.studio_path and studio_programs.
+--
+-- ⭐ THE SUPPORTED ROLLBACK IS APP-ONLY (review 2026-11-15): roll the image back with
+--    scripts/deploy-production.sh rollback and LEAVE THIS SCHEMA IN PLACE. The previous reader never reads or writes
+--    living_works.studio_path; the FK and the fixed-once trigger act only when that column is written; so every Work's
+--    program choice is preserved, and is honoured again when the program-aware reader returns.
+--
+-- ⛔ This schema rollback is DESTRUCTIVE: dropping the column erases members' program choices. It therefore REFUSES to
+--    run while any Work carries a program. It is only for removing the schema before any member has used it.
+BEGIN;
+DO $$
+DECLARE carried bigint;
+BEGIN
+  IF to_regclass('living_works') IS NOT NULL
+     AND EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'living_works' AND column_name = 'studio_path') THEN
+    SELECT count(*) INTO carried FROM living_works WHERE studio_path IS NOT NULL;
+    IF carried > 0 THEN
+      RAISE EXCEPTION 'refusing destructive rollback: % Work(s) carry a Studio program. Use the app-only rollback (image), which preserves them.', carried;
+    END IF;
+  END IF;
+END $$;
+DROP TRIGGER IF EXISTS living_works_studio_path_fixed ON living_works;
+DROP FUNCTION IF EXISTS living_works_studio_path_fixed();
+ALTER TABLE living_works DROP CONSTRAINT IF EXISTS living_works_studio_path_program_fk;
+ALTER TABLE living_works DROP COLUMN IF EXISTS studio_path;
+DROP TABLE IF EXISTS studio_programs;
+COMMIT;

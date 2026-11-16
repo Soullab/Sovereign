@@ -18,6 +18,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db/postgres';
 import { createSession, setSessionCookie } from '@/lib/auth/serverSessions';
+import { recordSignIn } from '@/lib/auth/recordSignIn';
 import { resolveMemberDisplayName } from '@/lib/stellium/clients';
 
 export async function POST(request: NextRequest) {
@@ -113,6 +114,7 @@ export async function POST(request: NextRequest) {
 
     // Set session cookie
     await setSessionCookie(session.sessionToken, session.expiresAt);
+    await recordSignIn(memberId, 'NativeBiometry');
 
     // Log the biometric sign-in
     console.log(`[NativeBiometry] Sign-in via ${biometryType || 'biometry'} for member ${memberId} on device ${deviceId}`);

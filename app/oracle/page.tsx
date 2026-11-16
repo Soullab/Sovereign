@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import styles from './divination-room.module.css';
 
 type DivinationKey = 'iching' | 'tarot' | 'runes';
@@ -141,6 +142,26 @@ export default function OraclePage() {
               </div>
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className={styles.study} aria-labelledby="divination-study">
+        <div className={styles.sectionHead}>
+          <p>THE ATLAS</p>
+          <h2 id="divination-study">Learn where the symbols come from.</h2>
+        </div>
+        <div className={styles.studyRow}>
+          <p className={styles.studyLead}>
+            Every hexagram, card and rune, laid out in layers — what was carved or written, what
+            later traditions added, what modern readers use — with the strength of the evidence
+            shown for each. Study before a reading, after it, or instead of one.
+          </p>
+          <ul className={styles.studyLinks}>
+            <li><Link href="/oracle/atlas/iching"><b>I Ching</b><span>64 hexagrams</span></Link></li>
+            <li><Link href="/oracle/atlas/tarot"><b>Tarot</b><span>78 cards</span></Link></li>
+            <li><Link href="/oracle/atlas/runes"><b>Runes</b><span>24 runes</span></Link></li>
+            <li><Link href="/oracle/atlas"><b>Open the Atlas</b><span>→</span></Link></li>
+          </ul>
         </div>
       </section>
 
