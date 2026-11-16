@@ -148,7 +148,10 @@ export const CONVERSATION_PROGRAM_SQL = `SELECT DISTINCT lw.studio_path AS studi
    ORDER BY 1 NULLS FIRST
    LIMIT 2`;
 
-export type ConversationProgram = { questionsOnly: boolean; program: WorkProgram };
+/** `stage`: THIS Work's declared stage in its program (null = not declared: the program's first stage applies). */
+export type ConversationProgram = { questionsOnly: boolean; program: WorkProgram; stage?: string | null };
+
+export const CONVERSATION_STAGE_SQL = `SELECT studio_stage FROM living_works WHERE id = $2::uuid AND member_id = $1`;
 
 export async function conversationProgram(
   memberId: string, workId: string, manuscriptId: string | null,
@@ -172,7 +175,18 @@ export async function conversationProgram(
     console.error('[ask] work studio program unreadable; holding the conservative program posture', error);
     program = { kind: 'unknown' };
   }
-  return { questionsOnly, program };
+  /* The stage is THIS Work's own (founder 2026-11-16: all College Essay stages). Unreadable ⇒ no stage posture (the program
+     posture and questions-only still hold). */
+  let stage: string | null = null;
+  if (program.kind === 'one') {
+    try {
+      const r = await query<{ studio_stage: string | null }>(CONVERSATION_STAGE_SQL, [memberId, workId]);
+      stage = r.rows[0]?.studio_stage ?? null;
+    } catch (error) {
+      console.error('[ask] work stage unreadable; no stage posture', error);
+    }
+  }
+  return { questionsOnly, program, stage };
 }
 
 /**
@@ -182,10 +196,18 @@ export async function conversationProgram(
 export function conversationProgramInstructions(
   c: ConversationProgram,
   postureOf: (id: string) => string | null,
+  /** The stage's coaching for this program and declared stage (null stage = the first), or null. */
+  stagePostureOf?: (programId: string, stageId: string | null) => string | null,
 ): string[] {
   const out: string[] = [];
   if (c.questionsOnly) out.push(workQuestionsOnlyInstruction());
-  if (c.program.kind === 'one') out.push(postureOf(c.program.id) ?? workProgramUncertainInstruction());
+  if (c.program.kind === 'one') {
+    const posture = postureOf(c.program.id);
+    out.push(posture ?? workProgramUncertainInstruction());
+    // A stage's coaching only on top of a known program's own posture, never on an uncertain one.
+    const stagePosture = posture && stagePostureOf ? stagePostureOf(c.program.id, c.stage ?? null) : null;
+    if (stagePosture) out.push(stagePosture);
+  }
   else if (c.program.kind === 'ambiguous' || c.program.kind === 'unknown') out.push(workProgramUncertainInstruction());
   return out;
 }

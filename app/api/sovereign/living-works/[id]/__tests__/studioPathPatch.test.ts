@@ -99,3 +99,39 @@ it('every registered program is seeded in the database registry (F1: registry an
     expect(seeded).toMatch(new RegExp(`INSERT INTO studio_programs \\(id\\) VALUES \\('${p.id}'\\)`));
   }
 });
+
+describe('the writer moves their Work through its program’s stages (founder 2026-11-16)', () => {
+  function dbStage(program: string | null) {
+    q.mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT studio_path FROM living_works')) return { rows: [{ studio_path: program }] };
+      if (sql.includes('UPDATE living_works')) return { rows: [{ ...row(program), studio_stage: 'voice' }] };
+      return { rows: [] };
+    });
+  }
+  it('a built stage of the Work’s own program is saved by the member’s own act', async () => {
+    dbStage('college-essay');
+    const res = await PATCH(req({ studioStage: 'voice' }), ctx as never);
+    expect(res.status).toBe(200);
+    expect((await res.json()).work.studioStage).toBe('voice');
+    const [sql, params] = updates()[0]!;
+    expect(String(sql)).toContain('studio_stage = $');
+    expect(String(sql)).toContain('WHERE id = $1 AND member_id = $2');
+    expect(params).toContain('voice');
+  });
+  it('NEGATIVE: an unknown stage, a non-string, or a stage on a Work with no program is refused and nothing is written', async () => {
+    dbStage('college-essay');
+    for (const bad of ['chapter-one', 'Voice', 7, null]) {
+      expect((await PATCH(req({ studioStage: bad }), ctx as never)).status).toBe(400);
+    }
+    dbStage(null);
+    const res = await PATCH(req({ studioStage: 'voice' }), ctx as never);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'no_studio_program' });
+    expect(updates()).toHaveLength(0);
+  });
+  it('another member’s Work is not found', async () => {
+    q.mockImplementation(async () => ({ rows: [] }));
+    expect((await PATCH(req({ studioStage: 'voice' }), ctx as never)).status).toBe(404);
+    expect(updates()).toHaveLength(0);
+  });
+});

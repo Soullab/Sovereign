@@ -49,9 +49,11 @@ async function run(c: AskContext, question = 'Can you rewrite my last two senten
 
 describe('what the server computes for a Work', () => {
   test('a questions-only college essay: questions-only first, then the essay posture', async () => {
-    query.mockResolvedValueOnce({ rows: [{ paused: true }] }).mockResolvedValueOnce({ rows: [{ studio_path: 'college-essay' }] });
+    query.mockResolvedValueOnce({ rows: [{ paused: true }] }).mockResolvedValueOnce({ rows: [{ studio_path: 'college-essay' }] })
+      .mockResolvedValueOnce({ rows: [{ studio_stage: 'meaning' }] });
     const c = await conversationProgram('m1', 'w1', 'ms1');
-    expect(c).toEqual({ questionsOnly: true, program: { kind: 'one', id: 'college-essay' } });
+    // The stage is THIS Work's own (2026-11-16, all essay stages).
+    expect(c).toEqual({ questionsOnly: true, program: { kind: 'one', id: 'college-essay' }, stage: 'meaning' });
     expect(conversationProgramInstructions(c, postureOf)).toEqual([workQuestionsOnlyInstruction(), ESSAY]);
   });
 
@@ -63,7 +65,7 @@ describe('what the server computes for a Work', () => {
   test('an unreadable setting fails CLOSED: questions-only on, conservative posture', async () => {
     query.mockRejectedValueOnce(new Error('db down')).mockRejectedValueOnce(new Error('db down'));
     const c = await conversationProgram('m1', 'w1', 'ms1');
-    expect(c).toEqual({ questionsOnly: true, program: { kind: 'unknown' } });
+    expect(c).toEqual({ questionsOnly: true, program: { kind: 'unknown' }, stage: null });
     expect(conversationProgramInstructions(c, postureOf)).toEqual([workQuestionsOnlyInstruction(), workProgramUncertainInstruction()]);
   });
 

@@ -23,6 +23,31 @@
  * Claim discipline (docs/canon/MARKETING_CLAIM_DISCIPLINE.md): a path shows the member only what exists today. `arc`
  * records the environment's intended journey; a stage is shown only once it is `built`.
  */
+/**
+ * One stage of a program's arc (founder 2026-11-16: "all phases of writing process for College essay ready to test").
+ * The words come from the program's own curriculum. `built` is claim discipline: a stage is shown only once it exists.
+ */
+export interface StudioStage {
+  /** Stable id stored on the Work (living_works.studio_stage). Lowercase, hyphenated. */
+  id: string;
+  /** What the writer sees the stage called. */
+  stage: string;
+  built: boolean;
+  /** The stage's one-line heading, e.g. "Look beneath the moment." */
+  lead?: string;
+  /** What this stage is for, in one or two plain sentences. */
+  guidance?: string;
+  /** The stage's question for the writer, and its label. */
+  prompt?: string;
+  question?: string;
+  /** Anything else the writer should know here (e.g. Draft's word range is information, not a limit). */
+  info?: string;
+  /** The label of the writer's private notes for this stage. */
+  notesLabel?: string;
+  /** How MAIA coaches in this stage (server-side; appended after the program posture). Never client-supplied. */
+  posture?: string;
+}
+
 export interface StudioPath {
   /** Exact id used in `?path=`. Lowercase, hyphenated. */
   id: string;
@@ -33,7 +58,7 @@ export interface StudioPath {
   /** The arena this environment serves, in one plain sentence (shown at its door). */
   arena: string;
   /** The environment's journey. Only `built` stages may ever be shown to a member. */
-  arc: readonly { stage: string; built: boolean }[];
+  arc: readonly StudioStage[];
   /** Replaces "Before anything else: what's calling you to write?" for this path. */
   firstPrompt: string;
   /** One quiet line under the prompt. */
@@ -75,14 +100,49 @@ export const STUDIO_PATHS: readonly StudioPath[] = [
     name: 'College essay',
     startLabel: 'Start a college essay',
     arena: 'For the personal essay you’ll send with your college applications: written in your own voice, from your own life.',
-    // The coaching arc built offline by the College Essay lane. Only Discover exists in the Studio today (this door).
+    // The College Essay coaching arc, from the program's own curriculum (offline Studio v2.1, weeks 1–6), brought into the Studio
+    // (founder 2026-11-16). Notes are private by default: MAIA reads one only when the writer sends it herself.
     arc: [
-      { stage: 'Discover', built: true },
-      { stage: 'Meaning', built: false },
-      { stage: 'Voice', built: false },
-      { stage: 'Draft', built: false },
-      { stage: 'Revise', built: false },
-      { stage: 'Ready', built: false },
+      { id: 'discover', stage: 'Discover', built: true,
+        lead: 'The story only you can tell.',
+        guidance: 'Begin with something genuinely yours. Your most meaningful experience need not be dramatic, public, or painful.',
+        prompt: 'A moment that stays with me',
+        question: 'What ordinary moment do you remember clearly—and what can you still notice about it?',
+        info: 'You are never required to disclose private experiences. A small moment of fascination, kindness, work, play or curiosity can be enough.',
+        notesLabel: 'My own notes',
+        posture: 'STAGE: DISCOVER. Help the writer find and stay with one specific moment: what they saw, heard, did. Do not hunt for significance yet.' },
+      { id: 'meaning', stage: 'Meaning', built: true,
+        lead: 'Look beneath the moment.',
+        guidance: 'An essay can show how you attend to the world. It does not need a predetermined moral.',
+        prompt: 'What draws my attention?',
+        question: 'What feels important about this experience now? What questions are still open?',
+        notesLabel: 'My own reflections',
+        posture: 'STAGE: MEANING. Ask what draws their attention and what still feels open. Never supply a meaning, a moral or a lesson; never say what the moment "shows about" them. Their reflections are theirs to find.' },
+      { id: 'voice', stage: 'Voice', built: true,
+        lead: 'Listen for your own voice.',
+        guidance: 'Notice where your writing feels natural, particular, and alive. No one needs to sound like a professional copywriter.',
+        prompt: 'Write a scene in your language',
+        question: 'Where were you? What did you notice? What actually happened?',
+        notesLabel: 'Scene exercise',
+        posture: 'STAGE: VOICE. Point to the places in their own words that sound most like them (quote only their words) and ask for the scene: where they were, what they noticed, what happened. Never model a voice.' },
+      { id: 'draft', stage: 'Draft', built: true,
+        lead: 'Write. Explore. Keep ownership.',
+        guidance: 'Only you can add, delete, or change your essay. All coaching appears outside the editor.',
+        info: 'The standard Common App essay range is 250–650 words; verify requirements for your actual application. The count is informational and does not limit your writing.',
+        notesLabel: 'My notes while drafting',
+        posture: 'STAGE: DRAFT. They are writing the whole essay now. Encourage getting it down; ask about what is missing or unclear; never draft for them.' },
+      { id: 'revise', stage: 'Revise', built: true,
+        lead: 'Improve the writing without giving it away.',
+        guidance: 'A reviewer can notice patterns, ask questions, or teach techniques. Rewriting remains your decision and your work.',
+        prompt: 'My revision intention',
+        question: 'One change I want to consider',
+        notesLabel: 'My revision intention',
+        posture: 'STAGE: REVISE. Notice patterns in their draft, ask questions, and when asked, explain a technique in general terms. Never write the revision; the change is theirs.' },
+      { id: 'ready', stage: 'Ready', built: true,
+        lead: 'Readiness belongs to the writer.',
+        guidance: 'These reminders help you review your work. They are not a certification or a promise of admission.',
+        notesLabel: 'My own readiness notes',
+        posture: 'STAGE: READY. The writer decides when the essay is ready. Never certify it, grade it, or predict admission; help them check it is their own voice and their own choices.' },
     ],
     // The College Essay coaching arc's Discover prompt (Discover → Meaning → Voice → Draft → Revise → Ready), verbatim.
     firstPrompt: 'A moment that stays with me: what ordinary moment do you remember clearly, and what can you still notice about it?',
@@ -119,6 +179,29 @@ export const STUDIO_PATHS: readonly StudioPath[] = [
 /** The arc stages a member may see: built ones only (claim discipline). */
 export function visibleArc(path: StudioPath): string[] {
   return path.arc.filter((s) => s.built).map((s) => s.stage);
+}
+
+/** The built stages of a program, in order. */
+export function builtStages(path: StudioPath): readonly StudioStage[] {
+  return path.arc.filter((s) => s.built);
+}
+
+/** A Work's stage: its declared stage if it is a built stage of its program, else the program's first built stage. */
+export function currentStage(path: StudioPath, declared: string | null | undefined): StudioStage {
+  const stages = builtStages(path);
+  return stages.find((s) => s.id === declared) ?? stages[0]!;
+}
+
+/** The stage after this one, or null at the last. */
+export function nextStage(path: StudioPath, stageId: string): StudioStage | null {
+  const stages = builtStages(path);
+  const i = stages.findIndex((s) => s.id === stageId);
+  return i >= 0 && i + 1 < stages.length ? stages[i + 1]! : null;
+}
+
+/** A built stage of this program by id (the server accepts nothing else), or null. */
+export function stageById(path: StudioPath, stageId: unknown): StudioStage | null {
+  return typeof stageId === 'string' ? builtStages(path).find((s) => s.id === stageId) ?? null : null;
 }
 
 /** The member's own link chose this path. Exact match only; anything else opens no path (F17). */

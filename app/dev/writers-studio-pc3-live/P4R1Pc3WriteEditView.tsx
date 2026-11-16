@@ -77,6 +77,7 @@ import { passageActQuestion, type PassageAct as PassageActId } from '@/lib/write
 import type { ArrivalOriginRef } from '@/lib/writersStudio/arrivalOrigin';
 import { pausedSendOptions } from '@/lib/writersStudio/revisionPause';
 import type { StudioActionId } from '@/lib/writersStudio/studioActions';
+import StudioStageCard from './StudioStageCard';
 
 export type Pc3HeldPassage = {
   draftSectionId: string;
@@ -427,7 +428,8 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
   ]);
 
   /* A Studio program Work (e.g. a college essay) speaks in its own words; an ordinary Work keeps "Manuscript" / "Section n". */
-  const programCopy = studioPathById(props.work?.studioPath ?? null)?.studioCopy ?? null;
+  const stageProgram = studioPathById(props.work?.studioPath ?? null);
+  const programCopy = stageProgram?.studioCopy ?? null;
   const editableCount = props.context.sections.filter((section) => section.editable).length;
   const placeName = (position: number) => unheadedPlaceName(programCopy, position, editableCount);
   const projection = projectPc3LiveWrite({
@@ -1361,6 +1363,19 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
             labelOf={(id) => { const sec = props.context.sections.find((x) => x.draftSectionId === id); return sec ? (sec.heading?.trim() || placeName(sec.position)) : 'a section'; }}
           />
         </div>
+        {/* A program Work's stage, its own words and the writer's private notes (founder 2026-11-16). Coaching beside the
+            page, never in it; notes reach MAIA only when the writer shows her. */}
+        {stageProgram && props.work ? (
+          <StudioStageCard
+            key={props.work.id}
+            workId={props.work.id}
+            program={stageProgram}
+            declaredStage={props.work.studioStage ?? null}
+            draftWords={props.context.sections.filter((section) => section.editable)
+              .reduce((n, section) => n + (props.writing.bodyOf(section.draftSectionId).trim().match(/\S+/g)?.length ?? 0), 0)}
+            onShowMaia={(text) => openWorkConversation(text)}
+          />
+        ) : null}
         {/* MAIA's letter and the walk: beside the manuscript, never instead of it. It stays mounted while the writer talks with
             MAIA, so the place they were on in the walk is still theirs when they come back. */}
         {/* S5 (F16): no "Read my book" when there is no book yet; on a first page, B's "Show MAIA this page" is the offer.

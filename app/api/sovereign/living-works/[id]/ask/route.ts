@@ -24,7 +24,7 @@ import { isHeldRetry, historyFor } from '@/lib/manuscript/ask/retry';
 import { workContextFingerprint } from '@/lib/writersStudio/workContextFingerprint';
 import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
 import { conversationProgram, conversationProgramInstructions } from '@/lib/manuscript/editorialRuntime/workRevisionPause';
-import { studioPathById } from '@/lib/writersStudio/studioPaths';
+import { currentStage, studioPathById } from '@/lib/writersStudio/studioPaths';
 
 export const dynamic = 'force-dynamic';
 
@@ -153,6 +153,7 @@ async function postHandler(
   const programInstructions = conversationProgramInstructions(
     await conversationProgram(memberId, workId, built.facts.manuscript?.id ?? null),
     (id) => studioPathById(id)?.studioPosture ?? null,
+    (programId, stageId) => { const p = studioPathById(programId); return p ? currentStage(p, stageId).posture ?? null : null; },
   );
   const outcome = await askMaia(
     {
