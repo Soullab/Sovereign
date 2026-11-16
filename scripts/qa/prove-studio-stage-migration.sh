@@ -6,7 +6,8 @@
 #   2  a program Work may carry a stage; the format CHECK refuses a malformed stage;
 #   3  a Work with NO program cannot carry a stage (CHECK);
 #   4  a note per Work and stage; a second note for the same stage is refused (UNIQUE); oversize body refused;
-#   5  erasing the Work, or the member, removes their notes;
+#   5  erasing the Work, or the member, removes their notes (production shape: living_works.member_id is ON DELETE RESTRICT,
+#      so a member's Works are erased first, then the member);
 #   6  the previous reader is unaffected: its named-column insert/update/delete on living_works succeed;
 #   7  the DESTRUCTIVE schema rollback REFUSES while a note or a staged Work exists; data intact;
 #   8  with nothing carried, the schema rollback is clean;
@@ -29,7 +30,7 @@ expect_error() { local db=$1 sql=$2 pat=$3; if out=$(q "$db" -c "$sql" 2>&1); th
 setup() {
   q "$1" -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;
     CREATE TABLE members (id uuid PRIMARY KEY);
-    CREATE TABLE living_works (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), member_id uuid NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    CREATE TABLE living_works (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), member_id uuid NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
       title text NOT NULL, purpose text, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());"
   q "$1" -f "$prior"
 }
@@ -80,10 +81,12 @@ expect_error proof "$(cat "$rb")" "refusing destructive rollback"
 echo "PASS 7 the destructive schema rollback refuses while notes or stages exist; data intact"
 
 createdb -h "$tmp" -p "$port" -U proof clean; setup clean
+q clean -c "CREATE TABLE schema_migrations (filename text PRIMARY KEY); INSERT INTO schema_migrations VALUES ('20261116000002_living_work_studio_stage_and_notes.sql');"
 q clean -f "$mig"; q clean -f "$rb"
 [ "$(q clean -c "SELECT to_regclass('studio_stage_notes') IS NULL")" = t ] || fail "clean rollback left the table"
 [ "$(q clean -c "SELECT count(*) FROM information_schema.columns WHERE table_name='living_works' AND column_name='studio_stage'")" = 0 ] || fail "clean rollback left the column"
-echo "PASS 8 with nothing carried, the schema rollback is clean"
+[ "$(q clean -c "SELECT count(*) FROM schema_migrations")" = 0 ] || fail "clean rollback left its ledger row"
+echo "PASS 8 with nothing carried, the schema rollback is clean, and it removes its own ledger row"
 
 q proof -f "$mig" && echo "PASS 9 re-applying the migration is safe"
 echo "ALL PASS ($(postgres --version))"

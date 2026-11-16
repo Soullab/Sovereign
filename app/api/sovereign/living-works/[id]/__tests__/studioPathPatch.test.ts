@@ -167,3 +167,17 @@ describe('founder ruling 2026-11-16 (#1900): a Work joins College Essay only aft
     expect(call[1]).toEqual([MEMBER]);
   });
 });
+
+describe('review follow-up 2026-11-16: re-sending the program a Work already has is a no-op, not a join', () => {
+  it('a grandfathered program Work with no attestation is not asked again (200, not 403)', async () => {
+    db('college-essay', undefined, null);
+    const res = await PATCH(req({ studioPath: 'college-essay' }), ctx as never);
+    expect(res.status).toBe(200);
+    expect(q.mock.calls.some(([sql]) => String(sql).includes('FROM member_age_attestations'))).toBe(false);
+  });
+  it('JOINING still requires the attestation (a Work with no program)', async () => {
+    db(null, undefined, null);
+    expect((await PATCH(req({ studioPath: 'college-essay' }), ctx as never)).status).toBe(403);
+    expect(updates()).toHaveLength(0);
+  });
+});

@@ -5,6 +5,13 @@
 -- ⛔ This schema rollback is DESTRUCTIVE (it erases members' supervision attestations, the record that a minor's use was
 --    supervised). It therefore REFUSES while any attestation exists. It is only for removing the table before any use.
 BEGIN;
+SET LOCAL lock_timeout = '5s';
+-- Review F3 (2026-11-16): lock before counting, so no attestation can be committed between the count and the DROP.
+DO $$ BEGIN
+  IF to_regclass('public.member_age_attestations') IS NOT NULL THEN
+    LOCK TABLE public.member_age_attestations IN ACCESS EXCLUSIVE MODE;
+  END IF;
+END $$;
 DO $$
 DECLARE carried bigint;
 BEGIN
@@ -21,4 +28,10 @@ DROP INDEX IF EXISTS idx_member_age_attestations_member_latest;
 DROP TABLE IF EXISTS member_age_attestations;
 DROP FUNCTION IF EXISTS member_age_attestations_no_truncate();
 DROP FUNCTION IF EXISTS member_age_attestations_guard();
+-- The objects are gone, so the ledger must not say they are applied (review follow-up 2026-11-16).
+DO $$ BEGIN
+  IF to_regclass('public.schema_migrations') IS NOT NULL THEN
+    DELETE FROM public.schema_migrations WHERE filename = '20261116000001_member_age_attestations.sql';
+  END IF;
+END $$;
 COMMIT;

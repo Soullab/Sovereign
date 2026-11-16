@@ -5,13 +5,22 @@
 -- ⛔ This schema rollback is DESTRUCTIVE (it erases writers' own notes and their stage choices). It REFUSES while any note
 --    exists or any Work carries a stage. It is only for removing the schema before any use.
 BEGIN;
+SET LOCAL lock_timeout = '5s';
+-- Review F3 (2026-11-16): lock before counting, so no note or stage can be committed between the count and the DROP.
+-- Lock order follows the foreign keys (parent first), the same order the forward migration touches them (review follow-up).
+DO $$ BEGIN
+  LOCK TABLE public.living_works IN ACCESS EXCLUSIVE MODE;
+  IF to_regclass('public.studio_stage_notes') IS NOT NULL THEN
+    LOCK TABLE public.studio_stage_notes IN ACCESS EXCLUSIVE MODE;
+  END IF;
+END $$;
 DO $$
 DECLARE notes bigint := 0; staged bigint := 0;
 BEGIN
   IF to_regclass('studio_stage_notes') IS NOT NULL THEN
     SELECT count(*) INTO notes FROM studio_stage_notes;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'living_works' AND column_name = 'studio_stage') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'living_works' AND column_name = 'studio_stage') THEN
     SELECT count(*) INTO staged FROM living_works WHERE studio_stage IS NOT NULL;
   END IF;
   IF notes > 0 OR staged > 0 THEN
@@ -23,4 +32,11 @@ DROP TABLE IF EXISTS studio_stage_notes;
 ALTER TABLE living_works DROP CONSTRAINT IF EXISTS living_works_studio_stage_needs_program;
 ALTER TABLE living_works DROP CONSTRAINT IF EXISTS living_works_studio_stage_format;
 ALTER TABLE living_works DROP COLUMN IF EXISTS studio_stage;
+-- The objects are gone, so the ledger must not say they are applied: otherwise a later deploy would skip recreating them
+-- (scripts/run-sql-migrations.sh applies only files absent from schema_migrations). Review follow-up 2026-11-16.
+DO $$ BEGIN
+  IF to_regclass('public.schema_migrations') IS NOT NULL THEN
+    DELETE FROM public.schema_migrations WHERE filename = '20261116000002_living_work_studio_stage_and_notes.sql';
+  END IF;
+END $$;
 COMMIT;

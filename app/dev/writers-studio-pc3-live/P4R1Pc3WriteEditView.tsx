@@ -302,6 +302,8 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       && previous.state === next.state ? previous : next);
   }, []);
   const workConversationScope = JSON.stringify([props.work?.id ?? null, props.context.manuscriptId]);
+  /* A stage note the writer chose to show MAIA opens a fresh conversation if the Work already has several (live walk 2026-11-16). */
+  const [stageNoteStarter, setStageNoteStarter] = useState<string | null>(null);
   const [workConversationState, setWorkConversationState] = useState(() => ({
     scope: workConversationScope, open: false, starter: '',
   }));
@@ -1080,6 +1082,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
         manuscriptId={props.context.manuscriptId}
         sectionId={props.focusId}
         initialDraft={workConversationStarter}
+        startFresh={stageNoteStarter !== null && workConversationStarter === stageNoteStarter}
         onStudioPlace={props.onStudioPlace}
         onClose={() => {
           setWorkConversationOpen(false);
@@ -1373,7 +1376,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
             declaredStage={props.work.studioStage ?? null}
             draftWords={props.context.sections.filter((section) => section.editable)
               .reduce((n, section) => n + (props.writing.bodyOf(section.draftSectionId).trim().match(/\S+/g)?.length ?? 0), 0)}
-            onShowMaia={(text) => openWorkConversation(text)}
+            onShowMaia={(text) => { setStageNoteStarter(text); openWorkConversation(text); }}
             manuscriptId={props.context.manuscriptId}
             writing={props.writing}
             currentText={props.context.sections.filter((section) => section.editable)

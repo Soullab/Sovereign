@@ -63,15 +63,19 @@ export default function StudioStageCard(props: {
         const b = await r.json().catch(() => null) as { notes?: { stage: string; body: string; checks?: string[] }[] } | null;
         if (!live || !r.ok) return;
         setNotes(Object.fromEntries((b?.notes ?? []).map((n) => [n.stage, { body: n.body, checks: n.checks ?? [] }])));
+        setNotesLoaded((n) => n + 1);
       } catch { /* the card still works; notes simply aren't shown */ }
     })();
     return () => { live = false; };
   }, [props.workId]);
+  /* Load the stage's saved note when the stage changes or the notes first arrive, never after our own save: re-running this on
+     every `notes` update reset "Saved." to idle at once, so the writer never saw it (live walk 2026-11-16). */
+  const [notesLoaded, setNotesLoaded] = useState(0);
   useEffect(() => {
     setDraft(notes[stage.id]?.body ?? '');
     setChecks(notes[stage.id]?.checks ?? []);
     setSave('idle');
-  }, [stage.id, notes]);
+  }, [stage.id, notesLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const persist = useCallback(async (body: string, ticks: string[]) => {
     const saved = notes[stage.id];
