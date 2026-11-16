@@ -5352,3 +5352,10 @@
   }
   .p4r1-root .p4r1-prose-host .p4r1-prose-view{flex:1;min-height:0;padding-top:20px}
 }
+
+/* College Essay polish (2026-11-16): the quiet first-entry relationship line. Wraps at any width; its one control stays a
+   comfortable tap target on a phone. */
+.p4r1-maia-relationship-quiet { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin-top: 14px; }
+.p4r1-maia-relationship-quiet .p4r1-empty { flex: 1 1 220px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.p4r1-maia-relationship-quiet [data-relationship-options] { min-height: 44px; }
+@media (max-width: 640px) { .p4r1-maia-relationship-quiet { flex-direction: column; align-items: flex-start; } }

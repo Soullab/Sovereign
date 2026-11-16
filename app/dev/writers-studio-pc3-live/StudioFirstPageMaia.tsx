@@ -18,6 +18,8 @@ export default function StudioFirstPageMaia(props: {
   page: string;
   sanctuary: boolean;
   onAnswer: (starter: string) => void;
+  /** Called ONLY after MAIA's authorized reading of exactly `page` succeeded (never on a refusal or failure). */
+  onRead?: (page: string) => void;
 }) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [reply, setReply] = useState<string | null>(null);
@@ -37,6 +39,7 @@ export default function StudioFirstPageMaia(props: {
       if (!response.ok || typeof body?.reply !== 'string') throw new Error(String(response.status));
       setReply(body.reply);
       setPhase('reply');
+      props.onRead?.(props.page);
     } catch {
       setError('MAIA couldn’t read the page just now. Nothing was kept. You can try again.');
       setPhase('idle');

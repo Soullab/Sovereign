@@ -61,3 +61,19 @@ export const CLAIM_INVITATION_SQL = `
 export const GRANT_FROM_INVITATION_SQL = `
   INSERT INTO writers_studio_beta_grant_events (member_id, action, expires_at, cohort, actor_member_id, reason)
   VALUES ($1, 'grant', $2, $3, $4, $5)`;
+
+/**
+ * What the door may say about a code (founder polish 2026-11-16). Only facts about the code itself: used up, expired, or
+ * not an open invitation for this door. `row` is the open (unrevoked) invitation for this code and studio, or null.
+ * Used outranks expired: a code that was redeemed is "used" even after its date, so the person is pointed to sign in.
+ */
+export type InvitationCheckAnswer =
+  | { valid: true }
+  | { valid: false; reason: 'used' | 'expired' | 'invalid' };
+
+export function invitationCheckAnswer(row: { used_up: boolean; expired: boolean } | null): InvitationCheckAnswer {
+  if (!row) return { valid: false, reason: 'invalid' };
+  if (row.used_up) return { valid: false, reason: 'used' };
+  if (row.expired) return { valid: false, reason: 'expired' };
+  return { valid: true };
+}
