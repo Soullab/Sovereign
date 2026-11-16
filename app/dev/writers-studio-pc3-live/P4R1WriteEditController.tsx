@@ -92,6 +92,7 @@ async function sha256Hex(text: string): Promise<string> {
 import { decideHandoff, HANDOFF_REFUSAL_COPY, PLAN_HANDOFF_KEY, PLAN_HANDOFF_EVENT } from '@/lib/writersStudio/developmentPlan';
 import { decidePassageHandoff, decodePassageHandoff, PASSAGE_HANDOFF_EVENT, PASSAGE_HANDOFF_KEY, PASSAGE_HANDOFF_REFUSAL_COPY } from '@/lib/writersStudio/passageHandoff';
 import { P4R1Pc3WriteEditView, UNDO_RESTORED_MESSAGES, type Pc3HeldPassage } from './P4R1Pc3WriteEditView';
+import StudioSignedOut from './StudioSignedOut';
 
 interface ContextReady {
   state: 'section_aware';
@@ -2552,11 +2553,11 @@ export default function FlagshipWriteEditController() {
     router.push(`${pathname}${query ? `?${query}` : ''}`);
   };
 
+  if (phase === 'unauthorized') return <StudioSignedOut />;
   if (phase !== 'ready' || !context) {
     return (
       <main className="fs-p4-opening">
         {phase === 'loading' ? 'Opening Writer’s Studio…' : null}
-        {phase === 'unauthorized' ? 'Sign in to open your Writer’s Studio.' : null}
         {phase === 'error' && wayInId ? <ContinuousDraftWayIn manuscriptId={wayInId} room="Write" /> : null}
         {phase === 'error' && !wayInId ? (message ?? 'The Studio could not be opened.') : null}
       </main>

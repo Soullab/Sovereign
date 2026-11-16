@@ -39,6 +39,7 @@ import WorkConversation from '@/app/writers-studio/canvas/WorkConversation';
 import { studioPlaceHref, type StudioPlace } from '@/lib/writersStudio/studioActions';
 import { checkpointServerDraft, newIdempotencyKey } from '@/app/press/manuscript/workingDraftClient';
 import P4R1ProofView from './P4R1ProofView';
+import StudioSignedOut from './StudioSignedOut';
 
 interface ContextReady {
   state: 'section_aware';
@@ -780,11 +781,11 @@ type ReadyReview = {
     );
   }
 
+  if (phase === 'unauthorized') return <StudioSignedOut />;
   if (phase !== 'ready' || !review || !context || !data) {
     const copy = phase === 'loading' ? 'Opening this Review…'
       : phase === 'idle' ? 'No saved Review is selected. Opening Review does not read your Work.'
-        : phase === 'unauthorized' ? 'Sign in to open your Writer’s Studio.'
-          : phase === 'unavailable' ? 'This Review is not available to show here. Nothing about your Work has changed.'
+        : phase === 'unavailable' ? 'This Review is not available to show here. Nothing about your Work has changed.'
             : message ?? 'Review could not be opened.';
     return (
       <main className="fr-root" data-pc3-review-phase={phase}>
