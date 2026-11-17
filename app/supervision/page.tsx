@@ -12,7 +12,7 @@ import {
   Stethoscope,
   Sparkles
 } from 'lucide-react';
-import { apiUrl } from '@/lib/http/apiBase';
+import { apiFetch } from '@/lib/http/apiBase';
 import {
   SupervisionRecorder,
   TranscriptViewer,
@@ -216,7 +216,9 @@ export default function SupervisionDashboard() {
   const fetchSessions = useCallback(async () => {
     setIsLoadingSessions(true);
     try {
-      const response = await fetch(apiUrl('/api/supervision/sessions?limit=20'), {
+      // apiFetch: the list is the signed-in practitioner's own now, and a bare fetch carries no
+      // x-session-token on a native / Safari cross-origin WebView.
+      const response = await apiFetch('/api/supervision/sessions?limit=20', {
         cache: 'no-store'
       });
       const data = await response.json();
@@ -234,7 +236,7 @@ export default function SupervisionDashboard() {
   const fetchInsights = useCallback(async (sessionId: string) => {
     setIsLoadingInsights(true);
     try {
-      const response = await fetch(apiUrl(`/api/supervision/insights/list?sessionId=${sessionId}`));
+      const response = await apiFetch(`/api/supervision/insights/list?sessionId=${sessionId}`);
       const data = await response.json();
       if (data.success) {
         setInsights(data.insights || {});

@@ -22,12 +22,20 @@
  * AND, per HANDLER (the unit of exposure — a file can mix a fixed handler with an open one),
  * that each exported GET/POST/PATCH/PUT/DELETE derives a session identity.
  *
- * THREE NAMED SETS, the work NOT done by this unit, each a RATCHET (a stale entry FAILS, so a
- * set can only shrink). Enforced as law until a product decision lets them close:
+ * THREE NAMED SETS were the work the first unit did NOT do, each a RATCHET (a stale entry FAILS,
+ * so a set can only shrink):
  *   OPEN_ACTING_IDENTITY      files still reading identity from the request
  *   OPEN_NO_SESSION_IDENTITY  handlers that derive no session identity (resource-id only)
  *   OPEN_UNOWNED_RESOURCE     handlers that DO authenticate but never compare the session
  *                             member to the owner of the session/resource id they act on
+ * PRACTITIONER-SESSION-OWNERSHIP-01 CLOSED ALL THREE (were 2 / 22 / 4; now 0 / 0 / 0). They remain as
+ * empty ratchets, pinned EMPTY below, so an entry can only come back by a deliberate edit of this file.
+ *
+ * AND the session-OWNERSHIP law (PRACTITIONER-SESSION-OWNERSHIP-01): every handler that addresses a
+ * practitioner session by id (a `sessionId` in the query/body, or a `session/[id]` path segment) must call
+ * `requireOwnedSession(<session member>, id)` BEFORE it reads, writes, generates or streams anything, and
+ * must RETURN its refusal; every `listSessions(` is scoped to the session member; every `createSession(`
+ * records the session member as the owner. See "session-ownership law" below.
  *
  * LETHALITY: the scanners are functions; they are run against defeat candidates built by
  * mutating the real, fixed route sources. A guard that only ever saw conforming code is not
@@ -49,51 +57,16 @@ const RESOURCE_ID_FIELDS: Record<string, string[]> = {
 };
 
 /**
- * ⛔ OPEN — files still reading ACTING identity from the request. Not repaired by this unit.
- * Must SHRINK, never grow.
+ * CLOSED by PRACTITIONER-SESSION-OWNERSHIP-01 (was 2 files: `supervision/session/start` read
+ * `body.practitionerId`; `supervision/sessions` read `?practitionerId=`). Pinned EMPTY below.
  */
-const OPEN_ACTING_IDENTITY: Record<string, string> = {
-  'app/api/supervision/session/start/route.ts':
-    'body.practitionerId. Replacing it with the session identity also decides the active-session 409 ' +
-    '(today enforced only when the client supplied the id; the scribe/studio flows never do) and starts ' +
-    'giving every new session an owner. A product decision, not a mechanical swap.',
-  'app/api/supervision/sessions/route.ts':
-    '?practitionerId= — and with none supplied it lists EVERY supervision session. Scoping it to the ' +
-    'session member empties the list for the (majority) sessions that were created with no owner.',
-};
+const OPEN_ACTING_IDENTITY: Record<string, string> = {};
 
 /**
- * ⛔ OPEN — handlers that derive NO session identity: they are addressed by a session id alone.
- * The ownership check they need depends on a decision about legacy UNOWNED rows:
- * practice_sessions.practitioner_id is nullable, and getSession() falls back to supervision_sessions,
- * whose rows are overwhelmingly created with no owner (the live-scribe and studio recorders never
- * send one). Deny-unowned breaks PracticePanel and the supervision list; allow-unowned leaves the
- * hole. Keys are `file::METHOD`. Must SHRINK, never grow.
+ * CLOSED by PRACTITIONER-SESSION-OWNERSHIP-01 (was 22 handlers addressed by a session id alone).
+ * Pinned EMPTY below. Keys would be `file::METHOD`.
  */
-const OPEN_NO_SESSION_IDENTITY: Record<string, string> = {
-  'app/api/practice/insights/generate/route.ts::POST': 'sessionId only; PracticePanel calls it for supervision sessions that have no owner',
-  'app/api/practice/insights/generate/route.ts::GET': 'sessionId only',
-  'app/api/practice/insights/list/route.ts::GET': 'sessionId only',
-  'app/api/practice/insights/list/route.ts::POST': 'sessionId only; adds an insight to any session',
-  'app/api/practice/session/stop/route.ts::POST': 'sessionId only; stops any session',
-  'app/api/practice/session/worlds/route.ts::GET': 'sessionId only',
-  'app/api/practice/session/worlds/route.ts::POST': 'sessionId only; records a world on any session',
-  'app/api/practice/sessions/route.ts::PATCH': 'sessionId only; updates any session (the LIST branch of GET is fixed)',
-  'app/api/practice/transcript/route.ts::GET': 'sessionId only; transcript text is PHI',
-  'app/api/practice/transcript/route.ts::POST': 'sessionId only; adds a transcript segment to any session',
-  'app/api/practice/worlds/detect/route.ts::POST': 'optional recordDetections writes session_worlds for any sessionId',
-  'app/api/supervision/insights/list/route.ts::GET': 'sessionId only',
-  'app/api/supervision/insights/stream/route.ts::GET': 'sessionId only (SSE)',
-  'app/api/supervision/scribe/route.ts::GET': 'sessionId only (SSE)',
-  'app/api/supervision/session/[id]/essence/route.ts::GET': 'session id only',
-  'app/api/supervision/session/[id]/route.ts::GET': 'session id only',
-  'app/api/supervision/session/[id]/route.ts::PATCH': 'session id only',
-  'app/api/supervision/session/[id]/route.ts::DELETE': 'session id only — documented "admin only", checks nothing',
-  'app/api/supervision/session/start/route.ts::POST': 'reads body.practitionerId; derives no session identity (also OPEN_ACTING_IDENTITY)',
-  'app/api/supervision/session/stop/route.ts::POST': 'sessionId only',
-  'app/api/supervision/sessions/route.ts::GET': 'reads ?practitionerId=; derives no session identity (also OPEN_ACTING_IDENTITY)',
-  'app/api/supervision/transcript/list/route.ts::POST': 'writes transcript segments for any sessionId (its GET is lab-gated)',
-};
+const OPEN_NO_SESSION_IDENTITY: Record<string, string> = {};
 
 /** Handlers that need no identity by design. Keys are `file::METHOD`. */
 const PUBLIC_BY_DESIGN: Record<string, string> = {
@@ -102,28 +75,11 @@ const PUBLIC_BY_DESIGN: Record<string, string> = {
 };
 
 /**
- * ⛔ OPEN — handlers that authenticate, but never compare the session member to the owner of the
- * session id they act on. `contains` must still match the handler: when it stops matching, the
- * handler was changed and the entry must be re-examined, not left to rot. Keys are `file::METHOD`.
+ * CLOSED by PRACTITIONER-SESSION-OWNERSHIP-01 (was 4 handlers that authenticated but acted on any
+ * session id: practice `sessions` GET single lookup, supervision `transcript/list` GET and
+ * `transcript/stream` POST + GET). Pinned EMPTY below. Keys would be `file::METHOD`.
  */
-const OPEN_UNOWNED_RESOURCE: Record<string, { contains: RegExp; reason: string }> = {
-  'app/api/practice/sessions/route.ts::GET': {
-    contains: /getSession\(sessionId\)/,
-    reason: 'the single-session lookup (?sessionId=) returns any session; only the LIST branch is scoped',
-  },
-  'app/api/supervision/transcript/list/route.ts::GET': {
-    contains: /getSession\(sessionId\)/,
-    reason: 'lab-gated, but returns the transcript of any sessionId',
-  },
-  'app/api/supervision/transcript/stream/route.ts::POST': {
-    contains: /getSession\(sessionId\)/,
-    reason: 'authenticated, but accepts an audio chunk for any sessionId',
-  },
-  'app/api/supervision/transcript/stream/route.ts::GET': {
-    contains: /searchParams\.get\('sessionId'\)/,
-    reason: 'authenticated, but streams the transcript of any sessionId',
-  },
-};
+const OPEN_UNOWNED_RESOURCE: Record<string, { contains: RegExp; reason: string }> = {};
 
 const SESSION_HELPER =
   /\b(?:requireSessionMember|getMemberIdFromRequest|requirePractitioner|getCurrentPractitioner|getAuthenticatedMember|requireLabAccess|getCurrentSession)\s*\(/;
@@ -189,6 +145,90 @@ export function handlersOf(src: string): Array<{ method: string; body: string }>
 
 export const derivesSessionIdentity = (body: string): boolean => SESSION_HELPER.test(stripComments(body));
 
+/** open-set entries whose handler now derives a session identity (the ratchet condition), over any set */
+export function staleNoSessionEntries(open: Record<string, unknown>, hs: Array<{ key: string; body: string }>): string[] {
+  return hs.filter((h) => h.key in open && derivesSessionIdentity(h.body)).map((h) => h.key);
+}
+
+/* ── the session-OWNERSHIP law (PRACTITIONER-SESSION-OWNERSHIP-01) ─────────────── */
+
+/**
+ * The names under which a handler holds the SESSION member: `actor.memberId` (requireSessionMember),
+ * `practitionerId` (a `const practitionerId = actor.memberId` alias), `memberId` (getMemberIdFromRequest)
+ * and `labMemberId` (the Lab Tools gate). Anything else as the owner argument is not the session member.
+ */
+const SESSION_MEMBER_ARG = /^(?:actor\.memberId|practitionerId|memberId|labMemberId)$/;
+
+/** the first call of anything that reads, writes, generates or streams session data */
+const SESSION_DATA_CALL =
+  /\b(?:getSession|stopSession|updateSession|listSessions|getTranscript|getFullTranscript|getRecentTranscript|getTranscriptSegments|addTranscriptSegment|getSessionInsights|getInsightsGroupedByType|getInsights|getInsightsSince|addInsight|getSessionWorlds|recordSessionWorld|generateInsight|generateAllInsightsForWorld|suggestWorldForContext|flushPendingCandidate|runAssembly|enqueueJob|getEssenceSummary|runSessionSynthesis|analyzeSession|getJobsForSession|getRecentTranscriptTexts|getLastChunkTail|query)\s*\(/;
+
+/** a handler names a practitioner session by id: a `sessionId`, or a `session/[id]` path segment */
+export function addressesSessionId(rel: string, body: string): boolean {
+  return /\bsessionId\b/.test(stripComments(body)) || /\/session\/\[id\]\//.test(rel);
+}
+
+/**
+ * `const x = await requireOwnedSession(<arg>, …);  if ('error' in x) return x.error;` — the refusal is
+ * RETURNED. A gate whose result is ignored is not a gate.
+ */
+const OWNER_GATE_SHAPE =
+  /(?:const|let)\s+(\w+)\s*=\s*await\s+requireOwnedSession\(\s*([\w.]+)\s*,[^)]*\)\s*;\s*if\s*\(\s*'error'\s+in\s+\1\s*\)\s*return\s+\1\.error\s*;/g;
+
+/** what is wrong with a session-addressed handler's owner gate; [] means it holds */
+export function ownerGateProblems(body: string): string[] {
+  const code = stripComments(body);
+  const calls = [...code.matchAll(/\brequireOwnedSession\s*\(/g)];
+  if (calls.length === 0) return ['no owner gate (requireOwnedSession)'];
+  const out: string[] = [];
+  const shaped = [...code.matchAll(OWNER_GATE_SHAPE)];
+  if (shaped.length !== calls.length) out.push('an owner gate whose refusal is not returned');
+  for (const m of shaped) {
+    if (!SESSION_MEMBER_ARG.test(m[2]!)) out.push(`the owner argument "${m[2]}" is not the session member`);
+  }
+  const firstGate = calls[0]!.index!;
+  const data = SESSION_DATA_CALL.exec(code);
+  if (data && data.index < firstGate) out.push(`session data is touched (${data[0].trim()}) before the owner gate`);
+  return out;
+}
+
+/** every `createSession({…})` must record the SESSION member as the owner (never absent, never a request value) */
+export function createSessionProblems(body: string): string[] {
+  const code = stripComments(body);
+  const out: string[] = [];
+  for (const m of code.matchAll(/createSession\(\s*\{([\s\S]*?)\}\s*\)/g)) {
+    const k = /\bpractitionerId\b(?:\s*:\s*([^,\n]+))?/.exec(m[1]!);
+    if (!k) { out.push('createSession without a practitionerId (an unowned row)'); continue; }
+    const val = (k[1] ?? 'practitionerId').trim().replace(/\s*\|\|\s*undefined$/, '');
+    if (val === 'actor.memberId' || val === 'memberId') continue;
+    if (val === 'practitionerId' && /(?:const|let)\s+practitionerId\s*=\s*(?:actor\.memberId|memberId)\s*;/.test(code)) continue;
+    out.push(`createSession owner is "${val}", not the session member`);
+  }
+  return out;
+}
+
+/** every `listSessions({…})` must be scoped to the SESSION member */
+export function listSessionsProblems(body: string): string[] {
+  const code = stripComments(body);
+  const out: string[] = [];
+  for (const m of code.matchAll(/listSessions\(\s*\{([\s\S]*?)\}\s*\)/g)) {
+    const k = /\bpractitionerId\b(?:\s*:\s*([^,\n]+))?/.exec(m[1]!);
+    if (!k) { out.push('listSessions is not scoped to a practitioner (it lists every practitioner\'s sessions)'); continue; }
+    const val = (k[1] ?? 'practitionerId').trim();
+    if (val === 'actor.memberId' || val === 'memberId') continue;
+    if (val === 'practitionerId' && /(?:const|let)\s+practitionerId\s*=\s*(?:actor\.memberId|memberId)\s*;/.test(code)) continue;
+    out.push(`listSessions is scoped to "${val}", not the session member`);
+  }
+  return out;
+}
+
+/** Handlers that mention a `sessionId` but do not address an EXISTING session. Keys are `file::METHOD`. */
+const SESSION_ID_NOT_OWNER_GATED: Record<string, string> = {
+  'app/api/supervision/upload/route.ts::POST':
+    'CREATES the session it names (`enqueueJob({ sessionId: session.id })` follows `createSession({ practitionerId })`, ' +
+    'whose owner is the session member); there is no pre-existing session id to gate',
+};
+
 /** a resource-id field is only allowed when the file shows the ownership predicate */
 function hasOwnershipEvidence(src: string): boolean {
   const code = stripComments(src);
@@ -211,6 +251,23 @@ function routeFiles(dir: string, acc: string[] = []): string[] {
 
 const files = FAMILIES.flatMap((f) => routeFiles(path.join(repoRoot, f)));
 const read = (rel: string) => readFileSync(path.join(repoRoot, rel), 'utf8');
+
+// An ownership query is a statement over practice_sessions / supervision_sessions that compares practitioner_id to a bound
+// parameter. The ONE place it may live is lib/auth/requireOwnedSession.ts; the only routes that may carry their own are the
+// two owner-scoped writes of session/[id] (DELETE and the title UPDATE), which are removed before the scan so that nothing ELSE
+// in that file can hide behind them. The guard and its defeat candidates run this same function.
+const OWNERSHIP_COLUMN_QUERY = /(?:practice|supervision)_sessions[\s\S]{0,200}practitioner_id\s*=\s*\$\d/;
+const ALLOWED_OWNER_SCOPED_WRITES = [
+  /DELETE FROM supervision_sessions\s+WHERE id = \$1 AND practitioner_id = \$2/g,
+  /UPDATE supervision_sessions SET title = \$1\s+WHERE id = \$2 AND practitioner_id = \$3/g,
+];
+function hasHandRolledOwnershipQuery(rel: string, src: string): boolean {
+  let code = stripComments(src);
+  if (rel === 'app/api/supervision/session/[id]/route.ts') {
+    for (const allowed of ALLOWED_OWNER_SCOPED_WRITES) code = code.replace(allowed, '');
+  }
+  return OWNERSHIP_COLUMN_QUERY.test(code);
+}
 const handlers = files.flatMap((rel) => handlersOf(read(rel)).map((h) => ({ key: `${rel}::${h.method}`, rel, ...h })));
 
 function violationsOf(rel: string): string[] {
@@ -254,8 +311,13 @@ describe('PRACTITIONER-API-IDENTITY-01 · static guard — acting identity is ne
   });
 
   it('OPEN_NO_SESSION_IDENTITY is a RATCHET: every entry still lacks a session identity', () => {
-    const stale = handlers.filter((h) => h.key in OPEN_NO_SESSION_IDENTITY && derivesSessionIdentity(h.body)).map((h) => h.key);
-    expect(stale).toEqual([]);
+    expect(staleNoSessionEntries(OPEN_NO_SESSION_IDENTITY, handlers)).toEqual([]);
+  });
+
+  it('the three open sets are CLOSED — empty. (PRACTITIONER-SESSION-OWNERSHIP-01 took them from 2 / 22 / 4 to 0.) An entry can come back only by editing this file on purpose.', () => {
+    expect(Object.keys(OPEN_ACTING_IDENTITY)).toEqual([]);
+    expect(Object.keys(OPEN_NO_SESSION_IDENTITY)).toEqual([]);
+    expect(Object.keys(OPEN_UNOWNED_RESOURCE)).toEqual([]);
   });
 
   it('OPEN_UNOWNED_RESOURCE is a RATCHET: each entry authenticates and still acts on the unowned id', () => {
@@ -288,6 +350,74 @@ describe('PRACTITIONER-API-IDENTITY-01 · static guard — acting identity is ne
       ...Object.values(OPEN_UNOWNED_RESOURCE).map((x) => x.reason),
     ];
     for (const r of reasons) expect(r.length).toBeGreaterThan(12);
+  });
+});
+
+describe('PRACTITIONER-SESSION-OWNERSHIP-01 · static guard — session-ownership law', () => {
+  const sessionHandlers = handlers.filter((h) => addressesSessionId(h.rel, h.body));
+
+  it('finds the session-addressed population (the law is not vacuously passing)', () => {
+    // practice: insights/generate ×2, insights/list ×2, session/stop, session/worlds ×2, sessions ×2,
+    // transcript ×2, worlds/detect, worlds/suggest = 13; supervision: session/[id] ×3, essence, stop,
+    // insights/list, insights/stream, scribe, transcript/list ×2, transcript/stream ×2 = 12; + upload (exempt) = 26
+    expect(sessionHandlers.length).toBeGreaterThanOrEqual(26);
+    for (const k of [
+      'app/api/practice/transcript/route.ts::GET',
+      'app/api/supervision/session/[id]/route.ts::DELETE',
+      'app/api/supervision/scribe/route.ts::GET',
+      'app/api/supervision/transcript/list/route.ts::POST',
+    ]) expect(sessionHandlers.map((h) => h.key)).toContain(k);
+  });
+
+  it('every session-addressed handler gates on ownership: present, refusal returned, owner = the session member, BEFORE any session data is touched', () => {
+    const offenders = sessionHandlers
+      .filter((h) => !(h.key in SESSION_ID_NOT_OWNER_GATED))
+      .map((h) => ({ key: h.key, p: ownerGateProblems(h.body) }))
+      .filter((x) => x.p.length > 0)
+      .map((x) => `${x.key} — ${x.p.join('; ')}`);
+    expect(offenders).toEqual([]);
+  });
+
+  it('the exemption list is a RATCHET: each exempt handler still mentions a sessionId, still does not gate, and is reasoned', () => {
+    for (const [key, reason] of Object.entries(SESSION_ID_NOT_OWNER_GATED)) {
+      const h = handlers.find((x) => x.key === key);
+      expect(h).toBeDefined();
+      expect(addressesSessionId(h!.rel, h!.body)).toBe(true);
+      expect(ownerGateProblems(h!.body)).toEqual(['no owner gate (requireOwnedSession)']);
+      expect(reason.length).toBeGreaterThan(20);
+    }
+  });
+
+  it('every session this family creates is owned by the session member', () => {
+    const creators = handlers.filter((h) => /\bcreateSession\s*\(/.test(stripComments(h.body)));
+    expect(creators.map((h) => h.key).sort()).toEqual([
+      'app/api/practice/session/start/route.ts::POST',
+      'app/api/supervision/session/start/route.ts::POST',
+      'app/api/supervision/upload/route.ts::POST',
+    ]);
+    expect(creators.flatMap((h) => createSessionProblems(h.body).map((p) => `${h.key} — ${p}`))).toEqual([]);
+  });
+
+  it('every session list is scoped to the session member', () => {
+    const listers = handlers.filter((h) => /\blistSessions\s*\(/.test(stripComments(h.body)));
+    expect(listers.map((h) => h.key).sort()).toEqual([
+      'app/api/practice/sessions/route.ts::GET',
+      'app/api/supervision/sessions/route.ts::GET',
+    ]);
+    expect(listers.flatMap((h) => listSessionsProblems(h.body).map((p) => `${h.key} — ${p}`))).toEqual([]);
+  });
+
+  it('DELETE of a supervision session carries the owner in its own statement', () => {
+    const h = handlers.find((x) => x.key === 'app/api/supervision/session/[id]/route.ts::DELETE')!;
+    expect(stripComments(h.body)).toMatch(/DELETE FROM supervision_sessions WHERE id = \$1 AND practitioner_id = \$2/);
+  });
+
+  it('nothing outside lib/auth/requireOwnedSession.ts queries the ownership columns of these tables to decide access', () => {
+    // The one lookup is the single place the predicate lives; a second hand-rolled one is a second thing to get wrong.
+    // session/[id]/route.ts is NOT exempt as a whole file: only its two owner-scoped writes are allowed, removed before
+    // the scan, so any other ownership query in that file is still an offender.
+    const offenders = files.filter((rel) => hasHandRolledOwnershipQuery(rel, read(rel)));
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -409,11 +539,123 @@ describe('PRACTITIONER-API-IDENTITY-01 · static guard — defeat candidates (ea
   });
 
   it('DC-G17 an open-set entry whose handler gained a session identity is STALE and would fail the ratchet', () => {
-    // practice/session/stop::POST is open; give it the helper and the ratchet condition flips.
-    const rel = 'app/api/practice/session/stop/route.ts';
-    const src = mutate(rel, /try \{/, 'try {\n    const actor = await requireSessionMember(req);');
-    const h = handlersOf(src).find((x) => x.method === 'POST')!;
-    expect(derivesSessionIdentity(h.body)).toBe(true); // → "stale entry" in the real ratchet
-    expect(`${rel}::POST` in OPEN_NO_SESSION_IDENTITY).toBe(true);
+    // somebody re-adds an entry for a handler that is already fixed: practice/session/stop::POST
+    const key = 'app/api/practice/session/stop/route.ts::POST';
+    const h = handlers.find((x) => x.key === key)!;
+    expect(derivesSessionIdentity(h.body)).toBe(true);
+    expect(staleNoSessionEntries({ [key]: 'a reason that is long enough' }, handlers)).toEqual([key]);
+    // and a genuinely-open synthetic entry is not stale
+    expect(staleNoSessionEntries({ 'app/api/practice/brand-new/route.ts::GET': 'a reason that is long enough' }, [
+      { key: 'app/api/practice/brand-new/route.ts::GET', body: 'export async function GET(){ return 1 }' },
+    ])).toEqual([]);
+  });
+});
+
+describe('PRACTITIONER-SESSION-OWNERSHIP-01 · static guard — ownership-law defeat candidates (each must be caught)', () => {
+  const STOP = 'app/api/practice/session/stop/route.ts';
+  const TRANSCRIPT = 'app/api/practice/transcript/route.ts';
+  const SUP_DEL = 'app/api/supervision/session/[id]/route.ts';
+  const SUP_START = 'app/api/supervision/session/start/route.ts';
+  const SUP_LIST = 'app/api/supervision/sessions/route.ts';
+  const SCRIBE = 'app/api/supervision/scribe/route.ts';
+
+  const mut = (rel: string, from: string | RegExp, to: string): string => {
+    const src = read(rel);
+    const out = src.replace(from, to);
+    if (out === src) throw new Error(`mutation did not apply to ${rel}: ${String(from)}`);
+    return out;
+  };
+  const handlerOf = (src: string, method: string) => handlersOf(src).find((h) => h.method === method)!.body;
+
+  it('control: the real, fixed handlers hold the law', () => {
+    expect(ownerGateProblems(handlerOf(read(STOP), 'POST'))).toEqual([]);
+    expect(ownerGateProblems(handlerOf(read(TRANSCRIPT), 'GET'))).toEqual([]);
+    expect(ownerGateProblems(handlerOf(read(SUP_DEL), 'DELETE'))).toEqual([]);
+    expect(ownerGateProblems(handlerOf(read(SCRIBE), 'GET'))).toEqual([]);
+    expect(createSessionProblems(handlerOf(read(SUP_START), 'POST'))).toEqual([]);
+    expect(listSessionsProblems(handlerOf(read(SUP_LIST), 'GET'))).toEqual([]);
+  });
+
+  it('DC-O1 the owner gate removed from a handler (session identity only — the shipped state)', () => {
+    const src = mut(STOP, /const owned = await requireOwnedSession\([^)]*\);\s*if \('error' in owned\) return owned\.error;/, '');
+    expect(ownerGateProblems(handlerOf(src, 'POST'))).toContain('no owner gate (requireOwnedSession)');
+  });
+
+  it('DC-O2 the gate placed AFTER session data is read (transcript GET reads, then checks)', () => {
+    const gate = /const owned = await requireOwnedSession\(actor\.memberId, sessionId\);\s*if \('error' in owned\) return owned\.error;/;
+    const src = read(TRANSCRIPT);
+    const get = handlerOf(src, 'GET');
+    const moved = get.replace(gate, '').replace('const segments = await getFullTranscript(sessionId);', 'const segments = await getFullTranscript(sessionId);\n      const owned = await requireOwnedSession(actor.memberId, sessionId);\n      if (\'error\' in owned) return owned.error;');
+    expect(moved).not.toBe(get);
+    expect(ownerGateProblems(moved).join()).toMatch(/touched \(getFullTranscript\(\) before the owner gate|touched .* before the owner gate/);
+  });
+
+  it('DC-O3 the gate is called but its refusal is IGNORED (the check cannot refuse anything)', () => {
+    const src = mut(STOP, /if \('error' in owned\) return owned\.error;/, '');
+    expect(ownerGateProblems(handlerOf(src, 'POST'))).toContain('an owner gate whose refusal is not returned');
+  });
+
+  it('DC-O4 the owner argument comes from the request: requireOwnedSession(body.practitionerId, …)', () => {
+    const src = mut(STOP, 'requireOwnedSession(actor.memberId, sessionId)', 'requireOwnedSession(body.practitionerId, sessionId)');
+    expect(ownerGateProblems(handlerOf(src, 'POST')).join()).toMatch(/not the session member/);
+    // and the identity scanner independently flags the body read
+    expect(findIdentityFromRequest(src).join()).toMatch(/practitionerId via property read/);
+  });
+
+  it('DC-O5 a session-addressed handler with only a session identity is not exempt, so the law would fail it', () => {
+    const src = 'export async function GET(req) {\n  const actor = await requireSessionMember(req);\n  const sessionId = new URL(req.url).searchParams.get("sessionId");\n  return Response.json(await getTranscript(sessionId));\n}\n';
+    const h = handlersOf(src)[0]!;
+    expect(addressesSessionId('app/api/practice/brand-new/route.ts', h.body)).toBe(true);
+    expect('app/api/practice/brand-new/route.ts::GET' in SESSION_ID_NOT_OWNER_GATED).toBe(false);
+    expect(ownerGateProblems(h.body)).toEqual(['no owner gate (requireOwnedSession)']);
+  });
+
+  it('DC-O6 a `session/[id]` handler is session-addressed even with no sessionId in its body', () => {
+    expect(addressesSessionId('app/api/supervision/session/[id]/thing/route.ts', 'export async function GET(){ return 1 }')).toBe(true);
+  });
+
+  it('DC-O7 createSession without an owner (the shipped scribe/studio shape) is caught', () => {
+    const src = mut(SUP_START, /practitionerId: actor\.memberId,\s*/, '');
+    expect(createSessionProblems(handlerOf(src, 'POST'))).toContain('createSession without a practitionerId (an unowned row)');
+  });
+
+  it('DC-O8 createSession owned by a request value (body.practitionerId) is caught', () => {
+    const src = mut(SUP_START, 'practitionerId: actor.memberId', 'practitionerId: body.practitionerId');
+    expect(createSessionProblems(handlerOf(src, 'POST')).join()).toMatch(/not the session member/);
+    expect(findIdentityFromRequest(src).join()).toMatch(/practitionerId via property read/);
+  });
+
+  it('DC-O9 a list that is not scoped (listSessions({ caseId, limit }) — lists every practitioner\'s sessions) is caught', () => {
+    const src = mut(SUP_LIST, /practitionerId,\s*\n\s*caseId,/, 'caseId,');
+    expect(listSessionsProblems(handlerOf(src, 'GET')).join()).toMatch(/not scoped to a practitioner/);
+  });
+
+  it('DC-O10 a list scoped by `?practitionerId=` (the shipped shape) is caught, by the list rule and by the identity scanner', () => {
+    const src = mut(SUP_LIST, 'const practitionerId = actor.memberId;', "const practitionerId = searchParams.get('practitionerId') || undefined;");
+    expect(listSessionsProblems(handlerOf(src, 'GET')).join()).toMatch(/not the session member/);
+    expect(findIdentityFromRequest(src).join()).toMatch(/practitionerId via \.get\(\)/);
+  });
+
+  it('DC-O11 DELETE reverted to an unscoped statement (`WHERE id = $1`) is caught', () => {
+    const src = mut(SUP_DEL, 'DELETE FROM supervision_sessions WHERE id = $1 AND practitioner_id = $2 RETURNING id', 'DELETE FROM supervision_sessions WHERE id = $1');
+    expect(/DELETE FROM supervision_sessions WHERE id = \$1 AND practitioner_id = \$2/.test(stripComments(handlerOf(src, 'DELETE')))).toBe(false);
+  });
+
+  it('DC-O12 a hand-rolled ownership query in a route (a second place the predicate lives) is caught, by the same predicate the guard runs', () => {
+    const rogue = "\nconst r = await query('SELECT id FROM practice_sessions WHERE id = $1 AND practitioner_id = $2', [id, me]);\n";
+    // control: the real routes are clean
+    expect(hasHandRolledOwnershipQuery(TRANSCRIPT, read(TRANSCRIPT))).toBe(false);
+    expect(hasHandRolledOwnershipQuery(SUP_DEL, read(SUP_DEL))).toBe(false);
+    // a rogue query appended to an ordinary route is an offender
+    expect(hasHandRolledOwnershipQuery(TRANSCRIPT, read(TRANSCRIPT) + rogue)).toBe(true);
+  });
+
+  it('DC-O12b the one route that issues owner-scoped writes itself is NOT exempt for anything else: a rogue lookup there is caught', () => {
+    const rogue = "\nconst r = await query('SELECT id FROM supervision_sessions WHERE id = $1 AND practitioner_id = $2', [id, me]);\n";
+    expect(hasHandRolledOwnershipQuery(SUP_DEL, read(SUP_DEL) + rogue)).toBe(true);
+    // and the whole-file exemption the first version of the guard had (any match in that file allowed) is the defeat candidate
+    const wholeFileExempt = (rel: string, src: string) =>
+      rel !== SUP_DEL && /(?:practice|supervision)_sessions[\s\S]{0,200}practitioner_id\s*=\s*\$\d/.test(stripComments(src));
+    expect(wholeFileExempt(SUP_DEL, read(SUP_DEL) + rogue)).toBe(false); // it would have let the rogue through
   });
 });

@@ -829,7 +829,7 @@ export const ACCESS_RULES: AccessRule[] = [
      The trailing slash is deliberate: matchRule uses raw `startsWith`, so a bare '/api/practice'
      would also capture a sibling such as '/api/practices-admin'. */
   { prefix: '/api/caseload/', minTier: 'free', notes: 'Caseload API — authenticated members only (PRACTITIONER-API-IDENTITY-01); each handler derives the acting practitioner from the session and checks case ownership itself' },
-  { prefix: '/api/practice/', minTier: 'free', notes: 'Practice API — authenticated members only (PRACTITIONER-API-IDENTITY-01); acting-identity handlers derive the practitioner from the session; session-id-only handlers are an open, named set in app/api/__tests__/practitionerFamiliesIdentityGuard.test.ts' },
+  { prefix: '/api/practice/', minTier: 'free', notes: 'Practice API — authenticated members only (PRACTITIONER-API-IDENTITY-01); every handler derives the practitioner from the session, and a handler that names a session by id is owner-only (PRACTITIONER-SESSION-OWNERSHIP-01, lib/auth/requireOwnedSession.ts; pinned by app/api/__tests__/practitionerFamiliesIdentityGuard.test.ts)' },
 
   // Scribe API - session review, summaries
   { prefix: '/api/scribe', minTier: 'free', notes: 'Scribe API' },

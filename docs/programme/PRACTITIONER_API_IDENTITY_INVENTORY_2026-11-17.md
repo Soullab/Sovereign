@@ -7,6 +7,10 @@ Evidence classes: **SOURCE** = read in the repository at the base commit; **RAN*
 session (jest, in a disposable worktree; fictional data; no database, no network, no production access).
 Nothing here was read from or run against production.
 
+> **Later the same day — PRACTITIONER-SESSION-OWNERSHIP-01** closed every row below marked OPEN (the 22, the 4, and the
+> two that read identity from the request). The sections below are kept as written; the last section,
+> "Session-ownership follow-up", carries the final table and supersedes them.
+
 ## What was wrong
 
 Under `app/api/caseload/**`, `app/api/practice/**`, `app/api/supervision/**` and
@@ -206,3 +210,168 @@ Failing-first, then green, with the same test files. See the commit message for 
 * `tests/support/sessionBoundaryHarness.ts` — the shared two-account check (I1–I5), also run against 5–6 wrong
   handlers per family, each of which must be caught
 * `app/api/__tests__/rawIdentityAuthorityGuard.test.ts` — the pre-existing `?memberId=` ratchet tightened 29 → 19
+
+---
+
+## Session-ownership follow-up — PRACTITIONER-SESSION-OWNERSHIP-01
+
+Branch `claude/fix-practitioner-session-ownership-20261117`, stacked on `claude/fix-practitioner-identity-session-20261117`
+(PR #2325, head `0117fc607`). Class A (PHI-adjacent). Evidence classes as above: **SOURCE** = read in the repository;
+**RAN** = executed in this session (jest and `node --test` against fakes; a throwaway PostgreSQL 16 with fictional rows).
+Nothing was read from or run against production, no credential was used, nothing was pushed.
+
+### The policy (founder-delegated 2026-11-17: FAIL CLOSED, RECOVERABLE)
+
+Privacy outranks convenience: a leaked transcript cannot be recalled; a row that is unreachable can be restored later by an
+audited backfill.
+
+* **P1** a `practice_sessions` / `supervision_sessions` row is reachable through these routes only by the practitioner who
+  owns it. A non-owner, an unowned legacy row and an absent id are indistinguishable: **404, same status, same body**
+  (no 403, no existence oracle). The owner is the SESSION member, compared to `practitioner_id` **inside one SQL statement**
+  (`lib/auth/requireOwnedSession.ts`), never a request value.
+* **P2** every route that creates a session derives the owner from the session; no unowned row is created any more.
+* **P3** legacy rows whose owner is NULL are unreachable here. Recovery is a founder-run, audited step **not built**: only a
+  read-only census (`scripts/ops/census-unowned-practitioner-sessions.mjs`). No backfill, **no claim endpoint** (a claim flow
+  would let anyone claim someone else's legacy session).
+* **P4** `DELETE /api/supervision/session/[id]` is **owner-only**. It was documented "admin only" and checked nothing. No admin
+  gate exists under `/api/supervision` (SOURCE: `grep` for `requireAdmin|isAdmin|requireFounder|isFounderMemberId` over the four
+  families and `lib/supervision`, `lib/practice` finds only the comment), and a platform-wide delete of a practitioner's PHI
+  session would be an exposure of its own, so there is nothing to defer to. The statement carries the owner as well
+  (`DELETE … WHERE id = $1 AND practitioner_id = $2 RETURNING id`), and zero rows deleted reads as the same 404.
+* **P5** `GET /api/supervision/sessions` lists only the session member's own sessions (`?practitionerId=` ignored).
+
+### Final table — every handler that names a session by id (SOURCE; all RAN-tested)
+
+| route (under `app/api/`) | method | before | after |
+|---|---|---|---|
+| `practice/insights/generate` | POST | no auth, any session | session + owner-only |
+| `practice/insights/generate` | GET | no auth, any session | session + owner-only |
+| `practice/insights/list` | GET | no auth, any session | session + owner-only |
+| `practice/insights/list` | POST | no auth, adds an insight to any session | session + owner-only |
+| `practice/session/stop` | POST | no auth, stops any session | session + owner-only |
+| `practice/session/worlds` | GET | no auth, any session | session + owner-only |
+| `practice/session/worlds` | POST | no auth, records a world on any session | session + owner-only |
+| `practice/sessions` | GET (`?sessionId=`) | session, returns any session | session + owner-only (list branch unchanged: own) |
+| `practice/sessions` | PATCH | no auth, updates any session | session + owner-only |
+| `practice/transcript` | GET | no auth, PHI transcript of any session | session + owner-only |
+| `practice/transcript` | POST | no auth, writes into any session | session + owner-only |
+| `practice/worlds/detect` | POST | no auth; `recordDetections` wrote into any session | session; a named `sessionId` is owner-only |
+| `practice/worlds/suggest` | POST | session; a named `sessionId` revealed which worlds any session used | session; a named `sessionId` is owner-only (**found by the new generic law**, not in the old open sets) |
+| `supervision/session/[id]` | GET | no auth, any session (+ transcript/insights/jobs) | session + owner-only |
+| `supervision/session/[id]` | PATCH | no auth, any session | session + owner-only; title statement also carries the owner |
+| `supervision/session/[id]` | DELETE | "admin only", checked nothing | session + owner-only; owner in the statement |
+| `supervision/session/[id]/essence` | GET | no auth, any session (could trigger a synthesis run) | session + owner-only |
+| `supervision/session/stop` | POST | no auth; flushed a segment, started the assembler, stopped ANY session | session + owner-only **before** any of those side effects |
+| `supervision/insights/list` | GET | no auth, any session | session + owner-only |
+| `supervision/insights/stream` | GET (SSE) | no auth, any session | session + owner-only |
+| `supervision/scribe` | GET (SSE) | no auth, transcript + insights + analysis of any session | session + owner-only |
+| `supervision/transcript/list` | GET | Lab Tools gate, any session | Lab Tools gate + owner-only |
+| `supervision/transcript/list` | POST | no auth; checked only the FIRST segment's session | session; EVERY session id in the batch must be the caller's, else the whole batch is refused and nothing is written |
+| `supervision/transcript/stream` | POST | session, any session | session + owner-only, checked before the audio is examined |
+| `supervision/transcript/stream` | GET (SSE) | session, any session | session + owner-only |
+| `supervision/sessions` | GET | `?practitionerId=`, and with none listed EVERY session | session member's own sessions only |
+| `supervision/session/start` | POST | owner read from `body.practitionerId`; recorders never sent one, so most sessions were unowned | owner = session member, always; 401 without a session |
+| `supervision/upload` | POST | already session-derived (creates the session) | unchanged: owner = session member |
+
+Population: 62 handlers in the four families. **60** derive a session identity; the other **2** are public by design
+(`practice/worlds/list` GET, `practitioners/check` GET). **25** name an existing session by id and are owner-gated; **3** create
+sessions (`practice/session/start`, `supervision/session/start`, `supervision/upload`), all owned by the session member;
+**2** list sessions, both scoped to the session member. The three open ratchets in
+`app/api/__tests__/practitionerFamiliesIdentityGuard.test.ts` went **2 / 22 / 4 → 0 / 0 / 0** and are pinned empty.
+
+### Decisions taken inside the delegation (each can be reversed by editing one place)
+
+1. **The old "Active session already exists" 409 on `supervision/session/start` is removed, not extended.** It ran only when the
+   client sent `practitionerId` in the body — the channel this unit closes — and no client in this repository ever did
+   (SOURCE: `/supervision` mounts `SupervisionRecorder` without a `practitionerId` prop; `labtools/scribe` and the studio
+   `RecordingContext` never send one). Enforcing it for every practitioner would be a NEW lockout: a session left open by a
+   crashed tab would block the next recording and no surface can stop it. Behaviour is preserved for every in-repo client; an
+   external caller that relied on the 409 loses it. Pinned by a test (a second start while one is open succeeds, both owned).
+2. **Ownership is one SQL statement, in both tables, with no `OR`/`IS NULL`/`COALESCE`** (a test pins the source), and an id
+   that is not a UUID reads as absent without reaching SQL (reaching it would be a PostgreSQL 22P02, i.e. a 500 that tells a
+   different story).
+3. **A database error is not an allow**: it propagates and the route answers 500.
+4. **Ownership never changes** (no route writes `practitioner_id` after creation), so routes check once and then act; the one
+   destructive act (DELETE) and the title UPDATE also carry the owner in their own statement.
+5. **No token-in-URL fallback for the two SSE routes that became authenticated** (`insights/stream`, `scribe`): `EventSource`
+   carries the `maia_session` cookie, like `transcript/stream` GET already did. A `?_t=` query token would put a session token
+   in access logs; that is a separate design decision.
+
+### Clients changed (P2) — plain `fetch(apiUrl(...))` → `apiFetch(...)`
+
+A bare `fetch` carries no `x-session-token` on a native / Safari cross-origin WebView (the Capacitor cookie trap), so the
+callers of the routes that newly require the session were converted: `components/supervision/SupervisionRecorder.tsx`
+(start, stop, transcript poll), `EssenceViewer.tsx`, `InsightsViewer.tsx` (the polling fallback), `PracticePanel.tsx` (worlds
+list, insights generate GET and POST — this also closes the PracticePanel flag raised for the `/api/practice/` matrix rule
+above), `TranscriptViewer.tsx` (transcript list ×2) and `app/supervision/page.tsx` (sessions list, insights list). Already
+`apiFetch`: `labtools/scribe` start/stop and the studio `RecordingContext`. A static guard
+(`app/api/__tests__/practitionerSessionCallersGuard.test.ts`) keeps a bare `fetch` from coming back.
+
+**Deliberately not changed, named in the guard with reasons:** `app/labtools/scribe/page.tsx` `transcript/stream` and `upload`
+(already authenticated routes before this unit, bare fetch — pre-existing exposure, unchanged) and
+`components/masters/FieldSessionListener.tsx` (same-origin relative URL, web only; it still sends `practitionerId=`, now ignored).
+
+### User-visible consequences (stated, not softened)
+
+* **Legacy unowned sessions disappear from every surface that reaches them through these routes.** They are not in the
+  `/supervision` history list; their detail, transcript, insights, essence, stop, PATCH and DELETE answer 404; `PracticePanel`
+  insights for such a session answer 404 (the panel's own error/empty state shows). Nothing was deleted or altered: the rows
+  are intact and a founder-run audited backfill can restore them. How many there are is **unread** (production was not
+  touched) — that is what the census is for.
+* **Sessions started from now on are owned** and appear in the practitioner's own list; an owned session works exactly as before.
+* **`supervision/session/start` now needs the session**: a client with none gets 401 instead of an unowned row.
+  `scripts/supervision-demo-stream.mjs` and `scripts/smoke/supervision-smoke.sh` post to `/api/supervision/transcript`, a path
+  with no route (SOURCE), so they were already stale and are now stopped one step earlier.
+* **`EventSource` consumers on a client that cannot send the cookie** (a native / Safari cross-origin WebView) lose the live
+  `insights/stream` and `scribe` streams (401). `InsightsViewer` falls back to its poll, which now uses `apiFetch`; the
+  scribe stream has no polling fallback. `lib/studio/RecordingContext.tsx` (`connectToStream`) re-opens the scribe `EventSource` every 3 s for as long as recording runs, so such a client now makes one failing (401) request every 3 s per recording and shows `disconnected`; `EventSource` cannot read the status, so the client cannot tell a refusal from a dropped connection. Not changed here: a bounded retry or a token-in-URL fallback is a product decision. Same-origin web is unaffected.
+* **`POST /supervision/transcript/list`** now needs the session (a Python transcriber that posted anonymously would get 401;
+  no such caller exists in this repository — the only ones are the two stale scripts above).
+
+### Census — READ ONLY, built, not run
+
+`scripts/ops/census-unowned-practitioner-sessions.mjs` (`node --test scripts/ops/test-census-unowned-practitioner-sessions.mjs`):
+counts only, per table `total / owned / unowned`, and for the unowned rows how many carry an ownership hint (a lead for a person to check, never proof: every hint column is client-writable) in
+existing columns — `supervision_sessions.metadata->>'scribeSessionId' → scribe_sessions.member_id`,
+`supervision_sessions.case_id → practitioner_cases.practitioner_id`, and `practitioner_growth.session_refs ∋ practice_sessions.id →
+practitioner_growth.practitioner_id` (cited by one practitioner / by several). It selects no row, id, name, title or transcript
+text (the output is built only from values that parse as non-negative integers), runs in one `BEGIN READ ONLY`, refuses to run
+without `DATABASE_URL`, has no write flag, and exits non-zero on any error. A hint names a column that already points at a
+member; it is **not** a verdict that the session belongs to them. **It has not been run against any real database.**
+
+### Verification (RAN)
+
+* Failing-first, on the unfixed tree (`0117fc607`): the two route suites, the static guard and the callers guard were run
+  before the fix. Route suites: 40 failed / 29 passed (the 29 are defeat candidates and controls that must pass on any tree);
+  static guard 15 failed; callers guard 5 failed. The helper suite and the census tests are new files, so their "red" is only
+  "module not found".
+* After the fix: `lib/auth/__tests__/requireOwnedSession.test.ts` 19, `app/api/practice/__tests__/sessionOwnership.test.ts` 31,
+  `app/api/supervision/__tests__/sessionOwnership.test.ts` 39 (the behavioural suites run every handler against two accounts, a
+  legacy unowned row, an absent id and a malformed id), the static guard 48, the callers guard 10, the census 16 (`node --test`).
+  Every suite carries named defeat candidates (owner ignored in SQL, owner trusted from query/body, 403-vs-404 oracle, list
+  unfiltered, unowned allowed, delete without owner, session id only, gate after the write, gate result ignored, batch checks
+  only the first id, no UUID guard, no authentication).
+* Mutation sweep (not committed): every `requireOwnedSession` gate and every `requireSessionMember` call in the practice and
+  supervision route files (the 18 this unit changed and the #2325 ones beside them) was removed or replaced one at a time;
+  **52 / 52** mutants in the 18 changed files were killed by the two behavioural suites. The 10 further survivors of the sweep are
+  all in #2325 routes this unit did not change (`growth`, `preferences`, `session/start` (practice), `worlds/experiments`,
+  `worlds/practitioner`); those are covered by their own suite, which that sweep did not run.
+* Throwaway PostgreSQL 16.15 (initdb in a `mktemp` dir, fictional rows, the real `practice_sessions` / `supervision_sessions` /
+  `practitioner_growth` / `practitioner_cases` / `scribe_sessions` migrations): the exact committed statements, extracted from
+  the sources, passed 28 / 28 checks, and two deliberately wrong predicates (owner ignored; unowned allowed) failed 4 and 3 of
+  them. This probe is **not committed**.
+* ⛔ Not claimed: every store in the route suites is a fake; no browser or WebView was run; the real `next dev` was not run;
+  nothing was run against production data.
+
+### Not done, and why
+
+* No backfill, no claim endpoint, no recovery of legacy rows (P3).
+* No `?_t=` SSE token (decision 5), so native-WebView SSE clients are not repaired.
+* `caseId` on `session/start` is still stored as the client sent it (as before); sessions never read the case through it.
+* A DELETE of a supervision session removes its transcript segments, `supervision_insights` and jobs (they carry
+  `ON DELETE CASCADE`), but NOT any `practice_insights` rows that cite it: `20260110000005` dropped that table's foreign key so it
+  could reference either session table, and `20260110000006` is an insert-time trigger only. Unchanged and pre-existing; the route
+  never cleaned them up. Named here so the next reader does not assume otherwise.
+* The `?memberId=` pin in `rawIdentityAuthorityGuard` (19) is exact and **unchanged** by this unit: none of the 26 handlers read
+  `memberId` (they read `practitionerId`, which the family guard pins). Nothing to tighten there.
+
