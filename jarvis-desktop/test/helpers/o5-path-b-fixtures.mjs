@@ -76,7 +76,7 @@ export async function interrupted(env, nowMs, { witness }) {
   const grantId = await authorize(env, id);
   let entered;
   const inRunner = new Promise((r) => { entered = r; });
-  WUC.canonicalConfirmAuthorizedExecution(REPO, id, grantId, {
+  const confirm = WUC.canonicalConfirmAuthorizedExecution(REPO, id, grantId, {
     env, actorId: ACTOR,
     executeCanonicalProvider: async (_root, args) => {
       const w = witness ? persist(env, args, durableBody(args)) : null;
@@ -84,7 +84,21 @@ export async function interrupted(env, nowMs, { witness }) {
       return new Promise(() => {}); // the process never returns: a hard stop
     },
   });
-  const w = await inRunner;
+  // A lawful refusal (capacity hold, admission block) never enters the provider,
+  // so `inRunner` never settles. Awaiting it alone turns any such refusal into an
+  // infinite hang: the file is cancelled and every test in it reports
+  // cancelledByParent with no diagnostic. Race the confirm so the disposition is
+  // what surfaces.
+  const w = await Promise.race([
+    inRunner,
+    confirm.then((res) => {
+      const status = res && res.status ? res.status : 'no-status';
+      const reason = res && res.reason ? ` / ${res.reason}` : '';
+      throw new Error(
+        `fixture: execution never entered the provider — canonicalConfirmAuthorizedExecution returned ${status}${reason}`,
+      );
+    }),
+  ]);
   return { id, grantId, witness: w };
 }
 
