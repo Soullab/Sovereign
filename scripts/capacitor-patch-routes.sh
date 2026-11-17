@@ -486,6 +486,8 @@ MOBILE_EXCLUDED_DIRS=(
     "app/media"
     # Dev review page that imports app/writers-studio (itself excluded as dynamic); web-only.
     "app/dev/writers-studio-full-redesign-review"
+    # Press manuscript editor imports app/writers-studio (excluded as dynamic); Studio rooms are web bridges on native.
+    "app/press/manuscript"
     # Studio web-only sections
     "app/studio/marketing"
     "app/studio/media"
