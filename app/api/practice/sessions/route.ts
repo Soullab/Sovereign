@@ -6,16 +6,18 @@
  * The LIST is always the SESSION practitioner's own: a `practitionerId` query param is ignored,
  * and with none supplied it no longer lists every practitioner's sessions.
  *
- * ⛔ NOT fixed here: the single-session lookup (`?sessionId=`) and PATCH address a session by id
- * alone and check no owner. practice_sessions.practitioner_id is nullable and getSession() falls
- * back to supervision_sessions, whose rows are mostly unowned, so an ownership check needs a
- * decision about legacy unowned rows. Open, by name, in
- * app/api/__tests__/practitionerFamiliesIdentityGuard.test.ts.
+ * The single-session lookup (`?sessionId=`) and PATCH address one session by id: it must be the
+ * SESSION practitioner's own. A session that is not theirs, a legacy session whose owner is NULL and an
+ * absent id all answer the same 404 (PRACTITIONER-SESSION-OWNERSHIP-01,
+ * lib/auth/requireOwnedSession.ts). practice_sessions.practitioner_id is nullable and getSession() falls
+ * back to supervision_sessions, so legacy unowned rows are unreachable here; recovery is a
+ * founder-run audited step, not built.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { listSessions, getSession, updateSession } from '@/lib/practice/PracticeStore';
 import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +38,8 @@ export async function GET(req: NextRequest) {
 
     // Single session lookup
     if (sessionId) {
+      const owned = await requireOwnedSession(practitionerId, sessionId);
+      if ('error' in owned) return owned.error;
       const session = await getSession(sessionId);
       if (!session) {
         return NextResponse.json(
@@ -70,6 +74,8 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
     const body = await req.json();
     const { sessionId, ...updates } = body;
 
@@ -79,6 +85,9 @@ export async function PATCH(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     const session = await updateSession(sessionId, updates);
 

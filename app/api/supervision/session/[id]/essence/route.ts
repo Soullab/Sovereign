@@ -4,6 +4,9 @@
  *
  * Returns the Fathom-like essence summary for a completed session.
  * Includes: title, coreInsight, themes, goldLines, supervisionFocus, etc.
+ *
+ * Owner-only (PRACTITIONER-SESSION-OWNERSHIP-01): any other session answers the same 404 as an absent
+ * one, and nothing is generated, regenerated or read for it.
  */
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +16,8 @@ export const revalidate = false;
 import { NextRequest, NextResponse } from 'next/server';
 import { getEssenceSummary, runSessionSynthesis } from '@/lib/supervision/SessionSynthesizer';
 import { getSession } from '@/lib/supervision/SupervisionStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -25,7 +30,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
     const { id: sessionId } = await context.params;
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
     const searchParams = request.nextUrl.searchParams;
     const regenerate = searchParams.get('regenerate') === 'true';
 

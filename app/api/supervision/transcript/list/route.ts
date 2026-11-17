@@ -5,6 +5,13 @@
  *
  * Used by Python transcription service to stream segments.
  * All data stored in local PostgreSQL - HIPAA compliant.
+ *
+ * PRACTITIONER-SESSION-OWNERSHIP-01. Both verbs are owner-only:
+ *   · GET keeps its Lab Tools gate and additionally requires the session to be the caller's own;
+ *   · POST now needs the session (it needed nothing) and EVERY session id named in the batch must be the
+ *     caller's own, or the whole batch is refused with nothing written (it used to check only the first
+ *     segment's session, so a batch could write into any other session).
+ * A session that is not theirs, an unowned legacy session and an absent id answer the same 404.
  */
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +26,8 @@ import {
   getTranscriptSegments,
   addTranscriptSegment
 } from '@/lib/supervision/SupervisionStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 interface AddSegmentRequest {
   sessionId: string;
@@ -33,9 +42,11 @@ interface AddSegmentRequest {
 }
 
 export async function GET(request: NextRequest) {
+  let labMemberId = '';
   if (!process.env.CAPACITOR_BUILD) {
     const access = await requireLabAccess();
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    labMemberId = access.memberId;
   }
 
   // Static export: return stub response during pre-rendering
@@ -55,6 +66,10 @@ export async function GET(request: NextRequest) {
         error: 'sessionId query parameter is required'
       }, { status: 400 });
     }
+
+    // The Lab Tools gate resolved the signed-in member; the session must be theirs.
+    const owned = await requireOwnedSession(labMemberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     // Verify session exists
     const session = await getSession(sessionId);
@@ -150,6 +165,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
     const body: AddSegmentRequest | AddSegmentRequest[] = await request.json();
 
     // Support both single segment and batch
@@ -170,6 +187,12 @@ export async function POST(request: NextRequest) {
           error: 'Each segment requires: sessionId, speaker, startMs, endMs, text'
         }, { status: 400 });
       }
+    }
+
+    // Every session named in the batch must be the caller's own — nothing is written otherwise
+    for (const id of new Set(segments.map(seg => seg.sessionId))) {
+      const owned = await requireOwnedSession(actor.memberId, id);
+      if ('error' in owned) return owned.error;
     }
 
     // Verify session exists (check first segment's session)

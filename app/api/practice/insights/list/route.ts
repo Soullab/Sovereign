@@ -2,6 +2,9 @@
  * GET/POST /api/practice/insights
  *
  * MAIA's developmental insights for practice sessions
+ *
+ * The caller is the SESSION member, and the session must be theirs (404 otherwise, the same 404 as an
+ * absent id): PRACTITIONER-SESSION-OWNERSHIP-01, lib/auth/requireOwnedSession.ts.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,6 +14,8 @@ import {
   addInsight,
   type InsightType
 } from '@/lib/practice/PracticeStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +25,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
     const { searchParams } = new URL(req.url);
     const sessionId = searchParams.get('sessionId');
     const insightType = searchParams.get('type') as InsightType | null;
@@ -31,6 +38,9 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     // Grouped by type (for dashboard display)
     if (grouped) {
@@ -60,6 +70,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
     const body = await req.json();
     const {
       sessionId,
@@ -80,6 +92,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     const insight = await addInsight({
       sessionId,

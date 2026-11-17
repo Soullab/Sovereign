@@ -10,12 +10,11 @@
  * Boundary check (I1-I5): tests/support/sessionBoundaryHarness.ts, run against every handler
  * below and against deliberately wrong handlers that must each be caught.
  *
- * ⛔ NOT in this suite, and not claimed: the practice handlers addressed by a SESSION id only
- * (`insights/*`, `session/stop`, `session/worlds`, `sessions` single/PATCH, `transcript`,
- * `worlds/detect`). `practice_sessions.practitioner_id` is nullable and `getSession` falls
- * back to `supervision_sessions`, whose rows are overwhelmingly unowned, so an ownership check
- * on them needs a product decision about legacy unowned rows. They are listed, by name, in the
- * static guard's open set (app/api/__tests__/practitionerFamiliesIdentityGuard.test.ts).
+ * ⛔ NOT in this suite: the practice handlers addressed by a SESSION id (`insights/*`,
+ * `session/stop`, `session/worlds`, `sessions` single/PATCH, `transcript`, `worlds/detect`,
+ * `worlds/suggest` with a sessionId). They were an open set when this suite was written; they are
+ * owner-only now and are covered by `sessionOwnership.test.ts` next to it
+ * (PRACTITIONER-SESSION-OWNERSHIP-01).
  */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import type { NextRequest } from 'next/server';

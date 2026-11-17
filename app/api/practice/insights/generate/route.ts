@@ -4,6 +4,10 @@
  * Generate world-specific supervision insights from session transcripts.
  * Uses local LLM only (HIPAA-compliant, no external APIs).
  *
+ * The caller is the SESSION member, and the session must be theirs: a session that is not the
+ * practitioner's, an unowned legacy session and an absent id all answer the same 404
+ * (PRACTITIONER-SESSION-OWNERSHIP-01, lib/auth/requireOwnedSession.ts).
+ *
  * Request body:
  *   - sessionId: UUID of the practice session
  *   - worldCode: Code of the interpretive lens (e.g., 'somatic', 'parts_ifs')
@@ -24,11 +28,15 @@ import {
   getSessionInsights,
   type InsightGenerationParams
 } from '@/lib/practice/InsightGenerator';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
     const body = await req.json();
     const {
       sessionId,
@@ -46,6 +54,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     if (!worldCode) {
       return NextResponse.json(
@@ -121,6 +132,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
     const { searchParams } = new URL(req.url);
     const sessionId = searchParams.get('sessionId');
     const worldCode = searchParams.get('worldCode');
@@ -132,6 +145,9 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     const insights = await getSessionInsights(sessionId, {
       worldCode: worldCode || undefined,
