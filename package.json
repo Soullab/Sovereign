@@ -115,6 +115,7 @@
     "matrix:jarvis-o5-r3-rb-event-purity": "node tests/constitutional/jarvis-o5-r3-runtime-binding/event-purity/matrix.mjs",
     "matrix:jarvis-o5-r3-rb-gesture": "node tests/constitutional/jarvis-o5-r3-runtime-binding/gesture/matrix.mjs",
     "matrix:jarvis-o5-r3-rb-capacity": "node tests/constitutional/jarvis-o5-r3-runtime-binding/capacity/matrix.mjs",
+    "matrix:jarvis-o5-r3-rb-sampler": "node tests/constitutional/jarvis-o5-r3-rb-sampler/matrix.mjs",
     "test:jarvis-o5-r3-a9": "node --test jarvis-desktop/test/o5-r3-a9-silent-fallback.test.mjs jarvis-desktop/test/jop-04-dev-resolution.test.mjs",
     "matrix:jarvis-o5-r3-a9": "node tests/constitutional/jarvis-o5-r3-a9-silent-fallback/matrix.mjs",
     "verify:jarvis-o5-r3-a9-freeze": "node scripts/verify-jarvis-o5-r3-a9-freeze.mjs",

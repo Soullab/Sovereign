@@ -39,6 +39,34 @@ function unitBytes(value, unit) {
   return n;
 }
 
+/**
+ * Reclaimable memory from `vm_stat`, in bytes, or null when the output cannot
+ * be trusted. Fails closed: every term must parse, including the page size,
+ * which is read from the header rather than assumed (Apple Silicon uses 16384,
+ * Intel 4096, and a wrong constant is a silent 4x error in either direction).
+ */
+function parseDarwinVmStatAvailable(read) {
+  let text;
+  try { text = String(read()); } catch { return null; }
+
+  const pageMatch = text.match(/page size of (\d+) bytes/);
+  const pageSize = pageMatch ? Number(pageMatch[1]) : NaN;
+  if (!Number.isFinite(pageSize) || pageSize <= 0) return null;
+
+  // Reclaimable without stalling. Wired, active and compressor pages are
+  // deliberately absent — see the sampler comment in sampleLocalCapacity.
+  const RECLAIMABLE = ['Pages free', 'Pages inactive', 'Pages speculative', 'Pages purgeable'];
+
+  let pages = 0;
+  for (const label of RECLAIMABLE) {
+    const m = text.match(new RegExp(`${label}:\\s+(\\d+)\\.`));
+    const n = m ? Number(m[1]) : NaN;
+    if (!Number.isFinite(n)) return null;
+    pages += n;
+  }
+  return pages * pageSize;
+}
+
 function parseDarwinSwap(text) {
   const s = String(text || '');
   const read = (name) => {
@@ -83,6 +111,26 @@ function sampleLocalCapacity(deps = {}) {
         swapFree = swap.free;
       }
     } catch { /* unknown stays unknown */ }
+
+    // RB-A6 SAMPLER REPAIR. os.freemem() on Darwin counts only genuinely FREE
+    // pages. macOS keeps that near zero by design and holds the remainder as
+    // cache, so the judge was being handed ~0.3 GiB on a 48 GiB host whose
+    // actual reclaimable memory was ~15.8 GiB — and then correctly refusing it.
+    // The Linux branch below has always read MemAvailable, the right concept;
+    // Darwin never got the equivalent. Governed by SLC-1…SLC-9 in
+    // tests/constitutional/jarvis-o5-r3-rb-sampler/ (additive law: LC-1…LC-8
+    // govern the judge and are untouched).
+    //
+    // Counted: free + inactive + speculative + purgeable — pages the kernel can
+    // reclaim without stalling. NOT counted: wired, active, and compressor
+    // pages, which are not reclaimable at speed; counting them would over-admit
+    // an 18.5 GB model onto a host that cannot hold it, and the judge has no
+    // way to know it was lied to. Unreadable or unparseable output yields null,
+    // which routes the judge to LOCAL_CAPACITY_SAMPLE_UNKNOWN rather than to a
+    // confident wrong refusal.
+    freeRam = parseDarwinVmStatAvailable(() => execFileSync('/usr/bin/vm_stat', [], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000,
+    }));
   } else if (platform === 'linux') {
     try {
       const mem = parseLinuxMeminfo(readFileSync('/proc/meminfo', 'utf8'));
