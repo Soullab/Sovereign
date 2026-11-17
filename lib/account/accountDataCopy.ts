@@ -7,9 +7,11 @@
  *  - POST /api/members/export-data returns profile, settings, session history, developmental memories and a
  *    Google-connected flag. It does not read a member's Works or writing.
  *  - POST /api/members/delete-account closes the account when it can. When governed content is held it refuses with a
- *    409 (`accountChanged:false`, `retained:[{label,rows}]`) and changes nothing; an unexpected failure is a 500 from a
- *    rolled-back transaction. Permanent erasure is not certified (releaseAuthority.permanentErasureCertified), so the
- *    description must not say "permanently" or "all associated data" (accountDataHonesty.test.ts ties it to that read).
+ *    409 (`accountChanged:false`, `retained:[{label,rows}]`) and changes nothing. A foreign key refusing the closure
+ *    that the route's list does not name is the same 409 with `retained:[]`: held, rolled back, support, not "try again".
+ *    Only a failure the route has not classified is a 500. Permanent erasure is not certified
+ *    (releaseAuthority.permanentErasureCertified), so the description must not say "permanently" or "all associated
+ *    data" (accountDataHonesty.test.ts ties it to that read).
  */
 
 export const EXPORT_DATA_DESCRIPTION =
@@ -18,7 +20,7 @@ export const EXPORT_DATA_DESCRIPTION =
 
 export const DELETE_ACCOUNT_DESCRIPTION =
   'Closes your account and revokes your sign-in. This cannot be undone. ' +
-  'If anything you have written or saved is still held and cannot be removed yet, nothing is changed and you are told what is held.';
+  'If anything you have written or saved is still held and cannot be removed yet, nothing is changed and you are told, naming what is held where we know it.';
 
 const NO_CONNECTION = "We couldn't reach the server. Check your connection and try again.";
 

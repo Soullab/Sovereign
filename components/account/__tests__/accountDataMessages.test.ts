@@ -36,6 +36,14 @@ describe('deleteFailureMessage', () => {
     expect(m.match(/your writing/g)).toHaveLength(1);
   });
 
+  it('409 from a foreign key the route could not name (retained: []): nothing changed, contact support, no empty "Still held"', () => {
+    const m = deleteFailureMessage(409, { ...refusal, retained: [] });
+    expect(m).toContain('have not been changed');
+    expect(m).toContain('contact support');
+    expect(m).not.toMatch(/still held/i);
+    expect(m).not.toMatch(/try again/i);
+  });
+
   it('409 without a readable body still says nothing was changed', () => {
     const m = deleteFailureMessage(409, null);
     expect(m).toMatch(/nothing was changed/i);
