@@ -97,6 +97,8 @@
     "verify:ws-continuity-freeze": "node scripts/verify-ws-continuity-freeze.mjs",
     "verify:ws-academy-freeze": "npx tsx scripts/verify-ws-academy-freeze.ts",
     "matrix:jarvis-o5-r1": "node tests/constitutional/jarvis-o5-r1/matrix.mjs",
+    "jarvis:run": "node scripts/builder/jarvis-run.mjs",
+    "matrix:jarvis-run": "node tests/constitutional/jarvis-run/matrix.mjs",
     "verify:jarvis-o5-r1-freeze": "node scripts/verify-jarvis-o5-r1-freeze.mjs",
     "matrix:jarvis-o5-r2": "node tests/constitutional/jarvis-o5-r2/matrix.mjs",
     "matrix:jarvis-o5-r3": "node tests/constitutional/jarvis-o5-r3/matrix.mjs",
