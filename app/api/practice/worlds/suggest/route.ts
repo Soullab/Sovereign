@@ -2,24 +2,27 @@
  * POST /api/practice/worlds/suggest
  *
  * MAIA Mentor: Suggest which world might help this client
+ *
+ * The practitioner is the SESSION member; a `practitionerId` in the body is ignored.
+ *
+ * A `sessionId`, when named, must be the caller's own session (404 otherwise, identical to an absent id):
+ * the worlds used in a session are the session owner's, and the suggestion that excludes them would
+ * otherwise reveal them (PRACTITIONER-SESSION-OWNERSHIP-01).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { suggestWorldForContext, getSessionWorlds } from '@/lib/practice/WorldsStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { practitionerId, transcriptSample, sessionId, excludeWorlds } = body;
-
-    if (!practitionerId) {
-      return NextResponse.json(
-        { success: false, error: 'practitionerId required' },
-        { status: 400 }
-      );
-    }
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
+    const { transcriptSample, sessionId, excludeWorlds } = await req.json();
 
     if (!transcriptSample) {
       return NextResponse.json(
@@ -31,6 +34,8 @@ export async function POST(req: NextRequest) {
     // If sessionId provided, exclude worlds already used in this session
     let worldsToExclude = excludeWorlds || [];
     if (sessionId) {
+      const owned = await requireOwnedSession(practitionerId, sessionId);
+      if ('error' in owned) return owned.error;
       const sessionWorlds = await getSessionWorlds(sessionId);
       const usedWorldIds = sessionWorlds
         .filter(sw => sw.usage_type === 'explicit')

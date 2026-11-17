@@ -9,6 +9,11 @@
  * - Session status updates
  *
  * Auto-triggers incremental analysis every 2 minutes during active sessions.
+ *
+ * Owner-only (PRACTITIONER-SESSION-OWNERSHIP-01): the stream (transcript, insights, and the incremental
+ * analysis it triggers) opens only for a session the caller owns. Another practitioner's session, an
+ * unowned legacy session and an absent id answer the same 404. EventSource carries the maia_session
+ * cookie; there is no token-in-URL fallback.
  */
 
 import { NextRequest } from 'next/server';
@@ -18,6 +23,8 @@ import {
   getInsightsSince
 } from '@/lib/supervision/SupervisionStore';
 import { analyzeRecentActivity } from '@/lib/supervision/ClinicalSupervisionEngine';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,12 +43,18 @@ export async function GET(req: NextRequest) {
     return new Response('SSE not available in static export', { status: 200 });
   }
 
+  const actor = await requireSessionMember(req);
+  if ('error' in actor) return actor.error;
+
   const url = new URL(req.url);
   const sessionId = url.searchParams.get('sessionId');
 
   if (!sessionId) {
     return new Response('Missing sessionId', { status: 400 });
   }
+
+  const owned = await requireOwnedSession(actor.memberId, sessionId);
+  if ('error' in owned) return owned.error;
 
   // Verify session exists
   const session = await getSession(sessionId);

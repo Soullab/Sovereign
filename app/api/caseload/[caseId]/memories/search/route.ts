@@ -13,6 +13,7 @@ export function generateStaticParams() {
 import { NextRequest, NextResponse } from 'next/server';
 import { CaseMemoryService } from '@/lib/caseload/CaseMemoryService';
 import { CaseStore } from '@/lib/caseload/CaseStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 interface RouteParams {
   params: Promise<{ caseId: string }>;
@@ -23,20 +24,19 @@ interface RouteParams {
  *
  * Search case memories using semantic similarity.
  *
+ * The practitioner is the SESSION member (a `memberId` in the body is ignored).
+ *
  * Body:
- * - memberId (required)
  * - query (required): Search query text
  * - topK: Number of results (default 8)
  */
 export async function POST(request: NextRequest, context: RouteParams) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await context.params;
-    const body = await request.json();
-    const { memberId, query: searchQuery, topK } = body;
-
-    if (!memberId) {
-      return NextResponse.json({ error: 'memberId required' }, { status: 400 });
-    }
+    const { query: searchQuery, topK } = await request.json();
 
     if (!searchQuery) {
       return NextResponse.json({ error: 'query required' }, { status: 400 });

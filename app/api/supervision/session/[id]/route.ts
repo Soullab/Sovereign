@@ -2,9 +2,16 @@
  * Get/Update Clinical Supervision Session
  * GET /api/supervision/session/[id] - Get session details
  * PATCH /api/supervision/session/[id] - Update session metadata
- * DELETE /api/supervision/session/[id] - Delete session (admin only)
+ * DELETE /api/supervision/session/[id] - Delete session (owner only)
  *
  * All data from local PostgreSQL - HIPAA compliant.
+ *
+ * Every verb is owner-only (PRACTITIONER-SESSION-OWNERSHIP-01): a session that is not the SESSION
+ * practitioner's, a legacy session whose owner is NULL and an absent id all answer the same 404.
+ * DELETE used to be documented "admin only" and checked nothing. No admin gate exists under
+ * /api/supervision to defer to, and a platform-wide delete of a practitioner's PHI session would be
+ * its own exposure, so it is the owner's act only. Its statement also carries the owner
+ * (`WHERE id = $1 AND practitioner_id = $2`), so it cannot delete a row the lookup did not clear.
  */
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +27,8 @@ import {
   getJobsForSession
 } from '@/lib/supervision/SupervisionStore';
 import { query } from '@/lib/db/postgres';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession, sessionNotFound } from '@/lib/auth/requireOwnedSession';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -31,7 +40,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
     const { id: sessionId } = await context.params;
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
     const searchParams = request.nextUrl.searchParams;
     const includeTranscript = searchParams.get('transcript') === 'true';
     const includeInsights = searchParams.get('insights') === 'true';
@@ -136,7 +149,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
     const { id: sessionId } = await context.params;
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
     const body = await request.json();
 
     const session = await getSession(sessionId);
@@ -153,8 +170,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (body.title !== undefined) {
       // Title update via direct query (not in updateSession)
       await query(`
-        UPDATE supervision_sessions SET title = $1 WHERE id = $2
-      `, [body.title, sessionId]);
+        UPDATE supervision_sessions SET title = $1 WHERE id = $2 AND practitioner_id = $3
+      `, [body.title, sessionId, actor.memberId]);
     }
 
     if (body.processingStatus !== undefined) {
@@ -193,21 +210,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
     const { id: sessionId } = await context.params;
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
-    // Verify session exists
-    const session = await getSession(sessionId);
-    if (!session) {
-      return NextResponse.json({
-        success: false,
-        error: 'Session not found'
-      }, { status: 404 });
+    // Delete session (cascades to transcript, insights, jobs). The owner is IN the statement: a row
+    // the lookup did not clear for this practitioner cannot be deleted by it, and zero rows deleted
+    // reads as the same 404 as an absent session.
+    const deleted = await query(`
+      DELETE FROM supervision_sessions WHERE id = $1 AND practitioner_id = $2 RETURNING id
+    `, [sessionId, actor.memberId]);
+    if (!deleted.rows || deleted.rows.length === 0) {
+      return sessionNotFound();
     }
-
-    // Delete session (cascades to transcript, insights, jobs)
-    await query(`
-      DELETE FROM supervision_sessions WHERE id = $1
-    `, [sessionId]);
 
     console.log(`🗑️ [SUPERVISION] Session deleted: ${sessionId}`);
 
