@@ -484,6 +484,8 @@ MOBILE_EXCLUDED_DIRS=(
     "app/founder/constellation"
     # LISTEN-01: gated Sound Studio audio route (server session + flag); web-only.
     "app/media"
+    # Dev review page that imports app/writers-studio (itself excluded as dynamic); web-only.
+    "app/dev/writers-studio-full-redesign-review"
     # Studio web-only sections
     "app/studio/marketing"
     "app/studio/media"
