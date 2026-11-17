@@ -9,8 +9,8 @@
  * no one. The tester flag, an allowlist, a tier claim or a subscription never
  * admit anyone here. A grant-lookup failure admits no one.
  *
- * 'tester-grant' is built but not chosen: it waits on the #1817 R20/privacy
- * verdict and the founder's acceptance of an exact Pro candidate.
+ * Which phase runs is a deploy setting (ASTRO_PRO_ACCESS_PHASE); read it from
+ * the running container, never from this comment.
  */
 import type { FounderPreviewConfig } from './founderOnlyPreviewAccess';
 import { hasActiveProTesterGrant } from './proTesterGrants';
