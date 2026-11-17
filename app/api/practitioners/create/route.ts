@@ -9,9 +9,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, transaction } from '@/lib/db/postgres';
 import { v4 as uuid } from 'uuid';
 import { validateModuleSlugs } from '@/lib/studio/moduleDefinitions';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 interface CreatePractitionerInput {
-  memberId: string;
   practiceName: string;
   slug: string;
   email: string;
@@ -35,7 +35,9 @@ function isValidPortalType(t: string): t is PortalType {
 /**
  * POST /api/practitioners/create
  *
- * Creates a new practitioner for an existing member.
+ * Creates a new practitioner for the SIGNED-IN member. The member is the SESSION member; a
+ * `memberId` in the body is ignored (it used to decide whose practice was created and whose
+ * is_practitioner flag was flipped).
  * - Validates member exists
  * - Checks slug uniqueness
  * - Creates practitioner record
@@ -43,9 +45,11 @@ function isValidPortalType(t: string): t is PortalType {
  */
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const body: CreatePractitionerInput = await request.json();
     const {
-      memberId,
       practiceName,
       slug,
       email,
@@ -55,9 +59,9 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validate required fields
-    if (!memberId || !practiceName || !slug || !email) {
+    if (!practiceName || !slug || !email) {
       return NextResponse.json(
-        { error: 'Missing required fields: memberId, practiceName, slug, email' },
+        { error: 'Missing required fields: practiceName, slug, email' },
         { status: 400 }
       );
     }

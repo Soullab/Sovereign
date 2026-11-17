@@ -2,10 +2,20 @@
  * GET /api/practice/sessions
  *
  * List practice sessions for a practitioner
+ *
+ * The LIST is always the SESSION practitioner's own: a `practitionerId` query param is ignored,
+ * and with none supplied it no longer lists every practitioner's sessions.
+ *
+ * ⛔ NOT fixed here: the single-session lookup (`?sessionId=`) and PATCH address a session by id
+ * alone and check no owner. practice_sessions.practitioner_id is nullable and getSession() falls
+ * back to supervision_sessions, whose rows are mostly unowned, so an ownership check needs a
+ * decision about legacy unowned rows. Open, by name, in
+ * app/api/__tests__/practitionerFamiliesIdentityGuard.test.ts.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { listSessions, getSession, updateSession } from '@/lib/practice/PracticeStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,8 +25,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
     const { searchParams } = new URL(req.url);
-    const practitionerId = searchParams.get('practitionerId') || undefined;
     const clientAlias = searchParams.get('clientAlias') || undefined;
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);

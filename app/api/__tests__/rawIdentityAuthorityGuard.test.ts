@@ -67,7 +67,9 @@ const KNOWN_UNREPAIRED_SHADOW_RESOLVER: string[] = [];
  * Pinned so the surface cannot grow while the follow-up census decides which of them
  * cross-check it against a verified session and which do not.
  */
-const QUERY_PARAM_IDENTITY_ROUTE_COUNT = 29;
+// PRACTITIONER-API-IDENTITY-01 removed the 7 /api/caseload routes that read it (they now act as
+// the SESSION member); the pin follows the surface down: 29 → 19. It must only ever shrink.
+const QUERY_PARAM_IDENTITY_ROUTE_COUNT = 19;
 
 function routeFiles(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

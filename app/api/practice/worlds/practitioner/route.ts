@@ -2,6 +2,9 @@
  * GET/POST/PATCH /api/practice/worlds/practitioner
  *
  * Manage which worlds a practitioner has enabled
+ *
+ * The practitioner is the SESSION member on every method. A `practitionerId` in the query or
+ * body is ignored.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -12,6 +15,7 @@ import {
   updatePractitionerWorld,
   incrementWorldUsage
 } from '@/lib/practice/WorldsStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,16 +25,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
     const { searchParams } = new URL(req.url);
-    const practitionerId = searchParams.get('practitionerId');
     const enabledOnly = searchParams.get('enabledOnly') !== 'false';
-
-    if (!practitionerId) {
-      return NextResponse.json(
-        { success: false, error: 'practitionerId required' },
-        { status: 400 }
-      );
-    }
 
     const worlds = await getPractitionerWorlds(practitionerId, { enabledOnly });
 
@@ -59,12 +58,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { practitionerId, worldId, proficiencyLevel, action } = body;
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
+    const { worldId, proficiencyLevel, action } = await req.json();
 
-    if (!practitionerId || !worldId) {
+    if (!worldId) {
       return NextResponse.json(
-        { success: false, error: 'practitionerId and worldId required' },
+        { success: false, error: 'worldId required' },
         { status: 400 }
       );
     }
@@ -110,12 +111,14 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { practitionerId, worldId, proficiencyLevel, autoSuggest, learningNotes } = body;
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
+    const { worldId, proficiencyLevel, autoSuggest, learningNotes } = await req.json();
 
-    if (!practitionerId || !worldId) {
+    if (!worldId) {
       return NextResponse.json(
-        { success: false, error: 'practitionerId and worldId required' },
+        { success: false, error: 'worldId required' },
         { status: 400 }
       );
     }

@@ -549,14 +549,17 @@ export async function getGrowthObservations(
 
 export async function acknowledgeGrowth(
   growthId: string,
-  notes?: string
+  notes: string | undefined,
+  practitionerId: string
 ): Promise<PractitionerGrowth | null> {
+  // The owner is part of the predicate: practitioner_growth.practitioner_id is NOT NULL, so a
+  // row that is not this practitioner's matches nothing — the same answer as an unknown id.
   const result = await query<PractitionerGrowth>(`
     UPDATE practitioner_growth
     SET acknowledged = TRUE, practitioner_notes = COALESCE($2, practitioner_notes)
-    WHERE id = $1
+    WHERE id = $1 AND practitioner_id = $3
     RETURNING *
-  `, [growthId, notes || null]);
+  `, [growthId, notes || null, practitionerId]);
 
   return result.rows[0] || null;
 }

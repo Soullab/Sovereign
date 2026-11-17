@@ -16,6 +16,7 @@ export function generateStaticParams() {
 import { NextRequest, NextResponse } from 'next/server';
 import { CaseStore } from '@/lib/caseload/CaseStore';
 import type { UpdateCaseInput } from '@/lib/caseload/types';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 interface RouteParams {
   params: Promise<{ caseId: string }>;
@@ -26,8 +27,10 @@ interface RouteParams {
  *
  * Get a case with statistics and recent notes.
  *
+ * The practitioner is the SESSION member (a `memberId` query param is ignored); the case id is
+ * a resource id, answered only when the session member owns it.
+ *
  * Query params:
- * - memberId (required): Practitioner's member ID
  * - includeNotes: Include recent notes (default: true)
  * - notesLimit: Number of notes to include (default: 5)
  */
@@ -37,16 +40,11 @@ export async function GET(request: NextRequest, context: RouteParams) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await context.params;
     const { searchParams } = new URL(request.url);
-    const memberId = searchParams.get('memberId');
-
-    if (!memberId) {
-      return NextResponse.json(
-        { error: 'memberId required' },
-        { status: 400 }
-      );
-    }
 
     const caseData = await CaseStore.getCaseWithStats(caseId, memberId);
 
@@ -88,22 +86,18 @@ export async function GET(request: NextRequest, context: RouteParams) {
  *
  * Update a case.
  *
+ * The practitioner is the SESSION member (a `memberId` in the body is ignored).
+ *
  * Body:
- * - memberId (required): Practitioner's member ID
  * - Any UpdateCaseInput fields to update
  */
 export async function PATCH(request: NextRequest, context: RouteParams) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await context.params;
-    const body = await request.json();
-    const { memberId, ...updates } = body;
-
-    if (!memberId) {
-      return NextResponse.json(
-        { error: 'memberId required' },
-        { status: 400 }
-      );
-    }
+    const updates = await request.json();
 
     // Validate status if provided
     if (updates.case_status) {
@@ -173,21 +167,14 @@ export async function PATCH(request: NextRequest, context: RouteParams) {
  *
  * Archive a case (soft delete).
  *
- * Body:
- * - memberId (required): Practitioner's member ID
+ * The practitioner is the SESSION member; the request body is not read.
  */
 export async function DELETE(request: NextRequest, context: RouteParams) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await context.params;
-    const body = await request.json();
-    const { memberId } = body;
-
-    if (!memberId) {
-      return NextResponse.json(
-        { error: 'memberId required' },
-        { status: 400 }
-      );
-    }
 
     const archivedCase = await CaseStore.archiveCase(caseId, memberId);
 

@@ -13,6 +13,7 @@ export function generateStaticParams() {
 import { NextRequest, NextResponse } from 'next/server';
 import { CasePatternService } from '@/lib/caseload/CasePatternService';
 import { CaseStore } from '@/lib/caseload/CaseStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 interface RouteParams {
   params: Promise<{ caseId: string }>;
@@ -22,6 +23,8 @@ interface RouteParams {
  * GET /api/caseload/[caseId]/patterns
  *
  * Recompute pattern summary from notes and return.
+ *
+ * The practitioner is the SESSION member (a `memberId` query param is ignored).
  */
 export async function GET(request: NextRequest, context: RouteParams) {
   // Static export: return stub response during pre-rendering
@@ -29,13 +32,10 @@ export async function GET(request: NextRequest, context: RouteParams) {
     return NextResponse.json({ success: true, summary: null });
   }
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await context.params;
-    const { searchParams } = new URL(request.url);
-    const memberId = searchParams.get('memberId');
-
-    if (!memberId) {
-      return NextResponse.json({ error: 'memberId required' }, { status: 400 });
-    }
 
     // Verify case access
     const caseData = await CaseStore.getCase(caseId, memberId);

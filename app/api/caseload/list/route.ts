@@ -12,14 +12,16 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { CaseStore } from '@/lib/caseload/CaseStore';
 import type { CreateCaseInput, CaseListFilters } from '@/lib/caseload/types';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 /**
  * GET /api/caseload
  *
- * List cases for a practitioner with optional filters.
+ * List cases for the signed-in practitioner with optional filters.
+ *
+ * The practitioner is the SESSION member. A `memberId` query param is ignored.
  *
  * Query params:
- * - memberId (required): Practitioner's member ID
  * - status: Filter by case status
  * - element: Filter by primary element
  * - search: Search client identifiers
@@ -32,15 +34,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { searchParams } = new URL(request.url);
-    const memberId = searchParams.get('memberId');
-
-    if (!memberId) {
-      return NextResponse.json(
-        { error: 'memberId required' },
-        { status: 400 }
-      );
-    }
 
     // Check if member is a practitioner
     const isPractitioner = await CaseStore.isPractitioner(memberId);
@@ -81,10 +78,11 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/caseload
  *
- * Create a new case.
+ * Create a new case for the signed-in practitioner.
+ *
+ * The practitioner is the SESSION member. A `memberId` in the body is ignored.
  *
  * Body:
- * - memberId (required): Practitioner's member ID
  * - client_identifier (required): Your identifier for this client
  * - presenting_concerns: Array of initial concerns
  * - intake_date: Date of intake (defaults to today)
@@ -94,15 +92,10 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { memberId, ...caseInput } = body;
-
-    if (!memberId) {
-      return NextResponse.json(
-        { error: 'memberId required' },
-        { status: 400 }
-      );
-    }
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
+    const caseInput = await request.json();
 
     if (!caseInput.client_identifier) {
       return NextResponse.json(

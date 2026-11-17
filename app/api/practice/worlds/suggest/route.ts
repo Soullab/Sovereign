@@ -2,24 +2,22 @@
  * POST /api/practice/worlds/suggest
  *
  * MAIA Mentor: Suggest which world might help this client
+ *
+ * The practitioner is the SESSION member; a `practitionerId` in the body is ignored.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { suggestWorldForContext, getSessionWorlds } from '@/lib/practice/WorldsStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { practitionerId, transcriptSample, sessionId, excludeWorlds } = body;
-
-    if (!practitionerId) {
-      return NextResponse.json(
-        { success: false, error: 'practitionerId required' },
-        { status: 400 }
-      );
-    }
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
+    const { transcriptSample, sessionId, excludeWorlds } = await req.json();
 
     if (!transcriptSample) {
       return NextResponse.json(

@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { CaseMemoryService } from '@/lib/caseload/CaseMemoryService';
 import { CasePatternService } from '@/lib/caseload/CasePatternService';
 import { CaseStore } from '@/lib/caseload/CaseStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 interface RouteParams {
   params: Promise<{ caseId: string }>;
@@ -24,6 +25,8 @@ interface RouteParams {
  * GET /api/caseload/[caseId]/memories
  *
  * List recent memory chunks and cached patterns for a case.
+ *
+ * The practitioner is the SESSION member (a `memberId` query param is ignored).
  */
 export async function GET(request: NextRequest, context: RouteParams) {
   // Static export: return stub response during pre-rendering
@@ -31,14 +34,12 @@ export async function GET(request: NextRequest, context: RouteParams) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await context.params;
     const { searchParams } = new URL(request.url);
-    const memberId = searchParams.get('memberId');
     const limit = parseInt(searchParams.get('limit') || '25');
-
-    if (!memberId) {
-      return NextResponse.json({ error: 'memberId required' }, { status: 400 });
-    }
 
     // Verify case access
     const caseData = await CaseStore.getCase(caseId, memberId);
@@ -67,8 +68,9 @@ export async function GET(request: NextRequest, context: RouteParams) {
  *
  * Manually ingest content into case memory.
  *
+ * The practitioner is the SESSION member (a `memberId` in the body is ignored).
+ *
  * Body:
- * - memberId (required)
  * - content (required)
  * - sourceType: 'note' | 'capture' | 'consultation' | 'manual'
  * - sourceId: optional source ID
@@ -78,13 +80,11 @@ export async function GET(request: NextRequest, context: RouteParams) {
  */
 export async function POST(request: NextRequest, context: RouteParams) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await context.params;
-    const body = await request.json();
-    const { memberId, content, sourceType, sourceId, occurredAt, metadata, embed } = body;
-
-    if (!memberId) {
-      return NextResponse.json({ error: 'memberId required' }, { status: 400 });
-    }
+    const { content, sourceType, sourceId, occurredAt, metadata, embed } = await request.json();
 
     if (!content) {
       return NextResponse.json({ error: 'content required' }, { status: 400 });
