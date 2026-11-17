@@ -13,6 +13,8 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { isCausedByPress } from './classify.mjs';
+
 const require = createRequire(import.meta.url);
 
 /** Find a Chromium the harness can drive. JL_CHROMIUM wins; then Playwright's own; then a pre-installed browser cache. */
@@ -174,21 +176,37 @@ async function signature(page) {
   return { ...s, controls: controls.length, controlKeys: controls.map(c => c.key), controlList: controls };
 }
 
-/** Wait until the page has been quiet (same text, same control count) for `quietMs`, or `capMs` passes. */
-export async function settle(page, { quietMs = 1500, capMs = 25000, minControls = 1, notWhile = null } = {}) {
+/**
+ * What counts as "the page changed" while waiting for it to be still. The ADDRESS is part of it: a press that makes a Work and
+ * then navigates (Just let me write: POST, POST, GET, router.push) shows its next controls BEFORE the address changes, and a wait
+ * that watched only text and control count called that page still while the navigation was on its way (row P1-05.09.01).
+ */
+export function settleKey(s) {
+  return `${s.url}|${s.text.length}|${s.text.slice(0, 200)}|${s.controls}|${s.aria}`;
+}
+
+/**
+ * Wait until the page has been still for `quietMs` (same address, text, control count and aria state; and, if `inflight` is given,
+ * no same-origin fetch/xhr still on its way), or `capMs` passes. The result carries `settled` (false if the cap ended the wait)
+ * and, then, `why`: a caller that presses something next must not read an unsettled page as a still one.
+ */
+export async function settle(page, { quietMs = 1500, capMs = 25000, minControls = 1, notWhile = null, inflight = null } = {}) {
   const t0 = Date.now();
-  let last = null; let lastChange = Date.now();
+  let last = null; let lastChange = Date.now(); let busyNow = 0;
   while (Date.now() - t0 < capMs) {
     const s = await signature(page).catch(() => null);
     if (s) {
-      const key = `${s.text.length}|${s.text.slice(0, 200)}|${s.controls}|${s.aria}`;
-      if (key !== last) { last = key; lastChange = Date.now(); }
+      const key = settleKey(s);
+      busyNow = inflight ? inflight.count() : 0;
+      // A request still on its way is the page moving, however quiet it looks.
+      if (key !== last || busyNow > 0) { last = key; lastChange = Date.now(); }
       // `notWhile`: a loading fallback ("Opening Writer's Studio…") is not a page that has settled, however quiet it is.
-      if (s.controls >= minControls && Date.now() - lastChange >= quietMs && !(notWhile && notWhile.test(s.text))) return s;
+      if (s.controls >= minControls && Date.now() - lastChange >= quietMs && busyNow === 0 && !(notWhile && notWhile.test(s.text))) return { ...s, settled: true, why: '' };
     }
     await page.waitForTimeout(250);
   }
-  return signature(page);
+  const s = await signature(page);
+  return { ...s, settled: false, why: busyNow > 0 ? `${busyNow} request(s) still in flight after ${capMs} ms` : `the page had not been still for ${quietMs} ms after ${capMs} ms` };
 }
 
 /** The loading fallback the Studio host shows while a route compiles / data loads. */
@@ -221,14 +239,35 @@ function describeClickError(e) {
   return { kind: 'other', message: msg.split('\n')[0].slice(0, 140) };
 }
 
+/** The page must have been still this long, with nothing in flight, before a control is pressed. */
+export const PRESS_QUIET_MS = 800;
+/** ...and this is the longest the walk waits for that; past it the press is made anyway and flagged `unsettledAtPress`. */
+export const PRESS_STILL_CAP_MS = 20000;
+
 /**
  * Press one control, already located on `page` by its key, and gather an observation for classifyTrial().
  * `prepare` (optional) is a persona hook that makes a disabled control pressable by doing what a person would do first.
+ * `flight` (optional) is a trackInFlight() tracker created when the page was, so a request an EARLIER press started is still
+ * known; without it only requests started after this call are seen. The page is first waited on until it is still (settle());
+ * if it never is, `obs.unsettledAtPress` says so and the classifier will not credit the press with whatever lands next.
  */
-export async function pressAndObserve(page, ctx, control, { base, modelLog, windowMs = 3000, prepare = null, hrefOf = null }) {
+export async function pressAndObserve(page, ctx, wanted, { base, modelLog, windowMs = 3000, prepare = null, hrefOf = null, flight = null, stillMs = PRESS_QUIET_MS, stillCapMs = PRESS_STILL_CAP_MS }) {
   const origin = new URL(base).origin;
+  const ownFlight = flight ? null : trackInFlight(page, origin);
+  const still = await settle(page, { quietMs: stillMs, capMs: stillCapMs, inflight: flight || ownFlight });
+  if (ownFlight) ownFlight.stop();
   const before = await signature(page);
+  // The page may have re-rendered while it settled, so the control is found again by its key: an index from before the wait
+  // could now point at a different control.
+  const control = before.controlList.find(c => c.key === wanted.key) || null;
+  if (!control) {
+    return {
+      label: wanted.label || `[unlabelled ${wanted.tag}${wanted.cls ? '.' + wanted.cls : ''}]`, kind: wanted.kind, href: wanted.href, origin, urlBefore: before.url, urlAfter: before.url,
+      clickError: { kind: 'not-found', message: 'the control was no longer on the screen once the page had settled' },
+    };
+  }
   const obs = {
+    unsettledAtPress: still.settled ? null : still.why, clickMs: 0,
     label: control.label || `[unlabelled ${control.tag}${control.cls ? '.' + control.cls : ''}]`, kind: control.kind, href: control.href,
     disabled: false, disabledReason: '', clickError: null, origin,
     urlBefore: before.url, urlAfter: before.url, document: null, linkProbe: null, popup: null,
@@ -269,7 +308,12 @@ export async function pressAndObserve(page, ctx, control, { base, modelLog, wind
     obs.hashTargetExists = await page.evaluate((h) => !!document.getElementById(decodeURIComponent(h.slice(1))) || !!document.querySelector(`[name="${h.slice(1)}"]`), control.href);
   }
 
-  const requests = [];
+  const requests = [];     // { method, url, status, startedAt }: startedAt is when the 'request' event was seen (null: before we were watching)
+  const startedAtOf = new Map();
+  const onRequest = (r) => { startedAtOf.set(r, Date.now()); };
+  page.on('request', onRequest);
+  let clickStartedAt = null;
+  const offsetOf = (r) => (r.startedAt == null || clickStartedAt == null ? null : r.startedAt - clickStartedAt);
   const pageErrors = [];
   const onPageError = (e) => { pageErrors.push(String(e && e.message ? e.message : e).split('\n')[0].slice(0, 160)); };
   page.on('pageerror', onPageError);
@@ -281,7 +325,7 @@ export async function pressAndObserve(page, ctx, control, { base, modelLog, wind
       if (!url.startsWith(origin)) return;
       if (/\/_next\/|\/__nextjs|hot-update|favicon|\.(png|jpe?g|svg|webp|gif|ico|woff2?|css|map)(\?|$)/.test(url)) return;
       if (type === 'document' && req.isNavigationRequest() && req.frame() === page.mainFrame()) { obs.document = { status: res.status(), url }; return; }
-      if (type === 'fetch' || type === 'xhr') requests.push({ method: req.method(), url: url.replace(origin, ''), status: res.status() });
+      if (type === 'fetch' || type === 'xhr') requests.push({ method: req.method(), url: url.replace(origin, ''), status: res.status(), startedAt: startedAtOf.has(req) ? startedAtOf.get(req) : null });
     } catch { /* ignore */ }
   };
   page.on('response', onResponse);
@@ -295,11 +339,15 @@ export async function pressAndObserve(page, ctx, control, { base, modelLog, wind
   page.on('filechooser', onChooser);
 
   const modelBefore = modelCallCount(modelLog);
+  // The address must not have moved since the page settled: if it did, something was still landing.
+  if (!obs.unsettledAtPress && page.url() !== before.url) obs.unsettledAtPress = 'the address changed between the page settling and the press';
+  clickStartedAt = Date.now();
   try {
     await loc.click({ timeout: 6000 });
   } catch (e) {
     obs.clickError = describeClickError(e);
   }
+  obs.clickMs = Date.now() - clickStartedAt;
 
   if (!obs.clickError) {
     // Observe: up to windowMs for the first change; once something changes, wait for quiet. A request still in flight is
@@ -313,7 +361,9 @@ export async function pressAndObserve(page, ctx, control, { base, modelLog, wind
       try { s = await signature(popupPage || page); } catch { s = null; }
       if (!s) continue;
       const key = `${s.url}|${s.text}|${s.aria}|${s.dialogs}|${s.controls}`;
-      const changed = s.url !== before.url || s.text !== before.text || s.aria !== before.aria || s.dialogs !== before.dialogs || s.controls !== before.controls || requests.length > 0 || !!popupPage || chooser;
+      // Only a request the press could have started counts as the page changing; the page's own traffic is not a reason to keep watching.
+      const mine = requests.some(r => isCausedByPress({ startOffsetMs: offsetOf(r) }, obs.clickMs));
+      const changed = s.url !== before.url || s.text !== before.text || s.aria !== before.aria || s.dialogs !== before.dialogs || s.controls !== before.controls || mine || !!popupPage || chooser;
       if (changed && changedAt === null) { changedAt = Date.now(); lastKey = key; }
       if (changedAt !== null && key !== lastKey) { lastKey = key; changedAt = Date.now(); }
       const quiet = changedAt !== null ? Date.now() - changedAt >= 1200 : Date.now() - t0 >= windowMs;
@@ -324,6 +374,7 @@ export async function pressAndObserve(page, ctx, control, { base, modelLog, wind
   obs.fileChooserOpened = chooser;
   inflight.stop();
   page.off('filechooser', onChooser);
+  page.off('request', onRequest);
   page.off('response', onResponse);
   page.off('pageerror', onPageError);
   ctx.off('page', onPopup);
@@ -343,7 +394,7 @@ export async function pressAndObserve(page, ctx, control, { base, modelLog, wind
     }
     if (popupPage) { obs.popup = { url: popupPage.url() }; await popupPage.close().catch(() => {}); }
   }
-  obs.requests = requests;
+  obs.requests = requests.map(r => ({ method: r.method, url: r.url, status: r.status, startOffsetMs: offsetOf(r) }));
   // Give an in-flight server-side model call a moment to be logged before counting.
   await page.waitForTimeout(300);
   obs.modelCalls = Math.max(0, modelCallCount(modelLog) - modelBefore);

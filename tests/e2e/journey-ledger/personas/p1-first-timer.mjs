@@ -17,7 +17,7 @@
  */
 import { PASS, DEAD_END, NOT_RUN } from '../lib/ledger.mjs';
 import { classifyTrial, REAL_TEXT_MIN } from '../lib/classify.mjs';
-import { launch, newContext, signInViaForm, gotoRetrying, enumerateControls, waitForControl, settle, pressAndObserve, modelCallCount, STUDIO_LOADING } from '../lib/trial.mjs';
+import { launch, newContext, signInViaForm, gotoRetrying, enumerateControls, waitForControl, settle, pressAndObserve, trackInFlight, modelCallCount, STUDIO_LOADING } from '../lib/trial.mjs';
 import { openMembers } from '../lib/members.mjs';
 
 export const PERSONA = 'P1 first-timer';
@@ -135,6 +135,9 @@ export async function walk(L, env) {
         const ctx = await newContext(browser, base, blocked);
         const page = await ctx.newPage();
         session = { ctx, page };
+        // Watches same-origin requests from the first one, so a request an earlier press started is still known when the
+        // next press is made (the page is waited on until nothing is in flight, and a press is credited only with its own).
+        const flight = trackInFlight(page, origin);
         await signInViaForm(page, member);
         await gotoRetrying(page, '/writers-studio');
         await settle(page, { quietMs: 1500, capMs: 90000, notWhile: STUDIO_LOADING });
@@ -145,14 +148,14 @@ export async function walk(L, env) {
           if (!c) { replayFailed = `parent control ${key.split('|')[2] || key} did not appear within 10 s when the path was replayed`; break; }
           await page.locator(`[data-jl="${c.idx}"]`).click({ timeout: 6000 }).catch(e => { replayFailed = `parent press failed: ${String(e.message).split('\n')[0]}`; });
           if (replayFailed) break;
-          await settle(page, { quietMs: 1000, capMs: 15000 });
+          await settle(page, { quietMs: 1000, capMs: 15000, inflight: flight });
         }
         if (replayFailed) {
           obs = { label: labelOf(item.control), kind: item.control.kind, clickError: { kind: 'not-found', message: replayFailed } };
         } else {
           const c = await waitForControl(page, item.control.key, 10000);
           obs = c
-            ? await pressAndObserve(page, ctx, c, { base, modelLog, windowMs: 2500, prepare: PREPARE[c.label] || null })
+            ? await pressAndObserve(page, ctx, c, { base, modelLog, windowMs: 2500, prepare: PREPARE[c.label] || null, flight })
             : { label: labelOf(item.control), kind: item.control.kind, clickError: { kind: 'not-found', message: 'the control did not appear within 10 s on the screen reached by replaying the path' } };
         }
         result = classifyTrial(obs);

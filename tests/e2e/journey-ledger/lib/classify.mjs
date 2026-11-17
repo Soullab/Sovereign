@@ -12,6 +12,10 @@
  *    question; the ledger's job is to make the answer explicit, and the row stays DEAD END until the product says why.
  *  - What the harness cannot decide stays NOT RUN: an external link it will not follow, a click the framework's
  *    dev overlay swallowed, a control that needs a MAIA reply (slice 1 has no MAIA step).
+ *  - A press is credited only with what IT caused. A request the page made on its own (one that started before the press, or
+ *    long after it) is not the press's; and a press made while the page was still moving (a request in flight, the address
+ *    about to change) cannot be credited with whatever lands next, so it stays NOT RUN. Otherwise the verdict for an inert
+ *    control depends on what the page happened to be doing, not on the control.
  */
 import { PASS, DEAD_END, NOT_RUN } from './ledger.mjs';
 
@@ -27,6 +31,24 @@ export const ERROR_MARKERS = Object.freeze([
   'Page not found',
 ]);
 
+/**
+ * How long after a press (plus the time the click itself took) a request may START and still be credited to it. A click handler
+ * starts its request within a frame or two; a page beacon or poll that begins later is the page's own. Cost of the choice,
+ * disclosed in the README: a handler that starts its only effect later than this, on a page that shows nothing else, reads as a
+ * DEAD END (loud, and the evidence names the request set aside), never as a PASS.
+ */
+export const ATTRIBUTION_MS = 500;
+
+/**
+ * Is this request the press's? `startOffsetMs` is when the request started, relative to the moment the click began (negative:
+ * before it; null/absent: the harness was not yet watching, so it began earlier). `clickMs` is how long the click took to deliver.
+ * Only a request that started after the press began, no later than ATTRIBUTION_MS after the click was delivered, is credited.
+ */
+export function isCausedByPress(r, clickMs = 0) {
+  const t = r && r.startOffsetMs;
+  return typeof t === 'number' && Number.isFinite(t) && t >= 0 && t <= (Number(clickMs) || 0) + ATTRIBUTION_MS;
+}
+
 const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const clip = (s, n = 90) => { const t = norm(s); return t.length > n ? t.slice(0, n) + '…' : t; };
 const pathOf = (u) => { try { const x = new URL(u); return x.pathname + x.search; } catch { return String(u); } };
@@ -41,6 +63,18 @@ function firstAdded(before, after) {
 }
 
 export function classifyTrial(o) {
+  const mine = (o.requests || []).filter(r => isCausedByPress(r, o.clickMs));
+  const setAside = (o.requests || []).filter(r => !mine.includes(r));
+  const out = decideTrial(o, mine);
+  // A DEAD END that set requests aside says so, so a reader can see what the verdict did not count.
+  if (out.status === DEAD_END && setAside.length) {
+    const named = setAside.slice(0, 2).map(r => `${r.method} ${clip(r.url, 60)} answered HTTP ${r.status}`).join('; ');
+    return { ...out, evidence: `${out.evidence} [not counted, not started by the press: ${named}${setAside.length > 2 ? `; and ${setAside.length - 2} more` : ''}]` };
+  }
+  return out;
+}
+
+function decideTrial(o, mine) {
   const who = `${o.kind || 'control'} "${clip(o.label, 40)}"`;
 
   // 1. The press itself.
@@ -82,7 +116,7 @@ export function classifyTrial(o) {
   }
 
   // 6. Requests the press caused that failed.
-  const failed = (o.requests || []).find(r => r.status >= 400);
+  const failed = mine.find(r => r.status >= 400);
   if (failed) {
     return { status: DEAD_END, evidence: `${who} sent ${failed.method} ${clip(failed.url, 80)} and it answered HTTP ${failed.status}` };
   }
@@ -91,6 +125,12 @@ export function classifyTrial(o) {
   const probe = o.linkProbe?.status;
   if (probe != null && probe >= 400) {
     return { status: DEAD_END, evidence: `${who} -> ${clip(o.href, 80)} answers HTTP ${probe} (dead link)` };
+  }
+
+  // 7b. The page was still moving when the control was pressed: a request in flight, an address about to change. Whatever
+  //     lands next may be the earlier press's, so a change (or no change) afterwards says nothing about THIS control.
+  if (o.unsettledAtPress) {
+    return { status: NOT_RUN, evidence: `${who} was pressed while the page was still moving (${clip(o.unsettledAtPress, 100)}), so a change afterwards cannot be credited to it and no change cannot be held against it; where it leads is not decided (the screen then read: "${clip(o.textAfter, 80)}")` };
   }
 
   // 8. The press went somewhere.
@@ -126,7 +166,7 @@ export function classifyTrial(o) {
   const textChanged = norm(o.textBefore) !== norm(o.textAfter);
   const ariaChanged = norm(o.ariaBefore) !== norm(o.ariaAfter);
   const controlsChanged = o.controlsBefore !== o.controlsAfter;
-  const okRequest = (o.requests || []).find(r => r.status >= 200 && r.status < 400);
+  const okRequest = mine.find(r => r.status >= 200 && r.status < 400);
   if (o.dialogOpened || o.fileChooserOpened || textChanged || ariaChanged || controlsChanged || okRequest) {
     const bits = [];
     if (o.dialogOpened) bits.push('a dialog opened');

@@ -38,12 +38,20 @@ Unit tests of the rule and the classifier (no browser, no database, a few second
 
 ```bash
 node --test tests/e2e/journey-ledger/lib/*.test.mjs      # or: npm run test:journey-ledger
-node tests/e2e/journey-ledger/lib/mutants.mjs            # breaks one line at a time in ledger.mjs / classify.mjs; every mutant must be killed
+node tests/e2e/journey-ledger/lib/mutants.mjs            # breaks one line at a time in ledger.mjs / classify.mjs / trial.mjs (settleKey); every mutant must be killed
+node tests/e2e/journey-ledger/lib/fixture-check.mjs      # the press harness in a real browser against a tiny local page that misbehaves (needs a Chromium, no database; ~45 s)
 ```
 
-The two suites also carry **defeat candidates**: deliberately wrong rules (NOT RUN ignored, any PASS suffices, an empty
-journey "works", a report or exit code that decides on its own) and wrong classifiers (status-only, inert-is-fine, a model call
-scored as the page working, a blocked click hidden as NOT RUN, text-only so a 404 page with words passes). Each must make the
+`fixture-check.mjs` exists because the unit tables cannot see WHEN the harness pressed or WHICH requests it credited: those depend on
+timing in a browser. Each scenario is a page that reproduces a fault of the run of record (a Work still being made when Home is
+pressed; a page's own request landing late; an unrelated beacon after the click; a request that never finishes), plus two controls
+that must stay PASS (a button whose own handler navigates, a button whose only effect is a request). Exit 0 = all judged as
+expected, 1 = misjudged, 64 = no browser (nothing is claimed). It is run by hand, like the walk; it is not in `npm run test:journey-ledger`.
+
+The suites also carry **defeat candidates**: deliberately wrong rules (NOT RUN ignored, any PASS suffices, an empty
+journey "works", a report or exit code that decides on its own), wrong classifiers (status-only, inert-is-fine, a model call
+scored as the page working, a blocked click hidden as NOT RUN, text-only so a 404 page with words passes, every request in the window
+credited to the press, a press on a moving page credited with what lands next) and a wrong wait (a key that ignores the address). Each must make the
 suite fail; a suite that cannot fail proves nothing.
 
 ## What `run.sh` starts, and always stops
@@ -108,9 +116,20 @@ An adult with an idea and no manuscript, newly invited. Rows:
 How a press is judged (`lib/classify.mjs`, pure and unit-tested): HTTP status is never enough. A link to a page that answered 200
 but rendered under 40 characters, or rendered the framework's "This page could not be found", is a DEAD END. A link whose target
 answers 4xx/5xx is a DEAD END even if the client rendered something. A press that changes no URL, text, aria state, dialog, control
-count or network request within about three seconds is a DEAD END (unless it is the already-selected choice of a toggle, or it opens
-the browser's own file chooser, which changes no DOM). A press that sends a request which fails is a DEAD END. The walk keeps watching
-while a request is still in flight (a cold `next dev` compiles an API route on its first call): a screen that says "listening…" is not an
+count and starts no request of its own within about three seconds is a DEAD END (unless it is the already-selected choice of a toggle, or it opens
+the browser's own file chooser, which changes no DOM). A press that sends a request which fails is a DEAD END.
+
+**A press is credited only with what it caused.** Before a control is pressed the page is waited on until it is *still*: same address,
+text and controls for 0.8 s and no same-origin fetch/xhr in flight (the persona's tracker watches from the first request, so one an
+earlier press started is still known; the longest wait is 20 s). If it never settles the press is made anyway and the row is **NOT RUN**
+("pressed while the page was still moving"), never PASS and never DEAD END, because whatever lands next may be the earlier press's.
+And a request counts as the press's only if it **started** after the press began and no more than 500 ms (`ATTRIBUTION_MS`) after the
+click was delivered. A request the page made on its own (started before the press, started long after it, or whose start the harness
+did not see) is set aside; a DEAD END row names what was set aside. Why: in the run of record the same inert button was PASS in one
+replay (the import room's own fetch answered during the window) and DEAD END in the next, and "Home" was credited with the
+navigation of the "Just let me write" press that preceded it (row P1-05.09.01).
+
+After the press the walk keeps watching while a request is still in flight (a cold `next dev` compiles an API route on its first call): a screen that says "listening…" is not an
 outcome, and a request still pending after 60 s leaves the row NOT RUN. A **disabled** control is NOT RUN (its precondition is unknown to
 the harness; "disabled until you choose" is not a defect) unless it states why, which is a PASS. A control that needs a model is NOT RUN.
 
@@ -127,6 +146,11 @@ the harness; "disabled until you choose" is not a defect) unless it states why, 
   can differ from `next start`. The harness removes Next's `<nextjs-portal>` dev element (it sits over the bottom-left corner and
   swallows clicks on whatever is under it, including the "Beta journey" button); a click intercepted by anything else is scored as
   the product's.
+- **Attribution is by time, not by cause.** A request that the page makes on its own *and that starts within 500 ms after the click*
+  (a poll that happens to tick then) is still credited to the press; the harness cannot see which code issued a request. Conversely
+  a handler whose only visible effect is a request that starts more than 500 ms after the click reads as DEAD END, with the request
+  named in the evidence: a false DEAD END is loud and gets a human look, a false PASS would hide a dead door. A navigation that
+  lands more than 0.8 s after everything else has been quiet, with nothing in flight, is not detectable either.
 - **Replaying a path can fail.** Each press replays its parent presses from a fresh Home. Once in 95 presses of the run of record a parent
   control did not reappear in time; that row is NOT RUN with the reason, never PASS, and never a DEAD END. A re-run decides it.
 - **Schema is not the production schema**: pgvector-backed tables are absent, so any surface that reads them is not exercised.
