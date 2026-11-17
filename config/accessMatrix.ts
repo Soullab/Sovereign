@@ -259,6 +259,13 @@ export const ACCESS_RULES: AccessRule[] = [
   // Practitioner pricing (public for discovery)
   { regex: /^\/api\/practitioner\/[^/]+\/pricing$/, public: true, notes: 'Practitioner pricing is public' },
 
+  // Portal contact form. Public ONLY because POST (a visitor writing to a practitioner) must be.
+  // The outer gate therefore asks nothing of GET and PATCH: the handler authorizes those independently
+  // (verified session + ownership of the portal named by the slug) and the matrix must not be read as
+  // protecting them. One exact-shaped rule: no /api/portal/* wildcard, and the sibling portal routes
+  // (messages, pricing, sliding-scale, client/status) are deliberately NOT declared by this entry.
+  { regex: /^\/api\/portal\/[^/]+\/inquiry$/, public: true, notes: 'Portal contact form: POST is public by design; GET (list) and PATCH (status) are independently owner-gated in the handler — a public rule here is not protection for them' },
+
   // -------------------------------------------------------------------------
   // 2) FREE TIER - Auth required but no paid subscription
   // -------------------------------------------------------------------------

@@ -8,14 +8,55 @@ export async function generateStaticParams() {
  *
  * Handles contact form submissions from the portal
  * Creates an inquiry record and notifies the practitioner
+ *
+ * AUTHORITY, by method (the access matrix declares this route public because
+ * POST must be, so GET and PATCH authorize independently, here):
+ *   POST   public contact form        — anyone may write to a practitioner
+ *   GET    list a portal's inquiries  — only the practitioner who owns the portal
+ *   PATCH  set an inquiry's status    — only the practitioner who owns the portal
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db/postgres';
 import crypto from 'crypto';
+import { requirePractitioner } from '@/lib/auth/getCurrentPractitioner';
 import { getPractitionerFeaturesBySlug } from '@/lib/practitioner/features';
 import { sendInquiryNotification } from '@/lib/portal/notifications';
 import { logAction } from '@/lib/focus/weightTracking';
+
+/**
+ * Who may read or change a portal's inquiries: the practitioner who owns it.
+ *
+ * The slug is public, so it names a portal and authorizes nothing. Identity is
+ * the verified session (never a header, query string or body field), and
+ * ownership is the portal row's own member_id.
+ *
+ *   no valid session                      → 401
+ *   signed in, not a practitioner         → 403 (decided before the slug is consulted)
+ *   practitioner, portal not theirs       → 404 'Portal not found'
+ *   slug does not exist / is not active   → 404 'Portal not found'
+ *
+ * 404 rather than 403 for a portal that exists but is not theirs, so the answer
+ * is identical to a slug that does not exist and a signed-in practitioner cannot
+ * use this route to learn which portals exist.
+ */
+async function authorizePortalOwner(
+  request: NextRequest,
+  slug: string
+): Promise<{ practitionerId: string } | { error: Response }> {
+  const auth = await requirePractitioner(request);
+  if ('error' in auth) return { error: auth.error };
+
+  const owned = await db.query(
+    `SELECT id FROM practitioners
+     WHERE slug = $1 AND member_id = $2 AND status = 'active'`,
+    [slug, auth.identity.memberId]
+  );
+  if (owned.rows.length === 0) {
+    return { error: NextResponse.json({ error: 'Portal not found' }, { status: 404 }) };
+  }
+  return { practitionerId: owned.rows[0].id };
+}
 
 export async function POST(
   request: NextRequest,
@@ -148,7 +189,7 @@ export async function POST(
 }
 
 /**
- * GET endpoint to list inquiries (for practitioner admin)
+ * GET endpoint to list inquiries — only the practitioner who owns the portal
  */
 export async function GET(
   request: NextRequest,
@@ -156,24 +197,15 @@ export async function GET(
 ) {
   try {
     const { slug } = await params;
+
+    const guard = await authorizePortalOwner(request, slug);
+    if ('error' in guard) return guard.error;
+    const practitionerId = guard.practitionerId;
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status'); // new, replied, archived
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
-
-    // TODO: Add authentication - only practitioner should access
-    // For now, we'll just check the portal exists
-
-    const practitionerResult = await db.query(
-      `SELECT id FROM practitioners WHERE slug = $1 AND status = 'active'`,
-      [slug]
-    );
-
-    if (practitionerResult.rows.length === 0) {
-      return NextResponse.json({ error: 'Portal not found' }, { status: 404 });
-    }
-
-    const practitionerId = practitionerResult.rows[0].id;
 
     // Build query
     let query = `
@@ -229,7 +261,7 @@ export async function GET(
 }
 
 /**
- * PATCH endpoint to update inquiry status
+ * PATCH endpoint to update inquiry status — only the practitioner who owns the portal
  */
 export async function PATCH(
   request: NextRequest,
@@ -237,6 +269,10 @@ export async function PATCH(
 ) {
   try {
     const { slug } = await params;
+
+    const guard = await authorizePortalOwner(request, slug);
+    if ('error' in guard) return guard.error;
+
     const body = await request.json();
     const { inquiry_id, status } = body;
 
@@ -253,8 +289,6 @@ export async function PATCH(
         { status: 400 }
       );
     }
-
-    // TODO: Add authentication
 
     const result = await db.query(
       `UPDATE portal_inquiries
