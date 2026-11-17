@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { query } from '@/lib/db/postgres';
+import { SOURCE_UPLOAD_HELD_MESSAGE } from '@/lib/writersStudio/heldDoorCopy';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,7 @@ export async function POST() {
   // original private files before Source custody, recovery and Class A.
   // This refusal occurs before multipart parsing, storage or SQL.
   return NextResponse.json(
-    { error: 'Source uploads are temporarily unavailable pending independent security and recovery acceptance.' },
+    { error: SOURCE_UPLOAD_HELD_MESSAGE },
     { status: 423, headers: { 'Cache-Control': 'no-store' } },
   );
 }

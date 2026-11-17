@@ -58,6 +58,12 @@ import { NostrMessagingSection } from '@/components/nostr/NostrMessagingSection'
 import PatternLedger from '@/components/consciousness/PatternLedger';
 import RecurringThemesCard from '@/components/consciousness/RecurringThemesCard';
 import { MemoryConsentSection } from '@/components/settings/MemoryConsentSection';
+import {
+  EXPORT_DATA_DESCRIPTION,
+  DELETE_ACCOUNT_DESCRIPTION,
+  exportFailureMessage,
+  deleteFailureMessage,
+} from '@/lib/account/accountDataCopy';
 import { useAstrologyTester } from '@/lib/hooks/useAstrologyTester';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -207,6 +213,9 @@ export function AccountSettings() {
   // Delete account state
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [deleting, setDeleting] = useState(false);
+  // A refused or failed export / closure is shown, never swallowed.
+  const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
 
   // Settings applied confirmation
   const [settingsApplied, setSettingsApplied] = useState(false);
@@ -817,6 +826,7 @@ export function AccountSettings() {
 
   const exportData = useCallback(async () => {
     if (!userId) return;
+    setExportMessage(null);
 
     try {
       const res = await apiFetch('/api/members/export-data', {
@@ -833,15 +843,19 @@ export function AccountSettings() {
         a.download = `maia-data-export-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
+      } else {
+        setExportMessage(exportFailureMessage(res.status));
       }
     } catch (err) {
       console.error('[AccountSettings] Export error:', err);
+      setExportMessage(exportFailureMessage(null));
     }
   }, [userId]);
 
   const deleteAccount = useCallback(async () => {
     if (!userId || !profile || deleteConfirm !== profile.username) return;
     setDeleting(true);
+    setDeleteMessage(null);
 
     try {
       const res = await apiFetch('/api/members/delete-account', {
@@ -861,9 +875,14 @@ export function AccountSettings() {
         localStorage.removeItem('maia_settings');
         localStorage.removeItem('maia_account_settings');
         window.location.href = '/';
+      } else {
+        // The 409 is the route's designed refusal (nothing changed, what is held); a 500 or 401 is shown too.
+        const refusal = await res.json().catch(() => null);
+        setDeleteMessage(deleteFailureMessage(res.status, refusal));
       }
     } catch (err) {
       console.error('[AccountSettings] Delete error:', err);
+      setDeleteMessage(deleteFailureMessage(null, null));
     } finally {
       setDeleting(false);
     }
@@ -2739,7 +2758,7 @@ export function AccountSettings() {
           <div className="flex-1">
             <h4 className="text-sm font-medium text-stone-200">Export Your Data</h4>
             <p className="text-xs text-stone-400 mt-1 mb-3">
-              Download all your data including profile, settings, and session history.
+              {EXPORT_DATA_DESCRIPTION}
             </p>
             <motion.button
               onClick={exportData}
@@ -2748,6 +2767,7 @@ export function AccountSettings() {
             >
               Download JSON
             </motion.button>
+            {exportMessage ? <p role="status" className="mt-3 text-xs text-amber-300">{exportMessage}</p> : null}
           </div>
         </div>
       </div>
@@ -2759,7 +2779,7 @@ export function AccountSettings() {
           <div className="flex-1">
             <h4 className="text-sm font-medium text-red-300">Delete Account</h4>
             <p className="text-xs text-stone-400 mt-1 mb-3">
-              Permanently delete your account and all associated data. This cannot be undone.
+              {DELETE_ACCOUNT_DESCRIPTION}
             </p>
             <input
               type="text"
@@ -2776,6 +2796,7 @@ export function AccountSettings() {
             >
               {deleting ? 'Deleting...' : 'Delete My Account'}
             </motion.button>
+            {deleteMessage ? <p role="status" className="mt-3 text-xs text-amber-300">{deleteMessage}</p> : null}
           </div>
         </div>
       </div>

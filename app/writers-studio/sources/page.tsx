@@ -8,6 +8,7 @@ import { apiFetch } from '@/lib/http/apiBase';
 import { PRESS, SERIF } from '../pressTheme';
 import { useLivingWorks, type LivingWork } from '../useLivingWorks';
 import { useStudioSources, type StudioSource } from '../useStudioSources';
+import { SOURCE_UPLOADS_HELD, SOURCE_UPLOAD_HELD_LEAD, SOURCE_UPLOAD_HELD_MESSAGE } from '@/lib/writersStudio/heldDoorCopy';
 
 interface SourceDetail extends StudioSource {
   transcriptionDraft: string | null;
@@ -267,15 +268,22 @@ export default function WriterSourcesPage() {
           <p className="mt-4 text-[15px] leading-relaxed opacity-65">
             Notebook pages, scans, notes, drafts, and reference material can live beside a Work without becoming the manuscript. Originals stay intact beside any transcription. When automatic reading is available, it produces only a draft; you can always enter or correct the words yourself.
           </p>
+          {SOURCE_UPLOADS_HELD ? (
+            <p data-source-upload-held role="status" className="mt-4 text-[13.5px] leading-relaxed opacity-80">
+              <b className="font-medium">{SOURCE_UPLOAD_HELD_LEAD}</b> {SOURCE_UPLOAD_HELD_MESSAGE}
+            </p>
+          ) : null}
         </div>
 
         <section className="border border-dashed p-6 mb-10" style={{ borderColor: PRESS.rule }}>
-          <button onClick={() => inputRef.current?.click()} disabled={uploading} className="inline-flex items-center gap-2 text-[14px] disabled:opacity-40">
+          <button onClick={() => inputRef.current?.click()} disabled={uploading || SOURCE_UPLOADS_HELD} className="inline-flex items-center gap-2 text-[14px] disabled:opacity-40">
             {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
             {uploading ? 'Bringing material in…' : 'Choose files or photographed pages'}
           </button>
-          <input ref={inputRef} type="file" multiple accept={ACCEPT} onChange={(e) => void uploadFiles(e.target.files)} className="hidden" />
-          <p className="text-[11.5px] opacity-40 mt-2">.docx · .pdf · .txt · .md · JPG/PNG/HEIC/TIFF/WebP · up to 50 MB each</p>
+          <input ref={inputRef} type="file" multiple accept={ACCEPT} disabled={SOURCE_UPLOADS_HELD} onChange={(e) => void uploadFiles(e.target.files)} className="hidden" />
+          {SOURCE_UPLOADS_HELD ? null : (
+            <p className="text-[11.5px] opacity-40 mt-2">.docx · .pdf · .txt · .md · JPG/PNG/HEIC/TIFF/WebP · up to 50 MB each</p>
+          )}
           {message ? <p className="text-[12.5px] mt-3 opacity-65">{message}</p> : null}
         </section>
 
