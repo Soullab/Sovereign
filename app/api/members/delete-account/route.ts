@@ -140,6 +140,9 @@ const GOVERNED_CONTENT: ReadonlyArray<{ table: string; column: string; label: st
   { table: 'writer_decision_events', column: 'member_id', label: 'what you settled about your Work, in your words' },
   { table: 'work_reading_scope_events', column: 'member_id', label: 'your permission for MAIA to read your Work' },
   { table: 'development_plans', column: 'member_id', label: 'your plans for your Work' },
+  // member_manuscripts.member_id names `members` ON DELETE RESTRICT (baseline SQL). Unlisted, a member whose only content is a Work
+  // skipped the refuse posture, hit the foreign key at `DELETE FROM members`, and got a rolled-back 500 instead of this refusal.
+  { table: 'member_manuscripts', column: 'member_id', label: 'your writing' },
 ];
 
 /**

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/http/apiBase';
+import { useWriterReleaseCapabilities } from '@/lib/writersStudio/useWriterReleaseCapabilities';
+import { PAGE_PROOF_HELD_COPY, isBookExportHeldRefusal } from '@/lib/writersStudio/heldDoorCopy';
 
 type Preflight = {
   ready: boolean;
@@ -37,6 +39,12 @@ export default function P4R1ProofView({
   const [proofUrl, setProofUrl] = useState<string | null>(null);
   const [proofMeta, setProofMeta] = useState<ProofMeta | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
+  // Whether to OFFER a proof is the server-owned release capability, not a guess: the same read the Publish room uses.
+  // A 423 that arrives anyway (capability and route disagreeing) is also "held" - a retry can never lift it.
+  const releaseCapabilities = useWriterReleaseCapabilities();
+  const [heldByServer, setHeldByServer] = useState(false);
+  const proofsOpen = releaseCapabilities.settled && releaseCapabilities.authority.exportsCertified.pdf && !heldByServer;
+  const proofsHeld = heldByServer || (releaseCapabilities.settled && !releaseCapabilities.authority.exportsCertified.pdf);
 
   useEffect(() => {
     let live = true;
@@ -77,6 +85,11 @@ export default function P4R1ProofView({
         },
       );
       if (!response.ok) {
+        const refusal = await response.json().catch(() => null);
+        if (isBookExportHeldRefusal(response.status, refusal)) {
+          setHeldByServer(true);
+          return;
+        }
         setRenderError('The current manuscript could not be rendered as pages. Nothing about your Work changed.');
         return;
       }
@@ -157,16 +170,23 @@ export default function P4R1ProofView({
             <span />
             <span />
           </div>
-          <div>
-            <h3>Make a reading proof</h3>
-            <p>
-              Writer’s Studio will typeset the exact current manuscript into a temporary PDF
-              and show it here. The server does not keep the rendered PDF.
-            </p>
-            <button type="button" disabled={busy || !preflight} onClick={() => void makeProof()}>
-              {busy ? 'Making the proof…' : 'Make proof'}
-            </button>
-          </div>
+          {proofsHeld ? (
+            <div data-proof-held role="status">
+              <h3>Page proofs</h3>
+              <p>{PAGE_PROOF_HELD_COPY}</p>
+            </div>
+          ) : (
+            <div>
+              <h3>Make a reading proof</h3>
+              <p>
+                Writer’s Studio will typeset the exact current manuscript into a temporary PDF
+                and show it here. The server does not keep the rendered PDF.
+              </p>
+              <button type="button" disabled={busy || !preflight || !proofsOpen} onClick={() => void makeProof()}>
+                {busy ? 'Making the proof…' : 'Make proof'}
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <>
