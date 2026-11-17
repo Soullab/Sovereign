@@ -1,0 +1,116 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:">
+<title>Soullab Capture</title>
+<style>
+  /* SOULLAB CORE tokens — the same verbatim copy MAIA Desktop's index.html
+     carries from app/globals.css. Downstream of the canon, never a peer. */
+  :root {
+    color-scheme: dark;
+    --sl-bg-canvas: #0A1628;
+    --sl-bg-canvas-deep: #060D18;
+    --sl-bg-surface: #121A2B;
+    --sl-bg-elevated: #1A2235;
+    --sl-border-subtle: #1E2F4D;
+    --sl-border-strong: #2A3F63;
+    --sl-text-primary: #F5F7FB;
+    --sl-text-secondary: #B7C0D1;
+    --sl-text-muted: #7F8AA3;
+    --sl-accent-primary: #B8860B;
+    --sl-accent-soft: #D4AF37;
+    --sl-state-error: #A65A5A;
+    --capture-red: #C2453D;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    background: var(--sl-bg-canvas); color: var(--sl-text-primary);
+    font: 14px/1.6 ui-sans-serif, -apple-system, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header { padding: 18px 22px 0; }
+  .mark { font-size: 12px; letter-spacing: .22em; color: var(--sl-accent-soft); font-weight: 500; }
+  main { flex: 1; padding: 14px 22px 22px; display: flex; flex-direction: column; gap: 16px; }
+  h1 { font: 400 22px/1.3 ui-serif, Georgia, 'Times New Roman', serif; margin: 0; display: flex; align-items: center; gap: 10px; }
+  .detail { color: var(--sl-text-secondary); margin: 0; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--capture-red); flex: none; display: none; }
+  body.recording .dot { display: inline-block; }
+  body.recording.mode-recording .dot { animation: pulse 1.6s ease-in-out infinite; }
+  body.mode-waiting .dot { background: var(--sl-accent-soft); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { body.recording.mode-recording .dot { animation: none; } }
+
+  .panel { background: var(--sl-bg-surface); border: 1px solid var(--sl-border-subtle); border-radius: 10px; padding: 14px 16px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .label { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--sl-text-muted); }
+  .muted { color: var(--sl-text-muted); font-size: 13px; }
+  .note { color: var(--sl-text-secondary); font-size: 13px; margin: 8px 0 0; }
+  .error { color: #E3A6A6; font-size: 13px; margin: 0; }
+
+  ul.apps { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; }
+  ul.apps button { width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; }
+  .playing { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--sl-accent-soft); }
+
+  .time { font: 400 34px/1 ui-monospace, 'SF Mono', Menlo, monospace; font-variant-numeric: tabular-nums; }
+  .meters { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+  .meter { height: 6px; background: var(--sl-bg-canvas-deep); border-radius: 3px; overflow: hidden; }
+  .meter > i { display: block; height: 100%; width: 0; background: var(--sl-accent-primary); transition: width .2s linear; }
+
+  button {
+    background: var(--sl-bg-elevated); color: var(--sl-text-primary);
+    border: 1px solid var(--sl-border-strong); border-radius: 7px;
+    padding: 8px 14px; font: inherit; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--sl-accent-primary); }
+  button:focus-visible { outline: 2px solid var(--sl-accent-soft); outline-offset: 2px; }
+  button:disabled { opacity: .35; cursor: default; }
+  button.link { background: none; border: none; padding: 0; color: var(--sl-accent-soft); text-decoration: underline; text-underline-offset: 3px; }
+  button.stop { background: var(--capture-red); border-color: var(--capture-red); color: #fff; width: 100%; padding: 11px; font-weight: 500; }
+  [hidden] { display: none !important; }
+</style>
+
+<header><div class="mark">SOULLAB CAPTURE</div></header>
+<main>
+  <div>
+    <h1><span class="dot" id="dot" aria-hidden="true"></span><span id="headline">Record one app</span></h1>
+    <p class="detail" id="detail" aria-live="polite"></p>
+  </div>
+
+  <p class="error" id="error" role="alert" hidden></p>
+  <div class="panel" id="permission" hidden>
+    <p class="note" style="margin:0">In System Settings, open <b>Privacy &amp; Security → Screen &amp; System Audio Recording</b> and turn on <b>Soullab Capture</b>. Then choose an app again.</p>
+    <p style="margin:10px 0 0"><button id="privacy">Open System Settings</button></p>
+  </div>
+
+  <section class="panel" id="live" hidden>
+    <div class="row"><span class="label">Elapsed</span><span class="muted" id="gaps"></span></div>
+    <div class="time" id="time">0:00</div>
+    <div class="meters" aria-hidden="true">
+      <div class="meter"><i id="m0"></i></div>
+      <div class="meter"><i id="m1"></i></div>
+    </div>
+  </section>
+  <button class="stop" id="stop" hidden>Stop recording</button>
+
+  <section class="panel" id="last" hidden>
+    <div class="row"><span class="label">Last recording</span><button class="link" id="reveal">Show in Finder</button></div>
+    <div id="lastName"></div>
+    <div class="muted" id="lastFacts"></div>
+    <p class="note" id="lastSentence"></p>
+  </section>
+
+  <section class="panel" id="choose">
+    <div class="row"><span class="label">Apps</span><button class="link" id="refresh">Refresh</button></div>
+    <ul class="apps" id="apps"><li class="muted">Looking for apps…</li></ul>
+  </section>
+
+  <section class="panel" id="folderPanel">
+    <div class="row"><span class="label">Saves to</span><button class="link" id="folder">Choose…</button></div>
+    <div id="folderName" class="muted">No folder chosen</div>
+    <p class="note" id="folderNote" hidden></p>
+  </section>
+
+  <p class="note" id="recovery" hidden></p>
+</main>
+<script src="capture-view.js"></script>
+<script src="capture-renderer.js"></script>

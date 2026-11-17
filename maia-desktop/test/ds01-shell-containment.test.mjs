@@ -477,15 +477,13 @@ test('F5 — DS01 opens no IPC channel; navigation stays main\'s authority', () 
   // conversation, and the authority refuses the report if it is late, doubled,
   // or from a replaced conversation.
   //
-  // ⭐ 17 and 7 since SOULLAB-CAPTURE J4a-1 (founder approval 2026-11-17, owner
-  // #1979) ratified five `maia:soullab-capture-*` verbs and one push channel.
-  // A member cannot record an app's audio without them; the only value the
-  // renderer supplies is one source id main returned, and the helper — never
-  // the renderer — holds the recording. None of them reaches the platform view.
-  assert.equal(INVOKE_CHANNEL_NAMES.length, 17, 'the ratified invoke allow-list changed size');
+  // SOULLAB-CAPTURE J4a-1 briefly raised these to 17 and 7; J4a-2 moved every
+  // capture verb to the Capture window's own preload, so the MAIA window is
+  // back to exactly what it was. The Capture bridge is counted on its own below.
+  assert.equal(INVOKE_CHANNEL_NAMES.length, 12, 'the ratified invoke allow-list changed size');
   assert.ok(INVOKE_CHANNEL_NAMES.includes('maia:send-text'));
   assert.ok(INVOKE_CHANNEL_NAMES.includes('maia:playback-ended'));
-  assert.equal(PUSH_CHANNEL_NAMES.length, 7, 'the ratified push allow-list changed size');
+  assert.equal(PUSH_CHANNEL_NAMES.length, 6, 'the ratified push allow-list changed size');
 
   for (const source of [shellJs, strip('shell-policy.js')]) {
     assert.ok(!/ipcMain|ipcRenderer|exposeInMainWorld/.test(source),

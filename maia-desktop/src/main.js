@@ -709,7 +709,7 @@ ipcMain.handle('maia:sign-out', async () => {
 
 ipcMain.handle('maia:auth-state', async () => memberSession.state());
 
-// ── SOULLAB-CAPTURE J4a-1: host the existing Soullab Capture helper ────────
+// ── SOULLAB-CAPTURE J4a-1/J4a-2: host the existing Soullab Capture helper ──
 // Owner LISTEN-01 #1979. MAIA Desktop supervises the package's helper; it does
 // not record anything itself. The helper is a separately signed nested app with
 // NO entitlements (no network, no microphone), launched through LaunchServices
@@ -731,12 +731,32 @@ function soullabCaptureClientModule() {
 
 let soullabCaptureFolders = null;
 let soullabCapture = null;
+let captureWindow = null;
+
+// macOS asks separately before an app may write to another drive; the Capture
+// window says so in advance. Only this boolean leaves main, never the location.
+function onExternalDrive(folder) {
+  return typeof folder === 'string' && folder.startsWith('/Volumes/');
+}
 
 function soullabCaptureState() {
   const folder = soullabCaptureFolders ? soullabCaptureFolders.get() : null;
   const snap = soullabCapture ? soullabCapture.snapshot() : { phase: 'idle' };
   // The surface learns the folder's NAME only, never where it lives.
-  return { ...snap, available: !!soullabCapture, folderName: folder ? path.basename(folder) : null };
+  return {
+    ...snap,
+    available: !!soullabCapture,
+    folderName: folder ? path.basename(folder) : null,
+    folderExternal: onExternalDrive(folder),
+  };
+}
+
+// Capture state goes to the Capture window alone — the conversation window has
+// no listener for it and is not sent it.
+function pushSoullabCaptureState() {
+  if (captureWindow && !captureWindow.isDestroyed()) {
+    captureWindow.webContents.send('maia:soullab-capture-state-changed', soullabCaptureState());
+  }
 }
 
 function initSoullabCapture() {
@@ -749,17 +769,54 @@ function initSoullabCapture() {
     loadClient: () => import(pathToFileURL(soullabCaptureClientModule()).href),
     getFolder: () => soullabCaptureFolders.get(),
     onChange: () => {
-      broadcast('maia:soullab-capture-state-changed', soullabCaptureState());
+      pushSoullabCaptureState();
       buildMenu();
     },
     logger: (record) => console.log('[Soullab Capture]', record.event),
   });
 }
 
+// SOULLAB-CAPTURE J4a-2 — the Capture window. Small, sandboxed, isolated, with
+// its own preload that carries Soullab Capture's verbs and nothing else.
+function openCaptureWindow() {
+  if (!soullabCapture) return;
+  if (captureWindow && !captureWindow.isDestroyed()) {
+    captureWindow.show();
+    captureWindow.focus();
+    return;
+  }
+  captureWindow = new BrowserWindow({
+    width: 420,
+    height: 640,
+    minWidth: 360,
+    minHeight: 480,
+    title: 'Soullab Capture',
+    backgroundColor: '#0A1628',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: path.join(__dirname, 'capture-preload.js'),
+    },
+  });
+  captureWindow.loadFile(path.join(__dirname, 'capture.html'));
+  // Like the MAIA window, the Capture window never navigates and opens nothing.
+  captureWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  captureWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // Closing the window never stops a recording: the menu keeps Stop available.
+  captureWindow.on('closed', () => { captureWindow = null; });
+}
+
+// Every Capture channel answers the Capture window and nobody else.
+function fromCaptureWindow(evt) {
+  return !!(captureWindow && !captureWindow.isDestroyed() && evt && evt.sender === captureWindow.webContents);
+}
+const NOT_THIS_WINDOW = Object.freeze({ ok: false, error: 'NOT_CAPTURE_WINDOW' });
+
 async function chooseSoullabCaptureFolder() {
   if (!soullabCaptureFolders) return { ok: false, error: 'UNAVAILABLE' };
   if (soullabCapture && soullabCapture.active()) return { ok: false, error: 'BUSY' };
-  const owner = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const owner = captureWindow && !captureWindow.isDestroyed() ? captureWindow : undefined;
   const picked = await dialog.showOpenDialog(owner, {
     title: 'Choose where Soullab Capture saves recordings',
     buttonLabel: 'Use This Folder',
@@ -771,76 +828,49 @@ async function chooseSoullabCaptureFolder() {
   } catch {
     return { ok: false, error: 'FOLDER_INVALID' };
   }
-  broadcast('maia:soullab-capture-state-changed', soullabCaptureState());
+  pushSoullabCaptureState();
   buildMenu();
   return { ok: true, folderName: path.basename(picked.filePaths[0]) };
-}
-
-// The minimum surface the J4a-1 witness needs: a menu, not a window. The
-// capture window (with "waiting for audio from <app>") is J4a-2.
-async function recordAnAppFromMenu() {
-  if (!soullabCapture || soullabCapture.active()) return;
-  if (!soullabCaptureFolders.get()) {
-    const chosen = await chooseSoullabCaptureFolder();
-    if (!chosen.ok) return;
-  }
-  const owner = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
-  let sources;
-  try {
-    sources = (await soullabCapture.listSources()).filter((s) => s.producingOutput).slice(0, 6);
-  } catch (error) {
-    await dialog.showMessageBox(owner, { type: 'warning', message: 'Soullab Capture could not start.', detail: String(error.code || error.message) });
-    return;
-  }
-  if (sources.length === 0) {
-    await dialog.showMessageBox(owner, {
-      type: 'info',
-      message: 'No app is playing audio right now.',
-      detail: 'Start playback in the app you want to record, then choose Record an App again.',
-    });
-    return;
-  }
-  const answer = await dialog.showMessageBox(owner, {
-    type: 'question',
-    message: 'Which app do you want to record?',
-    detail: 'Only that app\'s audio is recorded, until you choose Stop Recording.',
-    buttons: [...sources.map((s) => s.name), 'Cancel'],
-    cancelId: sources.length,
-    defaultId: sources.length,
-  });
-  const pick = sources[answer.response];
-  if (!pick) return;
-  try {
-    await soullabCapture.start(pick.id);
-  } catch (error) {
-    await dialog.showMessageBox(owner, { type: 'warning', message: 'Recording did not start.', detail: String(error.code || error.message) });
-  }
 }
 
 function soullabCaptureMenu() {
   if (!soullabCapture) return null;
   const snap = soullabCapture.snapshot();
   const recording = snap.phase === 'starting' || snap.phase === 'recording';
-  const folder = soullabCaptureFolders.get();
-  return {
-    label: 'Capture',
-    submenu: [
-      recording
-        ? { label: `Stop Recording ${snap.source ? snap.source.name : ''}`.trim(), click: () => { void soullabCapture.stop(); } }
-        : { label: 'Record an App…', enabled: snap.phase === 'idle', click: () => { void recordAnAppFromMenu(); } },
-      { type: 'separator' },
-      { label: 'Choose Recordings Folder…', enabled: snap.phase === 'idle', click: () => { void chooseSoullabCaptureFolder(); } },
-      { label: 'Show Recordings Folder', enabled: !!folder, click: () => { if (folder) void shell.openPath(folder); } },
-    ],
-  };
+  const items = [
+    { label: 'Open Capture…', accelerator: 'Alt+CmdOrCtrl+R', click: () => openCaptureWindow() },
+  ];
+  // Stop is always reachable, even with the Capture window closed.
+  if (recording) {
+    items.push({ type: 'separator' });
+    items.push({
+      label: `Stop Recording ${snap.source ? snap.source.name : ''}`.trim(),
+      click: () => { void soullabCapture.stop(); },
+    });
+  }
+  return { label: 'Capture', submenu: items };
 }
 
-ipcMain.handle('maia:soullab-capture-state', async () => soullabCaptureState());
+ipcMain.handle('maia:soullab-capture-state', async (evt) => {
+  if (!fromCaptureWindow(evt)) return NOT_THIS_WINDOW;
+  return soullabCaptureState();
+});
 
-ipcMain.handle('maia:soullab-capture-choose-folder', async () => chooseSoullabCaptureFolder());
+ipcMain.handle('maia:soullab-capture-choose-folder', async (evt) => {
+  if (!fromCaptureWindow(evt)) return NOT_THIS_WINDOW;
+  return chooseSoullabCaptureFolder();
+});
 
-ipcMain.handle('maia:soullab-capture-sources', async () => {
+// Listing launches a helper, so it is paced in main whatever the window does:
+// a surface bug can at worst ask once a second, never hundreds of times.
+const SOURCES_MIN_INTERVAL_MS = 1000;
+let lastSourcesAt = 0;
+ipcMain.handle('maia:soullab-capture-sources', async (evt) => {
+  if (!fromCaptureWindow(evt)) return NOT_THIS_WINDOW;
   if (!soullabCapture) return { ok: false, error: 'UNAVAILABLE' };
+  const now = Date.now();
+  if (now - lastSourcesAt < SOURCES_MIN_INTERVAL_MS) return { ok: false, error: 'TOO_SOON' };
+  lastSourcesAt = now;
   try {
     return { ok: true, sources: await soullabCapture.listSources() };
   } catch (error) {
@@ -848,7 +878,8 @@ ipcMain.handle('maia:soullab-capture-sources', async () => {
   }
 });
 
-ipcMain.handle('maia:soullab-capture-start', async (_evt, payload) => {
+ipcMain.handle('maia:soullab-capture-start', async (evt, payload) => {
+  if (!fromCaptureWindow(evt)) return NOT_THIS_WINDOW;
   if (!soullabCapture) return { ok: false, error: 'UNAVAILABLE' };
   // The renderer names an app by the id main gave it, and nothing else: no
   // folder, no file name, no format, no device.
@@ -862,7 +893,8 @@ ipcMain.handle('maia:soullab-capture-start', async (_evt, payload) => {
   }
 });
 
-ipcMain.handle('maia:soullab-capture-stop', async () => {
+ipcMain.handle('maia:soullab-capture-stop', async (evt) => {
+  if (!fromCaptureWindow(evt)) return NOT_THIS_WINDOW;
   if (!soullabCapture) return { ok: false, error: 'UNAVAILABLE' };
   try {
     await soullabCapture.stop();
@@ -870,6 +902,24 @@ ipcMain.handle('maia:soullab-capture-stop', async () => {
   } catch (error) {
     return { ok: false, error: String(error.code || error.message).slice(0, 64) };
   }
+});
+
+ipcMain.handle('maia:soullab-capture-reveal-take', async (evt) => {
+  if (!fromCaptureWindow(evt)) return NOT_THIS_WINDOW;
+  // Main reveals the take IT recorded. The renderer names nothing.
+  const file = soullabCapture ? soullabCapture.lastTakeFile() : null;
+  if (!file || !fs.existsSync(file)) return { ok: false, error: 'NO_TAKE' };
+  shell.showItemInFolder(file);
+  return { ok: true };
+});
+
+// One fixed address: System Settings › Privacy & Security › Screen & System
+// Audio Recording. Opening it never retries a recording.
+const SYSTEM_AUDIO_PRIVACY_PANE = 'x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture';
+ipcMain.handle('maia:soullab-capture-open-privacy', async (evt) => {
+  if (!fromCaptureWindow(evt)) return NOT_THIS_WINDOW;
+  await shell.openExternal(SYSTEM_AUDIO_PRIVACY_PANE);
+  return { ok: true };
 });
 
 async function startCabinRuntimeIfNeeded() {

@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import {
-  RATIFIED_INVOKE_CHANNELS, INVOKE_CHANNEL_NAMES, PUSH_CHANNEL_NAMES,
+  RATIFIED_INVOKE_CHANNELS, INVOKE_CHANNEL_NAMES, PUSH_CHANNEL_NAMES, ALL_INVOKE_CHANNEL_NAMES,
 } from './d01-preload-allowlist.mjs';
 
 const require = createRequire(import.meta.url);
@@ -42,7 +42,9 @@ test('every ratified channel carries a documented purpose and a naming ruling', 
 
 test('main handles exactly the ratified channels and no others', () => {
   const handled = [...mainJs.matchAll(/ipcMain\.handle\('([^']+)'/g)].map((m) => m[1]).sort();
-  assert.deepEqual(handled, INVOKE_CHANNEL_NAMES, 'main handles a channel the allow-list never ratified');
+  // Main serves two bridges (the MAIA window and, since SOULLAB-CAPTURE J4a-2,
+  // the Capture window); together they are still one exact, reviewed list.
+  assert.deepEqual(handled, ALL_INVOKE_CHANNEL_NAMES, 'main handles a channel the allow-list never ratified');
 });
 
 test('no general IPC, shell, or Node authority crosses the bridge', () => {

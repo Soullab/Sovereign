@@ -58,14 +58,50 @@ function takeNameFor(date, attempt = 0) {
   return attempt === 0 ? `Soullab Capture ${stamp}` : `Soullab Capture ${stamp} (${attempt + 1})`;
 }
 
-/** Sources a member may choose: named apps producing output, never system daemons. */
+// Apple's own apps a member might record. Every other com.apple.* process is a
+// system service and is not offered.
+const APPLE_APPS = new Map([
+  ['com.apple.QuickTimePlayerX', 'QuickTime Player'], ['com.apple.Music', 'Music'],
+  ['com.apple.Safari', 'Safari'], ['com.apple.WebKit.GPU', 'Safari and web pages'],
+  ['com.apple.podcasts', 'Podcasts'], ['com.apple.TV', 'TV'], ['com.apple.FaceTime', 'FaceTime'],
+  ['com.apple.VoiceMemos', 'Voice Memos'], ['com.apple.garageband10', 'GarageBand'],
+  ['com.apple.logic10', 'Logic Pro'], ['com.apple.iMovieApp', 'iMovie'],
+]);
+
+/** The name a member recognises: "Google Chrome", not "Google Chrome Helper (Aperitif)". */
+function memberName(s) {
+  const bundle = String(s.bundleID || '');
+  if (APPLE_APPS.has(bundle)) return APPLE_APPS.get(bundle);
+  return String(s.name || '').replace(/ Helper( \([^)]*\))?$/, '').trim();
+}
+
+/** Background services, not apps: Apple's system processes, and lowercase daemons (arkaudiod). */
+function isService(s) {
+  const bundle = String(s.bundleID || '');
+  if (!bundle) return true;
+  if (/^com\.apple\./.test(bundle) && !APPLE_APPS.has(bundle)) return true;
+  if (SYSTEM_SOURCE.test(bundle)) return true;
+  return /^[a-z][a-z0-9]*d$/.test(String(s.name || ''));
+}
+
+/**
+ * Sources a member may choose: apps under the names they know, one row per app,
+ * playing apps first. A helper process stands in for its app (it is where the
+ * app's sound is actually made), and the row records the process that is
+ * playing when there is one. System services are never offered.
+ */
 function offerableSources(sources) {
   if (!Array.isArray(sources)) return [];
-  return sources
-    .filter((s) => s && typeof s.id === 'string' && SOURCE_ID.test(s.id))
-    .filter((s) => typeof s.name === 'string' && s.name.length > 0)
-    .filter((s) => !SYSTEM_SOURCE.test(String(s.bundleID || '')))
-    .map((s) => ({ id: s.id, name: s.name.slice(0, 80), producingOutput: s.producingOutput === true }))
+  const byName = new Map();
+  for (const s of sources) {
+    if (!s || typeof s.id !== 'string' || !SOURCE_ID.test(s.id) || isService(s)) continue;
+    const name = memberName(s).slice(0, 80);
+    if (!name) continue;
+    const row = { id: s.id, name, producingOutput: s.producingOutput === true };
+    const seen = byName.get(name);
+    if (!seen || (row.producingOutput && !seen.producingOutput)) byName.set(name, row);
+  }
+  return [...byName.values()]
     .sort((a, b) => Number(b.producingOutput) - Number(a.producingOutput) || a.name.localeCompare(b.name));
 }
 
@@ -117,8 +153,11 @@ function createSoullabCaptureHost({
   let session = null; // { client, socketPath, dir }
   let source = null;
   let meter = { seconds: 0, peak: [] };
+  let loudest = 0; // highest peak seen in the current take; 0 means nothing audible arrived
   let discontinuities = 0;
   let lastTake = null;
+  let lastTakeFile = null; // main-only: where the last take lives, for Show in Finder
+  let recovery = null;     // the helper's report of takes it repaired at launch, shown once
   let lastError = null;
   let lastMeterEmit = 0;
   let finalizing = null;
@@ -130,6 +169,7 @@ function createSoullabCaptureHost({
     peak: meter.peak.slice(0, 2),
     discontinuities,
     lastTake,
+    recovery,
     error: lastError,
   });
   const emit = () => { try { onChange(snapshot()); } catch { /* the surface never breaks the host */ } };
@@ -164,12 +204,31 @@ function createSoullabCaptureHost({
 
   function recordTake(take) {
     if (!take || typeof take !== 'object') return;
+    lastTakeFile = typeof take.path === 'string' && path.isAbsolute(take.path) ? take.path : null;
     lastTake = {
       fileName: path.basename(String(take.path || '')),
       seconds: take.sampleRate ? Math.round((take.frames / take.sampleRate) * 10) / 10 : 0,
+      sampleRate: Number(take.sampleRate) || 0,
+      // An empty take is kept, never deleted (founder ruling J4a-2): the surface
+      // labels it instead.
+      empty: !(Number(take.frames) > 0),
+      // Frames arrived but every one was silent (J4a-2 witness: a 32.8 s take of
+      // pure digital silence read as an ordinary recording).
+      silent: Number(take.frames) > 0 && loudest === 0,
+      appName: source ? source.name : null,
+      gaps: discontinuities,
       stopReason: String(take.stopReason || 'unknown'),
       sha256: typeof take.sha256 === 'string' ? take.sha256 : null,
     };
+  }
+
+  function noteRecovery(hello) {
+    const r = hello && hello.recovery;
+    if (!r || typeof r !== 'object') return;
+    const count = (v) => (Array.isArray(v) ? v.length : 0);
+    const repaired = count(r.recovered) + count(r.provenanceCompleted);
+    const quarantined = count(r.quarantined);
+    if (repaired + quarantined > 0) recovery = { repaired, quarantined };
   }
 
   function onEvent(e) {
@@ -179,6 +238,7 @@ function createSoullabCaptureHost({
         break;
       case 'meter': {
         meter = { seconds: Number(e.seconds) || 0, peak: Array.isArray(e.peak) ? e.peak : [] };
+        for (const v of meter.peak) if (Number(v) > loudest) loudest = Number(v);
         const t = Date.now();
         if (t - lastMeterEmit >= METER_EMIT_MS) { lastMeterEmit = t; emit(); }
         break;
@@ -244,7 +304,7 @@ function createSoullabCaptureHost({
           }
         },
       });
-      await s.client.ready;
+      noteRecovery(await s.client.ready);
       session = s;
       return s;
     } catch (error) {
@@ -264,6 +324,8 @@ function createSoullabCaptureHost({
   return {
     snapshot,
     active: () => phase !== 'idle',
+    /** Main only — never sent to a renderer. */
+    lastTakeFile: () => lastTakeFile,
 
     /** Opens a short-lived helper only to read the list, then lets it go. */
     async listSources() {
@@ -291,6 +353,7 @@ function createSoullabCaptureHost({
       if (!folder) throw fail('NO_FOLDER');
       lastError = null;
       discontinuities = 0;
+      loudest = 0;
       meter = { seconds: 0, peak: [] };
       setPhase('launching');
       try {
@@ -298,7 +361,7 @@ function createSoullabCaptureHost({
         const { sources } = await s.client.request('listSources');
         const chosen = (sources || []).find((x) => x.id === sourceId);
         if (!chosen) throw fail('SOURCE_NOT_FOUND');
-        source = { name: String(chosen.name || 'App').slice(0, 80) };
+        source = { name: (memberName(chosen) || 'App').slice(0, 80) };
         const when = now();
         for (let attempt = 0; ; attempt++) {
           try {

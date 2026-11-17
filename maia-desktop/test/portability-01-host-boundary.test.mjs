@@ -25,6 +25,8 @@ const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src')
 const HOST_ADAPTERS = [
   { file: 'main.js',
     why: 'Host wiring: BrowserWindow, app lifecycle, ipcMain transport, webContents broadcast. The native supervisor replaces THIS file.' },
+  { file: 'capture-preload.js',
+    why: 'SOULLAB-CAPTURE J4a-2 — the Capture window\'s own bridge: contextBridge + ipcRenderer, Electron-specific by definition. Its channels are reviewed in test/d01-preload-allowlist.mjs beside the MAIA window\'s.' },
   { file: 'preload.js',
     why: 'The bridge itself: contextBridge + ipcRenderer. Electron-specific by definition; ten ratified channels reviewed in test/d01-preload-allowlist.mjs.' },
 ];
@@ -52,10 +54,15 @@ const PORTABLE_DOMAIN = [
   'cabin-runtime.js', // AIN-CABIN-RUNTIME-02 — host-independent runtime lifecycle
   'soullab-desktop-boundary.js', // SDU-01 — pure product/realm/transport law; no host dependency
   'soullab-capture-host.js', // SOULLAB-CAPTURE J4a-1 — helper supervision; LaunchServices + socket, no Electron
+  'capture-view.js', // SOULLAB-CAPTURE J4a-2 — the Capture window's words; pure, no DOM, no Electron
 ];
 
 // The presentation edge. Speaks an abstract capability surface, never Electron.
-const PRESENTATION = ['renderer.js'];
+const PRESENTATION = ['renderer.js', 'capture-renderer.js']; // capture-renderer: SOULLAB-CAPTURE J4a-2
+// Which abstract capability surface each presentation file speaks. The Capture
+// window has its own (window.soullabCapture), so neither window can reach the
+// other's verbs.
+const CAPABILITY_SURFACE = { 'renderer.js': 'window.maia.', 'capture-renderer.js': 'window.soullabCapture' };
 
 // Constructs that can only come from Electron itself — no injected parameter
 // legitimately carries these names. (`app` and `safeStorage` are deliberately
@@ -132,7 +139,7 @@ test('the renderer depends on an abstract Desktop capability, not on Electron ma
   for (const file of PRESENTATION) {
     const body = code(read(file));
     assert.ok(!/\brequire\s*\(/.test(body), `${file} uses require(); the renderer gets named verbs only.`);
-    assert.ok(/window\.maia\./.test(body), `${file} no longer speaks the capability surface.`);
+    assert.ok(body.includes(CAPABILITY_SURFACE[file]), `${file} no longer speaks the capability surface.`);
   }
 });
 

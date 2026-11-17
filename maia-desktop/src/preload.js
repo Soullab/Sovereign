@@ -71,17 +71,6 @@ contextBridge.exposeInMainWorld('maia', {
   signOut: () => ipcRenderer.invoke('maia:sign-out'),
   getAuth: () => ipcRenderer.invoke('maia:auth-state'),
 
-  // ── SOULLAB-CAPTURE J4a-1: record one app's audio ─────────────────────────
-  // The renderer may ask for the list of apps, name ONE of them by the id main
-  // returned, and say stop. It cannot name a folder, a file, a format or a
-  // device: the member picks the folder in a native dialog that main opens, and
-  // the helper — not this renderer, not main — holds the recording.
-  getSoullabCaptureState: () => ipcRenderer.invoke('maia:soullab-capture-state'),
-  soullabCaptureChooseFolder: () => ipcRenderer.invoke('maia:soullab-capture-choose-folder'),
-  soullabCaptureSources: () => ipcRenderer.invoke('maia:soullab-capture-sources'),
-  soullabCaptureStart: (sourceId) => ipcRenderer.invoke('maia:soullab-capture-start', { sourceId }),
-  soullabCaptureStop: () => ipcRenderer.invoke('maia:soullab-capture-stop'),
-
   // ── main → renderer ───────────────────────────────────────────────────────
   // Outward only; nothing crosses inward on these.
   onVoiceEvent: (fn) => {
@@ -118,11 +107,5 @@ contextBridge.exposeInMainWorld('maia', {
     const handler = (_evt, payload) => fn(payload);
     ipcRenderer.on('maia:voice-state-changed', handler);
     return () => ipcRenderer.removeListener('maia:voice-state-changed', handler);
-  },
-  onSoullabCaptureState: (fn) => {
-    if (typeof fn !== 'function') return () => {};
-    const handler = (_evt, payload) => fn(payload);
-    ipcRenderer.on('maia:soullab-capture-state-changed', handler);
-    return () => ipcRenderer.removeListener('maia:soullab-capture-state-changed', handler);
   },
 });

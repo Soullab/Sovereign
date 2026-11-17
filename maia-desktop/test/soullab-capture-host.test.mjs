@@ -153,7 +153,11 @@ test('member Stop finalizes, reports only the file NAME, removes the socket dire
   const dir = path.dirname(fake.launches[0].args[fake.launches[0].args.indexOf('--socket') + 1]);
   const snap = await host.stop();
   assert.equal(snap.phase, 'idle');
-  assert.deepEqual(snap.lastTake, { fileName: 'take.wav', seconds: 3, stopReason: 'memberStop', sha256: 'a'.repeat(64) });
+  assert.deepEqual(snap.lastTake, {
+    fileName: 'take.wav', seconds: 3, sampleRate: 44100, empty: false, silent: false, appName: 'QuickTime Player',
+    gaps: 0, stopReason: 'memberStop', sha256: 'a'.repeat(64),
+  });
+  assert.equal(host.lastTakeFile().endsWith('/take.wav'), true, 'main cannot reveal the take');
   assert.ok(!JSON.stringify(snap).includes('/'), 'a location leaked into the snapshot');
   assert.equal(fs.existsSync(dir), false, 'socket directory left behind');
   assert.ok(fake.launches[0].requests.some((r) => r.type === 'shutdown'));
@@ -245,13 +249,14 @@ test('offerableSources sorts playing apps first and drops malformed entries', ()
   ]);
 });
 
-test('structure: nothing starts a take except a member action', () => {
+test('structure: nothing starts a take except a member action in the Capture window', () => {
   const starts = [...mainJs.matchAll(/soullabCapture\.start\(/g)].length;
-  assert.equal(starts, 2, 'a new caller of start() appeared');
-  const menuFn = /async function recordAnAppFromMenu\(\)[\s\S]*?\n\}\n/.exec(mainJs)[0];
-  assert.ok(menuFn.includes('soullabCapture.start('));
+  assert.equal(starts, 1, 'a new caller of start() appeared');
   const ipc = /ipcMain\.handle\('maia:soullab-capture-start'[\s\S]*?\n\}\);/.exec(mainJs)[0];
   assert.ok(ipc.includes('soullabCapture.start(') && /slice\(0, 32\)/.test(ipc) && /SOURCE_ID\.test/.test(ipc));
+  const menu = /function soullabCaptureMenu\(\)[\s\S]*?\n\}\n/.exec(mainJs)[0];
+  assert.ok(!menu.includes('.start('), 'the menu can start a recording');
+  assert.ok(menu.includes("accelerator: 'Alt+CmdOrCtrl+R'") && menu.includes('openCaptureWindow()'));
   for (const banned of ['setInterval', 'resume', 'autoStart', 'retry']) {
     assert.ok(!hostJs.replace(/\/\/.*$/gm, '').includes(banned), `host contains ${banned}`);
   }
@@ -275,4 +280,23 @@ test('structure: packaging keeps the helper off electron-builder signing and the
   assert.ok(helper.includes("path.join(CAPTURE_PACKAGE, 'HelperBundle', 'Helper.entitlements')"));
   const entitlements = fs.readFileSync(path.join(here, '..', '..', 'packages', 'soullab-capture', 'HelperBundle', 'Helper.entitlements'), 'utf8');
   assert.ok(/<dict\/>/.test(entitlements) && !/<key>/.test(entitlements.replace(/<!--[\s\S]*?-->/g, '')), 'helper entitlements are not empty');
+});
+
+test('the app list uses names members know and hides background services', () => {
+  const raw = [
+    { id: 'pid:1', name: 'Google Chrome', bundleID: 'com.google.Chrome', producingOutput: false },
+    { id: 'pid:2', name: 'Google Chrome Helper (Aperitif)', bundleID: 'com.google.Chrome.helper', producingOutput: true },
+    { id: 'pid:3', name: 'arkaudiod', bundleID: 'com.rogueamoeba.arkaudiod', producingOutput: true },
+    { id: 'pid:4', name: 'corespeechd', bundleID: 'com.apple.CoreSpeech', producingOutput: false },
+    { id: 'pid:5', name: 'com.apple.WebKit.GPU', bundleID: 'com.apple.WebKit.GPU', producingOutput: false },
+    { id: 'pid:6', name: 'Claude Helper', bundleID: 'com.anthropic.claudefordesktop.helper', producingOutput: false },
+    { id: 'pid:7', name: 'Claude', bundleID: 'com.anthropic.claudefordesktop', producingOutput: false },
+    { id: 'pid:8', name: '', bundleID: '', producingOutput: true },
+    { id: 'pid:9', name: 'ControlCenter', bundleID: 'com.apple.controlcenter', producingOutput: false },
+  ];
+  assert.deepEqual(offerableSources(raw), [
+    { id: 'pid:2', name: 'Google Chrome', producingOutput: true },
+    { id: 'pid:6', name: 'Claude', producingOutput: false },
+    { id: 'pid:5', name: 'Safari and web pages', producingOutput: false },
+  ]);
 });
