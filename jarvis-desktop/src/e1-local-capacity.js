@@ -215,6 +215,7 @@ module.exports = {
   ADMISSION_VERSION,
   LOCAL_CAPACITY_PROFILES,
   parseDarwinSwap,
+  parseDarwinVmStatAvailable,
   parseLinuxMeminfo,
   sampleLocalCapacity,
   evaluateLocalCapacity,
