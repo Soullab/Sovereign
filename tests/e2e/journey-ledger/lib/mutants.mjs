@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * Mutation check for the ledger, the classifier and the pure part of the browser glue (trial.mjs settleKey): copy lib/ to a temp
- * directory, break ONE line of ledger.mjs, classify.mjs or trial.mjs, run the unit tests against the copy, and require that they fail. A mutant that survives means the tests
- * cannot see that line being wrong.
+ * Mutation check for the ledger, the classifier, the pure part of the browser glue (trial.mjs settleKey), the shell helpers and the
+ * parts of run.sh / run.mjs / the persona / the README the tests pin: copy the instrument (tests/e2e/journey-ledger) into a temp
+ * checkout-shaped directory, break ONE line, run the unit tests against the copy, and require that they fail. A mutant that survives
+ * means the tests cannot see that line being wrong.
  *
- *   node tests/e2e/journey-ledger/lib/mutants.mjs        (exit 0 only if every mutant is killed)
+ *   node tests/e2e/journey-ledger/lib/mutants.mjs        (exit 0 only if every mutant is killed; JL_SHOW_KILLS=1 also names the tests that killed it)
  *
- * The repository copy is never modified.
+ * The repository copy is never modified. A mutant's file is `ledger` / `classify` / `trial` (lib/<name>.mjs) or a path under the
+ * instrument directory (`lib/run-lib.sh`, `run.sh`, `run.mjs`, `personas/p1-first-timer.mjs`, `README.md`).
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,6 +17,26 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const instrument = path.resolve(here, '..');                 // tests/e2e/journey-ledger
+const repoRoot = path.resolve(instrument, '..', '..', '..');
+const nodeModules = fs.existsSync(path.join(repoRoot, 'node_modules')) ? fs.realpathSync(path.join(repoRoot, 'node_modules')) : null;
+
+/** A checkout-shaped copy: <tmp>/tests/e2e/journey-ledger (a copy of the instrument) and <tmp>/node_modules (a link), so run.sh finds its ROOT. */
+function makeCopy(tag) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), `jl-mutant-${tag}-`));
+  const dest = path.join(root, 'tests', 'e2e', 'journey-ledger');
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.cpSync(instrument, dest, { recursive: true });
+  if (nodeModules) fs.symlinkSync(nodeModules, path.join(root, 'node_modules'));
+  return { root, dest };
+}
+const runTests = (dest, root) => {
+  const dir = path.join(dest, 'lib');
+  return spawnSync(process.execPath, ['--test', ...fs.readdirSync(dir).filter(f => f.endsWith('.test.mjs')).map(f => path.join(dir, f))],
+    { encoding: 'utf8', env: { ...process.env, JL_NODE_MODULES: nodeModules || '' }, cwd: root });
+};
+const parses = (file) => (file.endsWith('.mjs') ? spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' }).status === 0
+  : file.endsWith('.sh') ? spawnSync('bash', ['-n', file], { encoding: 'utf8' }).status === 0 : true);
 
 const MUTANTS = [
   ['ledger', 'M01 NOT RUN no longer blocks "works"', "counts['DEAD END'] === 0 && counts['NOT RUN'] === 0", "counts['DEAD END'] === 0"],
@@ -53,33 +75,99 @@ const MUTANTS = [
   ['classify', 'M35 nothing is set aside: every request is the press\'s', "const mine = (o.requests || []).filter(r => isCausedByPress(r, o.clickMs));", "const mine = (o.requests || []).filter(r => true);"],
   ['trial', 'M36 the wait for stillness ignores the address', "return `${s.url}|${s.text.length}|${s.text.slice(0, 200)}|${s.controls}|${s.aria}`;", "return `${s.text.length}|${s.text.slice(0, 200)}|${s.controls}|${s.aria}`;"],
   ['classify', 'M22 a same-page anchor to a missing id passes', ": { status: DEAD_END, evidence: `${who} points at ${o.href}", ": { status: PASS, evidence: `${who} points at ${o.href}"],
+
+  // ---- F4: a walk that crashed is not "works" ----
+  ['ledger', 'M09 a harness crash does not block "works" (all rows PASS after the crash)', "if (!crash && counts['DEAD END'] === 0 && counts['NOT RUN'] === 0) {", "if (counts['DEAD END'] === 0 && counts['NOT RUN'] === 0) {"],
+  ['ledger', 'M09b runPersona does not record the crash on the ledger', "    ledger.fail(e);\n    ledger.note(", "    ledger.note("],
+  ['ledger', 'M09c verdict() does not hand the crash to decide', "this._decide(this.rows, { harnessError: this.harnessError })", "this._decide(this.rows)"],
+  ['ledger', 'M09d a crash with an empty message is not a crash', "typeof signals.harnessError === 'string'", "signals.harnessError"],
+  ['ledger', 'M09e a crash is dropped from the reason when rows also failed', "  if (crash) parts.push(crash);", "  "],
+  // ---- F8: a title that repeats the label is not a reason ----
+  ['classify', 'M19c any non-empty explanatory text is a reason', "if (t && !own.has(sameText(t))) return t;", "if (t) return t;"],
+  ['classify', 'M19d the repeat is compared case-sensitively', "const sameText = (s) => norm(s).toLowerCase();", "const sameText = (s) => norm(s);"],
+  ['classify', 'M19e only the label is compared (visible text and aria-label are ignored)', "const own = new Set([o.label, ...(o.ownNames || [])].map(sameText).filter(Boolean));", "const own = new Set([o.label].map(sameText).filter(Boolean));"],
+  ['classify', 'M19f only the old single reason is read (a later explanatory text is ignored)', "for (const r of [...(o.disabledReasons || []), o.disabledReason]) {", "for (const r of [o.disabledReason]) {"],
+  // ---- F6: only a delivered click is a press ----
+  ['classify', 'M37 a click that was refused counts as pressed', "if (obs.pressed === true) return null;", "if (obs.pressed === true || obs.clickError) return null;"],
+  ['classify', 'M38 a disabled control is not given its own reason (it falls through to "no click was delivered")', "if (obs.disabled) return 'disabled, so not pressed';", ""],
+  ['classify', 'M39 the controls the trial cap left alone are not counted', "if (skippedByCap > 0) {", "if (false) {"],
+  ['classify', 'M40 a trial that failed before an observation counts as pressed', "if (!obs) return 'its trial failed before any press';", "if (!obs) return null;"],
+  ['classify', 'M41 the sentence says each was pressed even when some were not', "if (t.notPressed === 0) return", "if (true) return"],
+  ['classify', 'M42 an unrowed control is told apart by its position', "const k = baseKey(c.key);", "const k = String(c.key);"],
+  ['classify', 'M43 a revealed control that has a row is still called unrowed', "if (!rowKeys.has(k) && !seen.has(k)) seen.set(k, c);", "if (!seen.has(k)) seen.set(k, c);"],
+  ['classify', 'M44 baseKey keeps the position', "String(key ?? '').replace(/#\\d+$/, '')", "String(key ?? '')"],
+  ['personas/p1-first-timer.mjs', 'P01 the walk goes a different depth from the README', "export const MAX_DEPTH = 4;", "export const MAX_DEPTH = 3;"],
+  ['personas/p1-first-timer.mjs', 'P02 the header counts controls tried, not pressed', "const tally = tallyPresses(tried.map(x => x.obs), skippedByCap);", "const tally = { pressed: tried.length, notPressed: 0, reasons: '' };"],
+  ['personas/p1-first-timer.mjs', 'P03 P1-06 goes back to claiming every control was pressed', "'Every control given a row was accounted for: pressed, or listed with why it was not; none left unsettled or skipped by the trial cap'", "'Every control found was pressed and ended PASS, DEAD END or NOT RUN: none skipped'"],
+  ['personas/p1-first-timer.mjs', 'P04 P1-06 evidence is no longer the tally sentence', "evidence: describeTally(t, { maxDepth: MAX_DEPTH, outcomes: c })", "evidence: `${t.total} controls found and each pressed`"],
+  // ---- F7 / F9: the README ----
+  ['README.md', 'D01 the README says three presses deep again', "up to four presses deep (`MAX_DEPTH` is 4", "up to three presses deep (`MAX_DEPTH` is 4"],
+  ['README.md', 'D02 the README claims nothing can reach a real provider', "a call made through the Anthropic SDK reaches the stub, never a real provider", "nothing can reach a real provider"],
+  ['README.md', 'D03 the README stops saying the network is not isolated', "- **The network.** Nothing stops the app server opening a connection wherever this machine allows.", "- **The network.** The app server is confined."],
+  ['run.sh', 'D04 the run.sh header stops saying the network is not isolated', "Nothing stops the app server opening a connection wherever this machine allows (the", "The app server cannot leave this machine (the"],
+  // ---- F3: the report directory ----
+  ['lib/run-lib.sh', 'S01 a missing report directory yields "/name" (the code that was there)', "  [ -d \"$d\" ] || return 1\n  abs=\"$(cd -- \"$d\" 2>/dev/null && pwd)\" || return 1\n  [ -n \"$abs\" ] || return 1\n", "  abs=\"$(cd -- \"$d\" 2>/dev/null && pwd)\"\n"],
+  ['lib/run-lib.sh', 'S02 a report path that is a directory is accepted', "  [ ! -d \"$p\" ] || return 1\n", ""],
+  ['run.sh', 'R01 run.sh no longer refuses a report directory that does not exist', "|| { echo \"REFUSED: the report's directory does not exist ($(dirname -- \"$REPORT\")); create it first\"; exit 64; }", "|| true"],
+  ['run.mjs', 'J01 run.mjs no longer refuses a report directory that does not exist', "if (!fs.existsSync(reportDir) || !fs.statSync(reportDir).isDirectory() || (fs.existsSync(reportPath) && fs.statSync(reportPath).isDirectory())) {", "if (false) {"],
+  // ---- F5: the combined exit code ----
+  ['lib/run-lib.sh', 'S03 WJ-1 can never fail the run', "if [ -n \"$w\" ] && [ \"$w\" != 0 ] && [ \"$l\" -lt 64 ]; then echo 1; else echo \"$l\"; fi", "echo \"$l\""],
+  ['lib/run-lib.sh', 'S04 a WJ-1 failure overwrites a harness failure code', " && [ \"$l\" -lt 64 ]; then echo 1;", "; then echo 1;"],
+  ['run.sh', 'R02 the run exits with the ledger code alone', "exit \"$FINAL_RC\"", "exit \"$RC\""],
+  ['run.sh', 'R03 WJ-1\'s code is not handed to the combiner', "FINAL_RC=\"$(jl_combined_exit \"$RC\" \"${WJ1_RC:-}\")\"", "FINAL_RC=\"$(jl_combined_exit \"$RC\" \"\")\""],
+  // ---- F10: the Subject ----
+  ['lib/run-lib.sh', 'S05 an untracked instrument file does not mark the run', "status --porcelain --untracked-files=all -- tests/e2e/journey-ledger", "status --porcelain --untracked-files=no -- tests/e2e/journey-ledger"],
+  ['lib/run-lib.sh', 'S06 any untracked file anywhere marks the run as modified product', "--untracked-files=no -- . ':(exclude)tests/e2e/journey-ledger'", "--untracked-files=all -- . ':(exclude)tests/e2e/journey-ledger'"],
+  ['lib/run-lib.sh', 'S07 a modified product file does not mark the run', "[ \"$other\" -gt 0 ] && parts+=", "[ 0 -gt 0 ] && parts+="],
+  ['lib/run-lib.sh', 'S08 a modified instrument file does not mark the run', "[ \"$own\" -gt 0 ] && parts+=", "[ 0 -gt 0 ] && parts+="],
+  ['lib/run-lib.sh', 'S08b an instrument file is also counted as a modified product file', "-- . ':(exclude)tests/e2e/journey-ledger'", "-- ."],
+  ['run.sh', 'R06 the Subject is the bare SHA again', "SUBJECT=\"$(jl_subject \"$ROOT\")\" ||", "SUBJECT=\"$(git rev-parse --short HEAD)\" ||"],
+  ['run.sh', 'R07 the report header drops the marker from the Subject', "  Subject: e.JL_SUBJECT,", "  Subject: e.JL_SUBJECT.split(' ')[0],"],
+  // ---- F9: the app server's environment ----
+  ['lib/run-lib.sh', 'S09 the checkout\'s env-file names are not blanked', "[ -n \"$name\" ] && JL_APP_ENV+=(\"$name=\"); done <<<\"$names\"", "[ -n \"$name\" ] && : ; done <<<\"$names\""],
+  ['lib/run-lib.sh', 'S10 the caller\'s HOME is passed to the app', "\"HOME=$RUN/home\"", "\"HOME=$HOME\""],
+  ['lib/run-lib.sh', 'S11 the caller\'s API key is passed to the app', "\"ANTHROPIC_API_KEY=journey-ledger-fictional-not-a-key\"", "\"ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-x}\""],
+  ['lib/run-lib.sh', 'S12 the caller\'s NODE_OPTIONS is passed to the app', "\"NODE_OPTIONS=--max-old-space-size=${JL_APP_HEAP_MB:-8192}\"", "\"NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=8192}\""],
+  ['lib/run-lib.sh', 'S13 an env-file loader that cannot run is guessed past', "names=\"$(jl_dotenv_names \"$ROOT\")\" || return 1", "names=\"$(jl_dotenv_names \"$ROOT\")\" || true"],
+  ['lib/run-lib.sh', 'S14a .env.development.local is not read', "for f in .env.development.local .env.local .env.development .env; do [ -f", "for f in .env.local .env.development .env; do [ -f"],
+  ['lib/run-lib.sh', 'S14b .env.local is not read', "for f in .env.development.local .env.local .env.development .env; do [ -f", "for f in .env.development.local .env.development .env; do [ -f"],
+  ['lib/run-lib.sh', 'S14c .env.development is not read', "for f in .env.development.local .env.local .env.development .env; do [ -f", "for f in .env.development.local .env.local .env; do [ -f"],
+  ['lib/run-lib.sh', 'S14d .env is not read', "for f in .env.development.local .env.local .env.development .env; do [ -f", "for f in .env.development.local .env.local .env.development; do [ -f"],
+  ['lib/run-lib.sh', 'S15 the loader\'s answer is discarded', "Object.keys(r.parsedEnv || {}).join(\"\\n\")", "[].join(\"\\n\")"],
+  ['lib/run-lib.sh', 'S16 the app\'s TMPDIR is the caller\'s', "\"TMPDIR=$RUN/tmp\"", "\"TMPDIR=${TMPDIR-}\""],
+  ['run.sh', 'R04 the app server inherits the caller\'s environment (no env -i)', "setsid env -i \"${JL_APP_ENV[@]}\"", "setsid env \"${JL_APP_ENV[@]}\""],
+  ['run.sh', 'R05 an environment that could not be built no longer refuses the run', "jl_build_app_env || { echo \"REFUSED: cannot tell what the checkout's env files would inject into the app (@next/env did not run)\"; exit 71; }", "jl_build_app_env || true"],
+  ['run.sh', 'R08 the app server is started through npx again', "\"$ROOT/node_modules/.bin/next\" dev --webpack", "npx next dev --webpack"],
 ];
 
 // The unmutated copy must pass, or "killed" means nothing.
 {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'jl-mutant-base-'));
+  const { root, dest } = makeCopy('base');
   try {
-    for (const f of fs.readdirSync(here)) if (f.endsWith('.mjs') && f !== 'mutants.mjs') fs.copyFileSync(path.join(here, f), path.join(tmp, f));
-    const r = spawnSync(process.execPath, ['--test', ...fs.readdirSync(tmp).filter(f => f.endsWith('.test.mjs')).map(f => path.join(tmp, f))], { encoding: 'utf8' });
-    if (r.status !== 0) { console.log('BASELINE FAILS: the unmutated tests do not pass, so no mutant can be judged'); process.exit(2); }
-  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+    const r = runTests(dest, root);
+    if (r.status !== 0) { console.log('BASELINE FAILS: the unmutated tests do not pass, so no mutant can be judged'); console.log(r.stdout.split('\n').filter(l => /^not ok|error:/.test(l)).slice(0, 8).join('\n')); process.exit(2); }
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 
 let survived = 0;
 for (const [file, name, from, to] of MUTANTS) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'jl-mutant-'));
+  const { root, dest } = makeCopy('m');
   try {
-    for (const f of fs.readdirSync(here)) if (/\.(mjs)$/.test(f) && f !== 'mutants.mjs') fs.copyFileSync(path.join(here, f), path.join(tmp, f));
-    const target = path.join(tmp, `${file}.mjs`);
+    const rel = /[./]/.test(file) ? file : `lib/${file}.mjs`;
+    const target = path.join(dest, rel);
     const src = fs.readFileSync(target, 'utf8');
-    if (!src.includes(from)) { console.log(`INVALID  ${name}: the line it breaks is not in ${file}.mjs (the mutant list is stale)`); survived += 1; continue; }
+    if (!src.includes(from)) { console.log(`INVALID  ${name}: the line it breaks is not in ${rel} (the mutant list is stale)`); survived += 1; continue; }
     fs.writeFileSync(target, src.replace(from, to));
     // A mutant that does not even parse would be "killed" by accident, which proves nothing about the tests.
-    if (spawnSync(process.execPath, ['--check', target], { encoding: 'utf8' }).status !== 0) { console.log(`INVALID  ${name}: the mutant does not parse`); survived += 1; continue; }
-    const r = spawnSync(process.execPath, ['--test', ...fs.readdirSync(tmp).filter(f => f.endsWith('.test.mjs')).map(f => path.join(tmp, f))], { encoding: 'utf8' });
-    if (r.status === 0) { console.log(`SURVIVED ${name}`); survived += 1; } else console.log(`killed   ${name}`);
+    if (!parses(target)) { console.log(`INVALID  ${name}: the mutant does not parse`); survived += 1; continue; }
+    const r = runTests(dest, root);
+    if (r.status === 0) { console.log(`SURVIVED ${name}`); survived += 1; } else {
+      console.log(`killed   ${name}`);
+      // JL_SHOW_KILLS=1 also prints which tests failed, so the reason a mutant died can be read, not only counted.
+      if (process.env.JL_SHOW_KILLS) for (const l of r.stdout.split('\n').filter(l => /^not ok \d+ - /.test(l)).slice(0, 2)) console.log(`           by: ${l.replace(/^not ok \d+ - /, '').slice(0, 130)}`);
+    }
   } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
   }
 }
 console.log(survived === 0 ? `\nall ${MUTANTS.length} mutants killed` : `\n${survived} mutant(s) survived or were invalid`);

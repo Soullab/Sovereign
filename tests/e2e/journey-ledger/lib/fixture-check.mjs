@@ -14,7 +14,7 @@
  * on, then one control is pressed through pressAndObserve. `flight` is the persona's trial-long request tracker.
  */
 import http from 'node:http';
-import { findChromium, launch, newContext, gotoRetrying, enumerateControls, waitForControl, settle, pressAndObserve, trackInFlight } from './trial.mjs';
+import { findChromium, launch, newContext, gotoRetrying, enumerateControls, settle, pressAndObserve, trackInFlight } from './trial.mjs';
 import { classifyTrial } from './classify.mjs';
 import { PASS, DEAD_END, NOT_RUN } from './ledger.mjs';
 
@@ -47,6 +47,14 @@ const PAGES = {
     document.getElementById('save').onclick = () => { fetch('/api/save', { method: 'POST' }); };`),
   // F3: a request that does not finish while the press is made (a hung call): the page never settles.
   '/f3': page('<button id=dev>Develop</button>', `fetch('/api/forever');`),
+  // F6: a control that is listed and never pressed: a link off the product is not followed.
+  '/f6': page('<a href="https://example.org/x">Elsewhere</a>'),
+  // F8: a disabled control "says why" only with text that is not its own name.
+  '/f8a': page('<button disabled title="Save">Save</button>'),
+  '/f8b': page('<button disabled title="Write a sentence first">Save</button>'),
+  '/f8c': page('<button disabled title="Archive"><svg width="16" height="16"></svg></button>'),
+  '/f8d': page('<button disabled aria-label="Save the draft" title="Save">Save</button>'),
+  '/f8e': page('<button disabled title="Save" aria-description="Write something first">Save</button>'),
 };
 const DELAYS = { '/api/create': 2200, '/api/late': 2600, '/api/save': 30, '/api/beacon': 20, '/api/forever': 12000 };
 
@@ -65,15 +73,34 @@ const server = http.createServer((req, res) => {
 });
 
 const SCENARIOS = [
-  // [name, path, parent label | null, control label, want, options passed to pressAndObserve, evidence must match]
-  ['F1  Home pressed after Begin, while the Work is still being made, is not credited with the landing', '/f1', 'Begin', 'Home', DEAD_END, {}, /nothing happened/],
-  ['F1c a button whose own handler changes the address and the text is still a PASS', '/f1real', null, 'Go', PASS, {}, /led to \/f1real\?opened=1/],
-  ['F2a an inert button is a DEAD END when the page’s own request (started before the press) answers during the window', '/f2a', null, 'Develop', DEAD_END, {}, /nothing happened/],
-  ['F2b ...and when it answers just AFTER the press and the harness never saw it start (no tracker handed in): never credited', '/f2b', null, 'Develop', DEAD_END, { noFlight: true, stillMs: 200 }, /not started by the press|nothing happened/],
-  ['F2c an inert button is a DEAD END when an unrelated beacon fires 900 ms after the click, and the evidence names it', '/f2c', null, 'Develop', DEAD_END, {}, /not counted, not started by the press: GET \/api\/beacon/],
-  ['F2d a button that really sends a request (and shows nothing else) is a PASS: the request is the press’s', '/f2c', null, 'Save', PASS, {}, /POST \/api\/save answered HTTP 200/],
-  ['F3  a press made while a request never finishes is NOT RUN, never a verdict', '/f3', null, 'Develop', NOT_RUN, { stillCapMs: 1500 }, /still moving/],
+  // [name, path, parent label | null, control label, want, options passed to pressAndObserve, evidence must match, was a click delivered?]
+  ['F1  Home pressed after Begin, while the Work is still being made, is not credited with the landing', '/f1', 'Begin', 'Home', DEAD_END, {}, /nothing happened/, true],
+  ['F1c a button whose own handler changes the address and the text is still a PASS', '/f1real', null, 'Go', PASS, {}, /led to \/f1real\?opened=1/, true],
+  ['F2a an inert button is a DEAD END when the page’s own request (started before the press) answers during the window', '/f2a', null, 'Develop', DEAD_END, {}, /nothing happened/, true],
+  ['F2b ...and when it answers just AFTER the press and the harness never saw it start (no tracker handed in): never credited', '/f2b', null, 'Develop', DEAD_END, { noFlight: true, stillMs: 200 }, /not started by the press|nothing happened/, true],
+  ['F2c an inert button is a DEAD END when an unrelated beacon fires 900 ms after the click, and the evidence names it', '/f2c', null, 'Develop', DEAD_END, {}, /not counted, not started by the press: GET \/api\/beacon/, true],
+  ['F2d a button that really sends a request (and shows nothing else) is a PASS: the request is the press’s', '/f2c', null, 'Save', PASS, {}, /POST \/api\/save answered HTTP 200/, true],
+  ['F3  a press made while a request never finishes is NOT RUN, never a verdict', '/f3', null, 'Develop', NOT_RUN, { stillCapMs: 1500 }, /still moving/, true],
+  // F6: only a control a click was delivered to is pressed; the rest are listed, not pressed.
+  ['F6  a link off the product is not followed, and is NOT pressed', '/f6', null, 'Elsewhere', NOT_RUN, {}, /points off the product/, false],
+  // F8: a disabled control that only repeats its own name does not say why; one that explains does. Neither is pressed.
+  ['F8a a disabled button whose title repeats its label does not say why: NOT RUN', '/f8a', null, 'Save', NOT_RUN, {}, /nothing on it says why/, false],
+  ['F8b a disabled button whose title differs from its label says why: PASS', '/f8b', null, 'Save', PASS, {}, /says why: "Write a sentence first"/, false],
+  ['F8c an icon button whose only name IS its title does not say why: NOT RUN', '/f8c', null, 'Archive', NOT_RUN, {}, /nothing on it says why/, false],
+  ['F8d a title that repeats the visible text under a longer aria-label does not say why: NOT RUN', '/f8d', null, 'Save the draft', NOT_RUN, {}, /nothing on it says why/, false],
+  ['F8e when the title repeats the name but an aria-description explains, it says why: PASS', '/f8e', null, 'Save', PASS, {}, /says why: "Write something first"/, false],
 ];
+
+/** A person waits for a control that mounts late (the F1 page shows Home only after Begin is pressed); so does this check. */
+async function waitForLabel(p, label, ms) {
+  const t0 = Date.now();
+  for (;;) {
+    const c = (await enumerateControls(p)).controls.find(x => x.label === label);
+    if (c) return c;
+    if (Date.now() - t0 >= ms) return null;
+    await p.waitForTimeout(400);
+  }
+}
 
 async function run() {
   if (!findChromium()) { console.log('COULD NOT RUN: no Chromium found (set JL_CHROMIUM, or install one Playwright can drive); nothing is claimed'); return 64; }
@@ -84,11 +111,11 @@ async function run() {
   const origin = new URL(base).origin;
   let bad = 0;
   try {
-    for (const [name, path, parent, label, want, opts, evidenceRe] of SCENARIOS) {
+    for (const [name, path, parent, label, want, opts, evidenceRe, wantPressed] of SCENARIOS) {
       const blocked = [];
       const ctx = await newContext(browser, base, blocked);
       const p = await ctx.newPage();
-      let got = null; let evidence = '';
+      let got = null; let evidence = ''; let pressed = null;
       try {
         const flight = trackInFlight(p, origin);
         await gotoRetrying(p, path);
@@ -99,19 +126,19 @@ async function run() {
           await p.locator(`[data-jl="${pc.idx}"]`).click();
           await settle(p, { quietMs: 1000, capMs: 15000, inflight: flight });     // the persona's replay settle
         }
-        const c = await waitForControl(p, `button||${label}|#1`, 10000)
-          || (await enumerateControls(p)).controls.find(x => x.label === label);
+        const c = await waitForLabel(p, label, 10000);
         if (!c) { got = 'control missing'; }
         else {
           const { noFlight, ...rest } = opts;
           const obs = await pressAndObserve(p, ctx, c, { base, modelLog: '/nonexistent/jl-model.log', windowMs: 2500, flight: noFlight ? null : flight, ...rest });
           ({ status: got, evidence } = classifyTrial(obs));
+          pressed = obs.pressed;
         }
       } catch (e) { got = `error: ${String(e.message).split('\n')[0]}`; }
       finally { await ctx.close().catch(() => {}); }
-      const ok = got === want && evidenceRe.test(evidence);
+      const ok = got === want && evidenceRe.test(evidence) && pressed === wantPressed;
       if (!ok) bad += 1;
-      console.log(`${ok ? 'ok     ' : 'WRONG  '} ${name}\n         got ${got}${got === want ? '' : `, wanted ${want}`}: ${evidence.slice(0, 230)}`);
+      console.log(`${ok ? 'ok     ' : 'WRONG  '} ${name}\n         got ${got}${got === want ? '' : `, wanted ${want}`}; click delivered: ${pressed}${pressed === wantPressed ? '' : ` (wanted ${wantPressed})`}: ${evidence.slice(0, 200)}`);
     }
   } finally {
     await browser.close().catch(() => {});

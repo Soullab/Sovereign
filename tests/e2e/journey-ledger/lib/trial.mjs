@@ -113,17 +113,21 @@ const ENUMERATE = () => {
     const role = el.getAttribute('role') || '';
     const href = el.getAttribute('href');
     const label = clean(el.getAttribute('aria-label') || el.innerText || el.value || el.getAttribute('title') || '').slice(0, 80);
+    // Every name the control gives itself (its label is the first of these that is not empty, or its title). A disabled control "says
+    // why" only with text that is none of these; classify.mjs statedReason() does the comparing.
+    const names = [el.getAttribute('aria-label'), el.innerText, el.value, el.textContent].map(clean).filter(Boolean).map(t => t.slice(0, 80));
     const disabled = el.disabled === true || el.getAttribute('aria-disabled') === 'true';
-    let disabledReason = '';
+    let disabledReasons = [];
     if (disabled) {
       const describedBy = (el.getAttribute('aria-describedby') || '').split(/\s+/).map(id => document.getElementById(id)?.innerText || '').join(' ');
-      disabledReason = clean(el.getAttribute('title') || el.getAttribute('aria-description') || describedBy || '');
+      disabledReasons = [el.getAttribute('title'), el.getAttribute('aria-description'), describedBy].map(clean).filter(Boolean);
     }
+    const disabledReason = disabledReasons[0] || '';
     const base = `${tag}|${role}|${label}|${href ?? ''}`;
     const ord = (seen.get(base) || 0) + 1; seen.set(base, ord);
     el.setAttribute('data-jl', String(n));
     out.push({
-      idx: n, key: `${base}#${ord}`, tag, role, label, href, disabled, disabledReason,
+      idx: n, key: `${base}#${ord}`, tag, role, label, names, href, disabled, disabledReason, disabledReasons,
       kind: tag === 'a' || role === 'link' ? 'link' : tag === 'summary' ? 'disclosure' : 'button',
       disclosure: tag === 'summary' || el.hasAttribute('aria-expanded') || el.hasAttribute('aria-haspopup'),
       target: el.getAttribute('target') || '',
@@ -268,8 +272,9 @@ export async function pressAndObserve(page, ctx, wanted, { base, modelLog, windo
   }
   const obs = {
     unsettledAtPress: still.settled ? null : still.why, clickMs: 0,
+    pressed: false,     // true only once a click was DELIVERED to the control (the report may say "pressed" of nothing else)
     label: control.label || `[unlabelled ${control.tag}${control.cls ? '.' + control.cls : ''}]`, kind: control.kind, href: control.href,
-    disabled: false, disabledReason: '', clickError: null, origin,
+    disabled: false, disabledReason: '', disabledReasons: [], ownNames: control.names || [], clickError: null, origin,
     urlBefore: before.url, urlAfter: before.url, document: null, linkProbe: null, popup: null,
     landingText: '', textBefore: before.text, textAfter: before.text,
     ariaBefore: before.aria, ariaAfter: before.aria, controlsBefore: before.controls, controlsAfter: before.controls,
@@ -295,7 +300,7 @@ export async function pressAndObserve(page, ctx, wanted, { base, modelLog, windo
     await page.waitForTimeout(400);
     isDisabled = await loc.evaluate(el => el.disabled === true || el.getAttribute('aria-disabled') === 'true').catch(() => false);
   }
-  if (isDisabled) { obs.disabled = true; obs.disabledReason = control.disabledReason || ''; return obs; }
+  if (isDisabled) { obs.disabled = true; obs.disabledReason = control.disabledReason || ''; obs.disabledReasons = control.disabledReasons || []; return obs; }
   if (prepare) { await prepare(page).catch(() => {}); await page.waitForTimeout(300); }
 
   // A dead link is a dead link whatever the click does: probe the target with the member's own session.
@@ -344,6 +349,7 @@ export async function pressAndObserve(page, ctx, wanted, { base, modelLog, windo
   clickStartedAt = Date.now();
   try {
     await loc.click({ timeout: 6000 });
+    obs.pressed = true;
   } catch (e) {
     obs.clickError = describeClickError(e);
   }

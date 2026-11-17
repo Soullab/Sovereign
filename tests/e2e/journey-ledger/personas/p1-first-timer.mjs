@@ -12,16 +12,22 @@
  *
  * Reach: from the first-visit Home, one press at a time (depth 1). When a press opens a menu or changes the studio view,
  * the controls it revealed are pressed too, again from a fresh Home (depth 2), and the contents of a menu opened at depth 2
- * are pressed at depth 3. Every press is made by a NEW fictional member, so pressing "Just let me write" (which makes a
- * Work) cannot change the Home the next control is tried from.
+ * or deeper are pressed at depth 3 and 4 (MAX_DEPTH). Every press is made by a NEW fictional member, so pressing "Just let me
+ * write" (which makes a Work) cannot change the Home the next control is tried from.
+ *
+ * What is said about "pressed": only a control a click was DELIVERED to is pressed (pressAndObserve sets obs.pressed). A control
+ * that was listed and found disabled, that points off the product, that could not be found again or whose click was refused has a
+ * row and was not pressed; so does one the trial cap left alone. The report counts those separately (tallyPresses), and a control
+ * a press revealed that never got a row at all (the depth limit) is counted apart from both.
  */
 import { PASS, DEAD_END, NOT_RUN } from '../lib/ledger.mjs';
-import { classifyTrial, REAL_TEXT_MIN } from '../lib/classify.mjs';
+import { classifyTrial, REAL_TEXT_MIN, tallyPresses, describeTally, unrowedControls, baseKey } from '../lib/classify.mjs';
 import { launch, newContext, signInViaForm, gotoRetrying, enumerateControls, waitForControl, settle, pressAndObserve, trackInFlight, modelCallCount, STUDIO_LOADING } from '../lib/trial.mjs';
 import { openMembers } from '../lib/members.mjs';
 
 export const PERSONA = 'P1 first-timer';
-const MAX_DEPTH = 4;
+/** How many presses deep the walk goes (Home is depth 1). The README states this number and readme.test.mjs fails if they differ. */
+export const MAX_DEPTH = 4;
 
 /** What a person does before a control becomes pressable. Keyed by the control's label. */
 const PREPARE = {
@@ -36,7 +42,7 @@ export function plan(L) {
   L.plan('P1-02', 'Opens Writer’s Studio: not sent back to sign-in or the invitation page, and Home renders real text');
   L.plan('P1-03', 'Has zero Works (the server says so) and Home shows no Works list');
   L.plan('P1-04', 'Every control visible on Home is listed');
-  L.plan('P1-06', 'Every control found was pressed and ended PASS, DEAD END or NOT RUN: none skipped');
+  L.plan('P1-06', 'Every control given a row was accounted for: pressed, or listed with why it was not; none left unsettled or skipped by the trial cap');
   L.plan('P1-07', 'The “Free and Pro” link to /writers-studio/plans (the study’s 404 link), found under Writing preferences, leads to a page that renders');
   L.plan('P1-08', 'The four mode buttons (Write, Develop, Review, Publish) each lead somewhere from the studio with zero Works');
 }
@@ -106,6 +112,8 @@ export async function walk(L, env) {
     // ---------------------------------------------------------------- P1-05.* the walk
     const tried = [];        // { id, depth, pathKeys, pathLabels, control, obs, result }
     const queue = [];
+    const rowKeys = new Set();       // base keys of every control that was given a row
+    const revealedUnrowed = [];      // controls a press revealed that were NOT queued (depth limit / not a menu)
     let seq = 0; // eslint-disable-line no-unused-vars
     // Insert a row directly after the last row that already sits under `anchorId` (rows are named by their path).
     const addRow = (anchorId, prefix, id, title) => {
@@ -116,6 +124,7 @@ export async function walk(L, env) {
     first.controls.forEach((c, i) => {
       const id = `P1-05.${String(i + 1).padStart(2, '0')}`;
       addRow('P1-04', 'P1-05.', id, `Home › ${c.kind} “${labelOf(c)}”`);
+      rowKeys.add(baseKey(c.key));
       queue.push({ id, depth: 1, parentKeys: [], parentLabels: [], control: c, title: `Home › ${c.kind} “${labelOf(c)}”` });
     });
 
@@ -179,8 +188,11 @@ export async function walk(L, env) {
           const id = `${item.id}.${String(i + 1).padStart(2, '0')}`;
           const title = `${item.title} › ${c.kind} “${labelOf(c)}”`;
           addRow(item.id, `${item.id}.`, id, title);
+          rowKeys.add(baseKey(c.key));
           queue.push({ id, depth: nextDepth, parentKeys: [...item.parentKeys, item.control.key], parentLabels: [...item.parentLabels, labelOf(item.control)], control: c, title });
         });
+      } else {
+        revealedUnrowed.push(...revealed);
       }
     }
 
@@ -193,7 +205,10 @@ export async function walk(L, env) {
       if (skippedByCap) return { status: NOT_RUN, evidence: `the trial cap (${maxTrials}) was reached: ${skippedByCap} of ${rows.length} controls were not pressed` };
       const c = { PASS: 0, 'DEAD END': 0, 'NOT RUN': 0 };
       rows.forEach(r => { c[r.status] += 1; });
-      return { status: PASS, evidence: `${rows.length} controls found and each pressed (depth ≤ ${MAX_DEPTH}) by a new member: ${c.PASS} PASS, ${c['DEAD END']} DEAD END, ${c['NOT RUN']} NOT RUN (a NOT RUN row says why it could not be decided)` };
+      const t = tallyPresses(tried.map(x => x.obs), skippedByCap);
+      // pressed + not pressed must be every row: if the two ledgers of the walk disagree, say nothing about what was pressed.
+      if (t.total !== rows.length) return { status: NOT_RUN, evidence: `the walk's own books disagree: ${rows.length} control rows but ${t.total} accounted for (${t.pressed} pressed, ${t.notPressed} not)` };
+      return { status: PASS, evidence: describeTally(t, { maxDepth: MAX_DEPTH, outcomes: c }) };
     });
 
     // ---------------------------------------------------------------- P1-07 the study's /plans link
@@ -218,7 +233,13 @@ export async function walk(L, env) {
       return { status: PASS, evidence: line };
     });
 
-    L.meta['Controls pressed'] = String(tried.length);
+    const tally = tallyPresses(tried.map(x => x.obs), skippedByCap);
+    L.meta['Controls pressed'] = `${tally.pressed} (a click was delivered to each)`;
+    L.meta['Controls found, not pressed'] = tally.notPressed ? `${tally.notPressed} (${tally.reasons}); each has its own row` : '0';
+    const unrowed = unrowedControls(revealedUnrowed, rowKeys);
+    L.meta['Revealed by a press, never given a row'] = unrowed.length
+      ? `${unrowed.length} distinct control(s), not expanded (the depth limit ${MAX_DEPTH}, a press that left the Studio, or a view change that is not a menu): ${unrowed.slice(0, 12).map(c => `${c.kind} “${labelOf(c)}”`).join(', ')}${unrowed.length > 12 ? `, and ${unrowed.length - 12} more` : ''}`
+      : '0';
     if (blocked.length) {
       const hosts = [...new Set(blocked.map(b => { try { return new URL(b.split(' ')[1]).host; } catch { return b; } }))];
       L.note(`requests to other hosts were blocked by the harness (${blocked.length}); hosts: ${hosts.join(', ')}`);

@@ -9,11 +9,13 @@
  *
  * THE RULE (enforced in `decide`, the single place the word "works" can come from):
  *
- *   A journey "works" (exit code 0) only if it has at least one row AND every row is PASS.
- *   Any DEAD END or NOT RUN row, or an empty ledger, means it does NOT work and the exit code is non-zero.
+ *   A journey "works" (exit code 0) only if it has at least one row, every row is PASS, AND the walk did not stop on a harness error.
+ *   Any DEAD END or NOT RUN row, an empty ledger, or a walk that crashed means it does NOT work and the exit code is non-zero.
  *
  * Unobservable is not pass: a row the script never reached, or could not decide, stays NOT RUN. It is never defaulted
  * to PASS, and a crash in the middle of a walk cannot produce a green report because every planned row starts NOT RUN.
+ * A crash AFTER the last planned row went PASS leaves no NOT RUN row to say so, which is why the crash is its own signal to
+ * `decide`: the rows of a walk that stopped are not the whole walk, whatever they say.
  *
  * No browser, no product code in this file: it is the bookkeeping, so the rule can be tested on its own
  * (ledger.test.mjs, including deliberately wrong rules that the tests must catch).
@@ -24,15 +26,21 @@ export const DEAD_END = 'DEAD END';
 export const NOT_RUN = 'NOT RUN';
 export const STATUSES = Object.freeze([PASS, DEAD_END, NOT_RUN]);
 
-/** The ONE decision. Pure. Nothing else in the harness may decide that a journey works. */
-export function decide(rows) {
+/**
+ * The ONE decision. Pure. Nothing else in the harness may decide that a journey works.
+ * `signals.harnessError` is a string (possibly empty: some things are thrown without a message) when the walk stopped on a
+ * harness error, and absent otherwise. Any string at all means the rows are not the whole walk.
+ */
+export function decide(rows, signals = {}) {
   const counts = { PASS: 0, 'DEAD END': 0, 'NOT RUN': 0 };
   for (const r of rows) counts[r.status] += 1;
-  if (rows.length === 0) return { works: false, counts, reason: 'the ledger has no rows, so nothing was exercised' };
-  if (counts['DEAD END'] === 0 && counts['NOT RUN'] === 0) {
+  const crash = typeof signals.harnessError === 'string' ? 'the walk stopped on a harness error, so its rows are not the whole walk' : '';
+  if (rows.length === 0) return { works: false, counts, reason: [crash, 'the ledger has no rows, so nothing was exercised'].filter(Boolean).join(' and ') };
+  if (!crash && counts['DEAD END'] === 0 && counts['NOT RUN'] === 0) {
     return { works: true, counts, reason: `all ${rows.length} rows are PASS` };
   }
   const parts = [];
+  if (crash) parts.push(crash);
   if (counts['DEAD END']) parts.push(`${counts['DEAD END']} DEAD END`);
   if (counts['NOT RUN']) parts.push(`${counts['NOT RUN']} NOT RUN`);
   return { works: false, counts, reason: parts.join(' and ') };
@@ -48,6 +56,17 @@ export class Ledger {
     this.rows = [];
     this._decide = decideFn;
     this.notes = [];
+    this.harnessError = null;
+  }
+
+  /**
+   * The walk itself stopped on a harness error (not a finding about the product). decide() reads it: a crash after the last
+   * planned row went PASS leaves no NOT RUN row behind, and must still not read as "works". Whatever was thrown, even nothing, counts.
+   */
+  fail(e) {
+    const m = e && e.message ? e.message : e;
+    this.harnessError = String(m ?? 'unknown error').split('\n')[0].slice(0, 300);
+    return this;
   }
 
   /** Declare a row BEFORE it runs. It starts NOT RUN, so a script that never reaches it cannot go green. */
@@ -107,7 +126,7 @@ export class Ledger {
   verdict() {
     const counts = { PASS: 0, 'DEAD END': 0, 'NOT RUN': 0 };
     for (const r of this.rows) counts[r.status] += 1;
-    const d = this._decide(this.rows);
+    const d = this._decide(this.rows, { harnessError: this.harnessError });
     return { works: d.works === true, reason: d.reason, counts };
   }
   exitCode() { return this.verdict().works ? 0 : 1; }
@@ -139,12 +158,14 @@ export class Ledger {
 
 /**
  * Run a persona script against a ledger and ALWAYS write the report. The exit code comes only from the ledger.
- * A throw from the script is recorded as a harness note; rows it never reached stay NOT RUN, so the report cannot say "works".
+ * A throw from the script is recorded as a harness error (ledger.fail, which decide() reads) and as a note; rows it never reached
+ * stay NOT RUN, and even if it had reached them all, the verdict is not "works".
  */
 export async function runPersona(ledger, script, { writeReport }) {
   try {
     await script(ledger);
   } catch (e) {
+    ledger.fail(e);
     ledger.note(`the walk stopped on a harness error: ${String(e && e.stack ? e.stack : e).split('\n').slice(0, 3).join(' / ')}`);
   }
   writeReport(ledger.renderMarkdown());

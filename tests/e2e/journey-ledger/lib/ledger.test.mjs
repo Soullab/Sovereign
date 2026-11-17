@@ -23,22 +23,24 @@ function* combos() {
   }
 }
 
-function ledgerWith(statuses, decide, LedgerClass = Ledger) {
+function ledgerWith(statuses, decide, LedgerClass = Ledger, { crashed = false } = {}) {
   const l = new LedgerClass({ journey: 't', persona: 'p', decide });
   statuses.forEach((s, i) => l.plan(`R${i}`, `row ${i}`));
   statuses.forEach((s, i) => { if (s !== NOT_RUN) l.settle(`R${i}`, s, `evidence ${i}`); });
+  if (crashed) l.fail(new Error('the walk stopped after its last planned row'));
   return l;
 }
 
 /** The rule, stated once, as violations. Empty array = the implementation obeys the rule. */
 export function ruleViolations(decide, LedgerClass = Ledger) {
   const bad = [];
-  for (const st of combos()) {
-    const want = st.length > 0 && st.every(s => s === PASS);
-    const l = ledgerWith(st, decide, LedgerClass);
+  for (const crashed of [false, true]) for (const st of combos()) {
+    // F4: a walk that stopped on a harness error never works, whatever its rows say (including all PASS).
+    const want = !crashed && st.length > 0 && st.every(s => s === PASS);
+    const l = ledgerWith(st, decide, LedgerClass, { crashed });
     const md = l.renderMarkdown();
     const claimsWorks = /^VERDICT: works\b/m.test(md);
-    const label = JSON.stringify(st);
+    const label = `${JSON.stringify(st)}${crashed ? ' + the walk crashed' : ''}`;
     if (l.verdict().works !== want) bad.push(`verdict().works for ${label} should be ${want}`);
     if ((l.exitCode() === 0) !== want) bad.push(`exitCode for ${label} should be ${want ? 0 : 'non-zero'}`);
     if (claimsWorks !== want) bad.push(`report claims works=${claimsWorks} for ${label}, should be ${want}`);
@@ -57,6 +59,9 @@ const CANDIDATES = {
   'DC-2 any PASS is enough': rows => ({ works: rows.some(r => r.status === PASS), reason: 'x' }),
   'DC-3 an empty journey works (vacuous truth)': rows => ({ works: rows.length === 0 || rows.every(r => r.status === PASS), reason: 'x' }),
   'DC-4 DEAD END tolerated below a threshold (<=1)': rows => ({ works: rows.length > 0 && rows.filter(r => r.status !== PASS).length <= 1, reason: 'x' }),
+  // F4: the rule as it stood before the crash signal: it reads the rows and nothing else.
+  'DC-5 a decide that ignores the harness-error signal (all rows PASS after a crash still works)': rows => conformingDecide(rows),
+  'DC-6 a decide that reads the signal only when no row is NOT RUN (a crash after the last PASS slips through)': (rows, sig) => conformingDecide(rows, rows.some(r => r.status === NOT_RUN) ? sig : {}),
 };
 for (const [name, decide] of Object.entries(CANDIDATES)) {
   test(`defeat candidate is caught: ${name}`, () => {
@@ -67,6 +72,11 @@ for (const [name, decide] of Object.entries(CANDIDATES)) {
 test('defeat candidate is caught: a report that decides on its own rather than from verdict()', () => {
   class Disagreeing extends Ledger { renderMarkdown() { return super.renderMarkdown().replace(/^VERDICT: .*$/m, 'VERDICT: works'); } }
   assert.notDeepEqual(ruleViolations(conformingDecide, Disagreeing), [], 'the rule suite let a report that always claims works through');
+});
+
+test('defeat candidate is caught: a ledger that never records the crash (fail() is a no-op)', () => {
+  class ForgetsCrash extends Ledger { fail() { return this; } }
+  assert.notDeepEqual(ruleViolations(conformingDecide, ForgetsCrash), [], 'the rule suite let a ledger that forgets a crash through');
 });
 
 test('defeat candidate is caught: an exit code that decides on its own rather than from verdict()', () => {
@@ -118,6 +128,59 @@ test('runPersona: an exception leaves the row it hit NOT RUN (cannot be decided)
   assert.equal(l.rows.find(r => r.id === 'C').status, NOT_RUN);
   assert.match(written, /does NOT work/);
   assert.match(written, /\| NOT RUN \|/);
+});
+
+// ---- F4: a walk that stopped on a harness error is never "works", whatever its rows say ----
+// The run of record's hole: the script crashes AFTER the last planned row went PASS. Every row is PASS, so a rule that reads only the
+// rows says "works" and exits 0, and the only trace of the crash was a note.
+const CRASHES = [
+  ['an Error', () => { throw new Error('browser closed under the walk'); }],
+  ['a string', () => { throw 'plain string'; }],   // eslint-disable-line no-throw-literal
+  ['an empty string', () => { throw ''; }],        // eslint-disable-line no-throw-literal
+  ['undefined', () => { throw undefined; }],       // eslint-disable-line no-throw-literal
+  ['null', () => { throw null; }],                 // eslint-disable-line no-throw-literal
+];
+for (const [what, boom] of CRASHES) {
+  test(`runPersona: a crash (${what}) AFTER the last planned row went PASS is not "works": exit non-zero and the report says so`, async () => {
+    const l = new Ledger({ journey: 't', persona: 'p' });
+    l.plan('A', 'a'); l.plan('B', 'b');
+    let written = null;
+    const rc = await runPersona(l, async (L) => { L.settle('A', PASS, 'x'); L.settle('B', PASS, 'y'); boom(); }, { writeReport: md => { written = md; } });
+    assert.ok(l.rows.every(r => r.status === PASS), 'precondition: every row really is PASS');
+    assert.notEqual(rc, 0, 'a walk that crashed is not a journey that works');
+    assert.doesNotMatch(written, /^VERDICT: works\b/m);
+    assert.match(written, /^VERDICT: does NOT work \(.*harness error/m, 'the verdict line itself names the crash, not only a note below the table');
+    assert.equal(l.verdict().works, false);
+  });
+}
+
+test('runPersona: a script that returns normally with every row PASS still works (the crash signal is not sticky or inverted)', async () => {
+  const l = new Ledger({ journey: 't', persona: 'p' });
+  l.plan('A', 'a');
+  let written = null;
+  const rc = await runPersona(l, async (L) => { L.settle('A', PASS, 'x'); }, { writeReport: md => { written = md; } });
+  assert.equal(rc, 0);
+  assert.match(written, /^VERDICT: works\b/m);
+});
+
+test('a crash is reported together with any DEAD END or NOT RUN rows, not instead of them', () => {
+  const l = new Ledger({ journey: 't', persona: 'p' });
+  l.plan('A', 'a'); l.plan('B', 'b');
+  l.settle('A', DEAD_END, 'led nowhere');
+  l.fail(new Error('x'));
+  const v = l.verdict();
+  assert.equal(v.works, false);
+  assert.match(v.reason, /harness error/);
+  assert.match(v.reason, /1 DEAD END/);
+  assert.match(v.reason, /1 NOT RUN/);
+});
+
+test('decide itself (not only the class around it) refuses "works" when told the walk crashed', () => {
+  const rows = [{ id: 'A', status: PASS }, { id: 'B', status: PASS }];
+  assert.equal(conformingDecide(rows).works, true);
+  assert.equal(conformingDecide(rows, { harnessError: 'boom' }).works, false);
+  assert.equal(conformingDecide(rows, { harnessError: '' }).works, false, 'an empty message is still a crash');
+  assert.equal(conformingDecide([], { harnessError: 'boom' }).works, false);
 });
 
 test('runPersona: a clean journey exits 0 only when every planned row passed', async () => {

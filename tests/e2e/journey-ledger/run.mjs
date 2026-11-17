@@ -17,6 +17,11 @@ const flag = (name, dflt = null) => { const i = args.indexOf(name); return i >= 
 const personaName = flag('--persona', 'p1');
 const reportPath = flag('--report');
 if (!reportPath) { console.error('REFUSED: --report <path.md> is required (the ledger is written there)'); process.exit(64); }
+// The report is written into a directory that already exists. Nothing here creates one: a mistyped path must not scatter directories (or write at the filesystem root).
+const reportDir = path.dirname(path.resolve(reportPath));
+if (!fs.existsSync(reportDir) || !fs.statSync(reportDir).isDirectory() || (fs.existsSync(reportPath) && fs.statSync(reportPath).isDirectory())) {
+  console.error(`REFUSED: the report's directory does not exist (${reportDir}); create it first, nothing was walked`); process.exit(64);
+}
 
 const PERSONAS = { p1: () => import('./personas/p1-first-timer.mjs') };
 if (!PERSONAS[personaName]) { console.error(`unknown persona ${personaName}; known: ${Object.keys(PERSONAS).join(', ')}`); process.exit(64); }
@@ -33,7 +38,7 @@ mod.plan(ledger);
 
 const env = { base: process.env.JL_BASE, modelLog: process.env.JL_MODEL_LOG, databaseUrl: process.env.DATABASE_URL, maxTrials: Number(process.env.JL_MAX_TRIALS || 120) };
 const rc = await runPersona(ledger, (L) => mod.walk(L, env), {
-  writeReport: (md) => { fs.mkdirSync(path.dirname(path.resolve(reportPath)), { recursive: true }); fs.writeFileSync(reportPath, md); },
+  writeReport: (md) => { fs.writeFileSync(reportPath, md); },
 });
 const v = ledger.verdict();
 console.log(`\nLEDGER ${ledger.persona}: ${v.works ? 'works' : 'does NOT work'} (${v.reason}); report: ${reportPath}`);

@@ -80,6 +80,28 @@ const CASES = [
     base({ kind: 'link', href: 'mailto:hello@example.org', externalHref: 'mailto:hello@example.org' }), NOT_RUN],
   ['a disabled control with no stated reason is NOT RUN: the harness cannot tell whether it leads anywhere, and "disabled until you choose" is not a defect',
     base({ disabled: true, disabledReason: '' }), NOT_RUN],
+  // ---- F8: a disabled control "says why" only if the explanation says something the control's own name does not ----
+  ['a disabled control whose title merely repeats its own label does not say why: NOT RUN (the old rule called any non-empty title a reason)',
+    base({ label: 'Save', disabled: true, disabledReason: 'Save' }), NOT_RUN],
+  ['...whatever the case or spacing of the repeat',
+    base({ label: 'Save draft', disabled: true, disabledReason: '  save   DRAFT ' }), NOT_RUN],
+  ['an icon button whose label IS its title (nothing else names it) does not say why',
+    base({ label: 'Archive', disabled: true, disabledReason: 'Archive', ownNames: [] }), NOT_RUN],
+  ['a title that repeats the visible text does not say why, even when an aria-label (the label) says something longer',
+    base({ label: 'Save the draft', ownNames: ['Save the draft', 'Save'], disabled: true, disabledReason: 'Save' }), NOT_RUN],
+  ['a title that repeats the aria-label does not say why, even when the visible text differs',
+    base({ label: 'Save the draft', ownNames: ['Save the draft', 'Save'], disabled: true, disabledReason: 'save THE draft' }), NOT_RUN],
+  ['when the first explanatory text only repeats the label, a later one that really explains is used: PASS',
+    base({ label: 'Save', disabled: true, disabledReason: 'Save', disabledReasons: ['Save', 'Write something first'] }), PASS],
+  ['when every explanatory text only repeats the name, it does not say why: NOT RUN',
+    base({ label: 'Save', ownNames: ['Save'], disabled: true, disabledReason: 'Save', disabledReasons: ['Save', 'save'] }), NOT_RUN],
+  ['a title that differs from the label says why: PASS',
+    base({ label: 'Save', ownNames: ['Save'], disabled: true, disabledReason: 'Write something first', disabledReasons: ['Write something first'] }), PASS],
+  ['a title that contains the label but says more is an explanation: PASS',
+    base({ label: 'Save', ownNames: ['Save'], disabled: true, disabledReason: 'Save is available once you have written something', disabledReasons: ['Save is available once you have written something'] }), PASS],
+  ['a control with no explanatory text at all is still NOT RUN',
+    base({ label: 'Save', ownNames: ['Save'], disabled: true, disabledReason: '', disabledReasons: [] }), NOT_RUN],
+
   ['a control that opens the browser’s own file chooser is PASS (a native dialog changes no DOM)',
     base({ label: 'Choose file', fileChooserOpened: true }), PASS],
   ['a request still in flight when the window closed cannot be decided: NOT RUN, even though the screen changed ("MAIA is listening…")',
@@ -191,6 +213,9 @@ const textOnly = (o) => {
 const selectedIsAlwaysFine = (o) => (o.kind === 'button' && !o.href && !o.clickError && !o.externalHref && !o.disabled ? { status: PASS, evidence: 'any button passes' } : conforming(o));
 const disabledIsDeadEnd = (o) => (o.disabled && !String(o.disabledReason || '').trim() && !o.clickError && !o.externalHref && !(o.modelCalls > 0) ? { status: DEAD_END, evidence: 'disabled' } : conforming(o));
 const ignoresPending = (o) => conforming({ ...o, pendingRequests: 0 });
+// F8 wrong rules: any non-empty explanatory text is a reason (the rule before); a repeat is only caught when it is byte-identical (DC-Q, below); only the label is compared (the visible text and aria-label are not).
+const anyTextIsAReason = (o) => conforming({ ...o, label: '\u0000never-a-label', ownNames: [] });
+const onlyTheLabelIsCompared = (o) => conforming({ ...o, ownNames: [] });
 const ignoresFileChooser = (o) => conforming({ ...o, fileChooserOpened: false });
 const ignoresUnsettled = (o) => conforming({ ...o, unsettledAtPress: null });
 // F2 wrong rules: credit every request in the window; credit one that started before the press; credit one whose start is unknown; no window.
@@ -200,6 +225,13 @@ const creditsRequestsOfUnknownStart = (o) => conforming({ ...o, requests: (o.req
 const noAttributionWindow = (o) => conforming({ ...o, requests: (o.requests || []).map(r => (typeof r.startOffsetMs === 'number' && r.startOffsetMs > 0 ? { ...r, startOffsetMs: 0 } : r)) });
 const unsettledOnlyCoversNavigation = (o) => (o.unsettledAtPress && !(o.urlAfter !== o.urlBefore) ? conforming({ ...o, unsettledAtPress: null }) : conforming(o));
 const CANDIDATES = {
+  'DC-P a disabled control whose title repeats its own label is said to "say why" (any non-empty explanatory text counts)': anyTextIsAReason,
+  'DC-Q the repeat is only recognised when it matches the label exactly (case and spacing are not normalised)': (o) => {
+    const norm1 = (x) => String(x ?? '');
+    const repeats = (o.disabled && norm1(o.disabledReason) && norm1(o.disabledReason) === norm1(o.label)) || (o.disabledReasons || []).some(r => norm1(r) === norm1(o.label));
+    return conforming({ ...o, label: repeats ? o.label : '\u0000never-a-label', ownNames: [] });
+  },
+  'DC-R only the control\u2019s label is compared with the explanation (its visible text and aria-label, when they differ, are ignored)': onlyTheLabelIsCompared,
   'DC-J a press on a page that was still moving is credited with whatever changed afterwards (the Home press credited with the earlier Just-let-me-write landing)': ignoresUnsettled,
   'DC-K every same-origin request in the window is credited to the press (an inert button passes on the page’s own fetch)': creditsEveryRequest,
   'DC-L a request that started BEFORE the press is credited to it (a late answer to the page’s own request)': creditsRequestsFromBeforeThePress,
@@ -220,5 +252,72 @@ for (const [name, wrong] of Object.entries(CANDIDATES)) {
   test(`defeat candidate is caught: ${name}`, () => {
     const disagreements = CASES.filter(([, obs, want]) => wrong(obs).status !== want);
     assert.ok(disagreements.length > 0, 'no case in the table distinguishes this wrong classifier from the right one');
+  });
+}
+
+// ---- F6: the report may say "pressed" only of a control a click was delivered to ----
+// The run of record printed "Controls pressed: 95" for the number of controls TRIED. A control that was listed and found disabled, that
+// points off the product, that could not be found again, whose click was refused, or whose trial crashed was tried and never pressed.
+const P = (extra = {}) => ({ label: 'x', kind: 'button', pressed: true, clickError: null, ...extra });
+const MIXED = [
+  P(), P(), P(),                                                   // 3 pressed
+  P({ pressed: false, disabled: true }), P({ pressed: false, disabled: true }),   // 2 disabled
+  P({ pressed: false, externalHref: 'https://example.org' }),      // 1 off the product
+  P({ pressed: false, clickError: { kind: 'not-found', message: 'gone' } }),     // 1 not found again
+  P({ pressed: false, clickError: { kind: 'intercepted-by-page', message: 'covered' } }),   // 1 click refused
+  null,                                                            // 1 trial crashed before an observation existed
+];
+test('tally: only a control a click was delivered to is counted as pressed', () => {
+  const t = Classify.tallyPresses(MIXED, 2);
+  assert.equal(t.pressed, 3);
+  assert.equal(t.notPressed, 6 + 2, '2 disabled + 1 external + 1 not found + 1 refused + 1 crashed + 2 left by the cap');
+  assert.equal(t.total, MIXED.length + 2, 'pressed + not pressed is every control that has a row');
+  assert.equal(t.pressed + t.notPressed, t.total);
+  assert.match(t.reasons, /2 disabled/);
+  assert.match(t.reasons, /1 points off the product/);
+  assert.match(t.reasons, /2 not reached: the trial cap was hit/);
+  assert.match(t.reasons, /1 its trial failed before any press/);
+});
+test('tally: an observation from before the press flag existed is not pressed (never defaulted to pressed)', () => {
+  const t = Classify.tallyPresses([{ label: 'x', kind: 'button' }]);
+  assert.equal(t.pressed, 0);
+  assert.equal(t.notPressed, 1);
+});
+test('tally: when nothing was skipped the sentence may say each was pressed, and only then', () => {
+  const all = Classify.tallyPresses([P(), P()]);
+  const some = Classify.tallyPresses([P(), P({ pressed: false, disabled: true })]);
+  const out = { PASS: 1, 'DEAD END': 1, 'NOT RUN': 0 };
+  assert.match(Classify.describeTally(all, { maxDepth: 4, outcomes: out }), /each of the 2 was pressed/);
+  const text = Classify.describeTally(some, { maxDepth: 4, outcomes: out });
+  assert.doesNotMatch(text, /each of the \d+ was pressed|every control .* pressed/i, 'a report must not say each was pressed when one was not');
+  assert.match(text, /1 were pressed/);
+  assert.match(text, /1 were NOT pressed \(1 disabled, so not pressed\)/);
+  assert.match(text, /depth ≤ 4/);
+});
+test('unrowed: a control a press revealed and nothing ever gave a row is named once, by kind/label/link, not by position', () => {
+  const rows = new Set([Classify.baseKey('button||Write|#1'), Classify.baseKey('link||Home|/writers-studio#2')]);
+  const revealed = [
+    { key: 'button||Write|#3', label: 'Write' },                 // has a row (position differs)
+    { key: 'link||Home|/writers-studio#1', label: 'Home' },       // has a row
+    { key: 'button||Archive|#1', label: 'Archive' },              // never given a row
+    { key: 'button||Archive|#2', label: 'Archive' },              // the same control seen again
+    { key: 'button||Share|#1', label: 'Share' },
+  ];
+  assert.deepEqual(Classify.unrowedControls(revealed, rows).map(c => c.label), ['Archive', 'Share']);
+  assert.deepEqual(Classify.unrowedControls([], rows), []);
+});
+
+// Wrong tallies: each must disagree with the table above.
+const TALLY_CANDIDATES = {
+  'DC-S every control tried is counted as pressed (the run of record: "Controls pressed: 95")': (obs, cap) => ({ pressed: obs.length, notPressed: cap }),
+  'DC-T a click that was REFUSED counts as pressed (the click was attempted)': (obs, cap) => ({ pressed: obs.filter(o => o && (o.pressed === true || o.clickError)).length, notPressed: cap }),
+  'DC-U a control with an observation counts as pressed (a disabled or off-product control has one too)': (obs, cap) => ({ pressed: obs.filter(Boolean).length, notPressed: cap }),
+  'DC-V the trial cap is forgotten (controls the walk never reached are not in the count)': (obs) => { const t = Classify.tallyPresses(obs, 0); return { pressed: t.pressed, notPressed: t.notPressed }; },
+};
+for (const [name, wrong] of Object.entries(TALLY_CANDIDATES)) {
+  test(`defeat candidate is caught: ${name}`, () => {
+    const right = Classify.tallyPresses(MIXED, 2);
+    const w = wrong(MIXED, 2);
+    assert.ok(w.pressed !== right.pressed || w.notPressed !== right.notPressed, 'the table does not distinguish this wrong tally from the right one');
   });
 }

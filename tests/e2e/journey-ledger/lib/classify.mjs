@@ -12,6 +12,8 @@
  *    question; the ledger's job is to make the answer explicit, and the row stays DEAD END until the product says why.
  *  - What the harness cannot decide stays NOT RUN: an external link it will not follow, a click the framework's
  *    dev overlay swallowed, a control that needs a MAIA reply (slice 1 has no MAIA step).
+ *  - A disabled control "says why" only if some explanatory text on it (title, aria-description, a described-by element) says
+ *    something its own name does not. A title that merely repeats the label explains nothing and the control stays NOT RUN.
  *  - A press is credited only with what IT caused. A request the page made on its own (one that started before the press, or
  *    long after it) is not the press's; and a press made while the page was still moving (a request in flight, the address
  *    about to change) cannot be credited with whatever lands next, so it stays NOT RUN. Otherwise the verdict for an inert
@@ -50,10 +52,27 @@ export function isCausedByPress(r, clickMs = 0) {
 }
 
 const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+const sameText = (s) => norm(s).toLowerCase();
 const clip = (s, n = 90) => { const t = norm(s); return t.length > n ? t.slice(0, n) + '…' : t; };
 const pathOf = (u) => { try { const x = new URL(u); return x.pathname + x.search; } catch { return String(u); } };
 const pathnameOf = (u) => { try { return new URL(u).pathname; } catch { return String(u); } };
 const stripHash = (u) => String(u).split('#')[0];
+
+/**
+ * The explanation a disabled control gives for being disabled, or '' if it gives none. Candidates are `disabledReasons` (every
+ * title / aria-description / described-by text found on it) and the older single `disabledReason`; one counts only if, ignoring case
+ * and spacing, it differs from the control's own name: its label and every other name it carries (`ownNames`: aria-label, visible text,
+ * value). A title that is the label, or that repeats the visible text under a longer aria-label, is the control naming itself.
+ * Cost, disclosed in the README: an explanation that merely contains the name ("Save is available once...") counts as one.
+ */
+export function statedReason(o) {
+  const own = new Set([o.label, ...(o.ownNames || [])].map(sameText).filter(Boolean));
+  for (const r of [...(o.disabledReasons || []), o.disabledReason]) {
+    const t = norm(r);
+    if (t && !own.has(sameText(t))) return t;
+  }
+  return '';
+}
 
 function firstAdded(before, after) {
   const a = norm(before), b = norm(after);
@@ -102,10 +121,10 @@ function decideTrial(o, mine) {
 
   // 4. A control that could not be pressed because it is disabled.
   if (o.disabled) {
-    const why = norm(o.disabledReason);
+    const why = statedReason(o);
     return why
       ? { status: PASS, evidence: `${who} is disabled and says why: "${clip(why, 100)}"` }
-      : { status: NOT_RUN, evidence: `${who} is disabled on arrival and nothing on it says why (no title or aria description); its precondition is unknown to the harness, so where it leads is not decided` };
+      : { status: NOT_RUN, evidence: `${who} is disabled on arrival and nothing on it says why (no title or aria description that differs from its own name); its precondition is unknown to the harness, so where it leads is not decided` };
   }
 
   // 5. A same-page anchor.
@@ -181,4 +200,60 @@ function decideTrial(o, mine) {
     return { status: PASS, evidence: `${who} is already the current choice (its own state says it is on), so pressing it again leaves the screen as it was` };
   }
   return { status: DEAD_END, evidence: `${who}: nothing happened (no URL, text, aria state, dialog, control or network change within the observation window)` };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// What was actually pressed. A report may say "pressed" only of a control a click was delivered to.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Why a control was NOT pressed, or null if a click was delivered to it. Only `obs.pressed === true` (set by pressAndObserve once the
+ * click returned) counts. A control that was listed but found disabled, that points off the product, that could not be found again or
+ * whose click was refused has not been pressed, whatever its row says; neither has one whose trial never got as far as pressing.
+ */
+export function notPressedReason(obs) {
+  if (!obs) return 'its trial failed before any press';
+  if (obs.pressed === true) return null;
+  if (obs.disabled) return 'disabled, so not pressed';
+  if (obs.externalHref) return 'points off the product, so not followed';
+  if (obs.clickError) return obs.clickError.kind === 'not-found' ? 'could not be found again to press' : `its click was not delivered (${obs.clickError.kind})`;
+  return 'no click was delivered';
+}
+
+/**
+ * Count the controls that were given a row: `observations` has one entry per control that was tried (null where the trial failed
+ * before an observation existed); `skippedByCap` is how many rows were left unpressed by the trial cap. pressed + notPressed = total.
+ */
+export function tallyPresses(observations, skippedByCap = 0) {
+  const byReason = {};
+  let pressed = 0; let notPressed = 0;
+  for (const o of observations) {
+    const why = notPressedReason(o);
+    if (why === null) { pressed += 1; continue; }
+    byReason[why] = (byReason[why] || 0) + 1; notPressed += 1;
+  }
+  if (skippedByCap > 0) { byReason['not reached: the trial cap was hit'] = skippedByCap; notPressed += skippedByCap; }
+  const reasons = Object.entries(byReason).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([r, n]) => `${n} ${r}`).join('; ');
+  return { total: pressed + notPressed, pressed, notPressed, byReason, reasons };
+}
+
+/** The sentence a report may print about the tally. It says "each ... was pressed" only when that is true. */
+export function describeTally(t, { maxDepth, outcomes }) {
+  const o = outcomes ? `: ${outcomes.PASS} PASS, ${outcomes['DEAD END']} DEAD END, ${outcomes['NOT RUN']} NOT RUN (a NOT RUN row says why it could not be decided)` : '';
+  if (t.notPressed === 0) return `${t.total} controls found (depth ≤ ${maxDepth}); each of the ${t.total} was pressed, by a new member${o}`;
+  return `${t.total} controls found (depth ≤ ${maxDepth}); ${t.pressed} were pressed by a new member and ${t.notPressed} were NOT pressed (${t.reasons}); each has its own row${o}`;
+}
+
+/**
+ * Distinct controls (by kind, label and link, not by position) that a press revealed and that never got a row of their own:
+ * found by the walk and then left alone (the depth limit, or a view change that is not a menu). `rowKeys` are the base keys of the controls that have a row.
+ */
+export const baseKey = (key) => String(key ?? '').replace(/#\d+$/, '');
+export function unrowedControls(revealedControls, rowKeys) {
+  const seen = new Map();
+  for (const c of revealedControls) {
+    const k = baseKey(c.key);
+    if (!rowKeys.has(k) && !seen.has(k)) seen.set(k, c);
+  }
+  return [...seen.values()];
 }

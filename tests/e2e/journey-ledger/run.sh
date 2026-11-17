@@ -5,17 +5,28 @@
 #   bash tests/e2e/journey-ledger/run.sh --report <path.md> [--persona p1] [--flag K=V ...] [--max-trials N]
 #                                        [--wj1 | --wj1-only | --defeat MODE] [--keep] [--app-port N] [--pg-port N] [--stub-port N]
 #
-# Exit codes: 0 the ledger says the journey WORKS (every row PASS) · 1 the ledger says it does NOT work (a DEAD END or a
-# NOT RUN row) · 64-79 the harness could not run (nothing was walked, so nothing is claimed). See README.md.
+# Exit codes: 0 the ledger says the journey WORKS (every row PASS, and the walk did not stop on a harness error, and WJ-1 passed if it
+# was run) · 1 it does NOT work (a DEAD END or a NOT RUN row, a walk that crashed after its last row, or a failed WJ-1) · 64-79 the
+# harness could not run (nothing was walked, so nothing is claimed). See README.md.
 #
 # What it starts, and always stops: a PostgreSQL 16 shadow (own data dir, own port, trust auth, 127.0.0.1 only), a loopback
-# model stub, `next dev --webpack` on localhost. What it never touches: any other checkout, any real credential, any network
-# beyond localhost (the app is started with every proxy variable removed, and the browser blocks off-localhost requests).
+# model stub, `next dev --webpack` on localhost. It touches no other checkout and writes only into the report's existing directory.
+#
+# What is isolated, exactly (lib/run-lib.sh, jl_build_app_env; README "What is and is not isolated"):
+#   - the app server starts with `env -i` and an ALLOWLIST: PATH, a throwaway HOME and TMPDIR, the shadow DATABASE_URL, the model-stub
+#     base URL with a fictional key, the harness flags and a few fixed settings. No variable of the caller's reaches it (no proxy
+#     variable, token, cloud credential or agent marker), and every name found in the checkout's Next env files (.env, .env.local,
+#     .env.development, .env.development.local) is passed EMPTY, because Next never overrides a variable that is already defined.
+#   - NOT isolated, and not claimed: the NETWORK. Nothing stops the app server opening a connection wherever this machine allows (the
+#     only network control is that the BROWSER's requests off localhost are blocked and listed). The harness's own process (walker,
+#     browser, WJ-1) runs with the caller's environment. Files the app can read by path are readable.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 HERE="$ROOT/tests/e2e/journey-ledger"
 cd "$ROOT"
+# shellcheck source=lib/run-lib.sh
+. "$HERE/lib/run-lib.sh"
 
 PERSONA=p1; REPORT=""; KEEP=0; WJ1=0; WJ1_ONLY=0; HOLD=0; DEFEAT=none; MAX_TRIALS=120
 APP_PORT="${JL_APP_PORT:-3651}"; PG_PORT="${JL_PG_PORT:-55691}"; STUB_PORT="${JL_STUB_PORT:-55692}"
@@ -39,7 +50,9 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$REPORT" ] || [ "$WJ1_ONLY" = 1 ] || [ "$HOLD" = 1 ] || { echo "REFUSED: --report <path.md> is required"; exit 64; }
 [ -n "$REPORT" ] || REPORT="${TMPDIR:-/tmp}/jl-unused-report.md"
-REPORT="$(cd "$(dirname "$REPORT")" 2>/dev/null && pwd)/$(basename "$REPORT")" || { echo "REFUSED: the report's directory does not exist"; exit 64; }
+# The report is written into a directory that already exists; this never creates one (and never falls back to the filesystem root).
+REPORT_ABS="$(jl_report_path "$REPORT")" || { echo "REFUSED: the report's directory does not exist ($(dirname -- "$REPORT")); create it first"; exit 64; }
+REPORT="$REPORT_ABS"
 
 # ---------------------------------------------------------------------------------------------------------------------
 # The Writer's Studio flag matrix this harness boots. Production's actual values are NOT in the repository, so these are
@@ -84,6 +97,9 @@ done
 # `next dev` rewrites two tracked files (it appends an agent-rules block to AGENTS.md and re-points next-env.d.ts at .next/dev).
 # Neither belongs to a walk: if they are clean now, they are restored on the way out. If they are already dirty, they are left alone.
 if git diff --quiet -- AGENTS.md next-env.d.ts 2>/dev/null; then RESTORE_NEXT_FILES=1; else RESTORE_NEXT_FILES=0; fi
+
+# Named BEFORE anything starts, so the walk's own writes (next dev rewrites AGENTS.md and next-env.d.ts) cannot read as a modified product.
+SUBJECT="$(jl_subject "$ROOT")" || { echo "REFUSED: cannot read this checkout's git state"; exit 66; }
 
 RUN="$(mktemp -d "${TMPDIR:-/tmp}/jl-run.XXXXXX")"
 if [ "$(id -u)" -eq 0 ]; then
@@ -160,12 +176,12 @@ STUB_PID=$!
 for i in $(seq 1 20); do node -e "const s=require('net').connect($STUB_PORT,'127.0.0.1');s.on('connect',()=>process.exit(0));s.on('error',()=>process.exit(1))" && break; sleep 0.3; done
 
 echo "[4/6] next dev --webpack on http://localhost:$APP_PORT (a development server, not a production build)"
-# Every proxy variable is removed so the app has no way out of the machine. The model SDK is pointed at the stub.
+# The app server gets an allowlisted environment and nothing else (jl_build_app_env): none of the caller's variables, the checkout's Next
+# env-file names blanked, the model SDK pointed at the stub. It is NOT network-isolated (see the header). Started through the checkout's
+# own next binary, not through npx, so npm's config and registry are not consulted either.
+jl_build_app_env || { echo "REFUSED: cannot tell what the checkout's env files would inject into the app (@next/env did not run)"; exit 71; }
 start_app() {
-  setsid env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy -u ALL_PROXY -u all_proxy -u NODE_EXTRA_CA_CERTS \
-    DATABASE_URL="$DATABASE_URL" NODE_ENV=development NEXT_TELEMETRY_DISABLED=1 PORT="$APP_PORT" \
-    ANTHROPIC_BASE_URL="http://127.0.0.1:$STUB_PORT" ANTHROPIC_API_KEY="journey-ledger-fictional-not-a-key" \
-    "${FLAG_ENV[@]}" npx next dev --webpack -p "$APP_PORT" >>"$RUN/app.log" 2>&1 &
+  setsid env -i "${JL_APP_ENV[@]}" "$ROOT/node_modules/.bin/next" dev --webpack -p "$APP_PORT" >>"$RUN/app.log" 2>&1 &
   APP_PID=$!; APP_PGID="$APP_PID"
   sleep 1     # setsid makes the child its own group leader a moment after the fork; do not test the group before that
 }
@@ -196,15 +212,14 @@ if [ "$HOLD" = 1 ]; then
 fi
 
 if [ "$WJ1_ONLY" = 1 ]; then echo "[5/6] ledger walk skipped (--wj1-only / --defeat)"; else echo "[5/6] walk: persona $PERSONA"; fi
-SHA="$(git rev-parse --short HEAD)"
-JL_SHA="$SHA" JL_BRANCH="$(git rev-parse --abbrev-ref HEAD)" JL_APP_PORT="$APP_PORT" JL_STUB_PORT="$STUB_PORT" JL_SCHEMA_TEXT="$SCHEMA_TEXT" \
+JL_SUBJECT="$SUBJECT" JL_APP_PORT="$APP_PORT" JL_STUB_PORT="$STUB_PORT" JL_SCHEMA_TEXT="$SCHEMA_TEXT" \
 JL_PGV="$("$PGBIN/postgres" --version | awk '{print $3}')" JL_FLAG_TEXT="$FLAG_TEXT" JL_META_OUT="$RUN/meta.json" node -e '
 const e = process.env;
 require("fs").writeFileSync(e.JL_META_OUT, JSON.stringify({
-  Subject: `${e.JL_SHA} (${e.JL_BRANCH})`,
+  Subject: e.JL_SUBJECT,
   Server: `next dev --webpack on http://localhost:${e.JL_APP_PORT} (development server; NOT a production build)`,
   Database: `PostgreSQL ${e.JL_PGV} shadow; ${e.JL_SCHEMA_TEXT}`,
-  Model: `loopback stub at 127.0.0.1:${e.JL_STUB_PORT}, refuses every call; slice 1 has no MAIA step`,
+  Model: `loopback stub at 127.0.0.1:${e.JL_STUB_PORT}, refuses every call; slice 1 has no MAIA step. The app server was started with an allowlisted environment (no caller variables); its NETWORK is not isolated`,
   Flags: `${e.JL_FLAG_TEXT.trim()} (production values are not in the repository and may differ)`,
   Node: process.version,
 }, null, 2));'
@@ -237,5 +252,6 @@ if [ "$WJ1" = 1 ]; then
 else
   echo "[6/6] WJ-1 not requested (--wj1)"
 fi
-echo "== ledger exit: $RC (0 = works; 1 = does NOT work; the report is $REPORT)"
-exit "$RC"
+FINAL_RC="$(jl_combined_exit "$RC" "${WJ1_RC:-}")"
+echo "== ledger exit: $RC${WJ1_RC:+, WJ-1 exit: $WJ1_RC} -> run exit: $FINAL_RC (0 = works; 1 = does NOT work, in the ledger or in WJ-1; the report is $REPORT)"
+exit "$FINAL_RC"
