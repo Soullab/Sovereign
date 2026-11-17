@@ -5,6 +5,8 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useSearchParams } from 'next/navigation';
 import { loadLastTab, saveLastTab } from './returningState';
 import { apiFetch } from '@/lib/http/apiBase';
+import { useWriterReleaseCapabilities } from '@/lib/writersStudio/useWriterReleaseCapabilities';
+import { BOOK_FILES_HELD_COPY, isBookExportHeldRefusal } from '@/lib/writersStudio/heldDoorCopy';
 import { readCurrentSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
 import { buildKeepRequestBody, interpretKeepReply } from './keepRequest';
 import WorkingDraftEditor from './WorkingDraftEditor';
@@ -270,6 +272,14 @@ function PressManuscriptRoom() {
 
   const [rendering, setRendering] = useState<'pdf' | 'epub' | null>(null);
   const [renderError, setRenderError] = useState(false);
+  // Whether to OFFER a PDF/EPUB is the server-owned release capability (the same read the Publish room uses). A 423 that
+  // arrives anyway is also "held": a retry can never lift it, so it is never told as "try again".
+  const releaseCapabilities = useWriterReleaseCapabilities();
+  const [bookFilesHeldByServer, setBookFilesHeldByServer] = useState(false);
+  const bookFileOpen = (format: 'pdf' | 'epub') =>
+    releaseCapabilities.settled && releaseCapabilities.authority.exportsCertified[format] === true && !bookFilesHeldByServer;
+  const bookFilesHeld = bookFilesHeldByServer
+    || (releaseCapabilities.settled && !bookFileOpen('pdf') && !bookFileOpen('epub'));
 
   /**
    * W-2 — a failed load must never look like an empty shelf.
@@ -646,6 +656,11 @@ function PressManuscriptRoom() {
         body: JSON.stringify({ format }),
       });
       if (!res.ok) {
+        const refusal = await res.json().catch(() => null);
+        if (isBookExportHeldRefusal(res.status, refusal)) {
+          setBookFilesHeldByServer(true);
+          return;
+        }
         setRenderError(true);
         return;
       }
@@ -1284,35 +1299,43 @@ function PressManuscriptRoom() {
 
         {tab === 'book' && (
           <div>
-            <p className="text-[14px] opacity-70 mb-3 leading-relaxed">
-              Your manuscript, set as a book — the whole of it, in your own words,
-              nothing added. Make a copy you can hold or share.
-            </p>
-            <p className="text-[12px] opacity-50 mb-8">
-              {pageEstimate(totalChars)} pages · {sections.length} section
-              {sections.length === 1 ? '' : 's'}. Set in a clean book design; this can take a
-              moment to prepare.
-            </p>
-            <div className="flex flex-wrap gap-4">
-              <button
-                onClick={() => renderBook('pdf')}
-                disabled={rendering !== null || sections.length === 0}
-                className="px-8 py-3 bg-[#C9A227] text-[#1A1513] text-[14px] tracking-wide disabled:opacity-30"
-              >
-                {rendering === 'pdf' ? 'setting your book…' : 'Download PDF'}
-              </button>
-              <button
-                onClick={() => renderBook('epub')}
-                disabled={rendering !== null || sections.length === 0}
-                className="px-8 py-3 border border-[#4A4238] text-[14px] tracking-wide opacity-80 disabled:opacity-30"
-              >
-                {rendering === 'epub' ? 'setting your book…' : 'Download EPUB'}
-              </button>
-            </div>
-            {renderError && (
-              <p className="text-[13px] opacity-70 mt-6">
-                Could not make your book just now. Please try again in a moment.
+            {bookFilesHeld ? (
+              <p data-book-files-held role="status" className="text-[14px] opacity-70 leading-relaxed">
+                {BOOK_FILES_HELD_COPY}
               </p>
+            ) : (
+              <>
+                <p className="text-[14px] opacity-70 mb-3 leading-relaxed">
+                  Your manuscript, set as a book — the whole of it, in your own words,
+                  nothing added. Make a copy you can hold or share.
+                </p>
+                <p className="text-[12px] opacity-50 mb-8">
+                  {pageEstimate(totalChars)} pages · {sections.length} section
+                  {sections.length === 1 ? '' : 's'}. Set in a clean book design; this can take a
+                  moment to prepare.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <button
+                    onClick={() => renderBook('pdf')}
+                    disabled={rendering !== null || sections.length === 0 || !bookFileOpen('pdf')}
+                    className="px-8 py-3 bg-[#C9A227] text-[#1A1513] text-[14px] tracking-wide disabled:opacity-30"
+                  >
+                    {rendering === 'pdf' ? 'setting your book…' : 'Download PDF'}
+                  </button>
+                  <button
+                    onClick={() => renderBook('epub')}
+                    disabled={rendering !== null || sections.length === 0 || !bookFileOpen('epub')}
+                    className="px-8 py-3 border border-[#4A4238] text-[14px] tracking-wide opacity-80 disabled:opacity-30"
+                  >
+                    {rendering === 'epub' ? 'setting your book…' : 'Download EPUB'}
+                  </button>
+                </div>
+                {renderError && (
+                  <p className="text-[13px] opacity-70 mt-6">
+                    Could not make your book just now. Please try again in a moment.
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}
