@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Soullab Capture Helper.app — nested inside MAIA Desktop (Contents/Helpers/), launched through
+  LaunchServices so macOS treats it as its own responsible process for the system-audio
+  permission. Not distributable on its own. Data file only in J2: not yet wired into MAIA Desktop.
+
+  NSAudioCaptureUsageDescription wording is PROPOSED and needs founder approval (J4).
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>life.soullab.maia.desktop.capture</string>
+	<key>CFBundleName</key>
+	<string>Soullab Capture Helper</string>
+	<key>CFBundleDisplayName</key>
+	<string>Soullab Capture</string>
+	<key>CFBundleExecutable</key>
+	<string>soullab-capture-helper</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.2</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Soullab Capture records the audio of the one app you choose, only while you are recording, and saves it to the folder you pick on this Mac.</string>
+</dict>
+</plist>

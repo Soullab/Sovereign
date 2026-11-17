@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Soullab Capture Helper entitlements (hardened runtime). Deliberately empty.
+
+  The helper does NOT inherit MAIA Desktop's entitlements. In particular it has none of:
+    com.apple.security.network.client
+    com.apple.security.cs.allow-jit
+    com.apple.security.cs.allow-unsigned-executable-memory
+    com.apple.security.cs.disable-library-validation
+    com.apple.security.device.audio-input   (microphone capture is C2, not C1)
+  Checked by test T20.
+-->
+<plist version="1.0">
+<dict/>
+</plist>
