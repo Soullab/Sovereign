@@ -367,7 +367,7 @@ Push and the #1979 post are clauses you can strike out. If you strike them, J2 e
 - **J2 never calls `AudioHardwareCreateProcessTap`.** It sits behind a `TapProvider` protocol; tests use `FakeTapProvider`.
 
 **A3 — No privilege inheritance.**
-- The helper is `Soullab Capture Helper.app`, nested inside MAIA Desktop (`Contents/Helpers/`):
+- The helper is `Soullab Capture.app`, nested inside MAIA Desktop (`Contents/Helpers/`). *J4a-1 amendment (2026-11-17): renamed from `Soullab Capture Helper.app`, because the bundle file name is what members see in the permission prompt and System Settings (J3 finding 4).*
   - `LSUIElement` (no Dock icon) and bundle ID `life.soullab.maia.desktop.capture`.
   - Hardened runtime with **its own minimal entitlements**: none of `network.client`, `allow-jit`, `allow-unsigned-executable-memory`, `disable-library-validation` or `device.audio-input`.
   - It is not distributable on its own.

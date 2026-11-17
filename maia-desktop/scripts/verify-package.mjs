@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { assertCaptureHelper, CAPTURE_APP_NAME } from './build-capture-helper.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
@@ -178,6 +179,17 @@ const cabinNativeReady = cabinNativeTrust.every((entry) =>
   entry.signatureValid && entry.developerId && entry.secureTimestamp && entry.hardenedRuntime
 );
 
+// SOULLAB-CAPTURE J4a-1 — checked on the finished app, not trusted from the
+// build: the nested helper exists, is the helper we built, carries NO
+// entitlements (electron-builder must not have re-signed it with
+// entitlementsInherit), and the host client it speaks to is present.
+const captureHelper = path.join(appPath, 'Contents', 'Helpers', CAPTURE_APP_NAME);
+assert.ok(fs.existsSync(captureHelper), `packaged Soullab Capture helper missing: ${captureHelper}`);
+const captureTrust = assertCaptureHelper(captureHelper);
+assert.ok(fs.existsSync(path.join(appPath, 'Contents', 'Resources', 'soullab-capture', 'captureClient.mjs')),
+  'packaged Soullab Capture host client is missing');
+const captureDeveloperId = /Authority=Developer ID Application:/.test(captureTrust.signature);
+
 const assessment = run('spctl', ['--assess', '--type', 'execute', '--verbose=4', appPath]);
 const gatekeeperAccepted = assessment.status === 0;
 const externalReady = developerId && cabinNativeReady && gatekeeperAccepted;
@@ -193,6 +205,7 @@ console.log(JSON.stringify({
   cabinNativeReady,
   cabinNativeTrust,
   gatekeeperAccepted,
+  soullabCapture: { entitlements: captureTrust.keys.length, developerId: captureDeveloperId },
   releaseClass: externalReady ? 'EXTERNAL_BETA' : 'LOCAL_BETA_ONLY',
 }, null, 2));
 

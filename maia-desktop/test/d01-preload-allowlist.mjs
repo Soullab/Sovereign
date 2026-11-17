@@ -44,6 +44,22 @@ export const RATIFIED_INVOKE_CHANNELS = [
     purpose: 'Send a typed message to the SAME MAIA the member speaks to. Main trims and caps the text, ends any live capture with normal member-Stop semantics first (text and voice are mutually exclusive), and delivers it through the one shared turn path — same route, same thread, same context assembly, same rendering. The renderer names nothing but the words.' },
   { channel: 'maia:playback-ended', ratified_in: 'DESKTOP-CONVERSATION-WIRING-01',
     purpose: 'RESET-01 §6, the half-duplex handoff. Only the renderer holds an output device, so only the renderer can observe that MAIA finished speaking; without the report, main re-armed speech-turn creation while she was still talking and her voice returned through the microphone as a member turn. It carries an OBSERVATION, not authority — like maia:voice-mic-result. The renderer names no turn, generation or conversation; the authority supplies all three and refuses the report if the turn is not maia_speaking, if it arrives twice, or if it belongs to a replaced conversation.' },
+  // SOULLAB-CAPTURE J4a-1 (founder approval 2026-11-17, owner #1979). Five verbs,
+  // each answering: required (a member cannot record an app's audio without
+  // them) · authorized (J4a-1 mandate) · minimal (the only renderer-supplied
+  // value anywhere is one source id, matched against pid:<digits> in main) ·
+  // main-validated · doctrine-compatible (the helper holds the recording; the
+  // renderer never sees a folder location, a file location, a socket or a token).
+  { channel: 'maia:soullab-capture-state', ratified_in: 'SOULLAB-CAPTURE-J4A-1',
+    purpose: 'Read the Soullab Capture snapshot: phase, the recorded app name, elapsed seconds, peak, gap count, the last take (file name, seconds, stop reason, checksum) and the chosen folder NAME. Read-only; never a location.' },
+  { channel: 'maia:soullab-capture-choose-folder', ratified_in: 'SOULLAB-CAPTURE-J4A-1',
+    purpose: 'Ask main to open the native folder picker so the member chooses where takes are saved. Takes no argument: the renderer cannot propose a location, and main refuses while a take is in progress.' },
+  { channel: 'maia:soullab-capture-sources', ratified_in: 'SOULLAB-CAPTURE-J4A-1',
+    purpose: 'List the apps a member may record (name, id, whether it is producing output). Main launches a short-lived helper to read the list and lets it exit; no tap is created and no permission is asked.' },
+  { channel: 'maia:soullab-capture-start', ratified_in: 'SOULLAB-CAPTURE-J4A-1',
+    purpose: 'Start ONE take of ONE app, named by the id main returned. Main truncates it to 32 chars and requires pid:<digits>; the take name is a timestamp main chooses and the folder is the one the member picked. Nothing auto-starts or resumes.' },
+  { channel: 'maia:soullab-capture-stop', ratified_in: 'SOULLAB-CAPTURE-J4A-1',
+    purpose: 'Member Stop. Takes no argument; the helper finalizes the take, verifies its checksum from disk, and exits.' },
   { channel: 'maia:status', ratified_in: 'MAIA-D01',
     purpose: 'Read app identity and build stamp. Read-only. An unstamped build reports UNSTAMPED rather than a fabricated SHA.' },
 ];
@@ -61,6 +77,8 @@ export const RATIFIED_PUSH_CHANNELS = [
     purpose: 'Voice state snapshot, outward only.' },
   { channel: 'maia:thread', ratified_in: 'MAIA-D04',
     purpose: 'Which conversation Desktop joined, outward only: whether a thread was resumed, its id, and the tail of its turns so the member opens on what was actually said. The turns are the member\'s own words and MAIA\'s, already theirs on every other surface — they go to the surface, never to telemetry. An adoption failure is reported here too, because a silent failure would fork the conversation.' },
+  { channel: 'maia:soullab-capture-state-changed', ratified_in: 'SOULLAB-CAPTURE-J4A-1',
+    purpose: 'Soullab Capture snapshot changed, outward only: the same shape as maia:soullab-capture-state, at most twice a second while recording. Never carries audio, a location or a credential.' },
 ];
 
 export const INVOKE_CHANNEL_NAMES = RATIFIED_INVOKE_CHANNELS.map((c) => c.channel).sort();

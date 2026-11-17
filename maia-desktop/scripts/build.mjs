@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildCaptureHelper, CAPTURE_APP_NAME, CAPTURE_PACKAGE } from './build-capture-helper.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
@@ -196,6 +197,27 @@ if (!stagedNodeModulesResource) {
   throw new Error('Cabin node_modules extraResources entry was not staged');
 }
 
+// SOULLAB-CAPTURE J4a-1 (owner #1979) — the nested Soullab Capture helper. It is
+// built and signed by build-capture-helper.mjs with NO entitlements, then
+// excluded from electron-builder's signing, which would otherwise re-sign it
+// with `entitlementsInherit` (network, JIT, unsigned memory, library-validation
+// off, microphone). verify-package.mjs re-checks the finished app.
+const captureHelperParent = path.join(stageParent, 'soullab-capture-helper');
+fs.mkdirSync(captureHelperParent, { recursive: true });
+const { appPath: captureHelperApp } = buildCaptureHelper({ outDir: captureHelperParent });
+stagedPackage.build.extraFiles = [
+  ...(stagedPackage.build.extraFiles || []),
+  { from: captureHelperApp, to: `Helpers/${CAPTURE_APP_NAME}`, filter: ['**/*'] },
+];
+stagedPackage.build.extraResources.push({
+  from: path.join(CAPTURE_PACKAGE, 'js', 'captureClient.mjs'),
+  to: 'soullab-capture/captureClient.mjs',
+});
+stagedPackage.build.mac = {
+  ...stagedPackage.build.mac,
+  signIgnore: [...(stagedPackage.build.mac.signIgnore || []), 'Contents/Helpers/Soullab Capture\\.app'],
+};
+
 fs.writeFileSync(stagedPackagePath, `${JSON.stringify(stagedPackage, null, 2)}\n`, 'utf8');
 
 console.log('[MAIA Desktop] cabin runtime staged outside electron-builder project and staging parent');
@@ -234,4 +256,5 @@ try {
 } finally {
   fs.rmSync(stage, { recursive: true, force: true });
   fs.rmSync(cabinSource, { recursive: true, force: true });
+  fs.rmSync(captureHelperParent, { recursive: true, force: true });
 }

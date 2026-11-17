@@ -51,6 +51,7 @@ const PORTABLE_DOMAIN = [
   'cabin-runtime-policy.js', // AIN-CABIN-RUNTIME-01 — loopback/runtime policy only
   'cabin-runtime.js', // AIN-CABIN-RUNTIME-02 — host-independent runtime lifecycle
   'soullab-desktop-boundary.js', // SDU-01 — pure product/realm/transport law; no host dependency
+  'soullab-capture-host.js', // SOULLAB-CAPTURE J4a-1 — helper supervision; LaunchServices + socket, no Electron
 ];
 
 // The presentation edge. Speaks an abstract capability surface, never Electron.

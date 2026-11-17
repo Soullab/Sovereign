@@ -47,6 +47,7 @@
 const {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   session,
@@ -105,6 +106,8 @@ const { createTurn } = require('./turn');
 const { createVoiceLifecycle } = require('./voice-lifecycle');
 const { createDesktopConversation } = require('./desktop-conversation');
 const { createCabinRuntimeSupervisor } = require('./cabin-runtime');
+const { pathToFileURL } = require('node:url');
+const { createSoullabCaptureHost, createFolderStore, SOURCE_ID } = require('./soullab-capture-host');
 
 // Separate userData for a dev launch, so a development instance can never read
 // or corrupt an installed instance's state. (jarvis-desktop precedent.)
@@ -576,6 +579,7 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
     { label: 'Go', submenu: go },
+    ...[soullabCaptureMenu()].filter(Boolean),
     { role: 'editMenu' },
     { role: 'windowMenu' },
     {
@@ -705,6 +709,169 @@ ipcMain.handle('maia:sign-out', async () => {
 
 ipcMain.handle('maia:auth-state', async () => memberSession.state());
 
+// ── SOULLAB-CAPTURE J4a-1: host the existing Soullab Capture helper ────────
+// Owner LISTEN-01 #1979. MAIA Desktop supervises the package's helper; it does
+// not record anything itself. The helper is a separately signed nested app with
+// NO entitlements (no network, no microphone), launched through LaunchServices
+// so the system-audio permission is asked for — and attributed to — the helper.
+// Nothing here starts by itself: every take begins with a member action.
+const SOULLAB_CAPTURE_APP_NAME = 'Soullab Capture.app';
+
+function soullabCaptureHelperApp() {
+  if (app.isPackaged) return path.join(process.resourcesPath, '..', 'Helpers', SOULLAB_CAPTURE_APP_NAME);
+  // A development launch uses the bundle built by scripts/build-capture-helper.mjs.
+  return path.join(__dirname, '..', '.capture-helper', SOULLAB_CAPTURE_APP_NAME);
+}
+
+function soullabCaptureClientModule() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'soullab-capture', 'captureClient.mjs')
+    : path.join(__dirname, '..', '..', 'packages', 'soullab-capture', 'js', 'captureClient.mjs');
+}
+
+let soullabCaptureFolders = null;
+let soullabCapture = null;
+
+function soullabCaptureState() {
+  const folder = soullabCaptureFolders ? soullabCaptureFolders.get() : null;
+  const snap = soullabCapture ? soullabCapture.snapshot() : { phase: 'idle' };
+  // The surface learns the folder's NAME only, never where it lives.
+  return { ...snap, available: !!soullabCapture, folderName: folder ? path.basename(folder) : null };
+}
+
+function initSoullabCapture() {
+  if (process.platform !== 'darwin') return;
+  soullabCaptureFolders = createFolderStore({
+    file: path.join(app.getPath('userData'), 'soullab-capture.json'),
+  });
+  soullabCapture = createSoullabCaptureHost({
+    helperApp: soullabCaptureHelperApp(),
+    loadClient: () => import(pathToFileURL(soullabCaptureClientModule()).href),
+    getFolder: () => soullabCaptureFolders.get(),
+    onChange: () => {
+      broadcast('maia:soullab-capture-state-changed', soullabCaptureState());
+      buildMenu();
+    },
+    logger: (record) => console.log('[Soullab Capture]', record.event),
+  });
+}
+
+async function chooseSoullabCaptureFolder() {
+  if (!soullabCaptureFolders) return { ok: false, error: 'UNAVAILABLE' };
+  if (soullabCapture && soullabCapture.active()) return { ok: false, error: 'BUSY' };
+  const owner = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const picked = await dialog.showOpenDialog(owner, {
+    title: 'Choose where Soullab Capture saves recordings',
+    buttonLabel: 'Use This Folder',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (picked.canceled || !picked.filePaths[0]) return { ok: false, error: 'CANCELLED' };
+  try {
+    soullabCaptureFolders.set(picked.filePaths[0]);
+  } catch {
+    return { ok: false, error: 'FOLDER_INVALID' };
+  }
+  broadcast('maia:soullab-capture-state-changed', soullabCaptureState());
+  buildMenu();
+  return { ok: true, folderName: path.basename(picked.filePaths[0]) };
+}
+
+// The minimum surface the J4a-1 witness needs: a menu, not a window. The
+// capture window (with "waiting for audio from <app>") is J4a-2.
+async function recordAnAppFromMenu() {
+  if (!soullabCapture || soullabCapture.active()) return;
+  if (!soullabCaptureFolders.get()) {
+    const chosen = await chooseSoullabCaptureFolder();
+    if (!chosen.ok) return;
+  }
+  const owner = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  let sources;
+  try {
+    sources = (await soullabCapture.listSources()).filter((s) => s.producingOutput).slice(0, 6);
+  } catch (error) {
+    await dialog.showMessageBox(owner, { type: 'warning', message: 'Soullab Capture could not start.', detail: String(error.code || error.message) });
+    return;
+  }
+  if (sources.length === 0) {
+    await dialog.showMessageBox(owner, {
+      type: 'info',
+      message: 'No app is playing audio right now.',
+      detail: 'Start playback in the app you want to record, then choose Record an App again.',
+    });
+    return;
+  }
+  const answer = await dialog.showMessageBox(owner, {
+    type: 'question',
+    message: 'Which app do you want to record?',
+    detail: 'Only that app\'s audio is recorded, until you choose Stop Recording.',
+    buttons: [...sources.map((s) => s.name), 'Cancel'],
+    cancelId: sources.length,
+    defaultId: sources.length,
+  });
+  const pick = sources[answer.response];
+  if (!pick) return;
+  try {
+    await soullabCapture.start(pick.id);
+  } catch (error) {
+    await dialog.showMessageBox(owner, { type: 'warning', message: 'Recording did not start.', detail: String(error.code || error.message) });
+  }
+}
+
+function soullabCaptureMenu() {
+  if (!soullabCapture) return null;
+  const snap = soullabCapture.snapshot();
+  const recording = snap.phase === 'starting' || snap.phase === 'recording';
+  const folder = soullabCaptureFolders.get();
+  return {
+    label: 'Capture',
+    submenu: [
+      recording
+        ? { label: `Stop Recording ${snap.source ? snap.source.name : ''}`.trim(), click: () => { void soullabCapture.stop(); } }
+        : { label: 'Record an App…', enabled: snap.phase === 'idle', click: () => { void recordAnAppFromMenu(); } },
+      { type: 'separator' },
+      { label: 'Choose Recordings Folder…', enabled: snap.phase === 'idle', click: () => { void chooseSoullabCaptureFolder(); } },
+      { label: 'Show Recordings Folder', enabled: !!folder, click: () => { if (folder) void shell.openPath(folder); } },
+    ],
+  };
+}
+
+ipcMain.handle('maia:soullab-capture-state', async () => soullabCaptureState());
+
+ipcMain.handle('maia:soullab-capture-choose-folder', async () => chooseSoullabCaptureFolder());
+
+ipcMain.handle('maia:soullab-capture-sources', async () => {
+  if (!soullabCapture) return { ok: false, error: 'UNAVAILABLE' };
+  try {
+    return { ok: true, sources: await soullabCapture.listSources() };
+  } catch (error) {
+    return { ok: false, error: String(error.code || error.message).slice(0, 64) };
+  }
+});
+
+ipcMain.handle('maia:soullab-capture-start', async (_evt, payload) => {
+  if (!soullabCapture) return { ok: false, error: 'UNAVAILABLE' };
+  // The renderer names an app by the id main gave it, and nothing else: no
+  // folder, no file name, no format, no device.
+  const sourceId = String(payload && payload.sourceId || '').slice(0, 32);
+  if (!SOURCE_ID.test(sourceId)) return { ok: false, error: 'INVALID_SOURCE' };
+  try {
+    await soullabCapture.start(sourceId);
+    return { ok: true, state: soullabCaptureState() };
+  } catch (error) {
+    return { ok: false, error: String(error.code || error.message).slice(0, 64) };
+  }
+});
+
+ipcMain.handle('maia:soullab-capture-stop', async () => {
+  if (!soullabCapture) return { ok: false, error: 'UNAVAILABLE' };
+  try {
+    await soullabCapture.stop();
+    return { ok: true, state: soullabCaptureState() };
+  } catch (error) {
+    return { ok: false, error: String(error.code || error.message).slice(0, 64) };
+  }
+});
+
 async function startCabinRuntimeIfNeeded() {
   if (CABIN_MODE !== 'offline') return { ok: true, state: 'disabled' };
 
@@ -828,6 +995,8 @@ app.whenReady().then(async () => {
   // discovers a 401 by itself and signs out internally; without this, main
   // never learned and the remote view kept its cookie.
   memberSession = createSession({ app, safeStorage, onSignedOut: teardownMemberState });
+  // Creates the supervisor only. No helper is launched until a member records.
+  initSoullabCapture();
   if (memberSession.state().signedIn) {
     conversation = createConversation({
       session: memberSession,
@@ -850,6 +1019,22 @@ app.whenReady().then(async () => {
       void goTo(MAIA);
     });
   }
+});
+
+// A take in progress is finalized before MAIA exits, and no helper outlives it.
+// While that is pending every quit attempt is held, including the Cabin
+// handler's own re-quit below.
+let soullabCaptureQuit = 'none'; // none · pending · done
+app.on('before-quit', (event) => {
+  if (soullabCaptureQuit === 'done') return;
+  if (soullabCaptureQuit === 'pending') { event.preventDefault(); return; }
+  if (!soullabCapture || !soullabCapture.active()) return;
+  event.preventDefault();
+  soullabCaptureQuit = 'pending';
+  void soullabCapture.shutdown().finally(() => {
+    soullabCaptureQuit = 'done';
+    app.quit();
+  });
 });
 
 let cabinQuitting = false;
