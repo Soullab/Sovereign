@@ -624,7 +624,7 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
               <div className="fr-home-actions">
                 <button type="button" className="fr-home-primary" onClick={() => setBeginning(true)}>Start writing</button>
                 <button type="button" className="fr-home-quiet" onClick={props.onImport}>Import writing</button>
-                <button type="button" className="fr-home-quiet" onClick={props.onSources}>Bring notes &amp; sources</button>
+                <button type="button" className="fr-home-quiet" onClick={props.onSources}>Notes &amp; sources</button>
               </div>
             ) : (
               <div className="p4r1-home-begin-form">
