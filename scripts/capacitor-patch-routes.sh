@@ -484,8 +484,8 @@ MOBILE_EXCLUDED_DIRS=(
     "app/founder/constellation"
     # LISTEN-01: gated Sound Studio audio route (server session + flag); web-only.
     "app/media"
-    # Dev review page that imports app/writers-studio (itself excluded as dynamic); web-only.
-    "app/dev/writers-studio-full-redesign-review"
+    # Developer review pages (never member-facing); several read searchParams or import excluded rooms.
+    "app/dev"
     # Press manuscript editor imports app/writers-studio (excluded as dynamic); Studio rooms are web bridges on native.
     "app/press/manuscript"
     # Empty generateStaticParams (no step pages were ever exported); Next 16 refuses it under export.
