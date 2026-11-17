@@ -321,7 +321,7 @@ hide_incompatible_pages() {
         case "$rel_path" in
             *\[*\]*)
                 # Already has generateStaticParams (and no force-dynamic)? Compatible.
-                if grep -q "generateStaticParams" "$file" 2>/dev/null; then
+                if grep -qE "^export (async )?(function|const) generateStaticParams" "$file" 2>/dev/null; then
                     continue
                 fi
 
@@ -414,7 +414,7 @@ patch_remaining_dynamic_pages() {
         case "$rel_path" in
             *\[*\]*)
                 # Already has generateStaticParams? Skip
-                if grep -q "generateStaticParams" "$file" 2>/dev/null; then
+                if grep -qE "^export (async )?(function|const) generateStaticParams" "$file" 2>/dev/null; then
                     continue
                 fi
 
