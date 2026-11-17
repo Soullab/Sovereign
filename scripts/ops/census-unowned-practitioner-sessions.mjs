@@ -12,7 +12,7 @@
  *
  * What it is, and is not
  *   · COUNTS ONLY. Per table: total, owned, unowned; and for the unowned rows, how many carry a
- *     deterministic ownership HINT in columns that already exist, naming those columns. No row, id, name,
+ *     ownership HINT in columns that already exist, naming those columns. A hint is a lead for a person to check, NEVER proof of ownership: every hint column is client-writable and unvalidated, so a hint can be forged or stale. No row, id, name,
  *     title, note or transcript text is selected into the output, and the output is built only from values
  *     that parsed as non-negative integers (a statement that returned anything else makes the run FAIL).
  *   · READ ONLY. One `BEGIN READ ONLY` transaction, only SELECT statements (each statement is checked

@@ -251,6 +251,23 @@ function routeFiles(dir: string, acc: string[] = []): string[] {
 
 const files = FAMILIES.flatMap((f) => routeFiles(path.join(repoRoot, f)));
 const read = (rel: string) => readFileSync(path.join(repoRoot, rel), 'utf8');
+
+// An ownership query is a statement over practice_sessions / supervision_sessions that compares practitioner_id to a bound
+// parameter. The ONE place it may live is lib/auth/requireOwnedSession.ts; the only routes that may carry their own are the
+// two owner-scoped writes of session/[id] (DELETE and the title UPDATE), which are removed before the scan so that nothing ELSE
+// in that file can hide behind them. The guard and its defeat candidates run this same function.
+const OWNERSHIP_COLUMN_QUERY = /(?:practice|supervision)_sessions[\s\S]{0,200}practitioner_id\s*=\s*\$\d/;
+const ALLOWED_OWNER_SCOPED_WRITES = [
+  /DELETE FROM supervision_sessions\s+WHERE id = \$1 AND practitioner_id = \$2/g,
+  /UPDATE supervision_sessions SET title = \$1\s+WHERE id = \$2 AND practitioner_id = \$3/g,
+];
+function hasHandRolledOwnershipQuery(rel: string, src: string): boolean {
+  let code = stripComments(src);
+  if (rel === 'app/api/supervision/session/[id]/route.ts') {
+    for (const allowed of ALLOWED_OWNER_SCOPED_WRITES) code = code.replace(allowed, '');
+  }
+  return OWNERSHIP_COLUMN_QUERY.test(code);
+}
 const handlers = files.flatMap((rel) => handlersOf(read(rel)).map((h) => ({ key: `${rel}::${h.method}`, rel, ...h })));
 
 function violationsOf(rel: string): string[] {
@@ -397,10 +414,9 @@ describe('PRACTITIONER-SESSION-OWNERSHIP-01 · static guard — session-ownershi
 
   it('nothing outside lib/auth/requireOwnedSession.ts queries the ownership columns of these tables to decide access', () => {
     // The one lookup is the single place the predicate lives; a second hand-rolled one is a second thing to get wrong.
-    const offenders = files
-      .filter((rel) => /(?:practice|supervision)_sessions[\s\S]{0,200}practitioner_id\s*=\s*\$\d/.test(stripComments(read(rel))))
-      // the two owner-scoped writes the route issues itself, pinned by the supervision suite's SQL assertions
-      .filter((rel) => rel !== 'app/api/supervision/session/[id]/route.ts');
+    // session/[id]/route.ts is NOT exempt as a whole file: only its two owner-scoped writes are allowed, removed before
+    // the scan, so any other ownership query in that file is still an offender.
+    const offenders = files.filter((rel) => hasHandRolledOwnershipQuery(rel, read(rel)));
     expect(offenders).toEqual([]);
   });
 });
@@ -625,8 +641,21 @@ describe('PRACTITIONER-SESSION-OWNERSHIP-01 · static guard — ownership-law de
     expect(/DELETE FROM supervision_sessions WHERE id = \$1 AND practitioner_id = \$2/.test(stripComments(handlerOf(src, 'DELETE')))).toBe(false);
   });
 
-  it('DC-O12 a hand-rolled ownership query in a route (a second place the predicate lives) is caught', () => {
-    const rogue = "const r = await query('SELECT id FROM practice_sessions WHERE id = $1 AND practitioner_id = $2', [id, me]);";
-    expect(/(?:practice|supervision)_sessions[\s\S]{0,200}practitioner_id\s*=\s*\$\d/.test(rogue)).toBe(true);
+  it('DC-O12 a hand-rolled ownership query in a route (a second place the predicate lives) is caught, by the same predicate the guard runs', () => {
+    const rogue = "\nconst r = await query('SELECT id FROM practice_sessions WHERE id = $1 AND practitioner_id = $2', [id, me]);\n";
+    // control: the real routes are clean
+    expect(hasHandRolledOwnershipQuery(TRANSCRIPT, read(TRANSCRIPT))).toBe(false);
+    expect(hasHandRolledOwnershipQuery(SUP_DEL, read(SUP_DEL))).toBe(false);
+    // a rogue query appended to an ordinary route is an offender
+    expect(hasHandRolledOwnershipQuery(TRANSCRIPT, read(TRANSCRIPT) + rogue)).toBe(true);
+  });
+
+  it('DC-O12b the one route that issues owner-scoped writes itself is NOT exempt for anything else: a rogue lookup there is caught', () => {
+    const rogue = "\nconst r = await query('SELECT id FROM supervision_sessions WHERE id = $1 AND practitioner_id = $2', [id, me]);\n";
+    expect(hasHandRolledOwnershipQuery(SUP_DEL, read(SUP_DEL) + rogue)).toBe(true);
+    // and the whole-file exemption the first version of the guard had (any match in that file allowed) is the defeat candidate
+    const wholeFileExempt = (rel: string, src: string) =>
+      rel !== SUP_DEL && /(?:practice|supervision)_sessions[\s\S]{0,200}practitioner_id\s*=\s*\$\d/.test(stripComments(src));
+    expect(wholeFileExempt(SUP_DEL, read(SUP_DEL) + rogue)).toBe(false); // it would have let the rogue through
   });
 });

@@ -324,14 +324,14 @@ above), `TranscriptViewer.tsx` (transcript list ×2) and `app/supervision/page.t
   with no route (SOURCE), so they were already stale and are now stopped one step earlier.
 * **`EventSource` consumers on a client that cannot send the cookie** (a native / Safari cross-origin WebView) lose the live
   `insights/stream` and `scribe` streams (401). `InsightsViewer` falls back to its poll, which now uses `apiFetch`; the
-  scribe stream has no polling fallback. Same-origin web is unaffected.
+  scribe stream has no polling fallback. `lib/studio/RecordingContext.tsx` (`connectToStream`) re-opens the scribe `EventSource` every 3 s for as long as recording runs, so such a client now makes one failing (401) request every 3 s per recording and shows `disconnected`; `EventSource` cannot read the status, so the client cannot tell a refusal from a dropped connection. Not changed here: a bounded retry or a token-in-URL fallback is a product decision. Same-origin web is unaffected.
 * **`POST /supervision/transcript/list`** now needs the session (a Python transcriber that posted anonymously would get 401;
   no such caller exists in this repository — the only ones are the two stale scripts above).
 
 ### Census — READ ONLY, built, not run
 
 `scripts/ops/census-unowned-practitioner-sessions.mjs` (`node --test scripts/ops/test-census-unowned-practitioner-sessions.mjs`):
-counts only, per table `total / owned / unowned`, and for the unowned rows how many carry a deterministic ownership hint in
+counts only, per table `total / owned / unowned`, and for the unowned rows how many carry an ownership hint (a lead for a person to check, never proof: every hint column is client-writable) in
 existing columns — `supervision_sessions.metadata->>'scribeSessionId' → scribe_sessions.member_id`,
 `supervision_sessions.case_id → practitioner_cases.practitioner_id`, and `practitioner_growth.session_refs ∋ practice_sessions.id →
 practitioner_growth.practitioner_id` (cited by one practitioner / by several). It selects no row, id, name, title or transcript
