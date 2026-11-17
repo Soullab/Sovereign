@@ -48,6 +48,7 @@ import { chapterSpanFor, type RebuildSection } from '@/lib/writersStudio/rebuild
 import { typesetManuscriptBody } from '@/app/writers-studio/full-redesign/manuscriptTypesetting';
 import { passagePlaceLabel } from '@/lib/writersStudio/passagePlace';
 import { DESK_SELECTION_NOTICE, unheldSelectionNotice } from '@/lib/writersStudio/selectionNotice';
+import { locateUniquePresentationPassage } from '@/lib/writersStudio/presentationPassageLocator';
 import { locateUniquePassage, type AdoptionWireOutcome, type RebuildEditorialRelationship, type RebuildEditorialThread } from '@/lib/writersStudio/rebuild/editorialCollaboration';
 import ObservationManuscriptLayer from './ObservationManuscriptLayer';
 import RevisionManuscriptLayer, { type RevisionEdit } from './RevisionManuscriptLayer';
@@ -607,7 +608,9 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       }
       const section = props.context.sections.find((candidate) => candidate.draftSectionId === picked.sectionId);
       const live = section ? props.writing.bodyOf(section.draftSectionId) : '';
-      const located = locateUniquePassage(live, picked.text);
+      // Exact first; then whitespace-only normalization (a highlight across a paragraph break reads one
+      // line break where the text holds two). The held words are always the exact Source slice.
+      const located = locateUniquePassage(live, picked.text) ?? locateUniquePresentationPassage(live, picked.text);
       if (!section || !located) {
         setSelectionRect(null);
         setSelectionMenuOpen(false);
@@ -616,7 +619,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
         return;
       }
       setSelectionProblem(null);
-      props.onHoldPassage(section, located.start, located.end, picked.text);
+      props.onHoldPassage(section, located.start, located.end, Array.from(live).slice(located.start, located.end).join(''));
       setSelectionRect(picked.rect);
     };
 

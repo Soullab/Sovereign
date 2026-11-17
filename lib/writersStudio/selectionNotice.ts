@@ -18,5 +18,6 @@ export function unheldSelectionNotice(sectionBody: string, selected: string): st
   if (selected && occurrences(sectionBody, selected) > 1) {
     return 'These words appear more than once here. Select a little more so it’s clear which ones you mean.';
   }
-  return 'These exact words couldn’t be held. Try selecting within one paragraph.';
+  // Line breaks are already matched (presentation locator); what remains is usually italic or other formatting marks.
+  return 'These exact words couldn’t be held, often because of italics or other formatting. Try selecting a little less.';
 }

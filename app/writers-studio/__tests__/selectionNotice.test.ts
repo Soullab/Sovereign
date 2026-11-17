@@ -6,6 +6,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { DESK_SELECTION_NOTICE, unheldSelectionNotice } from '@/lib/writersStudio/selectionNotice';
 import { locateUniquePassage } from '@/lib/writersStudio/rebuild/editorialCollaboration';
+import { locateUniquePresentationPassage } from '@/lib/writersStudio/presentationPassageLocator';
 
 const body = 'The river was cold. I waded in anyway.\n\nThe river was cold, and so was I.';
 
@@ -15,10 +16,19 @@ describe('why highlighted words could not be held', () => {
     expect(unheldSelectionNotice(body, 'The river was cold')).toMatch(/more than once/);
   });
 
-  it('words that do not match the text exactly suggest one paragraph', () => {
+  it('a highlight across a paragraph break is held as the exact Source words', () => {
     const acrossParagraphs = 'I waded in anyway.\nThe river'; // the page shows one break, the text holds two
     expect(locateUniquePassage(body, acrossParagraphs)).toBeNull();
-    expect(unheldSelectionNotice(body, acrossParagraphs)).toMatch(/within one paragraph/);
+    const located = locateUniquePresentationPassage(body, acrossParagraphs);
+    expect(located).not.toBeNull();
+    expect(Array.from(body).slice(located!.start, located!.end).join('')).toBe('I waded in anyway.\n\nThe river');
+  });
+
+  it('words that still cannot be matched (formatting marks in the text) name formatting', () => {
+    const styled = 'The *river* ran on.';
+    expect(locateUniquePassage(styled, 'The river ran')).toBeNull();
+    expect(locateUniquePresentationPassage(styled, 'The river ran')).toBeNull();
+    expect(unheldSelectionNotice(styled, 'The river ran')).toMatch(/italics or other formatting/);
   });
 
   it('NEGATIVE: words that can be held are held, so no notice is needed', () => {
