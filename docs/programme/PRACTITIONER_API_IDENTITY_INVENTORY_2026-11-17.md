@@ -193,6 +193,13 @@ Failing-first, then green, with the same test files. See the commit message for 
 
 * `app/api/caseload/__tests__/identityFromSession.test.ts` — all 17 caseload handlers, two accounts
 * `app/api/practice/__tests__/identityFromSession.test.ts` — the 12 practice handlers whose identity changed
+* `lib/practice/__tests__/acknowledgeGrowthOwner.test.ts` — the one SQL boundary this unit changed
+  (`acknowledgeGrowth`: `WHERE id = $1 AND practitioner_id = $3`). The practice route suite above mocks
+  `PracticeStore` wholesale and its mock enforces ownership itself, so it cannot see the SQL: a mutant of the
+  real store with the predicate dropped passed 8 suites / 133 tests. This suite runs the REAL function over a
+  fake `query` that evaluates the WHERE clause (it refuses predicates it cannot model), pins the statement and
+  its parameters, and carries 6 wrong stores that must each be caught. It models one statement; PostgreSQL is
+  not run.
 * `app/api/practitioners/__tests__/identityFromSession.test.ts` — check, create, onboarding GET+POST
 * `app/api/__tests__/practitionerFamiliesIdentityGuard.test.ts` — static guard, handler-level, + 17 defeat candidates
 * `config/__tests__/practitionerApiAccessRules.test.ts` — matrix rules, default unchanged, + 7 defeat candidates

@@ -115,6 +115,9 @@ jest.mock('@/lib/practice/PracticeStore', () => ({
   },
   // the fixed contract scopes the acknowledge to the owner; an unscoped call (the old
   // two-argument shape) acts on any row, exactly as the real unscoped UPDATE did.
+  // ⚠️ This mock enforces ownership ITSELF, so nothing in this file tests the real SQL predicate.
+  // That boundary is pinned against the real function in
+  // lib/practice/__tests__/acknowledgeGrowthOwner.test.ts.
   acknowledgeGrowth: async (growthId: string, _notes?: string, practitionerId?: string) => {
     as(practitionerId);
     const row = growth.find((g) => g.id === growthId && (practitionerId === undefined || g.practitioner_id === practitionerId));
