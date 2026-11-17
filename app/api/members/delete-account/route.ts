@@ -140,6 +140,12 @@ const GOVERNED_CONTENT: ReadonlyArray<{ table: string; column: string; label: st
   { table: 'writer_decision_events', column: 'member_id', label: 'what you settled about your Work, in your words' },
   { table: 'work_reading_scope_events', column: 'member_id', label: 'your permission for MAIA to read your Work' },
   { table: 'development_plans', column: 'member_id', label: 'your plans for your Work' },
+  // member_manuscripts.member_id names `members` ON DELETE RESTRICT (baseline SQL). Unlisted, a member whose only content is a Work
+  // skipped the refuse posture, hit the foreign key at `DELETE FROM members`, and got a rolled-back 500 instead of this refusal.
+  { table: 'member_manuscripts', column: 'member_id', label: 'your writing' },
+  // living_works.member_id names `members` ON DELETE RESTRICT too, and a Work exists before it has a manuscript (the home Door creates one
+  // on its own), so listing member_manuscripts alone left a member with only a Work on the rolled-back 500. Same label: one category.
+  { table: 'living_works', column: 'member_id', label: 'your writing' },
 ];
 
 /**
@@ -154,6 +160,27 @@ const GOVERNED_CONTENT: ReadonlyArray<{ table: string; column: string; label: st
  * It is a single constant so it can be changed without touching logic.
  */
 const CONTAINMENT_POSTURE: 'refuse' | 'proceed' = 'refuse';
+
+/**
+ * The designed refusal. Plain language, and unambiguous about the one fact that matters most to someone who just asked
+ * to be deleted: nothing happened. `retained` names what is held in the member's words where the registry knows; it is
+ * empty when a foreign key refused over something the registry does not list (see the catch below).
+ */
+function heldRefusal(retained: Array<{ label: string; rows: number }>) {
+  return NextResponse.json(
+    {
+      error: 'deletion_incomplete_unavailable',
+      message:
+        "We can't complete full account deletion automatically yet. Your account " +
+        'and content have not been changed. Please contact support so we can ' +
+        'handle your request safely.',
+      accountChanged: false,
+      nextStep: 'contact_support',
+      retained,
+    },
+    { status: 409 },
+  );
+}
 
 /**
  * Count governed content for a member, aggregated into member-legible
@@ -227,21 +254,7 @@ export async function POST(request: NextRequest) {
     // 3b. CONTAINMENT preflight — refuse rather than orphan.
     const governed = await governedContentFor(memberId);
     if (CONTAINMENT_POSTURE === 'refuse' && governed.length > 0) {
-      return NextResponse.json(
-        {
-          error: 'deletion_incomplete_unavailable',
-          // Plain language, and unambiguous about the one fact that matters
-          // most to someone who just asked to be deleted: nothing happened.
-          message:
-            "We can't complete full account deletion automatically yet. Your account " +
-            'and content have not been changed. Please contact support so we can ' +
-            'handle your request safely.',
-          accountChanged: false,
-          nextStep: 'contact_support',
-          retained: governed,
-        },
-        { status: 409 },
-      );
+      return heldRefusal(governed);
     }
 
     // 4. All-or-nothing. A partial failure must not leave an account that is
@@ -318,6 +331,16 @@ export async function POST(request: NextRequest) {
         'Your account has been closed and your sign-in credentials revoked.',
     });
   } catch (error) {
+    // A foreign key refusing `DELETE FROM members` (SQLSTATE 23503) is deterministic: some row still names this member
+    // ON DELETE RESTRICT, and no retry changes that. transaction() has already issued ROLLBACK before it rethrew, so the
+    // account and everything in it are unchanged and "not changed" is a fact. GOVERNED_CONTENT names what the route
+    // knows; this is the net for what it does not, so a table nobody listed cannot turn a refusal into "try again".
+    // Only this class: any other failure stays a 500, because the route cannot say nothing changed for a fault it has
+    // not classified.
+    if ((error as { code?: string } | null)?.code === '23503') {
+      console.error('[Delete Account API] Refused by a foreign key; nothing was changed:', (error as { constraint?: string }).constraint);
+      return heldRefusal([]);
+    }
     console.error('[Delete Account API] Error:', error);
     return NextResponse.json(
       { error: 'Failed to delete account' },
