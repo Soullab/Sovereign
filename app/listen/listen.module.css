@@ -195,3 +195,19 @@
 .toneHeading{margin:10px 0 0;font-family:Georgia,serif;font-size:16px;font-weight:400;color:#e9d3ae}
 .toneGroup h4{margin:8px 0 6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#9aafb0;font-weight:500}
 @media (max-width:640px){.toneDial{grid-template-columns:1fr}}
+/* LISTEN-01 · Orbit & Threshold (sketch 06), founder review */
+.orbitRow{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;font-size:13px;color:#ddd0bb}
+.orbitRow label{display:flex;flex-direction:column;gap:6px}
+.orbitRow select,.orbitDetails select{box-sizing:border-box;background:#071217;color:#f1efe7;border:1px solid #415258;border-radius:10px;padding:10px;min-height:44px;max-width:100%}
+.orbitBreath,.orbitBreathHeld{min-height:52px;padding:12px 24px;border-radius:30px;border:1px solid #ff8a4c;background:transparent;color:#ffd2b8;font-size:14px;touch-action:none;user-select:none;-webkit-user-select:none}
+.orbitBreathHeld{background:#ff8a4c;color:#1a0d06}
+.orbitBreath:disabled{opacity:.45;cursor:not-allowed}
+.orbitDetails{border:1px solid rgba(226,216,194,.14);border-radius:12px;padding:8px 14px;font-size:13px;color:#ddd0bb}
+.orbitDetails summary{cursor:pointer;min-height:32px;line-height:32px}
+.orbitCtl{display:grid;grid-template-columns:minmax(140px,200px) 1fr 52px;gap:10px;align-items:center;margin:6px 0}
+.orbitCtl input[type=range]{width:100%;min-height:36px;accent-color:#e8d2af}
+.orbitStage{display:grid;justify-items:center;gap:4px}
+.orbitGuide{margin:6px 0 0;min-height:1.7em;font-family:Georgia,serif;font-size:20px;text-align:center}
+.orbitPoint{margin:0;min-height:1.5em;font-size:13px;color:#b3b3ac;text-align:center}
+.orbitCanvas{width:100%;max-width:340px;aspect-ratio:3/4;border-radius:14px;border:1px solid rgba(226,216,194,.14);background:rgba(4,12,16,.5)}
+@media (max-width:640px){.orbitCtl{grid-template-columns:1fr 44px}.orbitCtl>span:first-child{grid-column:1/-1}}

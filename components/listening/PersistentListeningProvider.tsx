@@ -14,6 +14,7 @@ import {
   DEFAULT_LISTENING_LEVEL, generatedGainForLevel, readStoredListeningLevel, writeStoredListeningLevel,
 } from '@/lib/listening/listeningLevel';
 import type { SoundscapeHandle } from '@/lib/listening/soundscapeEngine';
+import type { ProceduralStudy, ProceduralStudyHandle } from '@/lib/listening/proceduralStudy';
 import type { FocusSoundId } from '@/lib/listening/focusSoundChoices';
 import type { FocusTimeDisplay } from '@/lib/listening/focusTimeDisplay';
 import PersistentListeningDock from './PersistentListeningDock';
@@ -104,6 +105,8 @@ type Sketch = {
   /** Soundscape output bus, and the stream tap that lets a media element carry the sound at screen lock. */
   out?: GainNode;
   stream?: MediaStreamAudioDestinationNode;
+  /** Present for a procedural study: its graph is built into `master`, which follows the shared level. */
+  study?: { definition: ProceduralStudy; handle: ProceduralStudyHandle; ended?: boolean };
 };
 
 export type ListeningTransport = {
@@ -123,6 +126,8 @@ export type ListeningTransport = {
     mood: ListeningMood, frequencies: number[], experience?: SoundExperiencePlayback, soundscape?: SoundscapeSpec,
   ) => Promise<boolean>;
   playExperienceMedia: (manifest: SoundExperienceManifest) => Promise<boolean>;
+  /** Member-initiated: plays a procedural study through this one player. The same id again resumes it. */
+  playStudy: (study: ProceduralStudy) => Promise<boolean>;
   selectLocalFile: (file: File) => { accepted: boolean; message: string };
   playLocalFile: () => Promise<boolean>;
   pause: () => void;
@@ -216,6 +221,7 @@ function endSketch(sketch: Sketch | null): void {
 }
 function endSketchNow(sketch: Sketch): void {
   try { sketch.soundscape?.dispose(); } catch {}
+  try { sketch.study?.handle.dispose(); } catch {}
   try { sketch.master.gain.setValueAtTime(0, sketch.context.currentTime); } catch {}
   for (const osc of [...sketch.oscillators,sketch.movement]) {
     try { osc.stop(); } catch {}
@@ -340,6 +346,28 @@ function newSoundscapeSketch(spec: SoundscapeSpec, level: number): Sketch {
     context, oscillators: handle.oscillators, master: handle.master, voices: handle.voices, filter: handle.filter,
     movement: handle.movement, movementDepth: handle.movementDepth, mood: 'focus', frequencies: [spec.root], soundscape: handle,
     out, stream,
+  };
+}
+
+/** A procedural study gets a context and a level-following master from this player, never its own output. The
+ * oscillator/voice/filter fields stay empty or inert: Receptive shaping never applies to a study. */
+function newStudySketch(definition: ProceduralStudy, level: number, ended: (message: string) => void): Sketch {
+  const AudioCtor: typeof AudioContext =
+    window.AudioContext ||
+    (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!;
+  if (!AudioCtor) throw new Error('This browser cannot open an AudioContext.');
+  const context = new AudioCtor();
+  const master = context.createGain();
+  master.gain.setValueAtTime(0.0001, context.currentTime);
+  master.gain.exponentialRampToValueAtTime(generatedGainForLevel(level), context.currentTime + 1.2);
+  master.connect(context.destination);
+  const filter = context.createBiquadFilter();
+  const movement = context.createOscillator();
+  const movementDepth = context.createGain();
+  const handle = definition.build(context, master, { ended });
+  return {
+    context, oscillators: [], master, voices: [], filter, movement, movementDepth, mood: 'focus', frequencies: [],
+    study: { definition, handle },
   };
 }
 
@@ -775,7 +803,7 @@ export function PersistentListeningProvider({
     const next=validatedReceptiveControls(input);
     shapeRef.current=next;
     saveShape(next);
-    if(sketch.current && kind.current==='sketch')
+    if(sketch.current && kind.current==='sketch' && !sketch.current.study)
       applyReceptiveShape(sketch.current,next);
     // Changes do NOT start an AudioContext or request audio focus.
   }, []);
@@ -836,7 +864,7 @@ export function PersistentListeningProvider({
         active = newSoundscapeSketch(soundscape, volumeRef.current / 100);
         sketch.current = active;
       }
-    } else if (!active || active.soundscape || active.mood !== mood ||
+    } else if (!active || active.soundscape || active.study || active.mood !== mood ||
       JSON.stringify(active.frequencies) !== JSON.stringify(frequencies)) {
       if (active) endSketch(active);
       active = newSketch(mood, frequencies, volumeRef.current / 100,shapeRef.current);
@@ -908,6 +936,71 @@ export function PersistentListeningProvider({
       return false;
     }
   }, [claimFocus, refuseDuringMaiaSpeech, releaseOutput, pause, experienceElapsed]);
+
+  // LISTEN-01 · procedural study (founder ruling 2026-11-17, review-only). Same order as playSketch: refuse during
+  // MAIA speech, take the one output lease, then start. Playing the same study again resumes it where it was.
+  const playStudy = useCallback(async (definition: ProceduralStudy): Promise<boolean> => {
+    if (refuseDuringMaiaSpeech()) return false;
+    experience.current = null;
+    if (outputLease.current) pause();
+    const generation = ++epoch.current;
+    const lease = await acquireAudioOutput('listening-music');
+    if (!lease || generation !== epoch.current || isMaiaSpeechActive()) {
+      lease?.release();
+      if (generation === epoch.current) {
+        if (isMaiaSpeechActive()) refuseDuringMaiaSpeech();
+        else setSnapshot(old => ({ ...old, playback: 'paused',
+          message: 'Another Soullab tab is playing audio, or coordination is unavailable. Please try again.' }));
+      }
+      return false;
+    }
+    outputLease.current = lease;
+    media.current?.pause();
+    if (media.current) media.current.loop = false;
+    saveLooping(false);
+    saveLoopAvailable(false);
+    kind.current = 'sketch';
+    let active = sketch.current;
+    try {
+      // A study that ended by itself starts again from the beginning only when the member asks.
+      if (!active?.study || active.study.ended || active.study.definition.id !== definition.id) {
+        if (active) endSketch(active);
+        let built: Sketch | null = null;
+        built = newStudySketch(definition, volumeRef.current, message => {
+          // The study finished by itself: pause, release the output, never restart.
+          if (!built?.study || sketch.current !== built) return;
+          built.study.ended = true;
+          ++epoch.current;
+          void built.context.suspend().catch(() => undefined);
+          releaseOutput();
+          setSnapshot(old => old.kind === 'sketch' && old.title === definition.title
+            ? { ...old, playback: 'paused', message } : old);
+        });
+        active = built;
+        sketch.current = active;
+      }
+      await active.context.resume();
+      if (generation !== epoch.current || kind.current !== 'sketch' || isMaiaSpeechActive()) {
+        void active.context.suspend().catch(() => undefined);
+        releaseOutput();
+        if (isMaiaSpeechActive()) refuseDuringMaiaSpeech();
+        return false;
+      }
+      claimFocus();
+      setSnapshot({
+        kind: 'sketch', playback: 'playing', mood: 'focus',
+        title: definition.title, subtitle: definition.subtitle,
+        experienceId: null, durationMs: null, elapsedMs: 0, passage: null,
+        fileFormat: null, message: definition.message,
+      });
+      return true;
+    } catch {
+      releaseOutput();
+      if (active && sketch.current === active) { endSketch(active); sketch.current = null; }
+      setSnapshot(old => ({ ...old, playback: 'error', message: 'Audio could not start.' }));
+      return false;
+    }
+  }, [claimFocus, refuseDuringMaiaSpeech, releaseOutput, pause]);
 
   const playExperienceMedia = useCallback(async (
     manifest: SoundExperienceManifest,
@@ -1278,7 +1371,7 @@ export function PersistentListeningProvider({
   const transport: ListeningTransport = {
     snapshot, volume, setVolume, looping, loopAvailable, setLooping, shape, setShape,
     fields, keepField, dropField, replaceFields,
-    playSketch, playExperienceMedia, selectLocalFile, playLocalFile,
+    playSketch, playExperienceMedia, playStudy, selectLocalFile, playLocalFile,
     pause, stopMusic: stopAll, listeningInstance, removeLocalFile,
     focusSession, focusClockMs,
     focusTimeDisplay, setFocusTimeDisplay,
@@ -1299,6 +1392,10 @@ export function PersistentListeningProvider({
     if (snapshot.kind === 'local-file') { void playLocalFile(); return; }
     if (snapshot.kind === 'review-media' && reviewManifest.current) {
       void playExperienceMedia(reviewManifest.current); return;
+    }
+    if (snapshot.kind === 'sketch' && sketch.current?.study) {
+      void playStudy(sketch.current.study.definition);
+      return;
     }
     if (snapshot.kind === 'sketch' && sketch.current?.soundscape) {
       const resumed = sketch.current.soundscape.spec.tone ? sketch.current.soundscape.spec : focusSoundscapeSpec(liveSoundscapeInput);

@@ -16,6 +16,7 @@ import SoundStudioNow from './SoundStudioNow';
 import FocusSoundPicker from './FocusSoundPicker';
 import FocusAdhdSupport from './FocusAdhdSupport';
 import ToneLabDesk from './ToneLabDesk';
+import OrbitThresholdDesk from './OrbitThresholdDesk';
 import type { StudioView } from './SoundStudioNow';
 import FocusFieldDesk from '@/components/listening/FocusFieldDesk';
 import type { MemberCollection, TrackReference } from '@/lib/listening/portableCollections';
@@ -288,7 +289,8 @@ export default function ListenRoom() {
       </div>}
       {view==='lab' && <>
         <div className={styles.body}><section aria-labelledby="lab-title" className={styles.shelfHead}><span className={styles.smallcaps}>LAB</span><h2 id="lab-title">Studies and inquiry.</h2><p className={styles.muted}>Early sound studies and, later, comparisons and research protocols. Nothing here claims an effect on mind or body.</p></section>
-        <ToneLabDesk /></div>
+        <ToneLabDesk />
+        <OrbitThresholdDesk /></div>
       <section className={`${styles.hero} ${styles[player.gradient]}`} aria-labelledby="listen-title" data-daily-listening-world="true">
         <div className={styles.heroInner}>
           <div className={styles.eyebrow}>STUDIES · EXISTING REVIEW PATH</div>
