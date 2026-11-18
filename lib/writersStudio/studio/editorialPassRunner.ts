@@ -127,6 +127,18 @@ export function primarySectionId(
 }
 
 /** The places in the order of the book — by the section each place is about — never ranked by importance. */
+/**
+ * Macro-to-micro, by SCALE ALONE (founder ruling 2026-11-17): whole Work, then part, chapter, section, passage; within one scale, book
+ * order. Only when the writer asks for it; book order is the default. It reads the item's scale (what span it is about) and nothing
+ * else: never the band, so MAIA ranks nothing (the convergence charter withholds that licence). An unknown scale goes last, never lost.
+ */
+export const SCALE_ORDER = ['whole-work', 'part', 'chapter', 'section', 'passage'] as const;
+export function byScale<T extends { scale: string; sectionIds: readonly string[]; evidence?: readonly { sectionIds: readonly string[] }[] }>(items: readonly T[], sectionOrder: readonly string[]): T[] {
+  const rank = (s: string) => { const i = (SCALE_ORDER as readonly string[]).indexOf(s); return i < 0 ? SCALE_ORDER.length : i; };
+  const book = inBookOrder(items, sectionOrder);
+  return book.map((it, i) => ({ it, i })).sort((a, b) => (rank(a.it.scale) - rank(b.it.scale)) || (a.i - b.i)).map((x) => x.it);
+}
+
 export function inBookOrder<T extends { sectionIds: readonly string[]; evidence?: readonly { sectionIds: readonly string[] }[] }>(items: readonly T[], sectionOrder: readonly string[]): T[] {
   const pos = new Map(sectionOrder.map((id, i) => [id, i]));
   const at = (it: T) => { const p = primarySectionId(it, sectionOrder); return p === null ? Number.MAX_SAFE_INTEGER : pos.get(p)!; };
