@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePersistentListening } from '@/components/listening/PersistentListeningProvider';
 import { frameCount, peak, type Audio } from '@/lib/listening/transform/audio';
-import { readWav, writeWav24 } from '@/lib/listening/transform/wav';
+import { readWav, wavAudioBytes, withProvenance, writeWav24 } from '@/lib/listening/transform/wav';
 import { renderRecipe } from '@/lib/listening/transform/render';
 import { acceptMemberFile, buildProvenance, sha256Hex, type SideInfo } from '@/lib/listening/transform/provenance';
 import { MAX_TRANSFORM_SECONDS, recipeProblem, type TransformStep } from '@/lib/listening/transform/recipe';
@@ -140,22 +140,27 @@ export default function TransformDesk() {
     try {
       const { out, wav } = await make();
       const name = `${base} (transformed).wav`;
-      const provenance = buildProvenance({
+      const audioSha256 = await sha256Hex(wavAudioBytes(wav));
+      const createdAt = new Date().toISOString();
+      const record = (fileSha?: string) => buildProvenance({
         source: source.info, second: second?.info, steps,
-        output: { name, sha256: await sha256Hex(wav), sampleRate: out.sampleRate, frames: frameCount(out), channels: out.channels.length },
-        createdAt: new Date().toISOString(),
+        output: { name, audioSha256, ...(fileSha ? { sha256: fileSha } : {}), sampleRate: out.sampleRate, frames: frameCount(out), channels: out.channels.length },
+        createdAt,
       });
+      // The record travels inside the WAV, so it survives if the second download is blocked.
+      const finished = withProvenance(wav, JSON.stringify(record()));
+      const provenance = record(await sha256Hex(finished));
       const download = (blob: Blob, fileName: string) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
         setTimeout(() => URL.revokeObjectURL(url), 2000);
       };
-      download(new Blob([wav], { type: 'audio/wav' }), name);
+      download(new Blob([finished], { type: 'audio/wav' }), name);
       download(new Blob([JSON.stringify(provenance, null, 2)], { type: 'application/json' }), `${base} (transformed).provenance.json`);
       // Re-read the original and prove it is unchanged.
       const again = await sha256Hex(await source.file.arrayBuffer());
       setSaved({ wav: name, json: `${base} (transformed).provenance.json`, original: again === source.info.sha256 ? 'unchanged' : 'CHANGED' });
-      setStatus('Saved as a new file in your downloads, with its provenance beside it.');
+      setStatus('Saved as a new file in your downloads. Its provenance is inside the file and beside it.');
     } catch (e) { setStatus(e instanceof Error ? e.message : 'This could not be saved.'); } finally { setBusy(false); }
   };
 
@@ -229,7 +234,7 @@ export default function TransformDesk() {
         <button type="button" className={styles.ghost} onClick={() => void save()} disabled={busy || !!problem || (needsSecond && !second)}>Save as new</button>
       </div>
       {saved && <p className={styles.toneProvenance} data-transform-saved="true">
-        Saved <strong>{saved.wav}</strong> and <strong>{saved.json}</strong>. Your original was re-read after saving: <strong>{saved.original}</strong>.
+        Saved <strong>{saved.wav}</strong> and <strong>{saved.json}</strong>. The same record is also inside the WAV. Your original was re-read after saving: <strong>{saved.original}</strong>.
       </p>}
     </>}
     {status && <p className={styles.focusStatus} role="status" aria-live="polite">{status}</p>}

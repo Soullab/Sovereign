@@ -26,12 +26,14 @@ screenshot_desktop:
 screenshot_mobile:
   - docs/design/contracts/screenshots/sound-studio-transform-mobile.png
 experience_verification: >
-  2026-11-17 isolated browser witness (tests/listening/transform_t1_browser_witness.cjs), 34/34: the real
+  2026-11-17 isolated browser witness (tests/listening/transform_t1_browser_witness.cjs), 46/46: the real
   TransformDesk compiled with its real stylesheet, the persistent player replaced by a recording shim, in
   local Chrome at 1440×1100 and 390×844. A non-audio file is refused; a 24-bit stereo WAV with a BWF bext
   chunk (a Capture take's shape) opens with its waveform; trim, fade, EQ, reverb and normalize are added and
   run in order; Preview hands exactly one WAV to the one player; Save as new downloads a new WAV and its
   provenance, whose source hash equals the original's and whose output hash equals the saved file's; the
+  saved WAV also carries the same record inside it, its audio hash matches the saved samples, and Chrome's
+  decoder and macOS Core Audio both read it; the
   original on disk is byte-identical and the desk re-reads it and says "unchanged"; output stays 44.1 kHz;
   no horizontal overflow and no page errors at either size. The same run measures the shaping steps in
   Chrome's own OfflineAudioContext: EQ bands within ±0.2–0.6 dB of target, high- and low-pass below −30 dB
@@ -49,7 +51,7 @@ A member has a recording of their own — a Soullab Capture take, a voice memo, 
 ## What the member can always rely on
 - **Their original is never changed.** Every save makes a new file. After saving, the desk re-reads the original and says whether it is unchanged.
 - **Nothing leaves the device.** Shaping happens in the browser; saving is a download.
-- **It says what was done.** Beside every new file is a provenance file: the original's fingerprint, every step and setting in order, and the new file's fingerprint.
+- **It says what was done.** Every new WAV carries its provenance inside it: the original's fingerprint, every step and setting in order, and the fingerprint of the new audio. A provenance file beside it says the same and adds the fingerprint of the whole saved file, so the record survives even if the browser blocks the second download.
 - **Only their own recordings.** Soullab and catalogue recordings cannot be opened here.
 - **One player.** Preview plays in the same player as everything else in Sound Studio.
 - **Honest limits.** Up to 20 minutes. Recordings with different sample rates are not joined (nothing is resampled silently). A WAV keeps its own sample rate; other formats are decoded by the browser at 48 kHz and the provenance says so.
@@ -61,4 +63,4 @@ A member has a recording of their own — a Soullab Capture take, a voice memo, 
 
 ## Copy
 - Eyebrow: "TRANSFORM · YOUR OWN RECORDINGS · ON THIS DEVICE". Heading: "Shape a recording".
-- After saving: "Saved <file> and <provenance>. Your original was re-read after saving: unchanged."
+- After saving: "Saved <file> and <provenance>. The same record is also inside the WAV. Your original was re-read after saving: unchanged."

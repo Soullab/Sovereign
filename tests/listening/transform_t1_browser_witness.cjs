@@ -12,7 +12,16 @@ const { chromium } = require('playwright-core');
 const repo = path.resolve(__dirname, '../..');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'soullab-transform-'));
 const shots = path.join(repo, 'docs/design/contracts/screenshots');
+const { execFileSync } = require('node:child_process');
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
+const riffChunk = (b, id) => { // the body of one RIFF chunk, or null
+  for (let p = 12; p + 8 <= b.length;) {
+    const size = b.readUInt32LE(p + 4);
+    if (b.toString('latin1', p, p + 4) === id) return b.subarray(p + 8, p + 8 + size);
+    p += 8 + size + (size & 1);
+  }
+  return null;
+};
 
 // A 4-second 24-bit stereo WAV with a BWF bext chunk, like a Soullab Capture take.
 function captureLikeWav() {
@@ -152,6 +161,21 @@ fs.writeFileSync(path.join(dir, 'entry.jsx'),
         const p1 = JSON.parse(outJson.toString('utf8'));
         check(`${name}: provenance source hash is the original's`, p1.source.sha256 === sha(wav), p1.source.sha256);
         check(`${name}: provenance output hash is the saved file's`, p1.output.sha256 === sha(outWav));
+        const inner = riffChunk(outWav, 'slpv');
+        const p2 = inner ? JSON.parse(inner.toString('utf8')) : null;
+        check(`${name}: the WAV carries its own provenance`, !!p2 && p2.schema === p1.schema && p2.derived === true);
+        check(`${name}: the embedded record matches the file beside it`, !!p2 && p2.source.sha256 === p1.source.sha256 && p2.createdAt === p1.createdAt && JSON.stringify(p2.recipe) === JSON.stringify(p1.recipe));
+        check(`${name}: the audio hash in both records is the saved samples'`, !!p2 && p2.output.audioSha256 === sha(riffChunk(outWav, 'data')) && p1.output.audioSha256 === p2.output.audioSha256);
+        check(`${name}: the RIFF size covers the whole file`, outWav.readUInt32LE(4) === outWav.length - 8);
+        const decoded = await p.evaluate(async (b64) => {
+          const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+          const d = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(bytes.buffer);
+          return { frames: d.length, channels: d.numberOfChannels };
+        }, outWav.toString('base64'));
+        check(`${name}: Chrome's own decoder plays the saved file at full length`, decoded.channels === 2 && decoded.frames === riffChunk(outWav, 'data').length / 6, decoded);
+        const savedPath = path.join(dir, `${name}-${'Soullab Capture 2026-11-17 18.40.38 (transformed).wav'}`);
+        const af = execFileSync('/usr/bin/afinfo', [savedPath], { encoding: 'utf8' });
+        check(`${name}: macOS Core Audio reads the saved file`, /audio packets: \d+/i.test(af) && /24-bit|24 bits/i.test(af), af);
         check(`${name}: provenance carries the recipe in order and says derived`, p1.derived === true && p1.recipe.map((s) => s.kind).join() === 'trim,fade,eq,reverb,normalize');
         check(`${name}: output keeps 44.1 kHz and the original decoder`, outWav.readUInt32LE(24) === 44100 && p1.source.decodedBy === 'soullab-wav');
       }

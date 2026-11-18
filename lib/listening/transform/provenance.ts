@@ -29,7 +29,7 @@ export function acceptMemberFile(input: unknown): { ok: true; file: MemberFile }
   return { ok: true, file: input as MemberFile };
 }
 
-export async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
+export async function sha256Hex(bytes: BufferSource): Promise<string> {
   const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
@@ -38,7 +38,12 @@ export type SideInfo = { name: string; sha256: string; sampleRate: number; frame
 
 export function buildProvenance(p: {
   source: SideInfo; second?: SideInfo; steps: readonly TransformStep[];
-  output: { name: string; sha256: string; sampleRate: number; frames: number; channels: number };
+  /**
+   * audioSha256 covers the samples alone. sha256 covers the whole saved file, so
+   * only the provenance file beside the WAV can state it: a record embedded in
+   * the WAV cannot contain a hash of the file that contains it.
+   */
+  output: { name: string; audioSha256: string; sha256?: string; sampleRate: number; frames: number; channels: number };
   createdAt: string;
 }) {
   return {

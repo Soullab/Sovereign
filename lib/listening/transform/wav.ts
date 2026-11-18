@@ -86,3 +86,44 @@ export function writeWav24(a: Audio): ArrayBuffer {
   }
   return buf;
 }
+
+/** The RIFF chunk that carries a saved file's provenance, as UTF-8 JSON. Players skip chunks they do not know. */
+export const PROVENANCE_CHUNK = 'slpv';
+
+function findChunk(bytes: ArrayBuffer, wanted: string): { offset: number; size: number } | null {
+  const v = new DataView(bytes);
+  for (let p = 12; p + 8 <= bytes.byteLength;) {
+    const id = String.fromCharCode(v.getUint8(p), v.getUint8(p + 1), v.getUint8(p + 2), v.getUint8(p + 3));
+    const size = v.getUint32(p + 4, true);
+    if (id === wanted) return { offset: p + 8, size: Math.min(size, bytes.byteLength - p - 8) };
+    p += 8 + size + (size & 1);
+  }
+  return null;
+}
+
+/** The sample bytes alone. Their hash stays the same whether or not provenance is embedded. */
+export function wavAudioBytes(wav: ArrayBuffer): Uint8Array<ArrayBuffer> {
+  const data = findChunk(wav, 'data');
+  if (!data) throw new Error('This WAV file has no audio in a form Soullab can read.');
+  return new Uint8Array(wav, data.offset, data.size);
+}
+
+/** A copy of the WAV with the provenance appended after the audio. The samples are not touched. */
+export function withProvenance(wav: ArrayBuffer, json: string): ArrayBuffer {
+  const body = new TextEncoder().encode(json);
+  const start = wav.byteLength + (wav.byteLength & 1); // RIFF chunks begin on an even byte
+  const out = new Uint8Array(start + 8 + body.length + (body.length & 1));
+  out.set(new Uint8Array(wav));
+  const v = new DataView(out.buffer);
+  for (let i = 0; i < 4; i++) v.setUint8(start + i, PROVENANCE_CHUNK.charCodeAt(i));
+  v.setUint32(start + 4, body.length, true);
+  out.set(body, start + 8);
+  v.setUint32(4, out.length - 8, true);
+  return out.buffer;
+}
+
+/** The provenance JSON embedded in a saved WAV, or null if it carries none. */
+export function readProvenance(wav: ArrayBuffer): string | null {
+  const chunk = findChunk(wav, PROVENANCE_CHUNK);
+  return chunk ? new TextDecoder().decode(new Uint8Array(wav, chunk.offset, chunk.size)) : null;
+}

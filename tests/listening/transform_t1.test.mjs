@@ -144,10 +144,26 @@ test('only a file the member chose is accepted — never a link, a gate path, or
 test('provenance hashes are SHA-256 and the record says it is derived', async () => {
   assert.equal(await prov.sha256Hex(new TextEncoder().encode('abc').buffer), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
   const p = prov.buildProvenance({ source: { name: 'a.wav', sha256: 'x', sampleRate: RATE, frames: 1, channels: 2, decodedBy: 'soullab-wav' },
-    steps: [{ kind: 'reverse' }], output: { name: 'b.wav', sha256: 'y', sampleRate: RATE, frames: 1, channels: 2 }, createdAt: '2026-11-17T00:00:00Z' });
+    steps: [{ kind: 'reverse' }], output: { name: 'b.wav', audioSha256: 'y', sampleRate: RATE, frames: 1, channels: 2 }, createdAt: '2026-11-17T00:00:00Z' });
   assert.equal(p.derived, true);
   assert.equal(p.transformVersion, recipe.TRANSFORM_VERSION);
   assert.deepEqual(p.recipe, [{ kind: 'reverse' }]);
+});
+
+test('provenance embedded in a WAV leaves the audio exact and survives odd sizes', async () => {
+  for (const [frames, channels] of [[3, 1], [4, 1], [1000, 2]]) { // 3 mono frames make an odd data chunk
+    const a = { sampleRate: RATE, channels: Array.from({ length: channels }, () => Float32Array.from({ length: frames }, (_, i) => (i + 1) / (frames + 1))) };
+    const plain = wav.writeWav24(a);
+    for (const json of ['{"note":"Reverb — hall"}', '{"a":1}x']) { // even and odd byte lengths
+      const saved = wav.withProvenance(plain, json);
+      assert.equal(wav.readProvenance(saved), json);
+      assert.equal(new DataView(saved).getUint32(4, true), saved.byteLength - 8, 'the RIFF size is wrong');
+      assert.equal(saved.byteLength % 2, 0, 'the file does not end on an even byte');
+      assert.ok(same(wav.readWav(saved), wav.readWav(plain)), 'the audio changed');
+      assert.equal(await prov.sha256Hex(wav.wavAudioBytes(saved)), await prov.sha256Hex(wav.wavAudioBytes(plain)), 'the audio hash changed');
+    }
+    assert.equal(wav.readProvenance(plain), null);
+  }
 });
 
 test('reverb spaces are Soullab-made, deterministic, and decay to silence', () => {
