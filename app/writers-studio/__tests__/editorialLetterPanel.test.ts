@@ -247,13 +247,15 @@ describe('step 2: the letter and decisions are kept on the server', () => {
 });
 
 
-describe('step 4: the pass runs on the server and survives closing the page', () => {
+describe('step 4: the pass runs on the server; resume on request only (founder ruling 2026-11-17)', () => {
   const running = { id: 'run1', draftRevision: 5, state: 'lens_done', done: 5, total: 9, lens: 'arc', refusal: null, letterId: null, createdAt: 'now' };
   it('⭐ an unfinished run is shown truthfully when the page opens ("5 of 9 readings done"), and can be stopped', async () => {
     fetchRun.mockResolvedValue(running);
     await mount();
     expect(q('[data-editorial-letter="running"]')?.textContent).toContain('5 of 9 readings done');
-    expect(host.textContent).toContain('close this page; I’ll carry on');
+    /* ⭐ MUST FAIL IF the page promises the pass carries on with the page closed (ruling 2026-11-17: it stops; Continue resumes it) */
+    expect(host.textContent).not.toContain('I’ll carry on');
+    expect(host.textContent).toContain('If you close this page I’ll stop');
     await act(async () => { q('[data-letter-cancel]')!.click(); await Promise.resolve(); await Promise.resolve(); });
     expect(cancelPassRun).toHaveBeenCalledWith('m');
   });
@@ -278,11 +280,22 @@ describe('step 4: the pass runs on the server and survives closing the page', ()
     expect(q('[data-letter-run-ended="stopped"]')?.textContent).toContain('you withdrew my permission');
     expect(q('[data-letter-continue]')).not.toBeNull();
   });
+  it('⭐ a pass stopped because no page was watching offers Continue, and says nothing read is paid for again', async () => {
+    fetchRun.mockResolvedValue({ ...running, state: 'stopped', refusal: 'no_page_watching' });
+    await mount();
+    const ended = q('[data-letter-run-ended="stopped"]')?.textContent ?? '';
+    expect(ended).toContain('I stopped when the page closed');
+    expect(ended).toContain('5 of 9');
+    expect(q('[data-letter-continue]')?.textContent).toBe('Continue');
+    fetchRun.mockResolvedValue({ ...running, state: 'stopped', refusal: 'interrupted' });
+    await mount();
+    expect(q('[data-letter-run-ended="stopped"]')?.textContent).toContain('I was interrupted');
+  });
   it('the daily limit is said in words', async () => {
     startPassRun.mockResolvedValue({ ok: false, refusal: 'daily_limit' });
     await mount();
     await act(async () => { q('[data-letter-read]')!.click(); await Promise.resolve(); await Promise.resolve(); });
-    expect(host.textContent).toContain('as many times today as your setting allows');
+    expect(host.textContent).toContain('two whole readings of your Work today');
     expect(runPass).not.toHaveBeenCalled();
   });
 });
