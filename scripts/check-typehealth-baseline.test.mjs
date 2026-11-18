@@ -9,10 +9,12 @@ import test from 'node:test';
 const require = createRequire(import.meta.url);
 const {
   EXIT_INFRASTRUCTURE,
+  TSC_HEAP_LIMIT_MB,
   TscInfrastructureError,
   assessTscRun,
   assertProgramListed,
   reportInfrastructureFailure,
+  tscEnv,
 } = require('./check-typehealth-baseline.js');
 
 const isInfrastructure = (err) => err instanceof TscInfrastructureError;
@@ -89,4 +91,46 @@ test('only the last lines of tsc output are kept', () => {
 
   assert.equal(kept.length, 40);
   assert.equal(kept.at(-1), 'line 99');
+});
+
+// Evidence: Actions job 135047416760 crashed with "JavaScript heap out of memory"
+// near 2 GB. tsc needs about 3.9 GB for this program.
+test('the heap limit leaves room above the measured 3.9 GB peak', () => {
+  assert.ok(TSC_HEAP_LIMIT_MB >= 5120, `limit ${TSC_HEAP_LIMIT_MB} MB is too close to the peak`);
+  assert.ok(TSC_HEAP_LIMIT_MB < 16384, `limit ${TSC_HEAP_LIMIT_MB} MB exceeds runner memory`);
+});
+
+test('tsc gets the heap limit when none is set', () => {
+  const env = tscEnv({ PATH: '/bin' });
+  assert.equal(env.NODE_OPTIONS, `--max-old-space-size=${TSC_HEAP_LIMIT_MB}`);
+  assert.equal(env.PATH, '/bin');
+  assert.equal(env.FORCE_COLOR, '0');
+});
+
+test('other Node options are kept alongside the heap limit', () => {
+  const env = tscEnv({ NODE_OPTIONS: '--trace-warnings' });
+  assert.equal(env.NODE_OPTIONS, `--trace-warnings --max-old-space-size=${TSC_HEAP_LIMIT_MB}`);
+});
+
+for (const explicit of ['--max-old-space-size=8192', '--max_old_space_size=8192']) {
+  test(`an explicit ${explicit} is respected`, () => {
+    assert.equal(tscEnv({ NODE_OPTIONS: explicit }).NODE_OPTIONS, explicit);
+  });
+}
+
+test('the caller environment is not modified', () => {
+  const base = { NODE_OPTIONS: '--trace-warnings' };
+  tscEnv(base);
+  assert.deepEqual(base, { NODE_OPTIONS: '--trace-warnings' });
+});
+
+test('a real child process receives the larger heap', () => {
+  const { NODE_OPTIONS: _ignored, ...parentEnv } = process.env;
+  const res = spawnSync(
+    process.execPath,
+    ['-p', 'Math.round(require("v8").getHeapStatistics().heap_size_limit / 1048576)'],
+    { encoding: 'utf8', env: tscEnv(parentEnv) }
+  );
+  assert.equal(res.status, 0, res.stderr);
+  assert.ok(Number(res.stdout) >= TSC_HEAP_LIMIT_MB, `child heap limit was ${res.stdout.trim()} MB`);
 });

@@ -71,6 +71,20 @@ const JSON_OUT = argv.includes('--json');
 const EXIT_INFRASTRUCTURE = 3;
 const OUTPUT_TAIL_LINES = 40;
 
+// tsc needs about 3.9 GB for this program (peak measured 2026-11-18). Node's default
+// heap can stop near 2 GB, which crashed the gate on some CI runners.
+const TSC_HEAP_LIMIT_MB = 6144;
+
+/** Environment for tsc: an explicit heap limit, unless the caller already set one. */
+function tscEnv(baseEnv) {
+  const existing = baseEnv.NODE_OPTIONS || '';
+  const hasHeapLimit = /--max[-_]old[-_]space[-_]size/.test(existing);
+  const NODE_OPTIONS = hasHeapLimit
+    ? existing
+    : `${existing} --max-old-space-size=${TSC_HEAP_LIMIT_MB}`.trim();
+  return { ...baseEnv, FORCE_COLOR: '0', NODE_OPTIONS };
+}
+
 /** tsc did not complete, so this run cannot say anything about the code. */
 class TscInfrastructureError extends Error {
   constructor(reason, output) {
@@ -138,7 +152,7 @@ function runTsc(extraArgs) {
     cwd: REPO_ROOT,
     encoding: 'utf8',
     maxBuffer: 256 * 1024 * 1024,
-    env: { ...process.env, FORCE_COLOR: '0' },
+    env: tscEnv(process.env),
   });
   return assessTscRun(res);
 }
@@ -545,8 +559,10 @@ if (require.main === module) {
 
 module.exports = {
   EXIT_INFRASTRUCTURE,
+  TSC_HEAP_LIMIT_MB,
   TscInfrastructureError,
   assessTscRun,
+  tscEnv,
   assertProgramListed,
   reportInfrastructureFailure,
 };
