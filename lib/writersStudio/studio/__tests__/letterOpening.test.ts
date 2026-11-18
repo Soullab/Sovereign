@@ -44,8 +44,8 @@ describe('the opening keeps only what the server can verify', () => {
   it('the opening is composed only where a letter is kept (route and run), never on a client path', () => {
     const route = fs.readFileSync(path.join(process.cwd(), 'app/api/sovereign/manuscripts/[id]/attention-map/route.ts'), 'utf8');
     const run = fs.readFileSync(path.join(process.cwd(), 'lib/writersStudio/studio/passRun.ts'), 'utf8');
-    expect(route).toMatch(/const opening = await composeOpening\(memberId, manuscriptId, readingIds\);\s+letterId = await saveLetter\(memberId, manuscriptId, revisionNumber, \{ \.\.\.map, \.\.\.openingFields\(opening\) \}\)/);
-    expect(run).toMatch(/const opening = await deps\.opening\(memberId, manuscriptId, synthesis\.readingIds\);/);
+    expect(route).toMatch(/const opening = await composeOpening\(memberId, manuscriptId, readingIds, synthesis\.observationKeys\);\s+letterId = await saveLetter\(memberId, manuscriptId, revisionNumber, \{ \.\.\.map, \.\.\.openingFields\(opening\) \}\)/);
+    expect(run).toMatch(/const opening = await deps\.opening\(memberId, manuscriptId, synthesis\.readingIds, synthesis\.observationKeys\);/);
   });
 });
 

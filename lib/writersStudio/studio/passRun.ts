@@ -13,7 +13,9 @@
  *  - One run per manuscript at a time.
  *  - Before EACH reading the server re-checks the writer's whole-Work read permission and their account's Sanctuary default; if either
  *    fails, the run stops (`stopped`) and nothing more is read.
- *  - A lens reading already frozen for this exact draft and section set is reused, never paid for twice.
+ *  - §20, rereading only what changed (lane authorized 2026-11-17): per lens, every section still covered by a body-depth reading whose
+ *    frozen digest equals its current text is reused; only the sections nothing covers are read, in ONE reading scoped to them. A lens
+ *    with nothing missing is not read at all. Never paid for twice.
  *  - A refused reading is tried once more; a second refusal fails the run at that lens. A refusal is never counted as done.
  *  - The synthesis is the SAME function the attention-map route calls. The letter is kept through the same store.
  *  - The writer can cancel; a cancelled run reads nothing more.
@@ -28,6 +30,7 @@ import { synthesizeAttentionMap } from '@/lib/writersStudio/studio/synthesizeAtt
 import { EDITORIAL_PASS_REQUEST } from '@/lib/writersStudio/studio/editorialPassRequest';
 import { saveLetter } from '@/lib/writersStudio/letter/letterStore';
 import { composeOpening, openingFields } from '@/lib/writersStudio/studio/letterOpening';
+import { planLens, type LensPlan } from '@/lib/writersStudio/studio/coveringSet';
 import type { DevelopmentalLens } from '@/lib/manuscript/developmentalReader/contract';
 import { holdsWholeWork } from '@/lib/auth/entitlements';
 import { WHOLE_WORK_REFUSAL } from '@/lib/writersStudio/wholeWorkAccess';
@@ -77,6 +80,8 @@ export interface RunDeps {
   opening: typeof composeOpening;
   /** `writing.wholeWork` (the Free / Pro line). Optional so existing callers keep the default; a test injects its own. */
   wholeWork?: (memberId: string) => Promise<boolean>;
+  /** §20: which current sections this lens's readings still cover (by digest), and which must be read. null = no established draft. */
+  cover: (memberId: string, manuscriptId: string, lens: DevelopmentalLens) => Promise<LensPlan | null>;
   /** Is a page watching this run? Optional; the default is the process-local watch above. */
   watching?: (memberId: string, manuscriptId: string) => boolean;
   /** The one complimentary whole-book pass for a Free writer (step C2, lib/writersStudio/proTaste.ts). Optional seam. */
@@ -111,6 +116,23 @@ export const defaultDeps: RunDeps = {
   synthesize: synthesizeAttentionMap,
   keepLetter: saveLetter,
   opening: composeOpening,
+  cover: async (memberId, manuscriptId, lens) => {
+    const live = (await query<{ id: string; text: string; draft_id: string }>(
+      `SELECT s.id, s.text, s.draft_id FROM manuscript_draft_sections s JOIN manuscript_working_drafts d ON d.id = s.draft_id
+        WHERE d.manuscript_id = $1 AND d.member_id = $2 ORDER BY s.position ASC`, [manuscriptId, memberId])).rows;
+    const draftId = live[0]?.draft_id;
+    if (!draftId) return null;
+    const rows = (await query<{ id: string; frozen_at: Date; draft_id: string; digests: Record<string, string> | null; depths: Record<string, string> | null }>(
+      `SELECT id, frozen_at, draft_id,
+              (SELECT jsonb_object_agg(k, v->>'digest') FROM jsonb_each(read_state->'sections') AS e(k, v)) AS digests,
+              coverage->'sections' AS depths
+         FROM developmental_readings
+        WHERE manuscript_id = $1 AND member_id = $2 AND commissioned_lens = $3 AND draft_id = $4`,
+      [manuscriptId, memberId, lens, draftId])).rows;
+    return planLens(draftId, live, rows.map((r) => ({
+      id: r.id, lens, draftId: r.draft_id, frozenAt: r.frozen_at.toISOString(), digests: r.digests ?? {}, depths: r.depths ?? {},
+    })));
+  },
 };
 
 /* ── reading the run ───────────────────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -234,11 +256,10 @@ async function advanceRunInner(memberId: string, manuscriptId: string, deps: Run
       await record(deps, run.id, 'stopped', { refusal: 'draft_changed' });
       return viewRun(memberId, manuscriptId, deps);
     }
-    const sectionIds = draft.sections;
     const withStructure = Number((await deps.q<{ n: string }>(
       `SELECT count(*)::text AS n FROM manuscript_structure_units WHERE manuscript_id = $1`, [manuscriptId])).rows[0]?.n ?? 0) > 0;
 
-    const readingIds = new Map<DevelopmentalLens, string>();
+    const readingIds = new Map<DevelopmentalLens, string[]>();
     for (const lens of LENS_ORDER) {
       run = await viewRun(memberId, manuscriptId, deps);
       if (!run || run.state === 'cancelled') return run;
@@ -246,8 +267,14 @@ async function advanceRunInner(memberId: string, manuscriptId: string, deps: Run
       if ((await deps.grant(memberId, manuscriptId)) !== 'work') { await record(deps, run.id, 'stopped', { lens, refusal: 'permission_withdrawn' }); return viewRun(memberId, manuscriptId, deps); }
       if ((await deps.sanctuaryDefault(memberId)) !== false) { await record(deps, run.id, 'stopped', { lens, refusal: 'sanctuary' }); return viewRun(memberId, manuscriptId, deps); }
 
-      const reused = await frozenFor(deps, memberId, manuscriptId, lens, run.draftRevision, sectionIds);
-      if (reused) { readingIds.set(lens, reused); await record(deps, run.id, 'lens_done', { lens, readingId: reused }); continue; }
+      /* §20: what this lens has already read of the current text is reused; only what nothing covers is read */
+      const before = await deps.cover(memberId, manuscriptId, lens);
+      if (!before) { await record(deps, run.id, 'stopped', { lens, refusal: 'draft_changed' }); return viewRun(memberId, manuscriptId, deps); }
+      if (before.missing.length === 0) {
+        readingIds.set(lens, before.contributing);
+        await record(deps, run.id, 'lens_done', { lens, readingId: before.contributing[0] });
+        continue;
+      }
       /* resume on request only: no paid reading starts unless a page is watching */
       if (!watching()) { await record(deps, run.id, 'stopped', { lens, refusal: 'no_page_watching' }); return viewRun(memberId, manuscriptId, deps); }
 
@@ -255,40 +282,28 @@ async function advanceRunInner(memberId: string, manuscriptId: string, deps: Run
       let lastRefusal = '';
       for (let attempt = 0; attempt < 2 && !made; attempt += 1) {
         await record(deps, run.id, 'reading', { lens });
-        const out = await deps.commission({ manuscriptId, memberId, lens, bodyScope: sectionIds, withStructure });
+        const out = await deps.commission({ manuscriptId, memberId, lens, bodyScope: before.missing, withStructure });
         if (out.outcome === 'frozen') made = out.reading.id;
         else { lastRefusal = `${out.stage}:${out.refusal}`; await record(deps, run.id, 'lens_refused', { lens, refusal: lastRefusal }); }
       }
       if (!made) { await record(deps, run.id, 'failed', { lens, refusal: lastRefusal }); return viewRun(memberId, manuscriptId, deps); }
-      readingIds.set(lens, made);
+      const after = await deps.cover(memberId, manuscriptId, lens);
+      if (!after || after.missing.length > 0) { await record(deps, run.id, 'failed', { lens, refusal: 'section_not_covered' }); return viewRun(memberId, manuscriptId, deps); }
+      readingIds.set(lens, after.contributing);
       await record(deps, run.id, 'lens_done', { lens, readingId: made });
     }
 
     if (!watching()) { await record(deps, run!.id, 'stopped', { refusal: 'no_page_watching' }); return viewRun(memberId, manuscriptId, deps); }
     await record(deps, run!.id, 'synthesizing');
-    const deep = LENS_ORDER.filter((l) => l !== 'overview').map((l) => readingIds.get(l)!);
+    const deep = LENS_ORDER.filter((l) => l !== 'overview').flatMap((l) => readingIds.get(l)!);
     const synthesis = await deps.synthesize(memberId, manuscriptId, deep, EDITORIAL_PASS_REQUEST);
     if (!synthesis.ok) { await record(deps, run!.id, 'failed', { refusal: `synthesis:${synthesis.error}` }); return viewRun(memberId, manuscriptId, deps); }
     if ((await deps.sanctuaryDefault(memberId)) !== false) { await record(deps, run!.id, 'stopped', { refusal: 'sanctuary' }); return viewRun(memberId, manuscriptId, deps); }
-    const opening = await deps.opening(memberId, manuscriptId, synthesis.readingIds);
+    const opening = await deps.opening(memberId, manuscriptId, synthesis.readingIds, synthesis.observationKeys);
     const letterId = await deps.keepLetter(memberId, manuscriptId, synthesis.revisionNumber, { ...synthesis.map, ...openingFields(opening) });
     await record(deps, run!.id, 'done', { letterId });
     return viewRun(memberId, manuscriptId, deps);
   } finally {
     inFlight.delete(key);
   }
-}
-
-/** A reading of this lens frozen for this exact revision and section set, if one exists (the member's own). */
-async function frozenFor(deps: RunDeps, memberId: string, manuscriptId: string, lens: DevelopmentalLens, revision: number, sectionIds: readonly string[]): Promise<string | null> {
-  const rows = (await deps.q<{ id: string }>(
-    `SELECT id FROM developmental_readings
-      WHERE manuscript_id = $1 AND member_id = $2 AND commissioned_lens = $3 AND revision_number = $4
-      ORDER BY frozen_at DESC LIMIT 5`,
-    [manuscriptId, memberId, lens, revision])).rows;
-  for (const row of rows) {
-    const reading = await deps.load(row.id, memberId);
-    if (reading && JSON.stringify(reading.scope.bodyScope) === JSON.stringify(sectionIds)) return reading.id;
-  }
-  return null;
 }
