@@ -195,3 +195,13 @@
 .toneHeading{margin:10px 0 0;font-family:Georgia,serif;font-size:16px;font-weight:400;color:#e9d3ae}
 .toneGroup h4{margin:8px 0 6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#9aafb0;font-weight:500}
 @media (max-width:640px){.toneDial{grid-template-columns:1fr}}
+/* SOULLAB TRANSFORM T1 — the Transform desk (docs/design/contracts/sound-studio-transform.md) */
+.transformWave{display:block;width:100%;height:96px;margin-top:10px;background:#071217;border-radius:8px}
+.transformSteps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.transformSteps li{border:1px solid #2b3a3f;border-radius:10px;padding:10px 12px;background:rgba(7,18,23,.6)}
+.transformStepHead{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.transformStepHead span{display:flex;gap:6px}
+.transformFields{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;align-items:end}
+.transformField{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#ddd0bb;min-width:0;flex:1 1 140px;max-width:220px}
+.transformField input,.transformField select{box-sizing:border-box;background:#071217;color:#f1efe7;border:1px solid #415258;border-radius:10px;padding:10px;min-height:44px;width:100%;min-width:0}
+.transformActions{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}

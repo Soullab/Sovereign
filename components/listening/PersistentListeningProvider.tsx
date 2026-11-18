@@ -225,6 +225,11 @@ function endSketchNow(sketch: Sketch): void {
 
 /** Smooth controls apply ONLY to Soullab's low-volume synthetic sound sketch.
  * They never process the member's local File or a commercial/provider master.
+ * (Amended by founder ruling 2026-11-17, #1979 comment 6963607549: the member's
+ * OWN files may be transformed into NEW files on their device by the separate
+ * Transform desk, app/listen/TransformDesk.tsx — never in place, never
+ * uploaded. Catalogue and provider masters are never transformed. These smooth
+ * controls are unchanged.)
  * All 50/50/50 restores the original review-study oscillator/filter mix.
  */
 function applyReceptiveShape(sketch: Sketch, shape: ReceptiveControls) {
