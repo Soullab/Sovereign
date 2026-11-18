@@ -21,6 +21,12 @@ import { PASS, DEAD_END, NOT_RUN } from './ledger.mjs';
 const WORDS = '<h1>Fixture studio</h1><p>This page exists to be pressed. It has enough words on it to count as a rendered page, and nothing else.</p>';
 const page = (body, script = '') => `<!doctype html><meta charset=utf-8><title>fixture</title><body>${WORDS}${body}<script>${script}</script>`;
 
+// A name longer than the 80 characters the harness shows of a label (F8f-h): the comparison of a disabled control's explanation with
+// its own name must be made on the whole name, not on what is shown of it.
+const LONG = 'Save everything you have written so far into your private working copy of this book, today';
+if (LONG.length <= 80) throw new Error('fixture error: LONG must be longer than the 80 characters a label is shown at');
+const SHOWN = LONG.slice(0, 80);   // what enumerateControls calls the control (its label); the scenario finds the control by it
+
 // What each route does. `delay` is how long the server holds the answer.
 const PAGES = {
   // F1: "Just let me write". Pressing Begin shows Home at once; the Work-creation request takes 2.2 s; then the address changes
@@ -55,6 +61,10 @@ const PAGES = {
   '/f8c': page('<button disabled title="Archive"><svg width="16" height="16"></svg></button>'),
   '/f8d': page('<button disabled aria-label="Save the draft" title="Save">Save</button>'),
   '/f8e': page('<button disabled title="Save" aria-description="Write something first">Save</button>'),
+  // F8f-h: a name longer than 80 characters. The title repeats it (f8f, and f8g where the title is the ONLY name), or says more (f8h).
+  '/f8f': page(`<button disabled title="${LONG}">${LONG}</button>`),
+  '/f8g': page(`<button disabled title="${LONG}"><svg width="16" height="16"></svg></button>`),
+  '/f8h': page(`<button disabled title="${LONG}, once you have written a sentence">${LONG}</button>`),
 };
 const DELAYS = { '/api/create': 2200, '/api/late': 2600, '/api/save': 30, '/api/beacon': 20, '/api/forever': 12000 };
 
@@ -89,6 +99,9 @@ const SCENARIOS = [
   ['F8c an icon button whose only name IS its title does not say why: NOT RUN', '/f8c', null, 'Archive', NOT_RUN, {}, /nothing on it says why/, false],
   ['F8d a title that repeats the visible text under a longer aria-label does not say why: NOT RUN', '/f8d', null, 'Save the draft', NOT_RUN, {}, /nothing on it says why/, false],
   ['F8e when the title repeats the name but an aria-description explains, it says why: PASS', '/f8e', null, 'Save', PASS, {}, /says why: "Write something first"/, false],
+  ['F8f a title that repeats a name LONGER than 80 characters does not say why: NOT RUN (the repeat must not look different because the name is shown clipped)', '/f8f', null, SHOWN, NOT_RUN, {}, /nothing on it says why/, false],
+  ['F8g ...nor when that title is the control\u2019s only name (an icon button)', '/f8g', null, SHOWN, NOT_RUN, {}, /nothing on it says why/, false],
+  ['F8h a title that continues a long name with an actual explanation says why: PASS', '/f8h', null, SHOWN, PASS, {}, /says why: "Save everything you have written/, false],
 ];
 
 /** A person waits for a control that mounts late (the F1 page shows Home only after Begin is pressed); so does this check. */

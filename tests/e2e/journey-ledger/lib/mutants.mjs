@@ -87,6 +87,11 @@ const MUTANTS = [
   ['classify', 'M19d the repeat is compared case-sensitively', "const sameText = (s) => norm(s).toLowerCase();", "const sameText = (s) => norm(s);"],
   ['classify', 'M19e only the label is compared (visible text and aria-label are ignored)', "const own = new Set([o.label, ...(o.ownNames || [])].map(sameText).filter(Boolean));", "const own = new Set([o.label].map(sameText).filter(Boolean));"],
   ['classify', 'M19f only the old single reason is read (a later explanatory text is ignored)', "for (const r of [...(o.disabledReasons || []), o.disabledReason]) {", "for (const r of [o.disabledReason]) {"],
+  // ---- F8f: the names a disabled control gives itself reach the comparison whole, not as clipped to the 80 characters shown ----
+  ['trial', 'M19g the names are clipped to the 80 characters shown before they are compared', ".map(clean).filter(Boolean) : [];", ".map(clean).filter(Boolean).map(t => t.slice(0, 80)) : [];"],
+  ['trial', 'M19h a label taken from the title is not carried as a name (an icon button whose only name is a long title)', "el.textContent, fullLabel].map(clean)", "el.textContent].map(clean)"],
+  ['trial', 'M19i a disabled control carries no names at all', "const names = disabled ? [", "const names = false ? ["],
+  ['trial', 'M19j the label is clipped before it is carried as a name', "const fullLabel = clean(el.getAttribute('aria-label') || el.innerText || el.value || el.getAttribute('title') || '');", "const fullLabel = clean(el.getAttribute('aria-label') || el.innerText || el.value || el.getAttribute('title') || '').slice(0, 80);"],
   // ---- F6: only a delivered click is a press ----
   ['classify', 'M37 a click that was refused counts as pressed', "if (obs.pressed === true) return null;", "if (obs.pressed === true || obs.clickError) return null;"],
   ['classify', 'M38 a disabled control is not given its own reason (it falls through to "no click was delivered")', "if (obs.disabled) return 'disabled, so not pressed';", ""],

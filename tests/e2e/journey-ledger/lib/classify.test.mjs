@@ -13,6 +13,8 @@ import { classifyTrial as conforming, REAL_TEXT_MIN, ERROR_MARKERS } from './cla
 import * as Classify from './classify.mjs';
 
 const REAL = 'Where would you like to begin? Your words first. Structure stays yours. Bring a manuscript you already have.';
+const LONG = 'Save everything you have written so far into your private working copy of this book, today';
+assert.ok(LONG.length > 80, 'LONG must be longer than the 80 characters a label is shown at');
 const base = (o = {}) => ({
   label: 'A control', kind: 'button', href: null, disabled: false,
   clickError: null,
@@ -101,6 +103,14 @@ const CASES = [
     base({ label: 'Save', ownNames: ['Save'], disabled: true, disabledReason: 'Save is available once you have written something', disabledReasons: ['Save is available once you have written something'] }), PASS],
   ['a control with no explanatory text at all is still NOT RUN',
     base({ label: 'Save', ownNames: ['Save'], disabled: true, disabledReason: '', disabledReasons: [] }), NOT_RUN],
+  // A name longer than the 80 characters a label is shown at: `label` is that clipped display, `ownNames` carries the whole name, and the
+  // explanation is compared with the whole name (trial.mjs hands it over whole; see trial.test.mjs). Clipping before comparing made a repeat look different.
+  ['a title that repeats a name longer than 80 characters does not say why: NOT RUN',
+    base({ label: LONG.slice(0, 80), ownNames: [LONG], disabled: true, disabledReason: LONG, disabledReasons: [LONG] }), NOT_RUN],
+  ['...when the title is the only name (no visible text, no aria-label), carried whole in ownNames',
+    base({ label: LONG.slice(0, 80), ownNames: [LONG], disabled: true, disabledReason: LONG.toUpperCase(), disabledReasons: [`  ${LONG}  `] }), NOT_RUN],
+  ['a title that continues a long name with an actual explanation says why: PASS',
+    base({ label: LONG.slice(0, 80), ownNames: [LONG], disabled: true, disabledReason: `${LONG}, once you have written a sentence`, disabledReasons: [`${LONG}, once you have written a sentence`] }), PASS],
 
   ['a control that opens the browser’s own file chooser is PASS (a native dialog changes no DOM)',
     base({ label: 'Choose file', fileChooserOpened: true }), PASS],
@@ -216,6 +226,8 @@ const ignoresPending = (o) => conforming({ ...o, pendingRequests: 0 });
 // F8 wrong rules: any non-empty explanatory text is a reason (the rule before); a repeat is only caught when it is byte-identical (DC-Q, below); only the label is compared (the visible text and aria-label are not).
 const anyTextIsAReason = (o) => conforming({ ...o, label: '\u0000never-a-label', ownNames: [] });
 const onlyTheLabelIsCompared = (o) => conforming({ ...o, ownNames: [] });
+// ...and the wrong rule behind F8f: the names are compared as shown (clipped to 80 characters), so a repeat of a longer name looks like a different text.
+const comparesOnlyWhatIsShown = (o) => conforming({ ...o, label: String(o.label ?? '').slice(0, 80), ownNames: (o.ownNames || []).map(n => String(n).slice(0, 80)) });
 const ignoresFileChooser = (o) => conforming({ ...o, fileChooserOpened: false });
 const ignoresUnsettled = (o) => conforming({ ...o, unsettledAtPress: null });
 // F2 wrong rules: credit every request in the window; credit one that started before the press; credit one whose start is unknown; no window.
@@ -232,6 +244,7 @@ const CANDIDATES = {
     return conforming({ ...o, label: repeats ? o.label : '\u0000never-a-label', ownNames: [] });
   },
   'DC-R only the control\u2019s label is compared with the explanation (its visible text and aria-label, when they differ, are ignored)': onlyTheLabelIsCompared,
+  'DC-S the names are compared as shown, clipped to 80 characters (a title repeating a longer name is said to "say why")': comparesOnlyWhatIsShown,
   'DC-J a press on a page that was still moving is credited with whatever changed afterwards (the Home press credited with the earlier Just-let-me-write landing)': ignoresUnsettled,
   'DC-K every same-origin request in the window is credited to the press (an inert button passes on the page’s own fetch)': creditsEveryRequest,
   'DC-L a request that started BEFORE the press is credited to it (a late answer to the page’s own request)': creditsRequestsFromBeforeThePress,

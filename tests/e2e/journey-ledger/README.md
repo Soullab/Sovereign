@@ -56,7 +56,7 @@ node tests/e2e/journey-ledger/lib/fixture-check.mjs      # the press harness in 
 timing in a browser. Each scenario is a page that reproduces a fault of the run of record (a Work still being made when Home is
 pressed; a page's own request landing late; an unrelated beacon after the click; a request that never finishes), plus two controls
 that must stay PASS (a button whose own handler navigates, a button whose only effect is a request), plus disabled controls whose
-`title` repeats their own name (must stay NOT RUN) or says something else (PASS), and a check, on every press, that the harness records a
+`title` repeats their own name (must stay NOT RUN, whatever the length of the name) or says something else (PASS), and a check, on every press, that the harness records a
 click as *delivered* only when it was (`obs.pressed`). Exit 0 = all judged as
 expected, 1 = misjudged, 64 = no browser (nothing is claimed). It is run by hand, like the walk; it is not in `npm run test:journey-ledger`.
 
@@ -180,8 +180,9 @@ After the press the walk keeps watching while a request is still in flight (a co
 outcome, and a request still pending after 60 s leaves the row NOT RUN. A **disabled** control is NOT RUN (its precondition is unknown to
 the harness; "disabled until you choose" is not a defect) unless it states why, which is a PASS: some text on it (its `title`, an
 `aria-description`, a described-by element) that is **not merely its own name**. The text is compared, ignoring case and spacing, with
-the control's label, `aria-label`, visible text and value; a `title` that repeats any of them explains nothing and the control stays
-NOT RUN. (A text that merely *contains* the name, "Save is available once you have written something", does count as an explanation.)
+the control's label, `aria-label`, visible text and value, each **whole** (the 80 characters of a label that a row shows are for reading, not
+for comparing: a title repeating a longer name would otherwise look different from it); a `title` that repeats any of them explains
+nothing and the control stays NOT RUN. (A text that merely *contains* the name, "Save is available once you have written something", does count as an explanation.)
 A disabled control is not pressed, so it counts under `Controls found, not pressed`. A control that needs a model is NOT RUN.
 
 ## Limits (read before trusting a PASS)

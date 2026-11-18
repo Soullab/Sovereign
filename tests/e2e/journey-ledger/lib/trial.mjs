@@ -112,11 +112,14 @@ const ENUMERATE = () => {
     const tag = el.tagName.toLowerCase();
     const role = el.getAttribute('role') || '';
     const href = el.getAttribute('href');
-    const label = clean(el.getAttribute('aria-label') || el.innerText || el.value || el.getAttribute('title') || '').slice(0, 80);
-    // Every name the control gives itself (its label is the first of these that is not empty, or its title). A disabled control "says
-    // why" only with text that is none of these; classify.mjs statedReason() does the comparing.
-    const names = [el.getAttribute('aria-label'), el.innerText, el.value, el.textContent].map(clean).filter(Boolean).map(t => t.slice(0, 80));
+    const fullLabel = clean(el.getAttribute('aria-label') || el.innerText || el.value || el.getAttribute('title') || '');
+    const label = fullLabel.slice(0, 80);   // shown, and part of the control's key; never what is compared
     const disabled = el.disabled === true || el.getAttribute('aria-disabled') === 'true';
+    // Every name the control gives itself, WHOLE (its label is the first of these that is not empty, or its title: `fullLabel`). A
+    // disabled control "says why" only with text that is none of these; classify.mjs statedReason() does the comparing, and only for a
+    // disabled control, so only those carry names. Clipped to the 80 characters shown, a title repeating a longer name looked like an
+    // explanation (F8f).
+    const names = disabled ? [el.getAttribute('aria-label'), el.innerText, el.value, el.textContent, fullLabel].map(clean).filter(Boolean) : [];
     let disabledReasons = [];
     if (disabled) {
       const describedBy = (el.getAttribute('aria-describedby') || '').split(/\s+/).map(id => document.getElementById(id)?.innerText || '').join(' ');
@@ -407,4 +410,4 @@ export async function pressAndObserve(page, ctx, wanted, { base, modelLog, windo
   return obs;
 }
 
-export { norm, signature };
+export { norm, signature, ENUMERATE };
