@@ -97,8 +97,9 @@ export function EditorialLetterPanel(props: {
     return () => { cancelled = true; };
   }, [manuscriptId]);
 
-  /* Step 4 (founder ruling 2026-11-11, "Let it run on its own"): with whole-Work permission the pass runs ON THE SERVER, so closing the
-     page does not stop it; this panel only shows its true state and checks back. Without that permission the writer's click still reads
+  /* Step 4: with whole-Work permission the pass runs ON THE SERVER and every finished reading is kept there. Founder ruling 2026-11-17,
+     resume on request only: it advances while this panel is watching (it checks every 5 s); with no page watching it stops before its
+     next paid step, and the writer's Continue resumes it without paying again for what is already read. Without that permission the writer's click still reads
      the book from this page, as before. */
   const [run, setRun] = useState<RunView | null>(null);
   const [openingAnswer, setOpeningAnswer] = useState<'yes' | 'not_quite' | null>(null);
@@ -135,7 +136,7 @@ export function EditorialLetterPanel(props: {
   const readOnServer = useCallback(async (): Promise<boolean> => {
     const out = await startPassRun(manuscriptId);
     if (!out.ok) {
-      if (out.refusal === 'daily_limit') { setError('I’ve already read this Work as many times today as your setting allows. Try again tomorrow.'); return true; }
+      if (out.refusal === 'daily_limit') { setError('I’ve already done two whole readings of your Work today, which is as many as I do in a day. Try again tomorrow.'); return true; }
       if (out.refusal === 'sanctuary_not_kept' || out.refusal === 'posture_undeclared') { setError(keepRefusalCopy(out.refusal)); return true; }
       /* Free / Pro line: never fall back to reading from this page, which would start the paid readings the server just declined. */
       if (out.refusal === WHOLE_WORK_REFUSAL) { setError(WHOLE_WORK_MESSAGE); return true; }
@@ -284,7 +285,7 @@ export function EditorialLetterPanel(props: {
     return (
       <section data-editorial-letter="running" role="status" aria-live="polite" className="fr-say">
         <p style={{ margin: 0 }}>I’m reading your Work{run.done > 0 ? `: ${run.done} of ${run.total} readings done` : ''}{run.state === 'synthesizing' ? ', and gathering what I found' : ''}.</p>
-        <p style={{ margin: '6px 0 0', fontSize: 12, opacity: .8 }}>Keep writing, or close this page; I’ll carry on and the letter will be here when you come back.</p>
+        <p style={{ margin: '6px 0 0', fontSize: 12, opacity: .8 }}>Keep writing; I won’t interrupt. If you close this page I’ll stop after the reading I’m on, and Continue picks up where I left off. Nothing I’ve read is paid for twice.</p>
         <button type="button" data-letter-cancel="true" onClick={() => { void cancelPassRun(manuscriptId).then(() => fetchRun(manuscriptId)).then((r) => { if (r !== undefined) setRun(r); stopWatching(); }); }}
           style={{ ...quiet, marginTop: 6 }}>Stop reading</button>
       </section>
@@ -304,6 +305,8 @@ export function EditorialLetterPanel(props: {
         : run.state === 'stopped' && run.refusal === 'sanctuary' ? 'I stopped reading because Sanctuary is on.'
         : run.state === 'stopped' && run.refusal === 'permission_withdrawn' ? 'I stopped reading because you withdrew my permission to read the whole Work.'
         : run.state === 'stopped' && run.refusal === 'draft_changed' ? 'I stopped because the Work changed while I was reading.'
+        : run.state === 'stopped' && run.refusal === 'no_page_watching' ? `I stopped when the page closed. ${run.done} of ${run.total} readings are done and kept; Continue picks up from there.`
+        : run.state === 'stopped' && run.refusal === 'interrupted' ? `I was interrupted. ${run.done} of ${run.total} readings are done and kept; Continue picks up from there.`
         : `I couldn’t finish the ${run.lens ?? ''} reading (${run.done} of ${run.total} were done; they are kept).`}
       {' '}<button type="button" data-letter-continue="true" onClick={() => void read()} style={quiet}>{run.state === 'failed' && (run.refusal ?? '').startsWith('synthesis') ? 'Try the letter again' : 'Continue'}</button>
     </p>
