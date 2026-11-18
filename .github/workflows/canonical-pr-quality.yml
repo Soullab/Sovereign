@@ -126,6 +126,9 @@ jobs:
       # `npm run typecheck` compares against typecheck-baseline.json and fails
       # only on a NEW diagnostic, an increased occurrence count, or a path that
       # left the program while still existing on disk.
+      - name: Prove the gate separates a crashed tsc from a code verdict
+        run: node --test scripts/check-typehealth-baseline.test.mjs
+
       - name: Run TypeScript no-regression gate
         run: npm run typecheck
 

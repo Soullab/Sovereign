@@ -24,6 +24,11 @@
  *   - files are deleted from disk and thus leave the program
  *   - new paths enter the program
  *
+ * CANNOT JUDGE (exit 3, never a pass) when tsc itself did not complete: it was
+ * killed, crashed, could not start, or listed an empty program. That result says
+ * nothing about the code, so it must not be reported as lost coverage or as a
+ * clean run. Exit codes: 0 pass · 1 regression · 3 infrastructure failure.
+ *
  * Diagnostic identity is NOT a count. Each diagnostic is keyed on:
  *      file  |  TS code  |  normalized message
  * plus an occurrence count per key. A count-only baseline would let one error
@@ -63,6 +68,70 @@ const JSON_OUT = argv.includes('--json');
 
 // ---------------------------------------------------------------- tsc runners
 
+const EXIT_INFRASTRUCTURE = 3;
+const OUTPUT_TAIL_LINES = 40;
+
+/** tsc did not complete, so this run cannot say anything about the code. */
+class TscInfrastructureError extends Error {
+  constructor(reason, output) {
+    super(reason);
+    this.name = 'TscInfrastructureError';
+    this.reason = reason;
+    this.outputTail = String(output || '')
+      .split('\n')
+      .filter((line) => line.trim())
+      .slice(-OUTPUT_TAIL_LINES)
+      .join('\n');
+  }
+}
+
+/**
+ * Decide whether a finished tsc process actually completed. Returns its output,
+ * or throws TscInfrastructureError. tsc exits 0 when clean, and 1 or 2 when it
+ * reports diagnostics; a non-zero exit with no diagnostic is not a tsc verdict
+ * (for example npx failing, or the process aborting).
+ */
+function assessTscRun(res) {
+  const output = `${res.stdout || ''}${res.stderr || ''}`;
+  if (res.error) {
+    throw new TscInfrastructureError(`tsc could not run: ${res.error.message}`, output);
+  }
+  if (res.signal) {
+    throw new TscInfrastructureError(`tsc was killed by ${res.signal}`, output);
+  }
+  if (res.status !== 0 && res.status !== 1 && res.status !== 2) {
+    throw new TscInfrastructureError(`tsc exited abnormally with status ${res.status}`, output);
+  }
+  if (res.status !== 0 && !/error TS\d+/.test(output)) {
+    throw new TscInfrastructureError(
+      `tsc exited with status ${res.status} without reporting a diagnostic`,
+      output
+    );
+  }
+  return output;
+}
+
+/** A real program is never empty: an empty list means tsc did not list it. */
+function assertProgramListed(paths, output) {
+  if (paths.size === 0) {
+    throw new TscInfrastructureError('tsc listed an empty program', output);
+  }
+  return paths;
+}
+
+/** Print why the gate could not judge this run. Returns the exit code. */
+function reportInfrastructureFailure(err, log = console.error) {
+  log(
+    `❌  INFRASTRUCTURE FAILURE — ${err.reason}.\n` +
+      '    The gate could not judge this code: this is not a type error and not lost coverage.\n' +
+      '    Re-run the job. Do NOT re-baseline.'
+  );
+  if (err.outputTail) {
+    log(`\n--- last tsc output ---\n${err.outputTail}`);
+  }
+  return EXIT_INFRASTRUCTURE;
+}
+
 function runTsc(extraArgs) {
   const args = ['tsc', '-p', PROJECT, '--noEmit', '--pretty', 'false', ...extraArgs];
   const res = spawnSync('npx', args, {
@@ -71,10 +140,7 @@ function runTsc(extraArgs) {
     maxBuffer: 256 * 1024 * 1024,
     env: { ...process.env, FORCE_COLOR: '0' },
   });
-  if (res.error) {
-    throw new Error(`Failed to spawn tsc: ${res.error.message}`);
-  }
-  return `${res.stdout || ''}${res.stderr || ''}`;
+  return assessTscRun(res);
 }
 
 /** Paths in the compilation program, repo-relative, excluding node_modules. */
@@ -90,7 +156,7 @@ function collectProgramPaths() {
     if (rel.startsWith('..')) continue;
     paths.add(toPosix(rel));
   }
-  return paths;
+  return assertProgramListed(paths, out);
 }
 
 // ------------------------------------------------------------------- parsing
@@ -465,9 +531,22 @@ function main() {
   return 0;
 }
 
-try {
-  process.exit(main());
-} catch (err) {
-  console.error(`❌  ${err.message}`);
-  process.exit(1);
+if (require.main === module) {
+  try {
+    process.exit(main());
+  } catch (err) {
+    if (err instanceof TscInfrastructureError) {
+      process.exit(reportInfrastructureFailure(err));
+    }
+    console.error(`❌  ${err.message}`);
+    process.exit(1);
+  }
 }
+
+module.exports = {
+  EXIT_INFRASTRUCTURE,
+  TscInfrastructureError,
+  assessTscRun,
+  assertProgramListed,
+  reportInfrastructureFailure,
+};

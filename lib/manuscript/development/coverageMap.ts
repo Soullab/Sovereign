@@ -47,7 +47,9 @@ export interface CoverageMap {
   lensesCurrentForWholeDraft: string[];
 }
 
-const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
+/** The one section digest: the same SHA-256 the reading froze in `read_state.sections[id].digest`. Shared with the covering set. */
+export const sectionDigest = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
+const sha256 = sectionDigest;
 
 /** Pure. `live` is the current draft, in order; `readings` any order. */
 export function deriveCoverage(input: {

@@ -2,6 +2,12 @@
  * The whole-manuscript synthesis (MAIA's editorial pass, or a chapter overview), in ONE place, used by the attention-map route and by
  * the server-side editorial pass run (relational architecture step 4). Moved here unchanged from the route so that the route and the
  * run can never produce two different syntheses from the same readings.
+ *
+ * §20 (rereading only what changed, lane authorized 2026-11-17): the whole-book (deep) synthesis no longer demands eight readings of the
+ * current revision over the whole draft. It accepts, per deep lens, a set of readings of THIS draft that together cover every current
+ * section at body depth with the section's current digest (lib/writersStudio/studio/coveringSet.ts). Only observations whose cited
+ * sections are all owned by their own reading reach the model; an observation about changed text never does. The overview (chapter)
+ * mode is unchanged: one overview reading of the current revision.
  */
 import { query } from '@/lib/db/postgres';
 import { loadReading } from '@/lib/manuscript/developmentalReading/store';
@@ -21,6 +27,7 @@ import {
 import { validateAttentionMap, type WholeManuscriptAttentionMap } from '@/lib/writersStudio/studio/attentionMap';
 import { writerUnderstandingContextForManuscript } from '@/lib/writersStudio/writerUnderstandingServer';
 import { wholeWorkForManuscript } from '@/lib/writersStudio/proTaste';
+import { checkCoveringSet, coverReadingOf, keepObservation, type CoveringSet } from '@/lib/writersStudio/studio/coveringSet';
 import { WHOLE_WORK_REFUSAL } from '@/lib/writersStudio/wholeWorkAccess';
 
 const TOOL = 'return_attention_map';
@@ -75,15 +82,20 @@ function inputSchemaFor(evidenceRefs: readonly string[]) {
 /** Generous enough for a whole-book letter; an answer that still hits it is refused as incomplete, never used. */
 export const SYNTHESIS_MAX_TOKENS = 32_000;
 
+/** At most this many readings in one synthesis (eight lenses, each split across a few rereadings). */
+export const SYNTHESIS_MAX_READINGS = 64;
+
 export type SynthesisOutcome =
   | { ok: true; map: WholeManuscriptAttentionMap; deepMode: boolean; revisionNumber: number; readingIds: string[];
+      /** `${readingId}:${observationKey}` of every observation sent to the model (the letter rests on exactly these) */
+      observationKeys: string[];
       provenance: { provider: unknown; model: unknown; reportedModel: unknown } }
   | { ok: false; status: number; error: string; detail?: unknown };
 
 export async function synthesizeAttentionMap(memberId: string, manuscriptId: string, readingIdsIn: readonly string[], request: string): Promise<SynthesisOutcome> {
   const readingIds = [...new Set(readingIdsIn)];
   const deepLenses = DEVELOPMENTAL_LENSES.filter((lens) => lens !== 'overview');
-  if (readingIds.length !== 1 && readingIds.length !== deepLenses.length) {
+  if (readingIds.length === 0 || readingIds.length > SYNTHESIS_MAX_READINGS) {
     return { ok: false, status: 409, error: 'overview_or_complete_eight_lens_set_required' };
   }
 
@@ -112,7 +124,8 @@ export async function synthesizeAttentionMap(memberId: string, manuscriptId: str
 
   const lenses = new Set(readings.map((r) => r.scope.commissionedLens));
   const overviewMode = readings.length === 1 && readings[0]!.scope.commissionedLens === 'overview';
-  const deepMode = readings.length === deepLenses.length
+  const deepMode = !overviewMode
+    && readings.every((r) => r.scope.commissionedLens !== 'overview')
     && deepLenses.every((lens) => lenses.has(lens));
   if (!overviewMode && !deepMode) {
     return { ok: false, status: 409, error: 'overview_or_complete_eight_lens_set_required' };
@@ -126,25 +139,34 @@ export async function synthesizeAttentionMap(memberId: string, manuscriptId: str
     if (entitled === null) return { ok: false, status: 503, error: 'entitlement_unavailable' };
     if (!entitled) return { ok: false, status: 403, error: WHOLE_WORK_REFUSAL };
   }
-  if (readings.some((r) => r.readState.revisionNumber !== revisionNumber)) {
+  /* Overview (chapter) mode, unchanged: one reading of the current revision. */
+  if (overviewMode && readings[0]!.readState.revisionNumber !== revisionNumber) {
     return { ok: false, status: 409, error: 'current_revision_moved' };
   }
 
-  const firstScope = JSON.stringify(readings[0]!.scope.bodyScope);
-  if (readings.some((r) => JSON.stringify(r.scope.bodyScope) !== firstScope)) {
-    return { ok: false, status: 409, error: 'scope_mismatch' };
-  }
-  const sectionRows = await query<{ id: string }>(
-    `SELECT ds.id
-       FROM manuscript_draft_sections ds
-       JOIN manuscript_working_drafts d ON d.id = ds.draft_id
-      WHERE d.manuscript_id = $1 AND d.member_id = $2
-      ORDER BY ds.position ASC`,
-    [manuscriptId, memberId],
-  );
-  const wholeScope = sectionRows.rows.map((row) => row.id);
-  if (deepMode && JSON.stringify(readings[0]!.scope.bodyScope) !== JSON.stringify(wholeScope)) {
-    return { ok: false, status: 409, error: 'whole_manuscript_scope_required' };
+  /* Deep mode (§20): the readings must TOGETHER cover the current draft, per lens, by digest. */
+  let cover: CoveringSet | null = null;
+  if (deepMode) {
+    const sectionRows = await query<{ id: string; text: string; draft_id: string }>(
+      `SELECT ds.id, ds.text, ds.draft_id
+         FROM manuscript_draft_sections ds
+         JOIN manuscript_working_drafts d ON d.id = ds.draft_id
+        WHERE d.manuscript_id = $1 AND d.member_id = $2
+        ORDER BY ds.position ASC`,
+      [manuscriptId, memberId],
+    );
+    const draftId = sectionRows.rows[0]?.draft_id;
+    if (!draftId) return { ok: false, status: 409, error: 'working_draft_revision_required' };
+    const checked = checkCoveringSet({
+      draftId,
+      live: sectionRows.rows.map((row) => ({ id: row.id, text: row.text })),
+      lenses: deepLenses,
+      readings: readings.map(coverReadingOf),
+    });
+    if (!checked.ok) {
+      return { ok: false, status: 409, error: checked.refusal, detail: { lens: checked.lens ?? null, sectionId: checked.sectionId ?? null, readingId: checked.readingId ?? null } };
+    }
+    cover = checked.set;
   }
 
   const observations: FrozenAttentionObservation[] = [];
@@ -158,6 +180,8 @@ export async function synthesizeAttentionMap(memberId: string, manuscriptId: str
           if (!sectionIds.includes(sectionId)) sectionIds.push(sectionId);
         }
       }
+      /* §20: an observation reaches the letter only if the text it cites is still the text its reading read. */
+      if (cover && !keepObservation(cover, reading.id, reading.scope.commissionedLens, sectionIds)) continue;
       synthesisIndex += 1;
       observations.push({
         synthesisRef: `E${synthesisIndex}`,
@@ -257,6 +281,7 @@ export async function synthesizeAttentionMap(memberId: string, manuscriptId: str
 
   return {
     ok: true, map, deepMode, revisionNumber, readingIds,
+    observationKeys: observations.map((o) => `${o.readingId}:${o.observationKey}`),
     provenance: {
       provider: structured.result.provenance.provider,
       model: structured.result.provenance.model,
