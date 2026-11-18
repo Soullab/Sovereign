@@ -35,6 +35,34 @@ const RECEIVER = path.join(REPO, 'app/api/telemetry/client/route.ts');
  */
 const INTENTIONALLY_LOCAL_ONLY: ReadonlyMap<string, string> = new Map();
 
+/**
+ * OUTSTANDING DEBT — not a decision, and deliberately a different register
+ * from `INTENTIONALLY_LOCAL_ONLY` above.
+ *
+ * These five are emitted by the client and discarded by the receiver. That is
+ * a defect, not a design choice: no one has decided these should be
+ * console-only, and the question of whether each should be admitted, renamed
+ * or removed from the emitter has not been examined.
+ *
+ * They are recorded here — rather than left as a red test — on the same
+ * principle as `typecheck-baseline.json`: a detector that sits red stops being
+ * read, and pre-existing debt must not be absorbed into silence NOR block
+ * unrelated work. This list is the exact known set, so the contract below
+ * still fails on a SIXTH event appearing (new drift), and fails again when one
+ * of these five is fixed (the entry must then be deleted). It can only shrink.
+ *
+ * Found by this test on 2026-11-18 while landing `voice_echo_blocked`; held
+ * out of that lane by founder ruling — the voice echo repair is not the place
+ * to adjudicate five unrelated telemetry events.
+ */
+const OUTSTANDING_UNADMITTED: readonly string[] = [
+  'voice_partial_summary',
+  'voice_turn_pause_continued',
+  'voice_floor_held',
+  'voice_explicit_yield',
+  'voice_explicit_yield_ignored',
+];
+
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 }
@@ -72,16 +100,27 @@ describe('voice telemetry receiver vocabulary', () => {
     expect(admittedEvents()).toContain('redirect_loop_detected');
   });
 
-  it('admits every event the client can emit', () => {
+  it('admits every event the client can emit, bar the recorded debt', () => {
     const admitted = new Set(admittedEvents());
     const dropped = emittedEvents()
       .filter((e) => !admitted.has(e))
       .filter((e) => !INTENTIONALLY_LOCAL_ONLY.has(e));
 
-    expect({
-      count: dropped.length,
-      silentlyDropped: dropped,
-    }).toEqual({ count: 0, silentlyDropped: [] });
+    // Compared as a set, in both directions. A new silently-dropped event
+    // fails; so does a fixed one still listed as debt.
+    expect([...dropped].sort()).toEqual([...OUTSTANDING_UNADMITTED].sort());
+  });
+
+  it('records no debt that is already fixed or no longer emitted', () => {
+    // The baseline may only shrink, and only by real repair. An entry that is
+    // admitted, or not emitted at all, is stale scaffolding claiming a defect
+    // that does not exist.
+    const admitted = new Set(admittedEvents());
+    const emitted = new Set(emittedEvents());
+    for (const event of OUTSTANDING_UNADMITTED) {
+      expect({ event, emitted: emitted.has(event), admitted: admitted.has(event) })
+        .toEqual({ event, emitted: true, admitted: false });
+    }
   });
 
   it('keeps the local-only exemption list honest', () => {

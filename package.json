@@ -218,6 +218,8 @@
     "maia:doctor": "bash scripts/maia doctor",
     "check:member-owned-boundary": "npx tsx scripts/check-member-owned-boundary.ts",
     "jarvis": "node scripts/builder/session.mjs status",
+    "lab": "node scripts/builder/jarvis-chat.mjs",
+    "lab:proof": "node tests/constitutional/jarvis-lab/apparatus.mjs",
     "jarvis:rate": "node scripts/builder/rate.mjs",
     "jarvis:report": "node scripts/builder/session.mjs report",
     "jarvis:providers": "node scripts/builder/opencode-provider.mjs list",
