@@ -5,6 +5,7 @@ import { apiFetch } from '@/lib/http/apiBase';
 import { MaiaNotYetNote } from './MaiaQuestionsOnlyCopy';
 import { studioPathById, unheadedPlaceName } from '@/lib/writersStudio/studioPaths';
 import { Shell } from '@/app/writers-studio/full-redesign/Shell';
+import { capturePagePlace, restorePagePlace, type PagePlace } from '@/lib/writersStudio/pageReturn';
 import { WriteManuscriptRail, WriteRoom, isWriteRoomReadbackCurrent, type WriteBlock, type WriteRoomReadback } from '@/app/writers-studio/full-redesign/WriteRoom';
 import { WRITE_COPY } from '@/app/writers-studio/full-redesign/fixtures';
 import { WRITE_GEOMETRY, appearanceVars } from '@/app/writers-studio/full-redesign/tokens';
@@ -365,6 +366,44 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
   useEffect(() => {
     if (props.held || props.carriedInsight || props.workspaceOpen || isolatedEditorial) setProseView(false);
   }, [props.held, props.carriedInsight, props.workspaceOpen, isolatedEditorial]);
+
+  /* Conversation-stage step 5: "Back to the page" returns to the same passage and scroll position. The place is recorded on every
+     scroll of the page while the page is in view (so opening the room cannot overwrite it), and restored after the room closes. */
+  const pagePlace = useRef<PagePlace | null>(null);
+  const roomOpen = useRef(props.workspaceOpen);
+  const focusNow = useRef(props.focusId);
+  focusNow.current = props.focusId;
+  useEffect(() => {
+    const onScroll = (event: Event) => {
+      const el = event.target;
+      if (roomOpen.current || !(el instanceof HTMLElement) || !el.classList.contains('fr-write-scroll')) return;
+      pagePlace.current = capturePagePlace(el, focusNow.current ?? null);
+    };
+    document.addEventListener('scroll', onScroll, true);
+    return () => document.removeEventListener('scroll', onScroll, true);
+  }, []);
+  useEffect(() => {
+    const wasOpen = roomOpen.current;
+    roomOpen.current = props.workspaceOpen;
+    if (props.workspaceOpen && !wasOpen) {
+      /* the offset is the page's last known position (recorded on scroll); the passage is the one the room opens on */
+      pagePlace.current = pagePlace.current
+        ? { scrollTop: pagePlace.current.scrollTop, focusId: props.focusId ?? null }
+        : capturePagePlace(document.querySelector<HTMLElement>('.fr-write-scroll'), props.focusId ?? null);
+    }
+    if (!props.workspaceOpen && wasOpen) {
+      const place = pagePlace.current;
+      const sectionId = props.focusId ?? null;
+      const restore = () => {
+        const passageEl = sectionId ? document.querySelector<HTMLElement>(`[data-write-editor][data-section-id="${CSS.escape(sectionId)}"]`) : null;
+        const scrollerEl = document.querySelector<HTMLElement>('.fr-write-scroll');
+        restorePagePlace(scrollerEl, place, sectionId, passageEl);
+        pagePlace.current = capturePagePlace(scrollerEl, sectionId);
+      };
+      /* two frames: the page has re-rendered and laid out before the position is set */
+      requestAnimationFrame(() => requestAnimationFrame(restore));
+    }
+  }, [props.workspaceOpen, props.focusId]);
 
   useEffect(() => {
     setBlankArrivalDismissed(false);
