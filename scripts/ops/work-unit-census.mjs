@@ -41,7 +41,12 @@ const reachable = (sha) => !!sha && git(['cat-file', '-e', sha]) !== null;
 const existsAtHead = (p) => git(['cat-file', '-e', `HEAD:${p}`]) !== null;
 
 const rows = [];
-for (const file of fs.readdirSync(UNITS).filter((f) => f.endsWith('.json')).sort()) {
+// Desktop writes a `<id>.desktop.json` sidecar beside each unit. They are normal
+// companions, not malformed units; counting them as anomalies buries the real
+// signal under noise the operator then has to learn to ignore.
+const all = fs.readdirSync(UNITS).filter((f) => f.endsWith('.json')).sort();
+const sidecars = all.filter((f) => f.endsWith('.desktop.json'));
+for (const file of all.filter((f) => !f.endsWith('.desktop.json'))) {
   const full = path.join(UNITS, file);
   let doc;
   try { doc = JSON.parse(fs.readFileSync(full, 'utf8')); }
@@ -88,7 +93,7 @@ const ORDER = ['UNROUTED · SCOPE INTACT', 'UNROUTED · SCOPE DRIFTED', 'UNROUTE
 console.log(`WORK-UNIT CENSUS   (read-only — nothing was bound, claimed or changed)`);
 console.log(`home ${HOME}`);
 console.log(`repo ${REPO}  @ ${git(['rev-parse', '--short', 'HEAD']) ?? '?'}`);
-console.log(`units ${rows.length}`);
+console.log(`units ${rows.length}   (+${sidecars.length} .desktop.json sidecars, not counted)`);
 
 for (const v of ORDER) {
   const group = by(v);
