@@ -1336,7 +1336,7 @@ export default function FlagshipWriteEditController() {
     if (!focusId || !context || !work || workContext.kind !== 'work'
       || workReentryRequired.current || !currentWorkGesture() || !stillCurrent()) return null;
     if (!scopedA2Relationship) {
-      setEditorialFailure('MAIA isn\'t sitting with this book yet. Begin a conversation with MAIA about it, then ask again. Nothing was sent.');
+      setEditorialFailure('We haven’t started on this Work together yet. Start with me, and I’ll pick this up. I haven’t sent anything.');
       return null;
     }
     if (!(await settleWriting()) || !currentWorkGesture() || !stillCurrent()) return null;
@@ -1502,7 +1502,7 @@ export default function FlagshipWriteEditController() {
     if (!text || editorialBusy) return;
     if (!focusId || !context || !work || !currentWorkGesture()) {
       // A refusal the writer cannot see reads as a dead button.
-      setEditorialFailure('MAIA can\'t see this passage just now. Select it again, or reopen the book, and then ask. Nothing was sent and your writing is untouched.');
+      setEditorialFailure('I can’t see this passage just now. Select it again, or reopen the Work, and ask me again. I haven’t sent anything, and your writing is untouched.');
       return;
     }
     // A current or formerly current A2 that failed a fresh check is not an
@@ -1575,12 +1575,12 @@ export default function FlagshipWriteEditController() {
         ? selectedPassage.text : focusSection?.body ?? '';
       if (thread.workId !== context.manuscriptId
         || thread.targetSectionId !== focusId || thread.locusText !== desired) {
-        setEditorialFailure('The editorial conversation could not be matched to this exact Work and passage. Nothing was sent.');
+        setEditorialFailure('I couldn’t match our conversation to this exact Work and passage, so I haven’t sent anything. Select the passage again and I’ll pick it up.');
         return;
       }
       const posture = readCurrentSanctuaryPosture();
       if (!stillCurrent() || !posture.resolved || posture.sanctuary) {
-        if (stillCurrent()) setEditorialFailure('MAIA editorial work is unavailable in Sanctuary or before Ordinary is chosen. Nothing was sent.');
+        if (stillCurrent()) setEditorialFailure('Sanctuary is on, or you haven’t chosen how I should hold this yet, so I haven’t sent anything. Your passage is unchanged.');
         return;
       }
       // The current writer act MUST contain ONLY the authored text. Any
@@ -1776,7 +1776,7 @@ export default function FlagshipWriteEditController() {
       if (!after.resolved || after.sanctuary) return true;
       if (!outcome.ok) {
         setOpeningFailure(outcome.reason === 'sanctuary_unavailable'
-          ? 'MAIA doesn’t open conversations in Sanctuary. Nothing was sent.'
+          ? 'Sanctuary is on, so I didn’t start this conversation. I haven’t sent anything.'
           : outcome.reason === 'accountability_unresolved'
             ? 'MAIA may have received the passage, but Soullab could not confirm the record, so her words were withheld.'
             : 'MAIA couldn’t start this conversation just now. Nothing was changed.');
