@@ -1003,6 +1003,12 @@ export const OracleConversation: React.FC<OracleConversationProps> = ({
   } | null>(null);
   const [showChatInterface, setShowChatInterface] = useState(initialShowChatInterface);
   const [interimTranscript, setInterimTranscript] = useState('');
+  // 🔇 ECHO GUARD INPUTS. The capture component compares a member transcript
+  // against what MAIA ACTUALLY said, inside a bounded window after her speech
+  // ends — replacing a static English word list that deleted ordinary member
+  // speech ("I closed my eyes" matched 'yes' inside "eyes").
+  const maiaLastUtteranceRef = useRef<string | null>(null);
+  const [maiaSpeechEndedAt, setMaiaSpeechEndedAt] = useState<number | null>(null);
 
   // Sync local state with parent when prop changes
   useEffect(() => {
@@ -2011,7 +2017,16 @@ export const OracleConversation: React.FC<OracleConversationProps> = ({
     setVoiceAmplitude(0);
   }, []);
 
+  // One transition watcher rather than a timestamp at each of the eight
+  // places playback can stop; a missed site would silently widen the window.
+  const wasAudioPlayingRef = useRef(false);
+  useEffect(() => {
+    if (wasAudioPlayingRef.current && !isAudioPlaying) setMaiaSpeechEndedAt(Date.now());
+    wasAudioPlayingRef.current = isAudioPlaying;
+  }, [isAudioPlaying]);
+
   const maiaSpeak = useCallback(async (text: string, elementHint?: Element, ttsInstructions?: string) => {
+    maiaLastUtteranceRef.current = text;
     if (!text || typeof window === 'undefined') return;
 
     // Check if we need to show audio permission prompt
@@ -10782,6 +10797,8 @@ I'm not sure what I'm feeling yet.`;
             ref={voiceMicRef}
             onTranscript={handleVoiceTranscript}
             onInterimTranscript={(t) => setInterimTranscript(t)}
+            maiaLastUtterance={maiaLastUtteranceRef.current}
+            maiaSpeechEndedAt={maiaSpeechEndedAt}
             onRecordingStateChange={handleRecordingStateChange}
             onAudioLevelChange={handleAudioLevelChange}
             onInterrupt={handleVoiceInterrupt}
