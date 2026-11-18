@@ -287,9 +287,12 @@ describe('step 4: the pass runs on the server; resume on request only (founder r
     expect(ended).toContain('I stopped when the page closed');
     expect(ended).toContain('5 of 9');
     expect(q('[data-letter-continue]')?.textContent).toBe('Continue');
+  });
+  it('a pass nothing was advancing (a restart) is shown as interrupted, with Continue', async () => {
     fetchRun.mockResolvedValue({ ...running, state: 'stopped', refusal: 'interrupted' });
     await mount();
     expect(q('[data-letter-run-ended="stopped"]')?.textContent).toContain('I was interrupted');
+    expect(q('[data-letter-continue]')).not.toBeNull();
   });
   it('the daily limit is said in words', async () => {
     startPassRun.mockResolvedValue({ ok: false, refusal: 'daily_limit' });
