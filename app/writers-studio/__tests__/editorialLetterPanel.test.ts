@@ -365,3 +365,34 @@ describe('RENDERED: the letter on a questions-only Work (review F4, 2026-11-15)'
     expect(q('[data-letter-act="options"]')).not.toBeNull();
   });
 });
+
+/* Founder ruling 2026-11-17: macro-to-micro by scale alone, only when the writer asks; book order stays the default. */
+describe('the order of places: book order unless the writer asks for whole-Work-down', () => {
+  const scaled = (id: string, sectionId: string, scale: string, band: string) => ({ ...item(id, sectionId), scale, band });
+  const SCALED = { ...MAP, items: [scaled('p', 's1', 'passage', 'begin-here'), scaled('w', 's2', 'whole-work', 'watch')] };
+  beforeEach(() => savePass('m', { draftRevision: 5, map: SCALED as any }));
+  const order = () => [...host.querySelectorAll('[data-letter-places] li button')].map((b) => b.textContent);
+  it('⭐ MUST FAIL IF macro-to-micro is the default: the letter opens in book order and says so', async () => {
+    await mount();
+    expect(q('[data-letter-places]')?.getAttribute('data-letter-order')).toBe('book');
+    expect(order()).toEqual(['Echo p', 'Echo w']);
+    expect(host.textContent).toContain('in the order they come in your Work');
+  });
+  it('⭐ the writer\'s click orders them from the whole Work down; another click returns to book order; nothing is sent', async () => {
+    await mount();
+    await act(async () => { q('[data-letter-order-toggle]')!.click(); });
+    expect(q('[data-letter-places]')?.getAttribute('data-letter-order')).toBe('scale');
+    expect(order()).toEqual(['Echo w', 'Echo p']);
+    expect(host.textContent).toContain('from the whole Work down to single passages');
+    await act(async () => { q('[data-letter-order-toggle]')!.click(); });
+    expect(order()).toEqual(['Echo p', 'Echo w']);
+    expect(runPass).not.toHaveBeenCalled();
+    expect(startPassRun).not.toHaveBeenCalled();
+  });
+  it('the walk follows the order the writer chose', async () => {
+    await mount();
+    await act(async () => { q('[data-letter-order-toggle]')!.click(); });
+    await act(async () => { q('[data-letter-start]')!.click(); });
+    expect(q('[data-editorial-letter="place"]')?.textContent).toContain('Echo w');
+  });
+});

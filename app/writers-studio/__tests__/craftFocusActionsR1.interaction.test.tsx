@@ -281,7 +281,7 @@ describe('JARVIS: canonical Write -> explicitly chosen Craftsman and MAIA', () =
     enterCraft();
     const invite = node.querySelector('[data-craft-begin-with-maia]');
     expect(invite).not.toBeNull();
-    expect(invite!.textContent).toContain("MAIA isn't sitting with this book yet");
+    expect(invite!.textContent).toContain("We haven’t started on this Work together yet");
     const b = Array.from(invite!.querySelectorAll('button')).find(x => x.textContent === 'Begin with MAIA');
     expect(b).toBeDefined();
     act(() => b!.click());

@@ -29,7 +29,7 @@ import { WHOLE_WORK_MESSAGE, WHOLE_WORK_REFUSAL } from '@/lib/writersStudio/whol
 import { ProMention } from '@/app/writers-studio/ProMention';
 import type { AttentionItem } from '@/lib/writersStudio/studio/attentionMap';
 import {
-  inBookOrder, primarySectionId, loadPassDecisions, loadSavedPass, runEditorialPass, savePass, savePassDecisions,
+  byScale, inBookOrder, primarySectionId, loadPassDecisions, loadSavedPass, runEditorialPass, savePass, savePassDecisions,
   type PassDecision, type SavedPass,
 } from '@/lib/writersStudio/studio/editorialPassRunner';
 
@@ -197,9 +197,16 @@ export function EditorialLetterPanel(props: {
     void read();
   }, [loaded, pass, mayAutoRead, busy, draftRevision, sections.length, manuscriptId, read]);
 
+  /* Book order by default (ruling 2026-11-11); whole-Work-down only when the writer asks (ruling 2026-11-17, by scale alone). */
+  const [order, setOrder] = useState<'book' | 'scale'>('book');
   const places = useMemo(
-    () => (pass ? inBookOrder(pass.map.items.filter((it) => it.sectionIds.length > 0), sections.map((s) => s.draftSectionId)) : []),
-    [pass, sections],
+    () => {
+      if (!pass) return [];
+      const items = pass.map.items.filter((it) => it.sectionIds.length > 0);
+      const sectionOrder = sections.map((s) => s.draftSectionId);
+      return order === 'scale' ? byScale(items, sectionOrder) : inBookOrder(items, sectionOrder);
+    },
+    [pass, sections, order],
   );
   const stale = pass !== null && draftRevision !== null && pass.draftRevision !== draftRevision;
   /* Talking about a place happens in the centre, on its words (founder direction 2026-11-12: "the middle is where the creative process
@@ -411,10 +418,13 @@ export function EditorialLetterPanel(props: {
       ) : (
         <>
           <p style={{ margin: 0, lineHeight: 1.55 }}>
-            I found {places.length} place{places.length === 1 ? '' : 's'} {props.revisionsPaused ? 'worth a closer look' : 'where an edit may help'}. Here they are in the order they come in your Work.
+            I found {places.length} place{places.length === 1 ? '' : 's'} {props.revisionsPaused ? 'worth a closer look' : 'where an edit may help'}. {order === 'scale' ? 'Here they are from the whole Work down to single passages; within each, in the order they come.' : 'Here they are in the order they come in your Work.'}
             {looked > 0 ? ` You’ve decided on ${looked} of them.` : ''}
           </p>
-          <ol data-letter-places="true" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <button type="button" data-letter-order-toggle="true" aria-pressed={order === 'scale'} onClick={() => setOrder((o) => (o === 'book' ? 'scale' : 'book'))} style={{ ...quiet, alignSelf: 'flex-start', fontSize: 12 }}>
+            {order === 'scale' ? 'Back to the order of my Work' : 'From the whole Work down'}
+          </button>
+          <ol data-letter-places="true" data-letter-order={order} style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
             {places.map((it, i) => (
               <li key={it.id}>
                 <button type="button" data-letter-open={i + 1} onClick={() => openPlace(i)} style={{ ...quiet, textAlign: 'left' }}>{it.label}</button>

@@ -826,7 +826,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
   // Every passage action needs a Living Work. Without one the MAIA panel (where
   // refusals are normally shown) is not on screen, so an action used to do
   // nothing at all. Say why, here, where the writer just clicked.
-  const NO_WORK_NOTICE = 'MAIA works inside a Living Work. This manuscript is not in exactly one declared Work yet, so nothing was sent. Declare it as a Work (or choose one Work if several include it), then try again.';
+  const NO_WORK_NOTICE = 'I work with you inside a Living Work, and this manuscript isn’t in exactly one yet, so I haven’t read it and I haven’t sent anything. Make it a Work (or choose one, if several include it), and I’m here.';
   const requireWork = (): boolean => {
     if (props.work) { setPassageNotice(null); return true; }
     setPassageNotice(NO_WORK_NOTICE);
@@ -884,9 +884,14 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
             <div role="status" className="p4r1-selection-notice" style={{ margin: '6px 10px', fontSize: '0.85em', lineHeight: 1.4 }}>
               <p style={{ margin: 0 }}>{passageNotice}</p>
               {passageNotice === NO_WORK_NOTICE ? (
-                <button type="button" data-open-home-to-declare onClick={() => { setSelectionMenuOpen(false); props.onMode('home'); }}>
-                  Open Home to declare this Work
-                </button>
+                <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                  <button type="button" data-open-home-to-declare onClick={() => { setSelectionMenuOpen(false); props.onMode('home'); }}>
+                    Make it a Work
+                  </button>
+                  <button type="button" data-no-work-keep-writing onClick={() => { setSelectionMenuOpen(false); setPassageNotice(null); }}>
+                    Just keep writing
+                  </button>
+                </span>
               ) : null}
             </div>
           ) : null}
