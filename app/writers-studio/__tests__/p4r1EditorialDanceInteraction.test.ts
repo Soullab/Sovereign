@@ -474,7 +474,7 @@ test('without a MAIA relationship for the Work, cards point at beginning one and
   act(() => first.click());
   expect(onSend).not.toHaveBeenCalled();
   expect(onBegin).not.toHaveBeenCalled();
-  expect(container.querySelector('[data-relationship-nudge]')?.textContent).toContain('Nothing has been sent');
+  expect(container.querySelector('[data-relationship-nudge]')?.textContent).toContain('I haven’t sent anything');
 
   const begin = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Start with MAIA')!;
   act(() => begin.click());

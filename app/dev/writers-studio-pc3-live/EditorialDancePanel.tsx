@@ -587,6 +587,9 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
       <button type="button" onClick={() => setHeldAct(null)}>Don’t continue</button>
     </p>
   ) : null;
+  const keepWriting = props.onBackToPage ? (
+    <button type="button" data-gate-keep-writing onClick={() => { setHeldAct(null); props.onBackToPage?.(); }}>Just keep writing</button>
+  ) : null;
   const relationshipGate = relationshipBlocks && !postureBlocksEditorial && props.maiaRelationship ? (
     <div
       ref={relationshipRef}
@@ -599,7 +602,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
         <b>{props.notYetCopy ?? 'I haven’t read this Work with you yet.'}</b>
         <MaiaRelationshipPromise paused={Boolean(props.revisionsPaused)} />
         {relationshipNudge ? (
-          <span role="status" data-relationship-nudge>Start with me first, and I’ll pick this up. Nothing has been sent.</span>
+          <span role="status" data-relationship-nudge>Start with me first, and I’ll pick this up. I haven’t sent anything.</span>
         ) : null}
         {props.maiaRelationship.message ? <span role="status">{props.maiaRelationship.message}</span> : null}
       </div>
@@ -617,6 +620,10 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
             Continue · {new Date(choice.createdAt).toLocaleDateString()}
           </button>
         ))}
+        {/* Conversation-stage step 1 (founder decision 2026-11-04): Keep this private turns Sanctuary on and drops any held act;
+            it never sends. Just keep writing goes back to the page. */}
+        <button type="button" data-gate-keep-private onClick={() => { setHeldAct(null); props.onChooseSessionPosture(true); }}>Keep this private</button>
+        {keepWriting}
       </div>
     </div>
   ) : null;
@@ -662,12 +669,13 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
             <b>How would you like me to hold this conversation?</b>
             <span>I won’t guess. Ordinary can be remembered; Sanctuary is never saved.</span>
             {postureNudge ? (
-              <span role="status" data-posture-nudge>Choose Ordinary or Sanctuary first, and I’ll continue. Nothing has been sent.</span>
+              <span role="status" data-posture-nudge>Choose Ordinary or Sanctuary first, and I’ll continue. I haven’t sent anything.</span>
             ) : null}
           </div>
           <div className="p4r1-dance-posture-actions">
             <button type="button" onClick={() => props.onChooseSessionPosture(false)}>Ordinary</button>
             <button type="button" onClick={() => props.onChooseSessionPosture(true)}>Sanctuary</button>
+            {keepWriting}
           </div>
         </>
       ) : (
@@ -676,11 +684,12 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
             <b>Sanctuary is on, so I’m not working on passages.</b>
             <span>Nothing here is saved. Switch to Ordinary when you want me to look at this one. Your passage is unchanged.</span>
             {postureNudge ? (
-              <span role="status" data-posture-nudge>Switch to Ordinary and I’ll work on this passage. Nothing has been sent.</span>
+              <span role="status" data-posture-nudge>Switch to Ordinary and I’ll work on this passage. I haven’t sent anything.</span>
             ) : null}
           </div>
           <div className="p4r1-dance-posture-actions">
             <button type="button" onClick={() => props.onChooseSessionPosture(false)}>Switch to Ordinary</button>
+            {keepWriting}
           </div>
         </>
       )}
