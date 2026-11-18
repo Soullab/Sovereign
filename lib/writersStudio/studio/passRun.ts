@@ -1,10 +1,16 @@
 /**
- * WS-RELATIONAL-ARCHITECTURE step 4 — an editorial pass that survives closing the page (founder ruling 2026-11-11: "Let it run on its
- * own"). The writer's click creates a run; the server advances it one lens at a time with no page open.
+ * WS-RELATIONAL-ARCHITECTURE step 4 — an editorial pass that survives closing the page. The writer's click creates a run; the server
+ * advances it one lens at a time, and every finished reading is kept on the server.
+ *
+ * Founder rulings 2026-11-17 (Kelly, in session), superseding the 2026-11-11 "let it run on its own" shape:
+ *  - RESUME ON REQUEST ONLY. A pass stops (`stopped`, refusal `no_page_watching`) before its next paid step when no page has asked
+ *    about it within WATCH_WINDOW_MS. Opening the page never starts or continues paid work; the writer presses Continue (POST).
+ *    Finished lenses are reused, never paid for twice.
+ *  - CEILING: 2 full editorial passes per writer per day (RUNS_PER_DAY). A resumed pass is the same pass and does not count again.
+ *    The number is the founder's; there is deliberately no environment override.
  *
  * Laws held here:
- *  - One run per manuscript at a time. A ceiling on runs per writer per day (MAIA_PASS_RUNS_PER_DAY, default 3 — a PLACEHOLDER until
- *    the founder sets the number).
+ *  - One run per manuscript at a time.
  *  - Before EACH reading the server re-checks the writer's whole-Work read permission and their account's Sanctuary default; if either
  *    fails, the run stops (`stopped`) and nothing more is read.
  *  - A lens reading already frozen for this exact draft and section set is reused, never paid for twice.
@@ -29,7 +35,23 @@ import { claimTaste, completeTaste, returnTaste, tasteStanding, type TasteStandi
 
 export type RunState = 'queued' | 'reading' | 'lens_done' | 'lens_refused' | 'synthesizing' | 'done' | 'failed' | 'stopped' | 'cancelled';
 const FINAL: ReadonlySet<RunState> = new Set(['done', 'failed', 'stopped', 'cancelled']);
-export const runsPerDay = () => Math.max(0, Number(process.env.MAIA_PASS_RUNS_PER_DAY ?? 3) || 0);
+/** Founder ruling 2026-11-17: 2 full editorial passes per writer per day. */
+export const RUNS_PER_DAY = 2;
+export const runsPerDay = () => RUNS_PER_DAY;
+
+/* ── is a page watching? (founder ruling 2026-11-17: resume on request only) ──────────────────────────────────────────────────────
+   The Letter panel asks about the run every 5 s while it is open. A page that has asked within the window counts as watching; a
+   background tab throttled to one check a minute still does. Process-local, like `inFlight` below: the app runs as one server process. */
+export const WATCH_WINDOW_MS = 90_000;
+const lastSeen = new Map<string, number>();
+const runKey = (memberId: string, manuscriptId: string) => `${memberId}:${manuscriptId}`;
+export function noteWatching(memberId: string, manuscriptId: string, now: number = Date.now()): void {
+  lastSeen.set(runKey(memberId, manuscriptId), now);
+}
+export function pageWatching(memberId: string, manuscriptId: string, now: number = Date.now()): boolean {
+  const t = lastSeen.get(runKey(memberId, manuscriptId));
+  return t !== undefined && now - t <= WATCH_WINDOW_MS;
+}
 
 export interface RunView {
   id: string;
@@ -55,6 +77,8 @@ export interface RunDeps {
   opening: typeof composeOpening;
   /** `writing.wholeWork` (the Free / Pro line). Optional so existing callers keep the default; a test injects its own. */
   wholeWork?: (memberId: string) => Promise<boolean>;
+  /** Is a page watching this run? Optional; the default is the process-local watch above. */
+  watching?: (memberId: string, manuscriptId: string) => boolean;
   /** The one complimentary whole-book pass for a Free writer (step C2, lib/writersStudio/proTaste.ts). Optional seam. */
   taste?: {
     standing: (memberId: string, manuscriptId: string) => Promise<TasteStanding>;
@@ -165,8 +189,21 @@ export async function cancelRun(memberId: string, manuscriptId: string, deps: Ru
   return true;
 }
 
-/* ── advancing (server-side, no page needed) ───────────────────────────────────────────────────────────────────────────────────── */
+/* ── advancing (server-side, while a page is watching) ─────────────────────────────────────────────────────────────────────────── */
 const inFlight = new Set<string>();
+export const isAdvancing = (memberId: string, manuscriptId: string) => inFlight.has(runKey(memberId, manuscriptId));
+
+/**
+ * An unfinished run that nothing in this process is advancing (a server restart, or a step that ended without recording) is stopped
+ * honestly as `interrupted`, so the page offers Continue instead of showing "reading" forever. Reads nothing; pays for nothing.
+ */
+export async function settleStranded(memberId: string, manuscriptId: string, deps: RunDeps = defaultDeps): Promise<RunView | null> {
+  const run = await viewRun(memberId, manuscriptId, deps);
+  if (!run || FINAL.has(run.state) || isAdvancing(memberId, manuscriptId)) return run;
+  await record(deps, run.id, 'stopped', { refusal: 'interrupted' });
+  await (deps.taste ?? defaultTaste).settle(memberId, manuscriptId, 'return').catch(() => undefined);
+  return viewRun(memberId, manuscriptId, deps);
+}
 
 /** Advance a run to its end. Safe to call again: a run already advancing in this process is not doubled. */
 export async function advanceRun(memberId: string, manuscriptId: string, deps: RunDeps = defaultDeps): Promise<RunView | null> {
@@ -181,7 +218,8 @@ export async function advanceRun(memberId: string, manuscriptId: string, deps: R
 }
 
 async function advanceRunInner(memberId: string, manuscriptId: string, deps: RunDeps): Promise<RunView | null> {
-  const key = `${memberId}:${manuscriptId}`;
+  const key = runKey(memberId, manuscriptId);
+  const watching = () => (deps.watching ?? pageWatching)(memberId, manuscriptId);
   if (inFlight.has(key)) return viewRun(memberId, manuscriptId, deps);
   inFlight.add(key);
   try {
@@ -210,6 +248,8 @@ async function advanceRunInner(memberId: string, manuscriptId: string, deps: Run
 
       const reused = await frozenFor(deps, memberId, manuscriptId, lens, run.draftRevision, sectionIds);
       if (reused) { readingIds.set(lens, reused); await record(deps, run.id, 'lens_done', { lens, readingId: reused }); continue; }
+      /* resume on request only: no paid reading starts unless a page is watching */
+      if (!watching()) { await record(deps, run.id, 'stopped', { lens, refusal: 'no_page_watching' }); return viewRun(memberId, manuscriptId, deps); }
 
       let made: string | null = null;
       let lastRefusal = '';
@@ -224,6 +264,7 @@ async function advanceRunInner(memberId: string, manuscriptId: string, deps: Run
       await record(deps, run.id, 'lens_done', { lens, readingId: made });
     }
 
+    if (!watching()) { await record(deps, run!.id, 'stopped', { refusal: 'no_page_watching' }); return viewRun(memberId, manuscriptId, deps); }
     await record(deps, run!.id, 'synthesizing');
     const deep = LENS_ORDER.filter((l) => l !== 'overview').map((l) => readingIds.get(l)!);
     const synthesis = await deps.synthesize(memberId, manuscriptId, deep, EDITORIAL_PASS_REQUEST);
