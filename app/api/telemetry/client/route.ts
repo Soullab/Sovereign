@@ -94,6 +94,7 @@ const ALLOWED_EVENTS = new Set([
   // only 1 behind the guards. Metadata is counts/booleans only.
   'voice_dedup_blocked',
   'voice_transcript_dispatched',
+  'voice_echo_blocked',
 ] as const);
 
 type AllowedEvent = typeof ALLOWED_EVENTS extends Set<infer T> ? T : never;
