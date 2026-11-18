@@ -18,7 +18,8 @@
  * What is said about "pressed": only a control a click was DELIVERED to is pressed (pressAndObserve sets obs.pressed). A control
  * that was listed and found disabled, that points off the product, that could not be found again or whose click was refused has a
  * row and was not pressed; so does one the trial cap left alone. The report counts those separately (tallyPresses), and a control
- * a press revealed that never got a row at all (the depth limit) is counted apart from both.
+ * a press revealed that never got a row at all (the depth limit, or a press the walk does not descend into: it descends only into
+ * a disclosure, or at depth 2 into a press that revealed three or more controls) is counted apart from both.
  */
 import { PASS, DEAD_END, NOT_RUN } from '../lib/ledger.mjs';
 import { classifyTrial, REAL_TEXT_MIN, tallyPresses, describeTally, unrowedControls, baseKey } from '../lib/classify.mjs';

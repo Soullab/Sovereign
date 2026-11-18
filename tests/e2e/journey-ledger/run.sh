@@ -10,7 +10,7 @@
 # harness could not run (nothing was walked, so nothing is claimed). See README.md.
 #
 # What it starts, and always stops: a PostgreSQL 16 shadow (own data dir, own port, trust auth, 127.0.0.1 only), a loopback
-# model stub, `next dev --webpack` on localhost. It touches no other checkout and writes only into the report's existing directory.
+# model stub, `next dev --webpack` on localhost. It touches no other checkout. It WRITES: the report (into the report's existing directory); a run directory under TMPDIR (shadow data, logs, stub); and, in THIS checkout, `.next` and `test-results` while `next dev` runs, plus `AGENTS.md` and `next-env.d.ts`, which Next rewrites and this script restores on exit.
 #
 # What is isolated, exactly (lib/run-lib.sh, jl_build_app_env; README "What is and is not isolated"):
 #   - the app server starts with `env -i` and an ALLOWLIST: PATH, a throwaway HOME and TMPDIR, the shadow DATABASE_URL, the model-stub

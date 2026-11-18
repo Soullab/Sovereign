@@ -155,7 +155,7 @@ An adult with an idea and no manuscript, newly invited. Rows:
 - `P1-06` every control given a row is **accounted for**: pressed, or listed with why it was not (disabled, points off the product, could not
   be found again, its click was refused, the trial cap was hit). The report header says how many controls were **pressed** (a click was
   delivered to them: `Controls pressed`) and, separately, how many were found and not pressed (`Controls found, not pressed`) and how many
-  controls a press revealed that never got a row at all, because of the depth limit (`Revealed by a press, never given a row`). The row
+  controls a press revealed that never got a row at all (`Revealed by a press, never given a row`): because of the depth limit, or because the walk descends only into a press that opened a disclosure, or at depth 2 into one that revealed three or more controls. The row
   says "each ... was pressed" only when that is true.
 - `P1-07` the study's `/writers-studio/plans` link (“Free and Pro”, under Writing preferences) leads to a page that renders.
 - `P1-08` the four mode buttons (Write, Develop, Review, Publish) each lead somewhere from the zero-Works studio view.
@@ -193,7 +193,7 @@ A disabled control is not pressed, so it counts under `Controls found, not press
 - **Slice 1 has no MAIA step.** No model is called; a control that needs one is NOT RUN. Writing, saving, adopting an edit,
   revision, undo, export and publishing are not walked.
 - **One persona, first-visit Home only**, up to four presses deep (`MAX_DEPTH` is 4 in `personas/p1-first-timer.mjs`; `lib/readme.test.mjs`
-  fails if this number and the code differ). Controls a press reveals beyond that depth are counted in the report header, not pressed. Nothing about a returning member, a member with Works, a
+  fails if this number and the code differ). Controls a press reveals beyond that depth, or that the walk does not descend into (see P1-06), are counted in the report header, not pressed. Nothing about a returning member, a member with Works, a
   novelist or a memoirist.
 - **Development server, not a production build.** Compile-on-first-request makes the first presses slow, and dev-only behaviour
   can differ from `next start`. The harness removes Next's `<nextjs-portal>` dev element (it sits over the bottom-left corner and
