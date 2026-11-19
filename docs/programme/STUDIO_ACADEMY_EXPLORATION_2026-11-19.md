@@ -78,7 +78,7 @@ Each path has:
 
 Rules for channel 1, drawn from the research:
 - Ask at a natural pause (after showing MAIA the first page, after a first reading), **never mid-draft**.
-- **Cap it in code:** at most one question per writer per ~30 days, one to three items. Stop asking
+- **Keep the ruled cadence, enforced in code:** at most once per question wave (2026-11-01 note, line 94), one to three items. Stop asking
   a question once there are enough answers.
 - Always in **Soullab's voice, never MAIA's** (2026-11-01 ruling). MAIA does not ask for feedback.
 - **Audio and video:** recorded in the browser, stored self-hosted, transcribed by `maia-whisper`
