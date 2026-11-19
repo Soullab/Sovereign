@@ -1527,7 +1527,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
           </>
         )}
         {/* "What do I do next?" (persona walk 2026-11-19): MAIA's answer from what is on screen, at full size. It reads no
-            manuscript text and sends nothing; "Ask MAIA about this" only places a question for the writer to send. */}
+            manuscript text and sends nothing; "Ask MAIA more" only places a question for the writer to send. */}
         {!workConversationOpen ? (
           <div data-write-what-next="true" style={{ marginTop: 12 }}>
             <button type="button" className="p4r1-talk" aria-expanded={whatNextOpen} data-write-what-next-button="true"

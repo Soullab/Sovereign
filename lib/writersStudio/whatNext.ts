@@ -10,7 +10,7 @@
  *    is the same in Sanctuary and before any relationship with MAIA exists.
  * ⛔ She points; she never presses. Every control named here is on screen in the state described, and the test pins each
  *    label to the live UI source so she is never made to name a button that does not exist.
- * ⛔ "Ask MAIA about this" only PLACES a question in the conversation's composer. Starters are never sent by themselves
+ * ⛔ "Ask MAIA more" only PLACES a question in the conversation's composer. Starters are never sent by themselves
  *    (WorkConversation `initialDraft`); the writer presses Send.
  */
 
@@ -39,7 +39,8 @@ export type WhatNext = {
 };
 
 export const WHAT_NEXT_LABEL = 'What do I do next?';
-export const WHAT_NEXT_ASK_LABEL = 'Ask MAIA about this';
+/* Not "Ask MAIA about this": that label is already Develop's selection offer (DevelopStage), a different act. */
+export const WHAT_NEXT_ASK_LABEL = 'Ask MAIA more';
 export const WHAT_NEXT_CLOSE_LABEL = 'Got it';
 
 export function whatNextInWrite(s: WriteScreen): WhatNext {

@@ -89,7 +89,7 @@ describe('What do I do next?', () => {
     expect(src).not.toMatch(/fetch\(|apiFetch|localStorage|sessionStorage|bodyOf/);
   });
 
-  test('the column shows the button, and "Ask MAIA about this" only places the question', () => {
+  test('the column shows the button, and "Ask MAIA more" only places the question', () => {
     const view = read(VIEW);
     expect(WHAT_NEXT_LABEL).toBe('What do I do next?');
     expect(view).toContain('{WHAT_NEXT_LABEL}');
@@ -97,6 +97,6 @@ describe('What do I do next?', () => {
     expect(view).toMatch(/setWhatNextOpen\(false\); openWorkConversation\(whatNext\.ask\)/);
     // The question goes into the composer as a starter; WorkConversation never sends a starter by itself.
     expect(read('app/writers-studio/canvas/WorkConversation.tsx')).toContain('Never auto-sent.');
-    expect(WHAT_NEXT_ASK_LABEL).toBe('Ask MAIA about this');
+    expect(WHAT_NEXT_ASK_LABEL).toBe('Ask MAIA more');
   });
 });
