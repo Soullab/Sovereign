@@ -100,6 +100,16 @@ heard and what changed" page, so their answers visibly matter.
 Lemo-Opuscar welcome films and short how-to clips, kept to what is live (claim discipline). They are
 offered beside the step, never autoplayed.
 
+**The guide on a phone, beside the computer (founder idea, 2026-11-19).** The writer works in the Studio
+on the computer and steps through the guide on their phone, so the guide never covers the page.
+- The guides already lay out for phone width. The Studio would offer "Open this guide on your phone",
+  showing a QR code and a short link, served by soullab.life itself (self-hosted, per the 2026-11-01
+  ruling), not a claude.ai page.
+- **The writer steps through the guide by hand.** Having the phone follow the computer automatically
+  would mean watching what the writer clicks, which the 2026-11-01 ruling forbids, and it would need
+  device pairing. It stays out unless the founder rules otherwise.
+- The guide page holds no member data and needs no sign-in, so it can be opened on any phone.
+
 ## 4. Proposed order of work (each step its own founder act)
 
 1. Fix the beta-feedback defect (Publish and Listen feedback should fail to save today).
