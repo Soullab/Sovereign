@@ -221,3 +221,15 @@ A long-form Dream Field may be represented by more than one exact media object w
   - The edge log shows the stream copy feeds only an analyser, and no analyser feeds anything.
   - Screenshots: `docs/design/contracts/screenshots/sound-studio-player-bar-generated-desktop.png`, `-recording-desktop.png`, `-mobile.png`.
   - Not witnessed: Safari, a phone, review media, and an authenticated /listen walk.
+
+## Opening Focus Field from anywhere (founder 2026-11-19, #1979: "selecting Choose a Sound goes to a dark page")
+- **The problem.** The listen room kept its view in state and never read the address, so `/listen#focus-field` (the bar's existing Open Focus Field) and `/listen#focus-sound` (its new Choose a sound) always landed on Now. On the test page, Choose a sound left for an empty page.
+- **The fix** (`lib/listening/studioSections.ts`). A bar link:
+  - scrolls in place when its section is already on screen;
+  - otherwise announces the section, so an open listen room switches to Focus;
+  - still carries the address, which a listen room reads when it first opens.
+  Navigation stays inside the app, so the one player keeps playing.
+- **Verification.** 2026-11-19:
+  - `tests/listening/listen_room_sections_browser_witness.cjs`, run on the real ListenRoom built outside Next: Now by default; both addresses and the bar's event open Focus with Sound for this session on screen. Against the previous code every Focus case landed on Now.
+  - The player bar witness shows Choose a sound stays on the page and brings the section into view.
+  - `tests/listening/studio_sections.test.mjs` passes 2/2.

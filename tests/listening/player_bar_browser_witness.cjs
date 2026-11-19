@@ -83,6 +83,13 @@ createRoot(document.getElementById('app')).render(
       const pauseBox = await p.getByRole('button', { name: 'Pause Focus Field session' }).boundingBox();
       const deco = await p.locator('[data-focus-dock-choose-sound]').evaluate((el) => getComputedStyle(el).textDecorationLine);
       check(`${name}: Choose a sound looks like the bar's other buttons (same height, no underline)`, Math.abs(chooseBox.height - pauseBox.height) <= 2 && deco === 'none', { chooseBox, pauseBox, deco });
+      // Choose a sound stays in the app and brings Sound for this session into view (it used to leave the page).
+      await p.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      const before = p.url();
+      await p.locator('[data-focus-dock-choose-sound]').click();
+      await p.waitForTimeout(900);
+      const picker = await p.locator('#focus-sound').boundingBox();
+      check(`${name}: Choose a sound stays on the page and brings Sound for this session into view`, p.url() === before && picker && picker.y >= -2 && picker.y < viewport.height / 2, { url: p.url(), before, picker });
       // A generated sound: waveform in its colour, and how long it has played.
       await p.locator('[data-focus-sound="creative-flow"]').click();
       await p.locator('[data-focus-play-sound]').click();

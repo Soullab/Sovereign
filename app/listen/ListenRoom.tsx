@@ -19,6 +19,7 @@ import ToneLabDesk from './ToneLabDesk';
 import TransformDesk from './TransformDesk';
 import type { StudioView } from './SoundStudioNow';
 import FocusFieldDesk from '@/components/listening/FocusFieldDesk';
+import { STUDIO_SECTION_EVENT, viewForSection } from '@/lib/listening/studioSections';
 import type { MemberCollection, TrackReference } from '@/lib/listening/portableCollections';
 import styles from './listen.module.css';
 import './listenGlobal.css';
@@ -102,6 +103,24 @@ export default function ListenRoom() {
     setView(next);
     if (next === 'fields') { setFieldWork(workId); setFieldKey(k => k + 1); }
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+  }, []);
+  // Opens the view that holds a section named by the address (/listen#focus-sound) or by the player bar,
+  // then brings the section into view. Before this, those addresses always landed on Now (#1979, 2026-11-19).
+  useEffect(() => {
+    const open = (section: string | null | undefined) => {
+      const next = viewForSection(section);
+      if (!next) return;
+      setView(next);
+      const id = String(section).replace(/^#/, '');
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() =>
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
+    };
+    open(window.location.hash);
+    const onSection = (event: Event) => open((event as CustomEvent<string>).detail);
+    const onHash = () => open(window.location.hash);
+    window.addEventListener(STUDIO_SECTION_EVENT, onSection);
+    window.addEventListener('hashchange', onHash);
+    return () => { window.removeEventListener(STUDIO_SECTION_EVENT, onSection); window.removeEventListener('hashchange', onHash); };
   }, []);
   // Lets the shared player sit above the phone tab bar while this room is open.
   useEffect(() => {

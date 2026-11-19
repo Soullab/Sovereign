@@ -7,6 +7,7 @@ import { formatExperienceTime, soundProgress } from '@/lib/listening/soundStudio
 import { COMPANION_MIXING_AVAILABLE } from '@/lib/listening/platformAudioPolicy';
 import type { ListeningSnapshot } from './PersistentListeningProvider';
 import styles from './persistentListeningDock.module.css';
+import { openStudioSection } from '@/lib/listening/studioSections';
 
 type Props = {
   snapshot: ListeningSnapshot;
@@ -287,13 +288,14 @@ export default function PersistentListeningDock({
         <div className={styles.focus} data-focus-field-dock="true">
           <strong>Focus Field · {focusSession.plan.taskLabel || focusSession.plan.task}</strong>
           <div>{focusSession.plan.focusNeed} · {focusSession.plan.musicalWorld} · {focusSession.status} · {focusRemainingLabel}</div>
-          <Link href="/listen#focus-field">Open Focus Field</Link>
+          <Link href="/listen#focus-field" onClick={event => openStudioSection('focus-field', event)}>Open Focus Field</Link>
         </div>
       )}
 
       <div className={styles.controls}>
         {focusDisplayed && !focusSoundLabel && snapshot.kind === 'none' && (
-          <Link className={styles.control} href="/listen#focus-sound" data-focus-dock-choose-sound="true">Choose a sound</Link>
+          <Link className={styles.control} href="/listen#focus-sound" data-focus-dock-choose-sound="true"
+            onClick={event => openStudioSection('focus-sound', event)}>Choose a sound</Link>
         )}
         {focusDisplayed && focusSoundLabel && snapshot.kind === 'none' && onPlayFocusSound && (
           <button type="button" className={styles.control} data-focus-dock-play-sound="true"
