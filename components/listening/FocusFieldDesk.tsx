@@ -185,15 +185,18 @@ export default function FocusFieldDesk() {
     setMessage('The session changed without resetting its clock or task.');
   };
 
-  const saveDesign = () => {
+  // Saves the given choices: the desk's choices before a session, or the running session's own plan
+  // (including any retune) while one runs (founder, 2026-11-19: "Yes, during sessions").
+  const saveDesign = (from: { task: FocusTaskKind; focusNeed: FocusNeed; musicalWorld: FocusMusicalWorld; stimulation: FocusStimulation; duration: FocusDuration }, during = false) => {
     if (designs.length >= FOCUS_DESIGNS_MAX) { setDesignNote(`You can keep up to ${FOCUS_DESIGNS_MAX} designs. Remove one first.`); return; }
     if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') { setDesignNote('Saving needs a secure browser context.'); return; }
     try {
       const design = newFocusDesign({
-        name: designName, task, focusNeed, musicalWorld, stimulation, duration,
+        name: designName, task: from.task, focusNeed: from.focusNeed, musicalWorld: from.musicalWorld,
+        stimulation: from.stimulation, duration: from.duration,
         id: `design-${crypto.randomUUID().replace(/-/g, '')}`, at: new Date(),
       });
-      keepDesigns([design, ...designs], `Saved “${design.name}” on this device. Anyone using this browser can see your saved designs.`);
+      keepDesigns([design, ...designs], `Saved “${design.name}” on this device${during ? '; it will be in My focus designs when you choose your next session' : ''}. Anyone using this browser can see your saved designs.`);
       setDesignName('');
     } catch (e) { setDesignNote(e instanceof Error ? e.message : 'This design could not be saved.'); }
   };
@@ -404,7 +407,8 @@ export default function FocusFieldDesk() {
                   onChange={event => setDesignName(event.target.value)}
                   placeholder="Morning code, evening reading…" />
               </label>
-              <button type="button" className={styles.secondary} onClick={saveDesign}
+              <button type="button" className={styles.secondary}
+                onClick={() => saveDesign({ task, focusNeed, musicalWorld, stimulation, duration })}
                 data-focus-design-save="true">Save this design</button>
             </div>
             <h3>My focus designs <span>{designs.length}/{FOCUS_DESIGNS_MAX}{designsOnDevice ? ' · on this device' : ' · this visit only'}</span></h3>
@@ -481,6 +485,19 @@ export default function FocusFieldDesk() {
                   </select>
                 </label>
               </div>
+              <div className={styles.focusDesignSave} data-focus-design-during="true">
+                <label className={styles.focusTextLabel} htmlFor="focus-design-name-during">
+                  Save this design
+                  <input id="focus-design-name-during" maxLength={60} value={designName}
+                    onChange={event => setDesignName(event.target.value)}
+                    placeholder="Name what is working right now" />
+                </label>
+                <button type="button" className={styles.secondary} data-focus-design-save-during="true"
+                  onClick={() => saveDesign({ task: session.plan.task, focusNeed: session.plan.focusNeed,
+                    musicalWorld: session.plan.musicalWorld, stimulation: session.plan.stimulation,
+                    duration: session.plan.duration }, true)}>Save this design</button>
+              </div>
+              {designNote && <p className={styles.focusStatus} role="status" data-focus-design-note="true">{designNote}</p>}
               <div className={styles.focusActions}>
                 <p className={styles.focusExplanation}>
                   Pause and Stop for this session are in the player below.

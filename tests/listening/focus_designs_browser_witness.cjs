@@ -113,8 +113,21 @@ createRoot(document.getElementById('app')).render(
       await p.getByRole('button', { name: 'Remove', exact: true }).click();
       check(`${name}: Remove deletes the design`, (await p.locator('[data-focus-design]').count()) === 0);
       check(`${name}: the page says saved designs stay in this browser`, /Designs you choose to save are kept in this browser on this device, never on a server/.test(await p.locator('section#focus-field').textContent()));
-      await p.locator('#focus-design-passphrase').fill('');
-      // A saved design back, for the screenshot.
+      // Save DURING a running session: it saves the session's own plan, including a retune.
+      await p.getByRole('button', { name: 'Start focus session' }).click();
+      await p.waitForSelector('[data-focus-design-during]');
+      await p.locator('select').first().selectOption('organic');
+      await p.locator('#focus-design-name-during').fill('Mid-session');
+      await p.locator('[data-focus-design-save-during]').click();
+      const midNote = await p.locator('[data-focus-design-note]').textContent();
+      const midStored = await p.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{"designs":[]}').designs.find((d) => d.name === 'Mid-session'), KEY);
+      check(`${name}: a design can be saved while a session runs, and it keeps the retuned world`, !!midStored && midStored.musicalWorld === 'organic' && /next session/.test(midNote), { midStored, midNote });
+      check(`${name}: saving mid-session leaves the session running`, (await p.locator('[data-focus-field-session="running"]').count()) === 1);
+      await p.locator('[data-focus-choose-another]').click();
+      await p.waitForSelector('[data-focus-designs]');
+      check(`${name}: the mid-session design is in My focus designs for the next session`, /Mid-session[\s\S]*Organic \/ acoustic/.test(await p.locator('[data-focus-design]').first().textContent()), await p.locator('[data-focus-design]').first().textContent());
+      await p.getByRole('button', { name: 'Remove', exact: true }).first().click();
+      // A saved design back, for the screenshot (the encrypted-file section is folded again after the session).
       await p.locator('#focus-design-name').fill('Morning code'); await p.locator('[data-focus-design-save]').click();
       await p.locator('[data-focus-designs]').scrollIntoViewIfNeeded();
       await p.locator('section#focus-field').screenshot({ path: path.join(shots, `sound-field-focus-designs-${name}.png`) });
