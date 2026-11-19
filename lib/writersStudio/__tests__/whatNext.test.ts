@@ -100,3 +100,75 @@ describe('What do I do next?', () => {
     expect(WHAT_NEXT_ASK_LABEL).toBe('Ask MAIA more');
   });
 });
+
+/* ── Develop ─────────────────────────────────────────────────────────────────────────────────────────────── */
+import { whatNextInDevelop, type DevelopScreen } from '../whatNext';
+
+const STAGE = 'app/dev/writers-studio-pc3-live/DevelopStage.tsx';
+const DEVELOP_VIEW = 'app/dev/writers-studio-pc3-live/P4R1DevelopView.tsx';
+const DEVELOP_UI = [STAGE, DEVELOP_VIEW].map(read).join('\n');
+const D_BASE: DevelopScreen = { chapterLabel: 'Chapter 2', reading: 'idle', noticed: 0, pass: 'none', posture: 'ordinary' };
+const dtext = (s: Partial<DevelopScreen>) => whatNextInDevelop({ ...D_BASE, ...s }).say.join(' ');
+const READINGS: DevelopScreen['reading'][] = ['idle', 'reading', 'ready', 'error'];
+const PASSES: DevelopScreen['pass'][] = ['none', 'running', 'ready', 'error', 'absent'];
+const POSTURES: DevelopScreen['posture'][] = ['ordinary', 'sanctuary', 'unresolved'];
+const ALL_D: DevelopScreen[] = READINGS.flatMap((reading) => PASSES.flatMap((pass) => POSTURES.flatMap((posture) =>
+  [0, 3].map((noticed) => ({ ...D_BASE, reading, pass, posture, noticed })))));
+
+describe('What do I do next? in Develop', () => {
+  test('in Sanctuary, or when Sanctuary cannot be read, no reading is ever suggested', () => {
+    for (const s of ALL_D.filter((x) => x.posture !== 'ordinary')) {
+      const t = whatNextInDevelop(s).say.join(' ');
+      expect(t).not.toMatch(/Read this chapter with MAIA|editorial pass|Go through what she noticed/);
+      expect(t).toMatch(/“Edit in Write”/);
+    }
+    expect(dtext({ posture: 'unresolved' })).toMatch(/won’t read anything until you’ve chosen/);
+  });
+
+  test('a chapter she has already read is never offered for reading again', () => {
+    expect(dtext({ reading: 'ready', noticed: 3 })).not.toContain('Read this chapter with MAIA');
+    expect(dtext({ reading: 'ready', noticed: 3 })).toContain('“Go through what she noticed”');
+  });
+
+  test('"Go through what she noticed" is named only when her reading card is on screen', () => {
+    expect(dtext({ reading: 'ready', noticed: 0 })).not.toContain('Go through what she noticed');
+  });
+
+  test('an unread chapter names the real reading control; a failed one says the writing is unchanged', () => {
+    expect(dtext({ reading: 'idle' })).toContain('press “Read this chapter with MAIA” at the top');
+    expect(dtext({ reading: 'error' })).toMatch(/Nothing in your writing changed[\s\S]*“Read this chapter with MAIA”/);
+  });
+
+  test('while she reads, she suggests nothing new to start', () => {
+    expect(dtext({ reading: 'reading' })).not.toMatch(/press “Read this|“Whole book · editorial pass”/);
+  });
+
+  test('the whole-Work reading is offered only when its control is shown, and its cost is never hidden', () => {
+    expect(dtext({ pass: 'absent' })).not.toMatch(/editorial pass/);
+    expect(dtext({ pass: 'none' })).toMatch(/“Whole book · editorial pass”[\s\S]*see what it uses before anything starts/);
+    expect(dtext({ pass: 'ready' })).toContain('“Whole book · editorial pass ready”');
+    expect(dtext({ pass: 'running' })).toMatch(/Keep this page open/);
+  });
+
+  test('every control she names in Develop is text the live Develop stage shows', () => {
+    for (const s of ALL_D) {
+      const labels = [...whatNextInDevelop(s).say.join(' ').matchAll(/“([^”]+)”/g)].map((m) => m[1]).filter((l) => l !== s.chapterLabel);
+      for (const label of labels) expect(DEVELOP_UI).toContain(label);
+    }
+  });
+
+  test('her own words say Work, not book (quoted Studio labels aside)', () => {
+    for (const s of ALL_D) {
+      const own = whatNextInDevelop(s).say.join(' ').replace(/“[^”]*”/g, '');
+      expect(own).not.toMatch(/\bbook\b/i);
+    }
+  });
+
+  test('Develop shows the button in MAIA’s column, reads posture when asked, and only places the question', () => {
+    const view = read(DEVELOP_VIEW);
+    expect(view).toContain('data-develop-what-next-button="true"');
+    expect(view).toMatch(/whatNextOpen \? \(\(\) => \{\s*const posture = readCurrentSanctuaryPosture\(\);/);
+    expect(view).toMatch(/setWhatNextOpen\(false\); placeInStageConversation\(answer\.ask\)/);
+    expect(view).toMatch(/pass: stagePass\.status,/);
+  });
+});
