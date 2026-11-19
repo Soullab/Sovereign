@@ -79,6 +79,10 @@ createRoot(document.getElementById('app')).render(
       check(`${name}: and it sets the one player's level`, (await p.evaluate(() => window.__transport.volume)) === 30);
       check(`${name}: the silent bar offers Choose a sound`, (await p.locator('[data-focus-dock-choose-sound]').getAttribute('href')) === '/listen#focus-sound');
 
+      const chooseBox = await p.locator('[data-focus-dock-choose-sound]').boundingBox();
+      const pauseBox = await p.getByRole('button', { name: 'Pause Focus Field session' }).boundingBox();
+      const deco = await p.locator('[data-focus-dock-choose-sound]').evaluate((el) => getComputedStyle(el).textDecorationLine);
+      check(`${name}: Choose a sound looks like the bar's other buttons (same height, no underline)`, Math.abs(chooseBox.height - pauseBox.height) <= 2 && deco === 'none', { chooseBox, pauseBox, deco });
       // A generated sound: waveform in its colour, and how long it has played.
       await p.locator('[data-focus-sound="creative-flow"]').click();
       await p.locator('[data-focus-play-sound]').click();

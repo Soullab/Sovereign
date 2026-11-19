@@ -34,3 +34,6 @@
 .barLiveNote{grid-column:1/-1;font-size:11px;color:#9aafb0}
 .barLive span[data-listen-bar-time]{white-space:nowrap}
 @media(max-width:700px){.barLive{grid-template-columns:90px auto}.barLive canvas{width:90px}}
+
+/* "Choose a sound" is a link styled as the bar's buttons: no underline, same height (founder screenshot 2026-11-19). */
+a.control{display:inline-flex;align-items:center;text-decoration:none;color:inherit;box-sizing:border-box}
