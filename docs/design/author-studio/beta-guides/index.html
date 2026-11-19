@@ -1,0 +1,288 @@
+<title>Writer's Studio Guides</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: choose a guide, then one large step at a time: the Studio screen with the thing to press outlined, and plain instructions beside it. */
+:root{
+  --bg:#f4f3f8; --panel:#ffffff; --fg:#1c1f2b; --muted:#565c70; --line:#d9dbe5; --accent:#8a5a12; --accent-bg:#f6ead3;
+  --display:"Newsreader",Georgia,"Times New Roman",serif; --body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --s-bg:#141a2e; --s-page:#18203a; --s-fg:#e2e6f0; --s-dim:#a3abc2; --s-line:#2a3354; --s-btn:#243058; --s-amber:#f0bb52;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0f121a; --panel:#181c28; --fg:#eceef4; --muted:#a4aabb; --line:#2c3142; --accent:#f0bb52; --accent-bg:#33270f; color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f121a; --panel:#181c28; --fg:#eceef4; --muted:#a4aabb; --line:#2c3142; --accent:#f0bb52; --accent-bg:#33270f; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:18px;line-height:1.6;margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-block:28px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);font-weight:600;text-wrap:balance;margin:0}
+h1{font-size:clamp(32px,4.6vw,46px);line-height:1.1}
+.lede{color:var(--muted);max-width:62ch;margin:10px 0 0}
+button{font:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* Chooser */
+.choose{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:28px}
+.door{all:unset;box-sizing:border-box;cursor:pointer;background:var(--panel);border:2px solid var(--line);border-radius:12px;padding:26px;display:grid;gap:10px;min-width:0}
+.door:hover{border-color:var(--accent)}
+.door:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.door h2{font-size:28px}
+.door p{margin:0;color:var(--muted)}
+.door .go{font-weight:700;color:var(--accent)}
+.promise{margin-top:26px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 22px;display:grid;gap:6px;max-width:80ch}
+.promise h3{font-size:20px}
+.promise ul{margin:0;padding-left:20px}
+
+/* Guide */
+.top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px}
+.back{background:none;border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:8px 14px;cursor:pointer;font-size:16px}
+.progress{display:flex;gap:6px;flex-wrap:wrap}
+.progress button{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;font-size:14px;font-variant-numeric:tabular-nums}
+.progress button[aria-current="step"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.progress button.done{color:var(--fg);border-color:var(--fg)}
+.step{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:24px;align-items:start}
+.say{display:grid;gap:14px;min-width:0}
+.say .count{font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.say h2{font-size:clamp(26px,3vw,34px);line-height:1.15}
+.say ol{margin:0;padding-left:24px;display:grid;gap:8px}
+.press{display:inline-block;background:var(--accent-bg);color:var(--fg);border:1px solid var(--accent);border-radius:6px;padding:0 8px;font-weight:700;white-space:nowrap}
+.tip{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:16px}
+.tip b{display:block;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.nav{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.nav button{border-radius:8px;padding:12px 22px;cursor:pointer;font-size:18px;border:1px solid var(--line);background:var(--panel);color:var(--fg)}
+.nav .next{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:700}
+.nav button:disabled{opacity:.35;cursor:default}
+.src{font-size:12px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;overflow-wrap:anywhere}
+.finish{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;display:grid;gap:10px}
+
+/* Studio mock (always the Studio's own dark look) */
+.studio{background:var(--s-bg);color:var(--s-fg);border-radius:12px;overflow:hidden;border:1px solid var(--s-line);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:13px;line-height:1.5;min-width:0}
+.s-bar{display:flex;align-items:center;gap:14px;padding:9px 14px;border-bottom:1px solid var(--s-line);flex-wrap:wrap}
+.s-brand{font-family:var(--display);font-size:17px;font-weight:600}
+.s-tabs{display:flex;gap:12px;flex-wrap:wrap}
+.s-tabs span{color:var(--s-dim);padding-bottom:2px}
+.s-tabs span.on{color:var(--s-fg);border-bottom:2px solid var(--s-fg)}
+.s-body{display:grid;grid-template-columns:130px minmax(0,1fr) 190px;min-height:360px}
+.s-body.full{grid-template-columns:1fr}
+.s-left{border-right:1px solid var(--s-line);padding:12px;font-family:var(--display);font-size:13px;color:var(--s-dim);display:grid;gap:7px;align-content:start}
+.s-left .lab{font-family:system-ui,sans-serif;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase}
+.s-left .sel{color:var(--s-fg);background:#22305a;border-radius:4px;padding:2px 6px;margin:0 -6px}
+.s-center{background:var(--s-page);padding:20px 22px;font-family:var(--display);font-size:15px;line-height:1.65;min-width:0;position:relative}
+.s-col{border-left:1px solid var(--s-line);padding:12px;font-size:12px;display:grid;gap:9px;align-content:start;min-width:0}
+.s-col .who{display:flex;gap:7px;align-items:center}
+.s-col .orb{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff,#9fb0d8);flex:none}
+.s-col .who b{font-family:var(--display);font-size:14px}
+.s-q{font-family:var(--display);font-size:21px;line-height:1.3;margin:0 0 8px}
+.s-hint{color:var(--s-dim);margin:0 0 14px}
+.s-btns{display:flex;flex-wrap:wrap;gap:7px;font-family:system-ui,sans-serif;font-size:12.5px}
+.s-btn{background:var(--s-btn);color:var(--s-fg);border:1px solid #34437a;border-radius:6px;padding:5px 11px}
+.s-link{color:var(--s-dim);text-decoration:underline;padding:5px 3px}
+.s-card{background:#1d2747;border:1px solid var(--s-line);border-radius:8px;padding:11px;font-family:system-ui,sans-serif;font-size:12.5px;display:grid;gap:8px}
+.s-switch{display:flex;gap:6px;align-items:center;font-family:system-ui,sans-serif;font-size:12px;background:#1d2747;border-radius:8px;padding:3px 8px;width:max-content;max-width:100%;margin-bottom:12px}
+.s-switch span{padding:1px 7px;border-radius:5px}
+.s-switch .on{background:#2c3a6a}
+.s-sel{background:rgba(240,187,82,.3);border-radius:2px}
+.s-menu{background:#202b50;border:1px solid #3a4a80;border-radius:8px;padding:10px;font-family:system-ui,sans-serif;font-size:12px;display:grid;gap:6px;max-width:250px;margin-top:10px}
+.s-in{border:1px solid var(--s-line);border-radius:5px;padding:5px 8px;color:var(--s-dim);font-family:system-ui,sans-serif}
+.s-area{border:1px solid var(--s-line);border-radius:6px;padding:8px;color:var(--s-dim);min-height:70px;font-family:system-ui,sans-serif}
+.s-chips{display:flex;flex-wrap:wrap;gap:5px;font-family:system-ui,sans-serif;font-size:11.5px;margin-bottom:12px}
+.s-chips span{border:1px solid var(--s-line);border-radius:999px;padding:2px 9px;color:var(--s-dim)}
+.s-steps{display:flex;gap:14px;font-family:system-ui,sans-serif;font-size:11.5px;color:var(--s-dim);margin-bottom:12px}
+.s-steps .on{color:var(--s-fg);font-weight:600}
+.s-row{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--s-line);border-radius:6px;padding:6px 9px;font-family:system-ui,sans-serif;font-size:12px}
+.s-letter a{color:var(--s-fg)}
+.s-letter small{color:var(--s-dim);display:block}
+.cue{outline:3px solid var(--s-amber);outline-offset:3px;border-radius:5px;box-shadow:0 0 0 7px rgba(240,187,82,.18)}
+@media (prefers-reduced-motion:no-preference){.cue{animation:pulse 1.8s ease-in-out infinite}}
+@keyframes pulse{50%{box-shadow:0 0 0 11px rgba(240,187,82,.08)}}
+
+@media (max-width:860px){
+  .step{grid-template-columns:1fr}
+  .s-body{grid-template-columns:minmax(0,1fr)}
+  .s-left{display:none}
+  .s-col{border-left:0;border-top:1px solid var(--s-line)}
+}
+</style>
+
+<div class="wrap" id="app"></div>
+
+<script>
+/* Mock pieces */
+const BAR = (tab) => `<div class="s-bar"><span class="s-brand">✳ Soullab</span><div class="s-tabs">${['Home','Write','Develop','Review','Publish','Listen'].map(t=>`<span class="${t===tab?'on':''}${t===tab&&tab.cue?' cue':''}">${t}</span>`).join('')}</div></div>`;
+const BARCUE = (tab, cue) => `<div class="s-bar"><span class="s-brand">✳ Soullab</span><div class="s-tabs">${['Home','Write','Develop','Review','Publish','Listen'].map(t=>`<span class="${t===tab?'on':''} ${t===cue?'cue':''}">${t}</span>`).join('')}</div></div>`;
+const LEFT = (sel, cue) => `<div class="s-left${cue?' cue':''}"><span class="lab">Manuscript</span>${['Introduction','Chapter 1','Chapter 2','Chapter 3'].map((s,i)=>`<span class="${i===sel?'sel':''}">${s}</span>`).join('')}</div>`;
+const COL = (inner) => `<div class="s-col"><div class="who"><span class="orb"></span><b>MAIA</b></div>${inner}</div>`;
+const PAGE = `<p>The river had been low all summer. Every morning she walked down to see how far it had fallen.</p><p>Nobody else seemed to notice.</p>`;
+const S = (tab, body, opts={}) => `<div class="studio" aria-hidden="true">${opts.cueTab?BARCUE(tab,opts.cueTab):BARCUE(tab,null)}<div class="s-body${opts.full?' full':''}">${body}</div></div>`;
+const P = (t) => `<span class="press">${t}</span>`;
+
+const NEW = {
+  id:'new', title:'Starting a new Work',
+  intro:'For when you are beginning something new, with no pages yet.',
+  steps:[
+  {h:'MAIA asks what’s calling you to write',
+   screen:S('Home',`<div class="s-center" style="padding:36px"><p class="s-q">Before anything else: what’s calling you to write?</p><p class="s-hint">It can be a feeling, an image…</p><div class="s-btns"><span class="s-btn cue">Tell MAIA</span><span class="s-btn">I don’t know yet</span><span class="s-link">Just let me write</span><span class="s-link">I already have pages</span></div></div>`,{full:true}),
+   do:[`Type a few words about what you want to write. A feeling or an image is enough.`,`Press ${P('Tell MAIA')}.`],
+   tip:['Not sure?',`${P('I don’t know yet')} is a perfectly good answer. If you’d rather skip the conversation, press “Just let me write”.`],
+   src:'lib/writersStudio/inspirationOpening.ts:19-25'},
+  {h:'Choose how MAIA holds this session',
+   screen:S('Home',`<div class="s-center" style="padding:36px"><p class="s-q">…is this an Ordinary session, or Sanctuary?</p><div class="s-btns"><span class="s-btn cue">Ordinary</span><span class="s-btn cue">Sanctuary</span></div></div>`,{full:true}),
+   do:[`Press ${P('Ordinary')} if you want MAIA to remember this work with you.`,`Press ${P('Sanctuary')} if you want nothing from this session saved.`],
+   tip:['Why she asks',`MAIA won’t guess. Nothing is kept until you choose.`],
+   src:'app/dev/writers-studio-pc3-live/StudioInspirationOpening.tsx:226-227, 306-307'},
+  {h:'Choose where to begin',
+   screen:S('Home',`<div class="s-center" style="padding:36px"><p class="s-q">Where would you like to begin?</p><div class="s-btns"><span class="s-btn cue">Write the first page</span><span class="s-btn">Bring what I’ve written</span><span class="s-btn">Keep talking</span><span class="s-btn">I don’t know yet</span></div></div>`,{full:true}),
+   do:[`Press ${P('Write the first page')}.`],
+   tip:['Other choices',`“Keep talking” stays in conversation with MAIA a little longer. “Bring what I’ve written” is for pages you already have (see the other guide).`],
+   src:'app/dev/writers-studio-pc3-live/StudioInspirationOpening.tsx:372-385'},
+  {h:'Tell MAIA how to work with you',
+   screen:S('Home',`<div class="s-center" style="padding:36px"><p class="s-q">How would you like me to work with you?</p><div class="s-btns"><span class="s-btn cue">Guide me</span><span class="s-btn cue">Teach me as we go</span><span class="s-btn cue">Give me full control</span><span class="s-btn">Not now</span></div></div>`,{full:true}),
+   do:[`Choose the one that sounds like you: ${P('Guide me')}, ${P('Teach me as we go')} or ${P('Give me full control')}.`],
+   tip:['No wrong answer','If you’re not sure, “Not now” is fine.'],
+   src:'lib/writersStudio/inspirationOpening.ts:182-187'},
+  {h:'Write on your blank page',
+   screen:S('Write',LEFT(0)+`<div class="s-center"><p style="color:var(--s-dim);font-style:italic">Write whatever is closest…</p><div class="s-card" style="margin-top:18px"><span>I’m here when you want me. I won’t read this page until you show it to me.</span><div class="s-btns"><span class="s-btn cue">Just start writing</span><span class="s-btn">Talk with MAIA</span><span class="s-btn">Help me find a beginning</span></div></div></div>`+COL(`<p>You can write here on your own…</p>`)),
+   do:[`Press ${P('Just start writing')}, then type on the page in the middle.`,`Stuck? Press ${P('Help me find a beginning')}. MAIA will ask you one question to help you start in your own words.`],
+   tip:['Your page is private',`MAIA doesn’t read your page until you show it to her.`],
+   src:'app/dev/writers-studio-pc3-live/P4R1BlankWritingArrival.tsx:44-53 · inspirationOpening.ts:103-104'},
+  {h:'Show MAIA your first page',
+   screen:S('Write',LEFT(0)+`<div class="s-center">${PAGE}</div>`+COL(`<span class="s-btn cue" style="justify-self:start">Show MAIA this page</span>`)),
+   do:[`When you’re ready, press ${P('Show MAIA this page')}.`,`Then press ${P('Yes, read it')}, or “Not yet” to wait.`],
+   tip:['Nothing happens by itself','She reads only after you say yes.'],
+   src:'app/dev/writers-studio-pc3-live/StudioFirstPageMaia.tsx:63-81 · inspirationOpening.ts:105-106'},
+  {h:'Work on one passage with MAIA',
+   screen:S('Write',LEFT(1)+`<div class="s-center"><div class="s-switch"><span>Prose</span><span class="on cue">Edit</span></div><p>The river had been low all summer. <span class="s-sel">Every morning she walked down to see how far it had fallen.</span></p><div class="s-menu"><span class="s-btn cue" style="justify-self:start">Talk with MAIA ›</span><span class="s-in">Tell MAIA what you want…</span><span>What’s happening here?</span><span>Show me an edit</span><span>Teach me the craft</span></div></div>`+COL(`<p>Choose a chapter or section at left…</p>`)),
+   do:[`Once your Work has more than one section, you’ll see “Prose” and “Edit” at the top of the page. Press ${P('Edit')}.`,`With your mouse, select the words you want to work on.`,`Press ${P('Talk with MAIA')}, which appears beside them.`,`Type what you want, or choose ${P('What’s happening here?')}, ${P('Show me an edit')} or ${P('Teach me the craft')}.`],
+   tip:['The key step','Selecting words only works in Edit. In Prose, the page is for reading.'],
+   src:'app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx:917-987, 1557-1565'},
+  {h:'Start working together',
+   screen:S('Write',LEFT(1)+`<div class="s-center"><div class="s-card"><b>I haven’t read this Work with you yet.</b><div class="s-btns"><span class="s-btn cue">Start with MAIA</span><span class="s-btn">Keep this private</span><span class="s-btn">Just keep writing</span></div></div></div>`+COL(`<p>…</p>`)),
+   do:[`The first time, MAIA asks before she begins working on this Work with you.`,`Press ${P('Start with MAIA')} to work together.`],
+   tip:['Your choice',`“Keep this private” or “Just keep writing” sends nothing to MAIA.`],
+   src:'app/dev/writers-studio-pc3-live/EditorialDancePanel.tsx:602-625'},
+  {h:'Talk, then go back to your page',
+   screen:S('Write',LEFT(1)+`<div class="s-center"><div style="display:flex;justify-content:space-between;align-items:center;font-family:system-ui,sans-serif;font-size:12px;color:var(--s-dim);border-bottom:1px solid var(--s-line);padding-bottom:8px;margin-bottom:10px"><span>Talking with MAIA · The Low River</span><span class="s-btn cue">Back to the page</span></div><div class="s-area">Reply to MAIA…</div></div>`+COL(`<p>We’re talking in the middle of the page.</p>`)),
+   do:[`Your conversation with MAIA opens in the middle of the screen.`,`When you’re done, press ${P('Back to the page')}. You return to the same place on your page.`],
+   tip:['Your page is still there','Talking with MAIA doesn’t change your page. “Back to the page” takes you to where you were.'],
+   src:'app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx:1143-1146 · lib/writersStudio/pageReturn.ts'},
+  {h:'Make more room on a laptop',
+   screen:S('Write',LEFT(1,true)+`<div class="s-center">${PAGE}</div>`+COL(`<p>…</p>`),{cueTab:null}),
+   do:[`On a larger screen, drag the edge between the columns to make the page wider.`,`The “Layout” button at the top also lets you change how the columns are shown.`],
+   tip:['Small screen?','On a smaller laptop screen the dividers aren’t shown, and the Studio arranges the columns for you.'],
+   src:'app/writers-studio/full-redesign/Shell.tsx:289 (Layout) · splitters: Shell.tsx, full-redesign-review.css @media (max-width:1023px)'},
+  {h:'When you have a few chapters, go to Develop',
+   screen:S('Develop',LEFT(1)+`<div class="s-center"><div class="s-card"><span>MAIA does not have a completed reading of Chapter 1 here yet. Would you like her to read it?</span><span class="s-btn cue" style="justify-self:start">Read this chapter with MAIA</span></div></div>`+COL(`<p>…</p>`),{cueTab:'Develop'}),
+   do:[`Choose ${P('Develop')} in the top bar.`,`Press ${P('Read this chapter with MAIA')}.`,`Afterwards MAIA asks “What would you like to do?” Choose one, or “Leave it for now”.`],
+   tip:['What Develop is for','Looking at how a chapter, and later the whole book, is working, with MAIA as your reader.'],
+   src:'app/dev/writers-studio-pc3-live/DevelopStage.tsx:660-672, 719-725'},
+  ]
+};
+
+const OLD = {
+  id:'existing', title:'Bringing in a Work you’ve already written',
+  intro:'For when you have a draft, a chapter or a whole manuscript.',
+  steps:[
+  {h:'Tell the Studio you already have pages',
+   screen:S('Home',`<div class="s-center" style="padding:36px"><p class="s-q">Before anything else: what’s calling you to write?</p><div class="s-btns"><span class="s-btn">Tell MAIA</span><span class="s-btn">I don’t know yet</span><span class="s-link">Just let me write</span><span class="s-link cue">I already have pages</span></div></div>`,{full:true}),
+   do:[`Press ${P('I already have pages')}, under the first question.`,`Already in the Studio? On Home, press ${P('Import writing')}.`],
+   tip:['Your original is safe','The Studio says: “Your original is always preserved.”'],
+   src:'lib/writersStudio/inspirationOpening.ts:25 · P4R1HomeView.tsx:494, 626, 826 · full-redesign/fixtures.ts:365-367'},
+  {h:'Bring your manuscript',
+   screen:S('Home',`<div class="s-center" style="padding:28px"><div class="s-steps"><span class="on">1 Source</span><span>2 Structure</span><span>3 Open in Write</span></div><p class="s-q" style="font-size:18px">Your words first. Structure stays yours.</p><div class="s-in" style="margin-bottom:8px">Title of the Work</div><div class="s-area cue">Choose your file, or paste your manuscript here…</div></div>`,{full:true}),
+   do:[`Give your Work a title.`,`Add your manuscript. A Word document, PDF, EPUB, Markdown or plain-text file all work.`],
+   tip:['MAIA doesn’t touch it','Nothing is interpreted or rewritten by MAIA during import. Your original file is encrypted and kept separate from the copy you edit.'],
+   src:'app/dev/writers-studio-pc3-live/P4R1ImportManuscript.tsx:400-420, 478-530 · lib/writersStudio/releaseAuthority.ts:21-27'},
+  {h:'Choose Ordinary or Sanctuary',
+   screen:S('Home',`<div class="s-center" style="padding:28px"><div class="s-btns"><span class="s-btn cue">Ordinary — keep my manuscript</span><span class="s-btn">Sanctuary — keep nothing</span></div></div>`,{full:true}),
+   do:[`Press ${P('Ordinary — keep my manuscript')} to keep your book in the Studio.`],
+   tip:['Sanctuary','“Sanctuary — keep nothing” lets you look without saving anything.'],
+   src:'app/dev/writers-studio-pc3-live/P4R1ImportManuscript.tsx (posture buttons)'},
+  {h:'Check the chapters, then open your book',
+   screen:S('Home',`<div class="s-center" style="padding:28px"><div class="s-steps"><span>1 Source</span><span class="on">2 Structure</span><span>3 Open in Write</span></div><div style="display:grid;gap:6px;margin-bottom:12px"><div class="s-row"><span>Chapter 1 · The Low River</span><span style="color:var(--s-dim)">Add cut</span></div><div class="s-row"><span>Chapter 2 · Morning</span><span style="color:var(--s-dim)">Merge ↑ · Add cut</span></div></div><span class="s-btn cue">Create Work and open in Write</span></div>`,{full:true}),
+   do:[`Press ${P('Review structure')}. The Studio proposes where your chapters begin.`,`Fix anything that’s wrong. Edit a heading, use “Merge ↑” to join two pieces, or “Add cut” to split one.`,`Press ${P('Create Work and open in Write')}.`],
+   tip:['You decide','No cut is accepted until you confirm it.'],
+   src:'app/dev/writers-studio-pc3-live/P4R1ImportManuscript.tsx:530-700'},
+  {h:'Find your way around your book',
+   screen:S('Write',LEFT(2,true)+`<div class="s-center">${PAGE}</div>`+COL(`<p style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--s-dim);margin:0">You selected</p><b>Chapter 2</b><p>I’m with this exact place now.</p><span class="s-btn cue" style="justify-self:start">Talk about this place</span>`)),
+   do:[`Your chapters are listed on the left, under “Manuscript”. Click one to open it.`,`MAIA’s column on the right shows the place you chose. Press ${P('Talk about this place')} to talk about it with her.`],
+   tip:['Talking about the whole book',`With no place chosen, the column offers “Talk about the whole Work”.`],
+   src:'app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx:1460-1515'},
+  {h:'Work on one passage with MAIA',
+   screen:S('Write',LEFT(2)+`<div class="s-center"><div class="s-switch"><span>Prose</span><span class="on cue">Edit</span></div><p><span class="s-sel">Every morning she walked down to see how far it had fallen.</span></p><div class="s-menu"><span class="s-btn cue" style="justify-self:start">Talk with MAIA ›</span><span>What’s happening here?</span><span>Show me an edit</span><span>Teach me the craft</span></div></div>`+COL(`<p>…</p>`)),
+   do:[`Press ${P('Edit')} at the top of the page.`,`Select the words you want to work on with your mouse.`,`Press ${P('Talk with MAIA')}, which appears beside them.`],
+   tip:['The first time','MAIA asks before she starts working on this Work with you. Press “Start with MAIA”, or “Keep this private” to send nothing.'],
+   src:'app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx:917-987 · EditorialDancePanel.tsx:602-625'},
+  {h:'Have MAIA read a chapter in Develop',
+   screen:S('Develop',LEFT(1)+`<div class="s-center"><div class="s-card"><b>What would you like to do?</b><div class="s-btns"><span class="s-btn cue">Go through what she noticed</span><span class="s-btn">Talk about one passage</span><span class="s-btn">Work toward a revision</span><span class="s-btn">Leave it for now</span></div></div></div>`+COL(`<p>…</p>`),{cueTab:'Develop'}),
+   do:[`Choose ${P('Develop')} in the top bar, then press ${P('Read this chapter with MAIA')}.`,`When she’s done, choose what to do next. ${P('Go through what she noticed')} is a good place to start.`],
+   tip:['To talk about exact words','Select them in the chapter here and press “Ask MAIA about this”. To change the words, press “Edit in Write”.'],
+   src:'app/dev/writers-studio-pc3-live/DevelopStage.tsx:660-672, 719-725'},
+  {h:'Have MAIA read the whole book',
+   screen:S('Develop',LEFT(-1)+`<div class="s-center"><div class="s-card"><b>Whole book · editorial pass</b><span>This asks MAIA to read your whole book: up to nine paid readings and a paid letter (readings she already made of this draft are reused). It takes several minutes.</span><div class="s-btns"><span class="s-btn cue">Read it</span><span class="s-link">Not now</span></div></div></div>`+COL(`<p>…</p>`)),
+   do:[`In Develop, press ${P('Whole book · editorial pass')} at the end of the row of ways to look at your Work.`,`Read the note about what it uses, then press ${P('Read it')}.`],
+   tip:['Or from Write','MAIA’s column in Write also offers “Read my Work”.'],
+   src:'app/dev/writers-studio-pc3-live/DevelopStage.tsx:150, 317-329 · EditorialLetterPanel.tsx:328-333'},
+  {h:'Read MAIA’s letter, back in Write',
+   screen:S('Write',LEFT(-1)+`<div class="s-center">${PAGE}</div>`+COL(`<div class="s-letter cue" style="display:grid;gap:6px"><span>I found 12 places where an edit may help. Here they are in the order they come in your Work.</span><a href="#" onclick="return false" style="text-decoration:underline">From the whole Work down</a><a href="#" onclick="return false">The river image returns three times</a><small>Chapter 1</small></div>`)),
+   do:[`MAIA’s letter appears in her column in ${P('Write')}, beside your page, not in Develop.`,`Click a place in the letter to go to it on your page.`,`Press ${P('From the whole Work down')} to see the biggest questions first.`],
+   tip:['If you close the page','She stops after the reading she’s on. Press “Continue” later to pick up where she left off. MAIA can read the whole book twice a day.'],
+   src:'app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx:1430-1445 · EditorialLetterPanel.tsx:139, 295, 318 · letter ordering (#2334)'},
+  ]
+};
+
+const GUIDES = {new:NEW, existing:OLD};
+const app = document.getElementById('app');
+let g=null, i=0;
+
+function home(){
+  g=null;
+  app.innerHTML = `
+    <header><h1>Writing with MAIA in the Studio</h1>
+    <p class="lede">Short, step-by-step guides to Writer’s Studio. Each step shows the screen you’ll see, with the thing to press outlined in gold.</p></header>
+    <div class="choose">
+      <button class="door" data-g="new"><h2>${NEW.title}</h2><p>${NEW.intro}</p><span class="go">${NEW.steps.length} steps →</span></button>
+      <button class="door" data-g="existing"><h2>${OLD.title}</h2><p>${OLD.intro}</p><span class="go">${OLD.steps.length} steps →</span></button>
+    </div>
+    <div class="promise"><h3>What stays true in every step</h3><ul>
+      <li>MAIA reads only what you show her or allow her to read.</li>
+      <li>She suggests. You press the buttons, and nothing changes in your writing unless you choose it.</li>
+      <li>In Sanctuary, nothing from the session is saved.</li></ul></div>`;
+  app.querySelectorAll('.door').forEach(b=>b.onclick=()=>open(b.dataset.g,0));
+  try{history.replaceState(null,'',location.pathname+location.search);}catch(e){}
+}
+function open(id,k){g=GUIDES[id];i=k;render();}
+function render(){
+  const n=g.steps.length;
+  if(i>=n){ // finish
+    const other = g.id==='new'?OLD:NEW;
+    app.innerHTML=`<div class="top"><button class="back" id="home">← All guides</button></div>
+      <div class="finish"><h2>That’s the whole path</h2><p>You’ve seen every step of “${g.title}”. Open the Studio and try it, and come back here whenever you need to.</p>
+      <div class="nav"><button id="again">Start again</button><button class="next" id="other">${other.title} →</button></div></div>`;
+    document.getElementById('home').onclick=home;
+    document.getElementById('again').onclick=()=>open(g.id,0);
+    document.getElementById('other').onclick=()=>open(other.id,0);
+    return;
+  }
+  const s=g.steps[i];
+  app.innerHTML=`
+    <div class="top"><button class="back" id="home">← All guides</button>
+      <nav class="progress" aria-label="Steps">${g.steps.map((x,k)=>`<button data-k="${k}" class="${k<i?'done':''}" ${k===i?'aria-current="step"':''} aria-label="Step ${k+1}: ${x.h.replace(/"/g,'&quot;')}">${k+1}</button>`).join('')}</nav></div>
+    <div class="step">
+      <div>${s.screen}</div>
+      <div class="say" aria-live="polite">
+        <span class="count">${g.title} · step ${i+1} of ${n}</span>
+        <h2>${s.h}</h2>
+        <ol>${s.do.map(d=>`<li>${d}</li>`).join('')}</ol>
+        <div class="tip"><b>${s.tip[0]}</b>${s.tip[1]}</div>
+        <div class="nav"><button id="prev" ${i===0?'disabled':''}>← Back</button><button class="next" id="next">${i===n-1?'Finish':'Next'} →</button></div>
+        <div class="src">Live code: ${s.src}</div>
+      </div>
+    </div>`;
+  document.getElementById('home').onclick=home;
+  document.getElementById('prev').onclick=()=>{if(i>0){i--;render();}};
+  document.getElementById('next').onclick=()=>{i++;render();};
+  app.querySelectorAll('.progress button').forEach(b=>b.onclick=()=>{i=+b.dataset.k;render();});
+  try{history.replaceState(null,'','#'+g.id+'-'+(i+1));}catch(e){}
+}
+document.addEventListener('keydown',e=>{ if(!g) return; if(e.key==='ArrowRight'){i=Math.min(i+1,g.steps.length);render();} if(e.key==='ArrowLeft'&&i>0){i--;render();} });
+(function(){try{const m=(location.hash||'').match(/^#(new|existing)-(\d+)$/); if(m){open(m[1],Math.max(0,Math.min(+m[2]-1,GUIDES[m[1]].steps.length-1)));return;}}catch(e){} home();})();
+</script>
