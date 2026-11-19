@@ -2,7 +2,7 @@
 // microphone. It builds into any BaseAudioContext, so the same graph renders live (the one persistent player)
 // and offline (for measurement). Nothing starts a context; the caller does, after the member's own Play.
 import { soundscapeNeedsRebuild } from './focusSoundscape';
-import { GENERATED_OUTPUT_SCALE } from './listeningLevel';
+import { GENERATED_OUTPUT_SCALE, ORIGINAL_OUTPUT_SCALE, TONE_OUTPUT_SCALE } from './listeningLevel';
 import { TONE_VOICE_GAIN, toneEffectiveLevel } from './toneLab';
 import type { RecordedLayerId, SoundscapeSpec, TickSpec } from './focusSoundscape';
 
@@ -49,7 +49,8 @@ export function buildSoundscape(
   master.gain.setValueAtTime(0.0001, t0);
   // Tone Lab plays at the shared level but never above its cap, so a turned-up level cannot make a pure tone loud.
   const playLevel = (value: number) => (spec.tone ? toneEffectiveLevel(value * 100) / 100 : value);
-  master.gain.exponentialRampToValueAtTime(Math.max(0.0001, playLevel(level) * SCALE), t0 + Math.max(1, spec.fadeInSec));
+  // Tone Lab keeps its original absolute scale (founder ruling 2026-11-19): only non-tone sound was raised.
+  master.gain.exponentialRampToValueAtTime(Math.max(0.0001, playLevel(level) * (spec.tone ? TONE_OUTPUT_SCALE : SCALE)), t0 + Math.max(1, spec.fadeInSec));
   master.connect(destination);
 
   const filter = context.createBiquadFilter();
@@ -168,7 +169,8 @@ export function buildSoundscape(
       }
     }
     layers.forEach((layer, id) => {
-      const target = ((wanted as Record<string, number | undefined>)[id] ?? 0) / SCALE;
+      // Mixed against the original scale, so recorded layers rise with the 2026-11-19 raise and keep their balance.
+      const target = ((wanted as Record<string, number | undefined>)[id] ?? 0) / ORIGINAL_OUTPUT_SCALE;
       layer.gain.gain.setTargetAtTime(target, context.currentTime, 2.5);
       if (target > 0 && !layer.source && !layer.loading) {
         layer.loading = true;

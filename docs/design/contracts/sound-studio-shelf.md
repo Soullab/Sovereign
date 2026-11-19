@@ -59,5 +59,5 @@ A member wants to receive a generated sound field, shape it if they wish, and ke
 - Change the sound in order to show it.
 
 ## Known, not addressed here
-- The fields stay quiet overall: about −46 LUFS at the default level, against about −14 to −16 for typical music. The level ceiling (GENERATED_OUTPUT_SCALE, 0.027) has no recorded reason and is unchanged. Raising it is a separate decision, and it would also change Focus Field soundscapes and every member's remembered level.
+- Loudness after the 2026-11-19 ceiling raise (founder ruling, #1979 comment 7022447051): a field is about −27 LUFS at the default Level 45% and about −20 LUFS at full, still below typical music (−14 to −16). Its loudest moment at full is about −9.5 dBFS, short of clipping. Members' remembered Levels sound about 19 dB louder than before.
 - Small pops while moving the sliders (founder, 2026-11-19) were not reproduced in Chrome (48 and 192 kHz) or WebKit, and the founder later heard them gone. Real Safari through real speakers is covered only by the founder's ear. The pops script detects clicks reliably only for Organic Current, because the shared filter rounds the others off.

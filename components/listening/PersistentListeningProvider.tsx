@@ -318,7 +318,7 @@ function newSketch(
   const master = context.createGain();
   master.gain.setValueAtTime(0.0001, context.currentTime);
   master.gain.exponentialRampToValueAtTime(
-    Math.max(0.0001, level * 0.027), context.currentTime + 1.8,
+    generatedGainForLevel(level * 100), context.currentTime + 1.8, // the one owner of the ceiling (listeningLevel.ts)
   );
   const filter = context.createBiquadFilter();
   filter.type = 'lowpass';
@@ -836,7 +836,9 @@ export function PersistentListeningProvider({
     if (sketch.current) {
       const { context, master } = sketch.current;
       master.gain.setTargetAtTime(
-        generatedGainForLevel(sketch.current.soundscape?.spec.tone ? toneEffectiveLevel(next) : next),
+        sketch.current.soundscape?.spec.tone
+          ? generatedGainForLevel(toneEffectiveLevel(next), { tone: true }) // Tone Lab: its cap, at its original scale
+          : generatedGainForLevel(next),
         context.currentTime, 0.06);
     }
     if (media.current && !probingVolume.current) media.current.volume = next / 100; // the probe applies it when it ends

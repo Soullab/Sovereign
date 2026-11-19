@@ -78,7 +78,9 @@ test('level cap: Tone Lab never plays above the cap, in the engine and when the 
   checks.cap(lab);
   assert.equal(lab.toneEffectiveLevel(35), 35);
   assert.match(code('lib/listening/soundscapeEngine.ts'), /toneEffectiveLevel\(value \* 100\)/);
-  assert.match(code('components/listening/PersistentListeningProvider.tsx'), /spec\.tone \? toneEffectiveLevel\(next\) : next/);
+  // The cap AND Tone Lab's original absolute scale (founder ruling 2026-11-19: the general raise does not reach Tone Lab).
+  assert.match(code('components/listening/PersistentListeningProvider.tsx'), /spec\.tone\s*\? generatedGainForLevel\(toneEffectiveLevel\(next\), \{ tone: true \}\)/);
+  assert.match(code('lib/listening/soundscapeEngine.ts'), /spec\.tone \? TONE_OUTPUT_SCALE : SCALE/);
   assert.ok(lab.TONE_FADE_IN_SEC >= 4, 'gentle fade in'); assert.ok(lab.TONE_FADE_OUT_SEC > 0, 'gentle fade out');
   assert.equal(toneSoundscapeSpec({}).fadeInSec, lab.TONE_FADE_IN_SEC);
   assert.match(code('components/listening/PersistentListeningProvider.tsx'), /TONE_FADE_OUT_SEC/);

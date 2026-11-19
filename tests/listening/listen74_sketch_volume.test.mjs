@@ -8,7 +8,8 @@ test('LISTEN-74 a generated sound always offers its own volume control, even whe
   assert.match(src, /volumeAdjustable=\{volumeAdjustable \|\| snapshot\.kind === 'sketch'\}/);
 });
 test('LISTEN-74 the volume control reaches the generated sound (master gain), not only the media element', () => {
-  assert.match(src, /master\.gain\.setTargetAtTime\(\s*generatedGainForLevel\(sketch\.current\.soundscape\?\.spec\.tone \? toneEffectiveLevel\(next\) : next\)/); // Tone Lab caps at its own level (tone_lab.test.mjs); scale owned by lib/listening/listeningLevel.ts (listen79)
+  // Updated for founder ruling 2026-11-19 (#1979): Tone Lab is capped AND keeps its original scale; all else follows the raised one.
+  assert.match(src, /master\.gain\.setTargetAtTime\(\s*sketch\.current\.soundscape\?\.spec\.tone\s*\? generatedGainForLevel\(toneEffectiveLevel\(next\), \{ tone: true \}\)[\s\S]*?: generatedGainForLevel\(next\)/); // Tone Lab caps at its own level (tone_lab.test.mjs); scale owned by lib/listening/listeningLevel.ts (listen79)
 });
 const css = fs.readFileSync(path.join(import.meta.dirname, '../../components/listening/persistentListeningDock.module.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 test('LISTEN-74 on a phone the open panel keeps its Pause / Stop / Less row pinned and does not chain scrolling', () => {

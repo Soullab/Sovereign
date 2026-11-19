@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  DEFAULT_LISTENING_LEVEL, GENERATED_OUTPUT_SCALE, LISTENING_LEVEL_STORAGE_KEY,
+  DEFAULT_LISTENING_LEVEL, GENERATED_OUTPUT_SCALE, LISTENING_LEVEL_STORAGE_KEY, ORIGINAL_OUTPUT_SCALE, TONE_OUTPUT_SCALE,
   generatedGainForLevel, normalizeListeningLevel, readStoredListeningLevel, writeStoredListeningLevel,
 } from '../../lib/listening/listeningLevel.ts';
 
@@ -54,10 +54,23 @@ test('pure · generated gain follows the level and never reaches 0 (Web Audio ra
   assert.equal(generatedGainForLevel(0), 0.0001);
 });
 
+test('ceiling · raised about 19 dB by founder ruling 2026-11-19; Tone Lab keeps its original absolute scale', () => {
+  const dB = 20 * Math.log10(GENERATED_OUTPUT_SCALE / ORIGINAL_OUTPUT_SCALE);
+  assert.ok(dB > 18.5 && dB < 19.5, `raise is ${dB.toFixed(2)} dB`);
+  assert.equal(ORIGINAL_OUTPUT_SCALE, 0.027);
+  assert.equal(TONE_OUTPUT_SCALE, ORIGINAL_OUTPUT_SCALE);
+  assert.equal(generatedGainForLevel(40, { tone: true }), 0.4 * 0.027); // Tone Lab's top: its cap of 40, at 0.027
+  // One owner: no hard-coded ceiling left in the player or the engine.
+  for (const [name, src] of [['provider', provider], ['engine', engine]])
+    assert.ok(!/0\.027/.test(src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')), `${name} hard-codes 0.027`);
+});
+
 test('generated sound · soundscapes start at, and are scaled by, the same output scale the control uses', () => {
-  assert.match(engine, /import \{ GENERATED_OUTPUT_SCALE \} from '\.\/listeningLevel'/);
+  assert.match(engine, /import \{ GENERATED_OUTPUT_SCALE, ORIGINAL_OUTPUT_SCALE, TONE_OUTPUT_SCALE \} from '\.\/listeningLevel'/);
   assert.match(engine, /const SCALE = GENERATED_OUTPUT_SCALE;/);
-  assert.match(engine, /master\.gain\.exponentialRampToValueAtTime\(Math\.max\(0\.0001, playLevel\(level\) \* SCALE\)/); // playLevel is the identity except for a Tone Lab sound, which is capped
+  // playLevel is the identity except for a Tone Lab sound, which is capped; Tone Lab also keeps its original scale.
+  assert.match(engine, /master\.gain\.exponentialRampToValueAtTime\(Math\.max\(0\.0001, playLevel\(level\) \* \(spec\.tone \? TONE_OUTPUT_SCALE : SCALE\)\)/);
+  assert.match(engine, /\?\? 0\) \/ ORIGINAL_OUTPUT_SCALE;/); // recorded layers keep their balance with the raised master
   // Every audible part of a soundscape (tones, noise, recorded nature, ticks) ends in the master the control sets.
   assert.match(engine, /filter\.connect\(master\)/);
   assert.match(engine, /noiseGain\.connect\(master\)/);
@@ -68,7 +81,8 @@ test('generated sound · soundscapes start at, and are scaled by, the same outpu
 
 test('every source · setVolume reaches the generated master gain and the one media element', () => {
   const body = fnBody(provider, 'setVolume');
-  assert.match(body, /master\.gain\.setTargetAtTime\(\s*generatedGainForLevel\(sketch\.current\.soundscape\?\.spec\.tone \? toneEffectiveLevel\(next\) : next\)/); // identity except Tone Lab (capped)
+  // Identity except Tone Lab: capped, and at its original scale (founder ruling 2026-11-19).
+  assert.match(body, /master\.gain\.setTargetAtTime\(\s*sketch\.current\.soundscape\?\.spec\.tone\s*\? generatedGainForLevel\(toneEffectiveLevel\(next\), \{ tone: true \}\)[\s\S]*?: generatedGainForLevel\(next\)/);
   assert.match(body, /media\.current\.volume = next \/ 100/);
 });
 
@@ -76,7 +90,7 @@ test('every source · each start path begins at the member\'s level, not a defau
   // Focus presets (Deep focus, Creative flow) and the Focus Field / "Your soundscape" generated sounds.
   assert.match(provider, /newSketch\(mood, frequencies, volumeRef\.current \/ 100/);
   assert.match(provider, /newSoundscapeSketch\(soundscape, volumeRef\.current \/ 100\)/);
-  assert.match(provider, /function newSketch[\s\S]*?master\.gain\.exponentialRampToValueAtTime\(\s*Math\.max\(0\.0001, level \* 0\.027\)/);
+  assert.match(provider, /function newSketch[\s\S]*?master\.gain\.exponentialRampToValueAtTime\(\s*generatedGainForLevel\(level \* 100\)/); // the one owner of the ceiling
   // Recorded works (Open Ground, Night Ground editions, Music Only) — also reached by the Open Ground focus preset.
   assert.match(fnBody(provider, 'playExperienceMedia'), /audio\.volume = volumeRef\.current \/ 100;\s*await audio\.play\(\)/);
   // A file chosen from the device.
