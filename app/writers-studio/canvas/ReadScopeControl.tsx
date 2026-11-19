@@ -9,7 +9,15 @@ import SessionPostureChoice from '@/app/writers-studio/canvas/SessionPostureChoi
 import { getReadScope, setReadScope, type ReadScope } from '@/lib/writersStudio/readScopeClient';
 import { readCurrentSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
 
-export default function ReadScopeControl({ manuscriptId }: { manuscriptId: string }) {
+/** Said after Stop in compact mode, where the unset choice is not shown, so the writer sees that Stop took effect. */
+export const READ_SCOPE_STOPPED_COPY = 'Stopped. MAIA now reads only the passage you are in.';
+
+/**
+ * `compact` (D3, R3.4.4 founder ruling A, 2026-11-19): for surfaces that hide the holdings (e.g. the Develop stage). It shows
+ * nothing until a permission is ACTIVE, and then always shows it with its one-action Stop: an active permission is never out of
+ * sight. Giving a permission stays where the full control is (More → What MAIA can read); compact never offers it.
+ */
+export default function ReadScopeControl({ manuscriptId, compact = false }: { manuscriptId: string; compact?: boolean }) {
   const [, setPostureTick] = useState(0); // re-read the posture after the writer chooses it
   const [scope, setScope] = useState<ReadScope | undefined>(undefined);
   const [checked, setChecked] = useState(false);
@@ -23,6 +31,10 @@ export default function ReadScopeControl({ manuscriptId }: { manuscriptId: strin
     padding: '2px 8px', font: 'inherit', cursor: 'pointer', opacity: busy ? 0.5 : 1 } as const;
 
   if (!checked) return null;
+  /* Compact: no permission (or one that could not be checked) shows nothing here; a just-taken Stop is confirmed. */
+  if (compact && !scope) {
+    return note ? <div data-read-scope-control="compact" role="status" style={{ fontSize: 12 }}>{note}</div> : null;
+  }
   if (scope === undefined) {
     return (
       <div data-read-scope-control="true" role="status" style={{ fontSize: 12 }}>
@@ -39,7 +51,7 @@ export default function ReadScopeControl({ manuscriptId }: { manuscriptId: strin
       setNote(next.refused === 'sanctuary_not_kept'
         ? 'Sanctuary is on, and MAIA doesn’t use this permission in Sanctuary, so it wasn’t recorded. Turn Sanctuary off to give it.'
         : 'Nothing was changed yet: choose how MAIA holds this session below, then choose again.');
-    } else if (next !== undefined) setScope(next); else setNote('That could not be changed just now. Nothing was changed; your setting is as it was.');
+    } else if (next !== undefined) { setScope(next); if (compact && next === null) setNote(READ_SCOPE_STOPPED_COPY); } else setNote('That could not be changed just now. Nothing was changed; your setting is as it was.');
     setBusy(false);
   };
 
