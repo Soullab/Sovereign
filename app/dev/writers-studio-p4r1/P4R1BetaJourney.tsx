@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/http/apiBase';
 import FounderSharedExchanges from './FounderSharedExchanges';
+import FounderRecordings from './FounderRecordings';
+import JourneyRecorder from './JourneyRecorder';
 import {
   COLAB_KINDS,
   COLAB_KIND_LABEL,
@@ -159,6 +161,7 @@ function PromptCard({
           ) : null}
         </div>
       ) : null}
+      <JourneyRecorder promptKey={prompt.key} />
     </section>
   );
 }
@@ -294,7 +297,7 @@ export default function P4R1BetaJourney() {
               {founderView ? 'Back to my answers' : 'All writers’ answers'}
             </button>
           ) : null}
-          {founderView ? <><FounderView answers={founderView} /><FounderSharedExchanges /></> : prompts.map((prompt) => (
+          {founderView ? <><FounderView answers={founderView} /><FounderSharedExchanges /><FounderRecordings /></> : prompts.map((prompt) => (
             <PromptCard
               key={prompt.key}
               prompt={prompt}
