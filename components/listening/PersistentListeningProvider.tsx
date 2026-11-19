@@ -383,11 +383,17 @@ export function PersistentListeningProvider({
   // platform value returns to 1 (measured on device). Detect it after a beat, not in the same tick,
   // so no control claims a level change the device will not make.
   const [volumeAdjustable, setVolumeAdjustable] = useState(true);
+  // While the probe runs nothing else may write the element's volume, or the probe reads that write back and
+  // wrongly concludes the level is the device's (founder witness 2026-11-19, #1979: a desktop Mac showed
+  // "Level: phone volume buttons" because the remembered level, 45% by default, was restored mid-probe).
+  // The probe itself restores the member's level when it ends.
+  const probingVolume = useRef(true);
   useEffect(() => {
     const element = media.current;
-    if (!element) return;
-    try { element.volume = 0.5; } catch { setVolumeAdjustable(false); return; }
+    if (!element) { probingVolume.current = false; return; }
+    try { element.volume = 0.5; } catch { probingVolume.current = false; setVolumeAdjustable(false); return; }
     const timer = window.setTimeout(() => {
+      probingVolume.current = false;
       setVolumeAdjustable(Math.abs(element.volume - 0.5) < 0.01);
       // Back to the member's level, not the element's default, so the next file starts where the control says.
       try { element.volume = volumeRef.current / 100; } catch { /* read-only on this platform */ }
@@ -756,7 +762,7 @@ export function PersistentListeningProvider({
         generatedGainForLevel(sketch.current.soundscape?.spec.tone ? toneEffectiveLevel(next) : next),
         context.currentTime, 0.06);
     }
-    if (media.current) media.current.volume = next / 100;
+    if (media.current && !probingVolume.current) media.current.volume = next / 100; // the probe applies it when it ends
     if (!transient) {
       try { writeStoredListeningLevel(window.localStorage, next); } catch { /* storage unavailable */ }
     }
@@ -768,7 +774,7 @@ export function PersistentListeningProvider({
     try { stored = readStoredListeningLevel(window.localStorage); } catch { /* storage unavailable */ }
     volumeRef.current = stored;
     saveVolume(stored);
-    try { if (media.current) media.current.volume = stored / 100; } catch { /* fixed by the platform */ }
+    try { if (media.current && !probingVolume.current) media.current.volume = stored / 100; } catch { /* fixed by the platform */ }
   }, []);
 
   const setLooping = useCallback((enabled: boolean) => {

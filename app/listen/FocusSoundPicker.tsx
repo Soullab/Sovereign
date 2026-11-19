@@ -13,6 +13,9 @@ export default function FocusSoundPicker() {
   const [message, setMessage] = useState('');
   const soundId = transport?.focusSoundChoice ?? 'none';
   const option = FOCUS_SOUND_OPTIONS.find(item => item.id === soundId) ?? FOCUS_SOUND_OPTIONS[0];
+  // As the player bar decides it: a generated sound's level is always Soullab's to set; recorded media on a
+  // phone follows the device's own volume buttons.
+  const levelAdjustable = !!transport && (transport.volumeAdjustable || transport.snapshot.kind === 'sketch');
   const sessionLive = transport?.focusSession?.status === 'running' || transport?.focusSession?.status === 'paused';
 
   const play = async () => {
@@ -43,6 +46,18 @@ export default function FocusSoundPicker() {
           {`▶  Play ${focusSoundLabel(soundId)}`}{sessionLive ? '' : ' (no timer running)'}
         </button>
       )}
+      {soundId !== 'none' && transport && (levelAdjustable ? (
+        // The ONE player's level, the same value as Level in the player bar (founder, 2026-11-19, #1979).
+        <label className={styles.focusSoundLevel} data-focus-sound-level="adjustable">
+          <span>Level</span>
+          <input aria-label="Level for this session's sound" type="range" min="0" max="100" step="1"
+            value={transport.volume} aria-valuetext={`${Math.round(transport.volume)}%`}
+            onChange={event => transport.setVolume(Number(event.target.value))} />
+          <output>{Math.round(transport.volume)}%</output>
+        </label>
+      ) : (
+        <p className={styles.focusExplanation} data-focus-sound-level="device">Level: use this device’s volume buttons.</p>
+      ))}
       {message && <p className={styles.focusStatus} role="status" aria-live="polite">{message}</p>}
     </section>
   );

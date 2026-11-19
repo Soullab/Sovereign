@@ -139,3 +139,13 @@ No download, offline Cabin, public broadcast, shared session, unbounded remix, s
 - **The boundary note** now reads: a running session stays only in memory; designs the member chooses to save are kept in this browser, never on a server.
 - **Verification.** 2026-11-19, `tests/listening/focus_designs.test.mjs` 8/8 and `tests/listening/focus_designs_browser_witness.cjs` 33/33: the real FocusFieldDesk inside the real PersistentListeningProvider in local Chrome at 1440 and 390 px. Save, reload, Use (every choice restored, no session, no AudioContext), Remove, Forget, an encrypted export that hides names and choices, restore, a refused wrong passphrase, and the blocked-storage fallback. Screenshots: `docs/design/contracts/screenshots/sound-field-focus-designs-desktop.png` and `-mobile.png`. This is a fixture witness, not an authenticated walk of /listen and not the founder's use.
 - **Not included.** The "Sound for this session" choice is not part of the combination format and is not saved.
+
+## Level in "Sound for this session" (founder request 2026-11-19, #1979)
+- Once a sound is chosen, the panel shows a **Level** slider. It is the one player's level, the same value as Level in the player bar: moving either moves both. It is never a second volume. Where the player bar shows "Level: phone volume buttons", the panel says the same.
+- **A defect found by the founder and fixed.** On a desktop Mac in Safari, the player bar showed "Level: phone volume buttons" for Open Ground. Cause: the player probes whether the page may set the audio element's volume (set 0.5, read it back 150 ms later), and the remembered level (45% by default) was written during that window, so the probe read 0.45 and decided the level was the device's. In local Chrome, every remembered level except exactly 50% failed this way. While the probe runs, nothing else now writes the element's volume; the probe applies the member's level when it ends.
+- **Verification.** 2026-11-19, `tests/listening/focus_sound_level_browser_witness.cjs` 20/20, the real FocusSoundPicker inside the real player and dock:
+  - Level appears once a sound is chosen, and moves the bar (and the bar moves it).
+  - 80% to 20% measured more than 6 dB quieter at the player's output.
+  - With remembered levels of none/45/73/50 the level stays adjustable and the remembered level is applied. Against the old code three of those four fail.
+  - Screenshots: `docs/design/contracts/screenshots/sound-field-focus-sound-level-desktop.png` and `-mobile.png`.
+  - Not witnessed on an iPhone. The probe itself is unchanged; only other writes during it are held back.
