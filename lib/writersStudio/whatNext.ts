@@ -68,3 +68,58 @@ export function whatNextInWrite(s: WriteScreen): WhatNext {
     ask: 'I’m in Write and I’m not sure what to do next. In a sentence or two, tell me where I am and the one next step, naming the button and where it is. Don’t start anything for me.',
   };
 }
+
+/**
+ * Develop (the stage, NEXT_PUBLIC_WS_DEVELOP_STAGE=1, on in production per the 2026-11-09 founder ruling). With the stage off,
+ * Develop shows its older map and this helper is not offered at all: it never names a control that is not on screen.
+ *
+ * ⛔ Readings are never suggested in Sanctuary, nor when Sanctuary cannot be read (fail closed, as every Develop act does).
+ * ⛔ It never suggests reading a chapter MAIA already has a reading of (studioGuide's rule).
+ */
+export type DevelopScreen = {
+  /** The chapter on the stage, in the writer's own heading, or null. */
+  readonly chapterLabel: string | null;
+  readonly reading: 'idle' | 'reading' | 'ready' | 'error';
+  /** How many things her ready reading noticed; her reading card (with "Go through what she noticed") shows only when > 0. */
+  readonly noticed: number;
+  /** The whole-Work editorial pass; 'absent' when its control is not shown. */
+  readonly pass: 'none' | 'running' | 'ready' | 'error' | 'absent';
+  /** Read at the moment of asking: 'unresolved' when the posture cannot be read on this device. */
+  readonly posture: 'ordinary' | 'sanctuary' | 'unresolved';
+};
+
+export function whatNextInDevelop(s: DevelopScreen): WhatNext {
+  const say: string[] = [];
+  const here = s.chapterLabel ? `“${s.chapterLabel}”` : 'this chapter';
+  if (s.posture !== 'ordinary') {
+    say.push(s.posture === 'sanctuary'
+      ? 'This is a Sanctuary session, so I don’t read or keep anything here.'
+      : 'I can’t tell yet whether this session is Ordinary or Sanctuary, so I won’t read anything until you’ve chosen.');
+    say.push('You can still read your chapter here. To go back to writing, press “Edit in Write” at the top.');
+  } else if (s.reading === 'reading') {
+    say.push(`I’m reading ${here} now. Keep writing or talking; I won’t interrupt.`);
+  } else if (s.reading === 'ready') {
+    say.push(s.noticed > 0
+      ? `I’ve read ${here}. To walk through it with me, press “Go through what she noticed” in my reading, here in this column.`
+      : `I’ve read ${here}.`);
+    say.push('To talk about exact words, select them in the chapter and press “Ask MAIA about this”.');
+  } else if (s.reading === 'error') {
+    say.push(`My reading of ${here} didn’t finish. Nothing in your writing changed.`);
+    say.push('To try again, press “Read this chapter with MAIA” at the top.');
+  } else {
+    say.push(`You’re looking at ${here}. To hear what I notice in it, press “Read this chapter with MAIA” at the top.`);
+    say.push('To look at a different chapter, choose it from the chapter menu at the top.');
+  }
+  if (s.posture === 'ordinary') {
+    if (s.pass === 'running') say.push('I’m also reading your whole Work. Keep this page open until I finish.');
+    else if (s.pass === 'ready') say.push('My letter about your whole Work is ready: press “Whole book · editorial pass ready”.');
+    else if (s.pass === 'none' && s.reading !== 'reading') {
+      say.push('When you want me to read your whole Work, press “Whole book · editorial pass” at the end of the row of ways to explore. You’ll see what it uses before anything starts.');
+    }
+    say.push('To change the words themselves, press “Edit in Write” at the top.');
+  }
+  return {
+    say,
+    ask: 'I’m in Develop and I’m not sure what to do next. In a sentence or two, tell me where I am and the one next step, naming the button and where it is. Don’t start anything for me.',
+  };
+}
