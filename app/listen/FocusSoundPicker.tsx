@@ -27,7 +27,7 @@ export default function FocusSoundPicker() {
   };
 
   return (
-    <section className={styles.focusSound} aria-labelledby="focus-sound-title" data-focus-sound-picker="true">
+    <section id="focus-sound" className={styles.focusSound} aria-labelledby="focus-sound-title" data-focus-sound-picker="true">
       <h3 id="focus-sound-title">Sound for this session</h3>
       <div className={styles.focusInlineChoices} role="radiogroup" aria-label="Sound for this session">
         {FOCUS_SOUND_OPTIONS.map(item => (

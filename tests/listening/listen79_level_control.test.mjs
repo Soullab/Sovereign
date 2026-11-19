@@ -95,7 +95,9 @@ test('remembered · read once after mount without starting sound; member changes
 });
 
 test('bar · the level slider is in the bar itself (not behind More), and honest where the device fixes it', () => {
-  assert.match(dock, /\{audioDisplayed && !mixOpen && \(volumeAdjustable \? \(\s*<label className=\{styles\.volume\} data-listen-bar-level="adjustable">/);
+  // Founder ruling 2026-11-19 (#1979, "Yes, in the bar" / "at least have volume"): Level is in the bar whenever
+  // the bar shows, including a silent focus timer, where it sets the level the next sound starts at.
+  assert.match(dock, /\{\(audioDisplayed \|\| focusDisplayed\) && !mixOpen && \(volumeAdjustable \|\| !audioDisplayed \|\| snapshot\.kind === 'sketch' \? \(\s*<label className=\{styles\.volume\} data-listen-bar-level="adjustable">/);
   assert.match(dock, /data-listen-bar-level="device">Level: phone volume buttons</);
   // a generated sound is always adjustable, so the bar shows the slider for it even on iOS
   assert.match(provider, /volumeAdjustable=\{volumeAdjustable \|\| snapshot\.kind === 'sketch'\}/);

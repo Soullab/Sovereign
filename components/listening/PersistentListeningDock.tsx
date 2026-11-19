@@ -25,6 +25,10 @@ type Props = {
   volumeAdjustable?: boolean;
   focusSoundLabel?: string | null;
   onPlayFocusSound?: () => void;
+  /** Read-only: an analyser on what is sounding, for the bar's live waveform; null when none is available. */
+  outputAnalyser?: () => AnalyserNode | null;
+  /** Read-only: where the member's own file is, for its play length. */
+  localFilePosition?: () => { title: string; seconds: number; duration: number | null; playing: boolean } | null;
   onPauseFocus: () => void;
   onResumeFocus: () => void;
   onStopFocus: () => void;
@@ -37,12 +41,84 @@ const COMPANION_LEVELS = [
   { id: 'soft', label: 'Soft', value: 22, description: 'A gentle companion level' },
   { id: 'present', label: 'Present', value: 35, description: 'Clearly audible without becoming the foreground' },
 ] as const;
+/** Each source's colour in the bar, beside the house gold (founder ruling 2026-11-19, #1979). */
+const MOOD_TINTS: Record<string, readonly [number, number, number]> = {
+  focus: [120, 160, 214], create: [226, 170, 92], drift: [110, 190, 200], rest: [167, 160, 214],
+};
+const BAR_GOLD = [212, 175, 55] as const;
+
+function clock(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** The bar's live view: a small soft waveform of what is sounding, and how long it has played. */
+function BarLive({ snapshot, outputAnalyser, localFilePosition }: Pick<Props, 'snapshot' | 'outputAnalyser' | 'localFilePosition'>) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [time, setTime] = useState<string | null>(null);
+  const [viewable, setViewable] = useState(true);
+  const getAnalyser = useRef(outputAnalyser); getAnalyser.current = outputAnalyser;
+  const getLocal = useRef(localFilePosition); getLocal.current = localFilePosition;
+  const playing = snapshot.playback === 'playing';
+  const tint = (snapshot.kind === 'sketch' && snapshot.mood && MOOD_TINTS[snapshot.mood]) || BAR_GOLD;
+  const tintRef = useRef(tint); tintRef.current = tint;
+  const kindRef = useRef(snapshot.kind); kindRef.current = snapshot.kind;
+  useEffect(() => {
+    let raf = 0, last = 0, started: number | null = null, generatedPlayed = 0;
+    const draw = (now: number) => {
+      raf = requestAnimationFrame(draw);
+      const c = canvas.current; if (!c) return;
+      const dpr = window.devicePixelRatio || 1;
+      const cw = Math.round(c.clientWidth * dpr), ch = Math.round(c.clientHeight * dpr);
+      if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
+      const g = c.getContext('2d'); if (!g) return;
+      const analyser = playing ? getAnalyser.current?.() ?? null : null;
+      const t = tintRef.current, rgba = (a: number) => `rgba(${t[0]},${t[1]},${t[2]},${a})`;
+      g.clearRect(0, 0, c.width, c.height);
+      const line = new Path2D();
+      if (analyser) {
+        const d = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(d);
+        let peak = 0; for (const v of d) if (Math.abs(v) > peak) peak = Math.abs(v);
+        // A fixed 25 ms of time whatever the device's rate (a studio interface may run at 192 kHz).
+        const shown = Math.min(d.length, Math.round(analyser.context.sampleRate * 0.025)), n = Math.min(shown, 400), stride = shown / n;
+        const scale = (c.height * 0.4) / Math.max(peak, 1e-4);
+        for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * c.width, y = c.height / 2 - d[Math.floor(i * stride)] * scale; i ? line.lineTo(x, y) : line.moveTo(x, y); }
+      } else { line.moveTo(0, c.height / 2); line.lineTo(c.width, c.height / 2); }
+      g.lineJoin = 'round'; g.lineCap = 'round';
+      g.save(); g.shadowColor = rgba(.5); g.shadowBlur = 8 * dpr; g.strokeStyle = rgba(.16); g.lineWidth = 5 * dpr; g.stroke(line); g.restore();
+      g.strokeStyle = rgba(.85); g.lineWidth = 1.1 * dpr; g.stroke(line);
+      if (now - last > 250) {
+        last = now;
+        setViewable(!playing || !!analyser);
+        if (kindRef.current === 'local-file') {
+          const p = getLocal.current?.();
+          setTime(p ? (p.duration ? `${clock(p.seconds)} / ${clock(p.duration)}` : clock(p.seconds)) : null);
+        } else if (kindRef.current === 'sketch') {
+          // Generated sound has no fixed length: show how long it has played, until Stop.
+          if (playing) { if (started === null) started = now; } else if (started !== null) { generatedPlayed += now - started; started = null; }
+          const played = generatedPlayed + (started === null ? 0 : now - started);
+          setTime(`${clock(played / 1000)} · until Stop`);
+        } else setTime(null); // review media already shows its passage and length in the bar
+      }
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, snapshot.title]);
+  return <div className={styles.barLive} data-listen-bar-live={playing ? (viewable ? 'playing' : 'not-viewable') : 'still'}
+    data-listen-bar-tint={tint.join(',')}>
+    <canvas ref={canvas} aria-hidden="true" data-listen-bar-wave="true" />
+    {time && <span data-listen-bar-time="true">{time}</span>}
+    {playing && !viewable && <span className={styles.barLiveNote} data-listen-bar-live-note="true">No live view for recordings in this browser</span>}
+  </div>;
+}
+
 const FADE_DURATION_MS = 12_000;
 const FADE_STEPS = 24;
 
 export default function PersistentListeningDock({
   snapshot, volume, looping, loopAvailable, displayed, focusSession, focusRemainingLabel,
   onPauseMusic, onResumeMusic, onStopMusic, onVolume, onLooping, onCompanionMode, volumeAdjustable = true, focusSoundLabel = null, onPlayFocusSound,
+  outputAnalyser, localFilePosition,
   onPauseFocus, onResumeFocus, onStopFocus,
 }: Props) {
   const [mixOpen, setMixOpen] = useState(false);
@@ -203,6 +279,10 @@ export default function PersistentListeningDock({
         </div>
       )}
 
+      {audioDisplayed && snapshot.kind !== 'none' && (
+        <BarLive snapshot={snapshot} outputAnalyser={outputAnalyser} localFilePosition={localFilePosition} />
+      )}
+
       {focusDisplayed && focusSession && (
         <div className={styles.focus} data-focus-field-dock="true">
           <strong>Focus Field · {focusSession.plan.taskLabel || focusSession.plan.task}</strong>
@@ -212,6 +292,9 @@ export default function PersistentListeningDock({
       )}
 
       <div className={styles.controls}>
+        {focusDisplayed && !focusSoundLabel && snapshot.kind === 'none' && (
+          <Link className={styles.control} href="/listen#focus-sound" data-focus-dock-choose-sound="true">Choose a sound</Link>
+        )}
         {focusDisplayed && focusSoundLabel && snapshot.kind === 'none' && onPlayFocusSound && (
           <button type="button" className={styles.control} data-focus-dock-play-sound="true"
             onClick={onPlayFocusSound} aria-label={`Play ${focusSoundLabel}`}>▶ {focusSoundLabel}</button>
@@ -253,7 +336,9 @@ export default function PersistentListeningDock({
 
       {/* The level sits in the bar itself for every source. Where the device fixes a media file's level (iOS),
           the bar says so instead of showing a slider that would change nothing. */}
-      {audioDisplayed && !mixOpen && (volumeAdjustable ? (
+      {/* Level is always in the bar while it shows (founder ruling 2026-11-19, #1979): with only a silent focus
+          timer it sets the level the next sound starts at. */}
+      {(audioDisplayed || focusDisplayed) && !mixOpen && (volumeAdjustable || !audioDisplayed || snapshot.kind === 'sketch' ? (
         <label className={styles.volume} data-listen-bar-level="adjustable">
           <span aria-hidden="true">Level</span>
           <input aria-label="Persistent music volume" type="range" min="0" max="100" step="1"

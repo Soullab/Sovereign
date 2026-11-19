@@ -203,3 +203,21 @@ A long-form Dream Field may be represented by more than one exact media object w
 - Immediate Stop clears the sequence and any pending continuation.
 - A sequence does not imply looping. Night Ground Nicole First Night completes after 109 minutes unless a later, separately admitted extended-night edition explicitly grants core continuation.
 - Review delivery format is described truthfully. A 44.1 kHz private-review export is not relabeled as a 48 kHz serving master; the original Night Ground 48 kHz source remains separately preserved.
+
+## The player bar: Level, play length and a live waveform (founder ruling 2026-11-19, #1979)
+**Ruling:** "Yes, in the bar". Then: "at least have volume", "and play lengtht".
+
+- **Level is always in the bar while it shows,** in every room. With only a silent focus timer, it sets the level the next sound starts at. The desktop probe defect that hid it is fixed (see sound-field.md).
+- **Play length.** A member's own recording shows "elapsed / total". Review media keeps its passage and length. A generated sound has no fixed length, so it shows how long it has played, "· until Stop".
+- **A small live waveform** of what is sounding, soft, in the source's own colour (house gold for recordings), showing 25 ms at the device's rate.
+  - Generated sound is read through the existing read-only output tap.
+  - A recording is read through a copy of the element's stream (`captureStream`), analysed in a context connected to nothing. Playback keeps its own path, and nothing is rerouted or heard twice.
+  - Where a browser has no `captureStream` for audio (Safari), the bar says "No live view for recordings in this browser" rather than reroute playback.
+- **A silent focus session** shows "Choose a sound", linking to Sound for this session.
+- **Verification.** 2026-11-19, `tests/listening/player_bar_browser_witness.cjs`: the real player and dock with the real Focus page parts, in local Chrome at 1440 and 390 px.
+  - Level is present and sets the player's level with only a silent timer; Choose a sound is offered.
+  - A generated sound moves the waveform in its colour, with "0:03 · until Stop".
+  - A member's WAV moves the waveform, with "0:01 / 0:06".
+  - The edge log shows the stream copy feeds only an analyser, and no analyser feeds anything.
+  - Screenshots: `docs/design/contracts/screenshots/sound-studio-player-bar-generated-desktop.png`, `-recording-desktop.png`, `-mobile.png`.
+  - Not witnessed: Safari, a phone, review media, and an authenticated /listen walk.

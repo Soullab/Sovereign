@@ -1084,6 +1084,35 @@ export function PersistentListeningProvider({
     return { analyser: taps.analyser, voices: taps.voices, frequencies: [...current.frequencies], mood: current.mood };
   }, []);
 
+  // Read-only view of a RECORDING's output for the player bar (founder ruling 2026-11-19, #1979): a copy of
+  // the element's stream via captureStream, analysed in a context connected to nothing. Playback keeps its own
+  // path; nothing is rerouted. Browsers without captureStream (Safari) get null, and the bar says so.
+  const mediaTap = useRef<{ url: string; context: AudioContext; analyser: AnalyserNode } | null>(null);
+  const outputAnalyser = useCallback((): AnalyserNode | null => {
+    if (kind.current === 'sketch' || (sketch.current && kind.current !== 'local-file' && kind.current !== 'review-media'))
+      return generatedOutput()?.analyser ?? null;
+    const element = media.current as (HTMLAudioElement & { captureStream?: () => MediaStream; mozCaptureStream?: () => MediaStream }) | null;
+    if (!element || element.paused) return null;
+    const capture = element.captureStream ?? element.mozCaptureStream;
+    if (typeof capture !== 'function') return null;
+    const url = element.currentSrc;
+    if (mediaTap.current?.url === url && mediaTap.current.context.state !== 'closed') return mediaTap.current.analyser;
+    try {
+      const stream = capture.call(element);
+      if (!stream.getAudioTracks().length) return null;
+      void mediaTap.current?.context.close().catch(() => undefined);
+      const Ctor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      const context = new Ctor();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 8192; analyser.smoothingTimeConstant = 0.5;
+      context.createMediaStreamSource(stream).connect(analyser); // to nothing: the copy is never heard
+      void context.resume().catch(() => undefined);
+      mediaTap.current = { url, context, analyser };
+      return analyser;
+    } catch { return null; }
+  }, [generatedOutput]);
+  useEffect(() => () => { void mediaTap.current?.context.close().catch(() => undefined); }, []);
+
   const localFilePosition = useCallback(() => {
     const el = media.current;
     if (kind.current !== 'local-file' || !el || !selected.current) return null;
@@ -1397,6 +1426,8 @@ export function PersistentListeningProvider({
       // generates itself (the soundscape's master gain), so that control is offered whenever such a sound is playing.
       volumeAdjustable={volumeAdjustable || snapshot.kind === 'sketch'}
       focusSoundLabel={focusSoundChoice === 'none' ? null : focusSoundLabel(focusSoundChoice)}
+      outputAnalyser={outputAnalyser}
+      localFilePosition={localFilePosition}
       onPlayFocusSound={() => { void playFocusSound(); }}
       onPauseFocus={() => { pauseFocusSession('member'); }}
       onResumeFocus={() => { resumeCurrentFocus(); }}

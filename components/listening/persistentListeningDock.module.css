@@ -28,3 +28,9 @@
 .volume input{width:120px;min-height:44px;margin:0}
 .volumeFixed{font-size:11px;color:#9fb7b7}
 @media(max-width:600px){.dock .volume,.dock .volumeFixed{grid-column:1/-1}.dock .volume input{flex:1;width:auto;min-height:36px}}
+
+.barLive{display:grid;grid-template-columns:120px auto;align-items:center;gap:10px;min-width:0;font-size:12px;color:#d8cdb8;font-variant-numeric:tabular-nums}
+.barLive canvas{width:120px;height:30px;display:block}
+.barLiveNote{grid-column:1/-1;font-size:11px;color:#9aafb0}
+.barLive span[data-listen-bar-time]{white-space:nowrap}
+@media(max-width:700px){.barLive{grid-template-columns:90px auto}.barLive canvas{width:90px}}
