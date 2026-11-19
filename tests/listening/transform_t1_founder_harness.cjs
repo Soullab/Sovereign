@@ -22,6 +22,8 @@ export function usePersistentListening() {
       return { accepted: true, message: 'ok' };
     },
     playLocalFile: async () => { await el?.play(); return true; },
+    localFilePosition: () => (el && url ? { title: (document.getElementById('playerTitle')!.textContent || ''), seconds: el.currentTime, duration: Number.isFinite(el.duration) ? el.duration : null, playing: !el.paused } : null),
+    pause: () => { el?.pause(); },
   };
 }`);
 fs.writeFileSync(path.join(dir, 'entry.jsx'),

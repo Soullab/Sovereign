@@ -13,6 +13,7 @@ import { usePersistentListening } from '@/components/listening/PersistentListeni
 import { frameCount, peak, type Audio } from '@/lib/listening/transform/audio';
 import { readWav, wavAudioBytes, withProvenance, writeWav24 } from '@/lib/listening/transform/wav';
 import { renderRecipe } from '@/lib/listening/transform/render';
+import { validateLocalAudio } from '@/lib/listening/localAudio';
 import { acceptMemberFile, buildProvenance, sha256Hex, type SideInfo } from '@/lib/listening/transform/provenance';
 import { MAX_TRANSFORM_SECONDS, recipeProblem, type TransformStep } from '@/lib/listening/transform/recipe';
 import { SPACES } from '@/lib/listening/transform/impulses';
@@ -104,10 +105,12 @@ export function stepView(steps: readonly TransformStep[], index: number, total: 
 type MarkKey = 'start' | 'end' | 'fadeIn' | 'fadeOut';
 type Mark = { key: MarkKey; at: number };
 
-function Waveform({ audio, keep, marks, fade, onMove }: {
+function Waveform({ audio, keep, marks, fade, onMove, playhead, label }: {
   audio: Audio; keep: [number, number]; marks: Mark[];
   fade: { a: number; inEnd: number; outStart: number; b: number } | null;
   onMove: (key: MarkKey, at: number) => void;
+  /** Where the one player is in this recording, when it is playing this recording. */
+  playhead?: number; label: string;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const cache = useRef<{ audio: Audio; w: number; peaks: Float32Array; top: number } | null>(null);
@@ -150,7 +153,12 @@ function Waveform({ audio, keep, marks, fade, onMove }: {
       g.fillStyle = '#f1efe7'; g.fillRect(x - dpr, 0, 2 * dpr, h);
       g.fillRect(x - 5 * dpr, 0, 10 * dpr, 8 * dpr); g.fillRect(x - 5 * dpr, h - 8 * dpr, 10 * dpr, 8 * dpr);
     }
-  }, [audio, total, keep, marks, fade]);
+    if (playhead !== undefined) {
+      const x = Math.round(X(Math.min(total, playhead)));
+      g.fillStyle = 'rgba(127, 209, 200, 0.95)'; g.fillRect(x - dpr, 0, 2 * dpr, h);
+      g.beginPath(); g.moveTo(x - 6 * dpr, 0); g.lineTo(x + 6 * dpr, 0); g.lineTo(x, 8 * dpr); g.closePath(); g.fill();
+    }
+  }, [audio, total, keep, marks, fade, playhead]);
 
   const at = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -159,7 +167,8 @@ function Waveform({ audio, keep, marks, fade, onMove }: {
   const { major, minor } = rulerStep(total);
   const ticks: { t: number; major: boolean }[] = [];
   for (let k = 0; k * minor <= total + 1e-9; k++) ticks.push({ t: k * minor, major: Math.abs((k * minor) / major - Math.round((k * minor) / major)) < 1e-6 });
-  return <div className={styles.transformWaveWrap}>
+  return <div className={styles.transformWaveWrap} data-transform-wave-of={label}>
+    {playhead !== undefined && <p className={styles.transformPlayhead} data-transform-playhead="true">Playing · {formatTime(playhead)}</p>}
     <canvas ref={ref} className={styles.transformWave} aria-hidden="true" data-transform-wave="true"
       style={{ touchAction: marks.length ? 'none' : 'auto', cursor: marks.length ? 'ew-resize' : 'default' }}
       onPointerDown={(e) => {
@@ -207,6 +216,25 @@ export default function TransformDesk() {
   const [status, setStatus] = useState('');
   const [saved, setSaved] = useState<{ wav: string; json: string; original: string } | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  // What this desk last handed the one player, and where that player is in it.
+  const [handed, setHanded] = useState<{ which: 'original' | 'preview'; title: string } | null>(null);
+  const [pos, setPos] = useState<{ seconds: number; playing: boolean } | null>(null);
+  const [result, setResult] = useState<Audio | null>(null);
+  const playerRef = useRef(player); playerRef.current = player;
+  useEffect(() => {
+    if (!handed) { setPos(null); return; }
+    let raf = 0;
+    const tick = () => {
+      const p = playerRef.current?.localFilePosition?.() ?? null;
+      const next = p && p.title === handed.title ? { seconds: p.seconds, playing: p.playing } : null;
+      setPos((old) => (old?.seconds === next?.seconds && old?.playing === next?.playing ? old : next));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [handed]);
+  useEffect(() => { setResult(null); }, [steps, source, second]);
+  const titleOf = (f: File) => { const v = validateLocalAudio(f); return v.allowed ? v.name : f.name; };
   const len = source ? frameCount(source.audio) / source.audio.sampleRate : 0;
   const problem = useMemo(() => (source ? recipeProblem(steps, source.audio.sampleRate / 2) : null), [steps, source]);
   const needsSecond = steps.some((s) => s.kind === 'join');
@@ -218,7 +246,7 @@ export default function TransformDesk() {
     setBusy(true); setStatus('Reading your recording on this device…'); setSaved(null);
     try {
       const loaded = await load(accepted.file);
-      if (which === 'source') { setSource(loaded); setSteps([]); setSecond(null); setSelected(null); } else setSecond(loaded);
+      if (which === 'source') { setSource(loaded); setSteps([]); setSecond(null); setSelected(null); setHanded(null); } else setSecond(loaded);
       setStatus(`${loaded.file.name}: ${clock(loaded.info.frames / loaded.info.sampleRate)} · ${loaded.info.sampleRate / 1000} kHz · ${loaded.info.channels === 2 ? 'stereo' : 'mono'}${loaded.info.decodedBy === 'browser' ? ' · decoded by your browser at 48 kHz' : ''}.`);
     } catch (e) {
       setStatus(e instanceof Error ? e.message : 'This file could not be read.');
@@ -272,13 +300,28 @@ export default function TransformDesk() {
     if (!player) return;
     setBusy(true); setStatus('Shaping on this device…');
     try {
-      const { wav } = await make();
-      const result = player.selectLocalFile(new File([wav], `${base} (transformed preview).wav`, { type: 'audio/wav' }));
-      if (!result.accepted) { setStatus(result.message); return; }
+      const { out, wav } = await make();
+      const file = new File([wav], `${base} (transformed preview).wav`, { type: 'audio/wav' });
+      const picked = player.selectLocalFile(file);
+      if (!picked.accepted) { setStatus(picked.message); return; }
+      setResult(out); setHanded({ which: 'preview', title: titleOf(file) });
       await player.playLocalFile();
       setStatus('Playing the transformed version in the player. Nothing has been saved yet.');
     } catch (e) { setStatus(e instanceof Error ? e.message : 'This could not be rendered.'); } finally { setBusy(false); }
   };
+
+  const originalPlaying = handed?.which === 'original' && !!pos?.playing;
+  const playOriginal = async () => {
+    if (!player || !source) return;
+    if (originalPlaying) { player.pause(); return; }
+    if (!(handed?.which === 'original' && pos)) {
+      const picked = player.selectLocalFile(source.file);
+      if (!picked.accepted) { setStatus(picked.message); return; }
+      setHanded({ which: 'original', title: titleOf(source.file) });
+    }
+    if (await player.playLocalFile()) setStatus('Playing your original in the player. Mark a step where you hear it.');
+  };
+  const hereAt = handed?.which === 'original' && pos ? pos.seconds : null;
 
   const save = async () => {
     if (!source) return;
@@ -324,8 +367,12 @@ export default function TransformDesk() {
       <div className={styles.localAudioCard}>
         <strong>{source.file.name}</strong>
         <p className={styles.muted}>{clock(len)} · {source.info.sampleRate / 1000} kHz · {source.info.channels === 2 ? 'stereo' : 'mono'} · up to 20 minutes</p>
-        <Waveform audio={source.audio} keep={marked.keep} marks={marked.marks} fade={marked.fade}
+        <Waveform audio={source.audio} keep={marked.keep} marks={marked.marks} fade={marked.fade} label="original"
+          playhead={hereAt ?? undefined}
           onMove={(key, t) => { if (selected !== null) setMark(selected, key, t); }} />
+        <div className={styles.transformActions}>
+          <button type="button" className={styles.ghost} onClick={() => void playOriginal()} disabled={busy || !player}>{originalPlaying ? 'Pause the original' : 'Play the original'}</button>
+        </div>
         <p className={styles.muted} data-transform-wave-hint="true">{
           sel && view ? (sel.kind === 'trim' ? 'Drag the start and end handles on the waveform, or type a time.' : 'Drag where the fade in ends and the fade out begins, or type a time.')
             : sel && (sel.kind === 'trim' || sel.kind === 'fade') ? 'This step comes after a step that changes the recording\'s length or direction, so its times are not marked on this waveform.'
@@ -345,6 +392,15 @@ export default function TransformDesk() {
               <button type="button" className={styles.ghost} aria-label={`Remove ${LABELS[s.kind]}`} onClick={(e) => { e.stopPropagation(); remove(i); }}>Remove</button>
             </span>
           </div>
+          {v && hereAt !== null && (s.kind === 'trim' || s.kind === 'fade') && <div className={styles.transformActions} data-mark-here="true">
+            {s.kind === 'trim' ? <>
+              <button type="button" className={styles.ghost} onClick={() => setMark(i, 'start', hereAt)}>Start here · {formatTime(hereAt)}</button>
+              <button type="button" className={styles.ghost} onClick={() => setMark(i, 'end', hereAt)}>End here · {formatTime(hereAt)}</button>
+            </> : <>
+              <button type="button" className={styles.ghost} onClick={() => setMark(i, 'fadeIn', hereAt)}>Fade in until here · {formatTime(hereAt)}</button>
+              <button type="button" className={styles.ghost} onClick={() => setMark(i, 'fadeOut', hereAt)}>Fade out from here · {formatTime(hereAt)}</button>
+            </>}
+          </div>}
           <div className={styles.transformFields}>
             {s.kind === 'trim' && (v ? <><TimeField name="trim-start" label="Starts at" value={v.off + s.startSec} onChange={(t) => setMark(i, 'start', t)} />
               <TimeField name="trim-end" label="Ends at" value={v.off + s.endSec} onChange={(t) => setMark(i, 'end', t)} /></>
@@ -387,6 +443,12 @@ export default function TransformDesk() {
       </label>
       {problem && steps.length > 0 && <p className={styles.focusStatus} role="alert">{problem}</p>}
 
+      {result && <div className={styles.localAudioCard} data-transform-result="true">
+        <strong>Result · what the preview plays</strong>
+        <p className={styles.muted}>{formatTime(frameCount(result) / result.sampleRate)} · its own timeline, after every step</p>
+        <Waveform audio={result} keep={[0, frameCount(result) / result.sampleRate]} marks={[]} fade={null} label="result"
+          playhead={handed?.which === 'preview' && pos ? pos.seconds : undefined} onMove={() => undefined} />
+      </div>}
       <div className={styles.transformActions}>
         <button type="button" className={styles.play} onClick={() => void preview()} disabled={busy || !!problem || !player || (needsSecond && !second)}>Preview in the player</button>
         <button type="button" className={styles.ghost} onClick={() => void save()} disabled={busy || !!problem || (needsSecond && !second)}>Save as new</button>

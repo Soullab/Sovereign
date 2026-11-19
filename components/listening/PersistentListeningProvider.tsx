@@ -125,6 +125,12 @@ export type ListeningTransport = {
   playExperienceMedia: (manifest: SoundExperienceManifest) => Promise<boolean>;
   selectLocalFile: (file: File) => { accepted: boolean; message: string };
   playLocalFile: () => Promise<boolean>;
+  /**
+   * Read-only: where the member's own local file is in playback, for the
+   * Transform desk's playhead. Founder ruling 2026-11-19 (#1979). Null unless a
+   * local file is selected. Adds no control and changes nothing the dock shows.
+   */
+  localFilePosition: () => { title: string; seconds: number; duration: number | null; playing: boolean } | null;
   pause: () => void;
   /** Terminally clear just this member-bound music; does not stop Focus time. */
   stopMusic: () => void;
@@ -1044,6 +1050,13 @@ export function PersistentListeningProvider({
     return { accepted: true, message: 'File selected locally; use the persistent player.' };
   }, [releaseOutput]);
 
+  const localFilePosition = useCallback(() => {
+    const el = media.current;
+    if (kind.current !== 'local-file' || !el || !selected.current) return null;
+    return { title: selected.current.title, seconds: el.currentTime,
+      duration: Number.isFinite(el.duration) ? el.duration : null, playing: !el.paused };
+  }, []);
+
   const playLocalFile = useCallback(async (): Promise<boolean> => {
     if (!selected.current || !media.current) return false;
     if (refuseDuringMaiaSpeech()) return false;
@@ -1283,7 +1296,7 @@ export function PersistentListeningProvider({
   const transport: ListeningTransport = {
     snapshot, volume, setVolume, looping, loopAvailable, setLooping, shape, setShape,
     fields, keepField, dropField, replaceFields,
-    playSketch, playExperienceMedia, selectLocalFile, playLocalFile,
+    playSketch, playExperienceMedia, selectLocalFile, playLocalFile, localFilePosition,
     pause, stopMusic: stopAll, listeningInstance, removeLocalFile,
     focusSession, focusClockMs,
     focusTimeDisplay, setFocusTimeDisplay,

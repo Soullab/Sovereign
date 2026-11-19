@@ -4,6 +4,7 @@ human_activity: shaping a recording of their own — trimming, fading, evening i
 surfaces:
   - app/listen/TransformDesk.tsx
   - app/listen/ListenRoom.tsx
+  - components/listening/PersistentListeningProvider.tsx
   - lib/listening/transform/recipe.ts
   - lib/listening/transform/audio.ts
   - lib/listening/transform/wav.ts
@@ -26,12 +27,14 @@ screenshot_desktop:
 screenshot_mobile:
   - docs/design/contracts/screenshots/sound-studio-transform-mobile.png
 experience_verification: >
-  2026-11-17 isolated browser witness (tests/listening/transform_t1_browser_witness.cjs), 58/58: the real
+  2026-11-17 isolated browser witness (tests/listening/transform_t1_browser_witness.cjs), 72/72: the real
   TransformDesk compiled with its real stylesheet, the persistent player replaced by a recording shim, in
   local Chrome at 1440×1100 and 390×844. A non-audio file is refused; a 24-bit stereo WAV with a BWF bext
   chunk (a Capture take's shape) opens with its waveform; trim, fade, EQ, reverb and normalize are added and
   run in order; the waveform carries a time ruler, Trim and Fade read as times on the recording (m:ss.cc),
-  dragging a handle on the waveform moves the trim end, and a typed time sets the fade; Preview hands exactly one WAV to the one player; Save as new downloads a new WAV and its
+  dragging a handle on the waveform moves the trim end, and a typed time sets the fade; Play the original
+  hands the original to the one player, a playhead follows its reported position, and Start here marks the
+  trim there; after Preview the result's own waveform appears and the playhead follows it there; Preview hands exactly one WAV to the one player; Save as new downloads a new WAV and its
   provenance, whose source hash equals the original's and whose output hash equals the saved file's; the
   saved WAV also carries the same record inside it, its audio hash matches the saved samples, and Chrome's
   decoder and macOS Core Audio both read it; the
@@ -62,7 +65,9 @@ A member has a recording of their own — a Soullab Capture take, a voice memo, 
 - Selecting a Trim or Fade step marks it on the waveform: trim start and end as handles with the cut parts dimmed; fades as ramps, with a handle where the fade in ends and one where the fade out begins. Dragging a handle and typing a time do the same thing.
 - Times are written as times on the recording (0:01.20), never as bare seconds. The length of each fade is shown beside it.
 - After a step that changes the recording's length or direction (reverse, loop, join, reverb), a later Trim or Fade works on the changed recording, so it is not marked on this waveform and the desk says so.
-- The waveform has no playhead: the one persistent player does not report its position for a member's own file, and changing that player is outside Transform.
+- **Play the original** plays the member's file in the one player. While it plays, a playhead follows it on the waveform with its time, and each Trim or Fade step offers **Start here / End here** or **Fade in until here / Fade out from here** at that time.
+- **Preview** plays the result. Its own waveform appears below, with its own ruler, because after a trim or a reverb the result's times are not the original's, and the playhead follows the preview there.
+- The playhead reads the one player's position through `localFilePosition()`: read-only, for the member's own local file only, with no new control and nothing new on the player bar. Founder ruling 2026-11-19 (#1979).
 
 ## What the desk never does
 - Upload, analyse, or store anything on a server.

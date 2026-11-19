@@ -41,13 +41,16 @@ function captureLikeWav() {
 
 fs.writeFileSync(path.join(dir, 'player-shim.tsx'), `
 import React from 'react';
-const w = window as any; w.__selected = []; w.__played = 0;
+const w = window as any; w.__selected = []; w.__played = 0; w.__pos = null; w.__paused = 0;
 let snap: any = { kind: 'none', playback: 'idle', title: '' };
 export function usePersistentListening() {
   return {
     snapshot: snap,
     selectLocalFile: (file: File) => { w.__selected.push({ name: file.name, size: file.size, type: file.type }); return { accepted: true, message: 'ok' }; },
     playLocalFile: async () => { w.__played += 1; return true; },
+    // The real player reports the member's local file position read-only; the witness sets it.
+    localFilePosition: () => (w.__pos === null || !w.__selected.length ? null : { title: w.__selected.at(-1).name, seconds: w.__pos, duration: null, playing: true }),
+    pause: () => { w.__paused += 1; },
   };
 }`);
 fs.writeFileSync(path.join(dir, 'engine.ts'),
@@ -161,11 +164,32 @@ fs.writeFileSync(path.join(dir, 'entry.jsx'),
       const fadeNote = await p.locator('[data-transform-step="fade"]').textContent();
       check(`${name}: a typed time sets the fade, and its length is shown`, /0\.50 s in · 2\.00 s out/.test(fadeNote || ''), fadeNote);
       check(`${name}: the waveform says how to mark it`, /Drag where the fade in ends/.test(await p.locator('[data-transform-wave-hint]').textContent() || ''));
+      // Play the original, follow it on the waveform, and mark a step where it is.
+      await p.getByRole('button', { name: 'Play the original' }).click();
+      const orig = await p.evaluate(() => window.__selected.at(-1));
+      check(`${name}: Play the original hands the original itself to the one player`, orig && orig.name === 'Soullab Capture 2026-11-17 18.40.38.wav', orig);
+      check(`${name}: no playhead before the player reports a position`, (await p.locator('[data-transform-playhead]').count()) === 0);
+      await p.evaluate(() => { window.__pos = 2.5; });
+      await p.waitForSelector('[data-transform-wave-of="original"] [data-transform-playhead]');
+      check(`${name}: the playhead follows the player on the original's waveform`, (await p.locator('[data-transform-wave-of="original"] [data-transform-playhead]').textContent()) === 'Playing · 0:02.50');
+      check(`${name}: the button offers to pause while the original plays`, (await p.getByRole('button', { name: 'Pause the original' }).count()) === 1);
+      await p.locator('[data-transform-step="trim"] strong').first().click();
+      await p.getByRole('button', { name: /^Start here · 0:02\.50$/ }).click();
+      check(`${name}: Start here marks the trim where the player is`, (await tf('trim-start')) === '0:02.50', await tf('trim-start'));
+      await p.locator('[data-time-field="trim-start"]').fill('0:00'); await p.locator('[data-time-field="trim-start"]').press('Enter');
       await p.locator('[data-transform-step="fade"] strong').first().click();
+      const playedBefore = await p.evaluate(() => window.__played);
       await p.getByRole('button', { name: 'Preview in the player' }).click();
-      await p.waitForFunction(() => window.__played > 0, null, { timeout: 15000 });
+      await p.waitForFunction((n) => window.__played > n, playedBefore, { timeout: 15000 });
       const sel = await p.evaluate(() => window.__selected.at(-1));
       check(`${name}: preview goes to the ONE player as a WAV`, sel && sel.type === 'audio/wav' && /\(transformed preview\)\.wav$/.test(sel.name), sel);
+      await p.evaluate(() => { window.__pos = 1; });
+      await p.waitForFunction(() => document.querySelector('[data-transform-wave-of="result"] [data-transform-playhead]')?.textContent === 'Playing · 0:01.00', null, { timeout: 5000 }).catch(() => undefined);
+      check(`${name}: the preview's own waveform appears, and the playhead follows the preview there`,
+        (await p.locator('[data-transform-wave-of="result"] [data-transform-playhead]').textContent()) === 'Playing · 0:01.00'
+        && (await p.locator('[data-transform-wave-of="original"] [data-transform-playhead]').count()) === 0,
+        [await p.locator('[data-transform-wave-of="result"] [data-transform-playhead]').textContent(), await p.locator('[data-transform-wave-of="original"] [data-transform-playhead]').count()]);
+      check(`${name}: Mark here is offered only while the original plays`, (await p.locator('[data-mark-here]').count()) === 0);
       const downloads = [];
       p.on('download', (d) => downloads.push(d));
       await p.getByRole('button', { name: 'Save as new' }).click();
