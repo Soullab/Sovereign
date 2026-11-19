@@ -20,17 +20,18 @@ reference_surfaces:
   - docs/design/contracts/sound-studio-tone-lab.md — an instrument that claims nothing, controls laid out as labelled number fields
   - docs/design/contracts/sound-studio-field.md — the same field, player, level control and Stop
 shared_with_house: the deep contained field, editorial serif headings, restrained gold signal, plain human language; the same persistent player carries every preview
-distinct_to_room: a workbench rather than a destination — an ordered list of steps that runs top to bottom, a waveform of the member's own file, and a save that always makes something new and then proves the original is untouched
+distinct_to_room: a workbench rather than a destination — an ordered list of steps that runs top to bottom, a waveform of the member's own file with a time ruler, where Trim and Fade are marked and dragged, and a save that always makes something new and then proves the original is untouched
 screenshot_desktop:
   - docs/design/contracts/screenshots/sound-studio-transform-desktop.png
 screenshot_mobile:
   - docs/design/contracts/screenshots/sound-studio-transform-mobile.png
 experience_verification: >
-  2026-11-17 isolated browser witness (tests/listening/transform_t1_browser_witness.cjs), 46/46: the real
+  2026-11-17 isolated browser witness (tests/listening/transform_t1_browser_witness.cjs), 58/58: the real
   TransformDesk compiled with its real stylesheet, the persistent player replaced by a recording shim, in
   local Chrome at 1440×1100 and 390×844. A non-audio file is refused; a 24-bit stereo WAV with a BWF bext
   chunk (a Capture take's shape) opens with its waveform; trim, fade, EQ, reverb and normalize are added and
-  run in order; Preview hands exactly one WAV to the one player; Save as new downloads a new WAV and its
+  run in order; the waveform carries a time ruler, Trim and Fade read as times on the recording (m:ss.cc),
+  dragging a handle on the waveform moves the trim end, and a typed time sets the fade; Preview hands exactly one WAV to the one player; Save as new downloads a new WAV and its
   provenance, whose source hash equals the original's and whose output hash equals the saved file's; the
   saved WAV also carries the same record inside it, its audio hash matches the saved samples, and Chrome's
   decoder and macOS Core Audio both read it; the
@@ -55,6 +56,13 @@ A member has a recording of their own — a Soullab Capture take, a voice memo, 
 - **Only their own recordings.** Soullab and catalogue recordings cannot be opened here.
 - **One player.** Preview plays in the same player as everything else in Sound Studio.
 - **Honest limits.** Up to 20 minutes. Recordings with different sample rates are not joined (nothing is resampled silently). A WAV keeps its own sample rate; other formats are decoded by the browser at 48 kHz and the provenance says so.
+
+## Marking times
+- The waveform has a ruler of round times under it, and is drawn to the recording's own loudest point so a quiet take is readable. This changes the picture only, never the sound.
+- Selecting a Trim or Fade step marks it on the waveform: trim start and end as handles with the cut parts dimmed; fades as ramps, with a handle where the fade in ends and one where the fade out begins. Dragging a handle and typing a time do the same thing.
+- Times are written as times on the recording (0:01.20), never as bare seconds. The length of each fade is shown beside it.
+- After a step that changes the recording's length or direction (reverse, loop, join, reverb), a later Trim or Fade works on the changed recording, so it is not marked on this waveform and the desk says so.
+- The waveform has no playhead: the one persistent player does not report its position for a member's own file, and changing that player is outside Transform.
 
 ## What the desk never does
 - Upload, analyse, or store anything on a server.

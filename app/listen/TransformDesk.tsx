@@ -60,22 +60,136 @@ async function load(file: File): Promise<Loaded> {
   return { file, audio, info: { name: file.name, sha256: sha, sampleRate: audio.sampleRate, frames: frameCount(audio), channels: audio.channels.length, decodedBy } };
 }
 
-function Waveform({ audio }: { audio: Audio }) {
+/** m:ss.cc — a time on the recording, never a bare number of seconds. */
+export function formatTime(sec: number): string {
+  const c = Math.round(Math.max(0, sec) * 100);
+  const m = Math.floor(c / 6000);
+  return `${m}:${((c % 6000) / 100).toFixed(2).padStart(5, '0')}`;
+}
+
+/** Reads "1:02.5", "0:01.20", "75" or "1.2" as seconds; null if it is not a time. */
+export function parseTime(text: string): number | null {
+  const m = /^(?:(\d+):)?(\d+(?:\.\d*)?|\.\d+)$/.exec(text.trim().replace(',', '.'));
+  if (!m || (m[1] !== undefined && Number(m[2]) >= 60)) return null;
+  const v = (m[1] ? Number(m[1]) * 60 : 0) + Number(m[2]);
+  return Number.isFinite(v) ? v : null;
+}
+
+/** Ruler spacing: about eight labelled ticks across the recording, on round times. */
+export function rulerStep(total: number): { major: number; minor: number } {
+  const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
+  const major = steps.find((x) => total / x <= 8) ?? 300;
+  const minor = major / ([0.2, 2, 20, 120].includes(major) ? 4 : major === 15 ? 3 : 5);
+  return { major, minor };
+}
+
+/**
+ * Where a Trim or Fade step sits on the source waveform: the stretch of the
+ * original it works on. Earlier trims narrow it; level and tone steps leave
+ * it alone. After reverse, loop, join or reverb the step works on a
+ * different timeline, so it is not marked on this waveform (null).
+ */
+export function stepView(steps: readonly TransformStep[], index: number, total: number): { off: number; len: number } | null {
+  let off = 0, len = total;
+  for (let j = 0; j < index; j++) {
+    const s = steps[j];
+    if (s.kind === 'trim') {
+      const a = Math.min(Math.max(0, s.startSec), len), b = Math.min(Math.max(a, s.endSec), len);
+      off += a; len = b - a;
+    } else if (s.kind === 'reverse' || s.kind === 'loop' || s.kind === 'join' || s.kind === 'reverb') return null;
+  }
+  return { off, len };
+}
+
+type MarkKey = 'start' | 'end' | 'fadeIn' | 'fadeOut';
+type Mark = { key: MarkKey; at: number };
+
+function Waveform({ audio, keep, marks, fade, onMove }: {
+  audio: Audio; keep: [number, number]; marks: Mark[];
+  fade: { a: number; inEnd: number; outStart: number; b: number } | null;
+  onMove: (key: MarkKey, at: number) => void;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const cache = useRef<{ audio: Audio; w: number; peaks: Float32Array; top: number } | null>(null);
+  const drag = useRef<MarkKey | null>(null);
+  const total = frameCount(audio) / audio.sampleRate;
   useEffect(() => {
     const canvas = ref.current; if (!canvas) return;
-    const w = canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
-    const h = canvas.height = 96 * (window.devicePixelRatio || 1);
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.width = Math.max(1, Math.round(canvas.clientWidth * dpr));
+    const h = canvas.height = Math.round(96 * dpr);
     const g = canvas.getContext('2d'); if (!g) return;
-    g.clearRect(0, 0, w, h);
-    g.fillStyle = 'rgba(212, 175, 55, 0.85)';
-    const c = audio.channels[0]; const per = Math.max(1, Math.floor(c.length / w));
-    for (let x = 0; x < w; x++) {
-      let m = 0; for (let i = x * per; i < Math.min(c.length, (x + 1) * per); i++) m = Math.max(m, Math.abs(c[i]));
-      const bar = Math.max(1, m * h); g.fillRect(x, (h - bar) / 2, 1, bar);
+    if (!cache.current || cache.current.audio !== audio || cache.current.w !== w) {
+      const peaks = new Float32Array(w); const n = frameCount(audio); let top = 0;
+      for (let x = 0; x < w; x++) {
+        let m = 0; const from = Math.floor((x * n) / w), to = Math.max(from + 1, Math.floor(((x + 1) * n) / w));
+        for (const c of audio.channels) for (let i = from; i < Math.min(n, to); i++) { const v = Math.abs(c[i]); if (v > m) m = v; }
+        peaks[x] = m; if (m > top) top = m;
+      }
+      cache.current = { audio, w, peaks, top };
     }
-  }, [audio]);
-  return <canvas ref={ref} className={styles.transformWave} aria-hidden="true" />;
+    const { peaks, top } = cache.current;
+    const X = (t: number) => (t / total) * w;
+    g.clearRect(0, 0, w, h);
+    // Drawn to the recording's own loudest point, so a quiet take is still readable. Display only.
+    const scale = top > 0 ? 0.92 / top : 1;
+    for (let x = 0; x < w; x++) {
+      const t = (x / w) * total;
+      g.fillStyle = t >= keep[0] && t <= keep[1] ? 'rgba(212, 175, 55, 0.9)' : 'rgba(212, 175, 55, 0.22)';
+      const bar = Math.max(1, peaks[x] * scale * h); g.fillRect(x, (h - bar) / 2, 1, bar);
+    }
+    if (fade) {
+      g.fillStyle = 'rgba(7, 18, 23, 0.55)';
+      g.beginPath(); g.moveTo(X(fade.a), 0); g.lineTo(X(fade.inEnd), 0); g.lineTo(X(fade.a), h); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(X(fade.outStart), 0); g.lineTo(X(fade.b), 0); g.lineTo(X(fade.b), h); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(241, 239, 231, 0.75)'; g.lineWidth = 1.5 * dpr;
+      g.beginPath(); g.moveTo(X(fade.a), h); g.lineTo(X(fade.inEnd), 0); g.moveTo(X(fade.outStart), 0); g.lineTo(X(fade.b), h); g.stroke();
+    }
+    for (const m of marks) {
+      const x = Math.round(X(m.at));
+      g.fillStyle = '#f1efe7'; g.fillRect(x - dpr, 0, 2 * dpr, h);
+      g.fillRect(x - 5 * dpr, 0, 10 * dpr, 8 * dpr); g.fillRect(x - 5 * dpr, h - 8 * dpr, 10 * dpr, 8 * dpr);
+    }
+  }, [audio, total, keep, marks, fade]);
+
+  const at = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return Math.min(total, Math.max(0, ((e.clientX - r.left) / r.width) * total));
+  };
+  const { major, minor } = rulerStep(total);
+  const ticks: { t: number; major: boolean }[] = [];
+  for (let k = 0; k * minor <= total + 1e-9; k++) ticks.push({ t: k * minor, major: Math.abs((k * minor) / major - Math.round((k * minor) / major)) < 1e-6 });
+  return <div className={styles.transformWaveWrap}>
+    <canvas ref={ref} className={styles.transformWave} aria-hidden="true" data-transform-wave="true"
+      style={{ touchAction: marks.length ? 'none' : 'auto', cursor: marks.length ? 'ew-resize' : 'default' }}
+      onPointerDown={(e) => {
+        if (!marks.length) return;
+        const t = at(e); const px = e.currentTarget.getBoundingClientRect().width / total;
+        const near = marks.reduce((b, m) => (Math.abs(m.at - t) * px < Math.abs(b.at - t) * px ? m : b));
+        drag.current = near.key; e.currentTarget.setPointerCapture(e.pointerId); onMove(near.key, t);
+      }}
+      onPointerMove={(e) => { if (drag.current) onMove(drag.current, at(e)); }}
+      onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} />
+    <div className={styles.transformRuler} aria-hidden="true" data-transform-ruler="true">
+      {ticks.map(({ t, major: big }) => <span key={t} className={big ? styles.transformTickMajor : styles.transformTick} style={{ left: `${(t / total) * 100}%` }}>
+        {big && <em>{formatTime(t).replace(/\.00$/, '')}</em>}
+      </span>)}
+    </div>
+  </div>;
+}
+
+function TimeField({ label, value, onChange, name }: { label: string; value: number; onChange: (v: number) => void; name: string }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    const v = parseTime(draft);
+    if (v !== null) onChange(Math.round(v * 100) / 100);
+    setDraft(null);
+  };
+  return <label className={styles.transformField}>{label}
+    <input type="text" inputMode="decimal" spellCheck={false} data-time-field={name} value={draft ?? formatTime(value)}
+      onChange={(e) => setDraft(e.currentTarget.value)} onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }} /></label>;
 }
 
 function Num({ label, value, onChange, min, max, step }: { label: string; value: number; onChange: (v: number) => void; min: number; max: number; step: number }) {
@@ -92,6 +206,7 @@ export default function TransformDesk() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [saved, setSaved] = useState<{ wav: string; json: string; original: string } | null>(null);
+  const [selected, setSelected] = useState<number | null>(null);
   const len = source ? frameCount(source.audio) / source.audio.sampleRate : 0;
   const problem = useMemo(() => (source ? recipeProblem(steps, source.audio.sampleRate / 2) : null), [steps, source]);
   const needsSecond = steps.some((s) => s.kind === 'join');
@@ -103,7 +218,7 @@ export default function TransformDesk() {
     setBusy(true); setStatus('Reading your recording on this device…'); setSaved(null);
     try {
       const loaded = await load(accepted.file);
-      if (which === 'source') { setSource(loaded); setSteps([]); setSecond(null); } else setSecond(loaded);
+      if (which === 'source') { setSource(loaded); setSteps([]); setSecond(null); setSelected(null); } else setSecond(loaded);
       setStatus(`${loaded.file.name}: ${clock(loaded.info.frames / loaded.info.sampleRate)} · ${loaded.info.sampleRate / 1000} kHz · ${loaded.info.channels === 2 ? 'stereo' : 'mono'}${loaded.info.decodedBy === 'browser' ? ' · decoded by your browser at 48 kHz' : ''}.`);
     } catch (e) {
       setStatus(e instanceof Error ? e.message : 'This file could not be read.');
@@ -111,7 +226,38 @@ export default function TransformDesk() {
   };
 
   const update = (i: number, patch: Partial<TransformStep>) => setSteps((all) => all.map((s, j) => (j === i ? ({ ...s, ...patch } as TransformStep) : s)));
-  const move = (i: number, d: -1 | 1) => setSteps((all) => { const a = all.slice(); const j = i + d; if (j < 0 || j >= a.length) return a; [a[i], a[j]] = [a[j], a[i]]; return a; });
+  const move = (i: number, d: -1 | 1) => {
+    const j = i + d; if (j < 0 || j >= steps.length) return;
+    const a = steps.slice(); [a[i], a[j]] = [a[j], a[i]]; setSteps(a);
+    setSelected((k) => (k === i ? j : k === j ? i : k));
+  };
+  const remove = (i: number) => { setSteps((a) => a.filter((_, j) => j !== i)); setSelected((k) => (k === null || k === i ? null : k > i ? k - 1 : k)); };
+
+  // A Trim or Fade mark moved on the waveform or typed as a time, in the original's time.
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const setMark = (i: number, key: MarkKey, t: number) => {
+    const s = steps[i]; const v = stepView(steps, i, len); if (!v) return;
+    const local = Math.min(v.len, Math.max(0, t - v.off));
+    if (s.kind === 'trim' && key === 'start') update(i, { startSec: r2(Math.min(local, s.endSec - 0.01)) });
+    if (s.kind === 'trim' && key === 'end') update(i, { endSec: r2(Math.max(local, s.startSec + 0.01)) });
+    if (s.kind === 'fade' && key === 'fadeIn') update(i, { inSec: r2(Math.min(local, 60, v.len - s.outSec)) });
+    if (s.kind === 'fade' && key === 'fadeOut') update(i, { outSec: r2(Math.min(v.len - local, 60, v.len - s.inSec)) });
+  };
+  const sel = selected !== null ? steps[selected] : undefined;
+  const view = selected !== null && sel && (sel.kind === 'trim' || sel.kind === 'fade') ? stepView(steps, selected, len) : null;
+  const marked = useMemo(() => {
+    if (!sel || !view) return { keep: [0, len] as [number, number], marks: [] as Mark[], fade: null };
+    if (sel.kind === 'trim') {
+      const a = view.off + Math.min(sel.startSec, view.len), b = view.off + Math.min(sel.endSec, view.len);
+      return { keep: [a, b] as [number, number], marks: [{ key: 'start', at: a }, { key: 'end', at: b }] as Mark[], fade: null };
+    }
+    if (sel.kind === 'fade') {
+      const a = view.off, b = view.off + view.len;
+      const inEnd = a + Math.min(sel.inSec, view.len), outStart = b - Math.min(sel.outSec, view.len);
+      return { keep: [a, b] as [number, number], marks: [{ key: 'fadeIn', at: inEnd }, { key: 'fadeOut', at: outStart }] as Mark[], fade: { a, inEnd, outStart, b } };
+    }
+    return { keep: [0, len] as [number, number], marks: [] as Mark[], fade: null };
+  }, [sel, view?.off, view?.len, len]);
 
   const make = async () => {
     if (!source) throw new Error('Choose a recording first.');
@@ -178,25 +324,37 @@ export default function TransformDesk() {
       <div className={styles.localAudioCard}>
         <strong>{source.file.name}</strong>
         <p className={styles.muted}>{clock(len)} · {source.info.sampleRate / 1000} kHz · {source.info.channels === 2 ? 'stereo' : 'mono'} · up to 20 minutes</p>
-        <Waveform audio={source.audio} />
+        <Waveform audio={source.audio} keep={marked.keep} marks={marked.marks} fade={marked.fade}
+          onMove={(key, t) => { if (selected !== null) setMark(selected, key, t); }} />
+        <p className={styles.muted} data-transform-wave-hint="true">{
+          sel && view ? (sel.kind === 'trim' ? 'Drag the start and end handles on the waveform, or type a time.' : 'Drag where the fade in ends and the fade out begins, or type a time.')
+            : sel && (sel.kind === 'trim' || sel.kind === 'fade') ? 'This step comes after a step that changes the recording\'s length or direction, so its times are not marked on this waveform.'
+              : 'Select a Trim or Fade step to mark it on the waveform.'}</p>
       </div>
 
       <h3 className={styles.toneHeading}>Steps, in order</h3>
       {steps.length === 0 && <p className={styles.muted}>Add a step below. Steps run top to bottom.</p>}
       <ol className={styles.transformSteps}>
-        {steps.map((s, i) => <li key={i} data-transform-step={s.kind}>
+        {steps.map((s, i) => { const v = s.kind === 'trim' || s.kind === 'fade' ? stepView(steps, i, len) : null; return <li key={i} data-transform-step={s.kind}
+          data-selected={selected === i ? 'true' : undefined} className={selected === i ? styles.transformStepSelected : undefined}
+          onClickCapture={() => setSelected(i)} onFocusCapture={() => setSelected(i)}>
           <div className={styles.transformStepHead}><strong>{LABELS[s.kind]}</strong>
             <span>
               <button type="button" className={styles.ghost} aria-label={`Move ${LABELS[s.kind]} up`} onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
               <button type="button" className={styles.ghost} aria-label={`Move ${LABELS[s.kind]} down`} onClick={() => move(i, 1)} disabled={i === steps.length - 1}>↓</button>
-              <button type="button" className={styles.ghost} aria-label={`Remove ${LABELS[s.kind]}`} onClick={() => setSteps((a) => a.filter((_, j) => j !== i))}>Remove</button>
+              <button type="button" className={styles.ghost} aria-label={`Remove ${LABELS[s.kind]}`} onClick={(e) => { e.stopPropagation(); remove(i); }}>Remove</button>
             </span>
           </div>
           <div className={styles.transformFields}>
-            {s.kind === 'trim' && <><Num label="Start (s)" value={s.startSec} min={0} max={len} step={0.01} onChange={(v) => update(i, { startSec: v })} />
-              <Num label="End (s)" value={s.endSec} min={0} max={len} step={0.01} onChange={(v) => update(i, { endSec: v })} /></>}
-            {s.kind === 'fade' && <><Num label="Fade in (s)" value={s.inSec} min={0} max={60} step={0.1} onChange={(v) => update(i, { inSec: v })} />
-              <Num label="Fade out (s)" value={s.outSec} min={0} max={60} step={0.1} onChange={(v) => update(i, { outSec: v })} /></>}
+            {s.kind === 'trim' && (v ? <><TimeField name="trim-start" label="Starts at" value={v.off + s.startSec} onChange={(t) => setMark(i, 'start', t)} />
+              <TimeField name="trim-end" label="Ends at" value={v.off + s.endSec} onChange={(t) => setMark(i, 'end', t)} /></>
+              : <><TimeField name="trim-start" label="Starts at (in the changed recording)" value={s.startSec} onChange={(t) => update(i, { startSec: t })} />
+                <TimeField name="trim-end" label="Ends at (in the changed recording)" value={s.endSec} onChange={(t) => update(i, { endSec: t })} /></>)}
+            {s.kind === 'fade' && (v ? <><TimeField name="fade-in" label="Fade in until" value={v.off + Math.min(s.inSec, v.len)} onChange={(t) => setMark(i, 'fadeIn', t)} />
+              <TimeField name="fade-out" label="Fade out from" value={v.off + v.len - Math.min(s.outSec, v.len)} onChange={(t) => setMark(i, 'fadeOut', t)} />
+              <span className={styles.muted}>{s.inSec.toFixed(2)} s in · {s.outSec.toFixed(2)} s out</span></>
+              : <><TimeField name="fade-in" label="Fade in lasts" value={s.inSec} onChange={(t) => update(i, { inSec: Math.min(60, t) })} />
+                <TimeField name="fade-out" label="Fade out lasts" value={s.outSec} onChange={(t) => update(i, { outSec: Math.min(60, t) })} /></>)}
             {s.kind === 'normalize' && <Num label="Peak (dBFS, at most −1)" value={s.peakDbfs} min={-30} max={-1} step={0.5} onChange={(v) => update(i, { peakDbfs: v })} />}
             {s.kind === 'loop' && <><Num label="Times" value={s.times} min={2} max={64} step={1} onChange={(v) => update(i, { times: v })} />
               <Num label="Crossfade (ms)" value={s.crossfadeMs} min={0} max={2000} step={10} onChange={(v) => update(i, { crossfadeMs: v })} /></>}
@@ -218,11 +376,11 @@ export default function TransformDesk() {
               <Num label="Mix (0–1)" value={s.mix} min={0} max={1} step={0.05} onChange={(v) => update(i, { mix: v })} /></>}
             {s.kind === 'reverse' && <span className={styles.muted}>Plays the recording backwards.</span>}
           </div>
-        </li>)}
+        </li>; })}
       </ol>
 
       <label className={styles.transformField}>Add a step
-        <select value="" onChange={(e) => { const k = e.currentTarget.value as TransformStep['kind']; if (k) setSteps((a) => [...a, defaults(k, len)]); }}>
+        <select value="" onChange={(e) => { const k = e.currentTarget.value as TransformStep['kind']; if (k) { setSelected(steps.length); setSteps([...steps, defaults(k, len)]); } }}>
           <option value="">Choose…</option>
           {(Object.keys(LABELS) as TransformStep['kind'][]).map((k) => <option key={k} value={k}>{LABELS[k]}</option>)}
         </select>
