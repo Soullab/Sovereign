@@ -133,9 +133,10 @@ the claude.ai review pages cannot hold it and must not.
   Soullab unless the writer shares that exchange (§5 ruling).
 - **On the phone guide:** the guide itself needs no sign-in, but talking with MAIA does, because she
   speaks with a member about their Work. "Talk with MAIA about this" on the phone therefore asks the
-  writer to sign in there. Recommended: keep the phone guide's MAIA area to "Ask MAIA on your
-  computer", which places the question in the computer's composer only through a sign-in on that
-  device. No device pairing. To decide when this is designed.
+  writer to sign in there. Recommended: on the phone, the MAIA area shows the step's suggested
+  question with "Ask this in the Studio": the writer asks it from the same step's "Talk with MAIA
+  about this" on the computer, or signs in on the phone to talk there. The phone never puts text on
+  the computer; that would need device pairing. To decide when this is designed.
 
 ## 4. Proposed order of work (each step its own founder act)
 
