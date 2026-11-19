@@ -109,6 +109,33 @@ on the computer and steps through the guide on their phone, so the guide never c
   would mean watching what the writer clicks, which the 2026-11-01 ruling forbids, and it would need
   device pairing. It stays out unless the founder rules otherwise.
 - The guide page holds no member data and needs no sign-in, so it can be opened on any phone.
+- **⭐ Founder choice 2026-11-19 ("QR sounds perfect"): the QR code appears inside the "What do I do
+  next?" answer** (#2344 Write, #2346 Develop), so scanning it opens the phone guide **at the step that
+  matches the screen at that moment**. It is the writer's own act at a moment they choose; nothing
+  follows them in the background. The link carries only the guide and step (for example
+  `/writers-studio/guide/new#step-7`). No member id, Work, manuscript text or tracking token goes in
+  it, and opening it records nothing.
+
+### D. Every step and every form is a place to talk with MAIA (founder direction, 2026-11-19)
+
+"All needs to be interactive with areas to talk with MAIA about that field." Each guide step, and
+each form's way in (nonfiction, novel, song, play, screenplay, poetry …), carries a **"Talk with MAIA
+about this"** area. Because MAIA runs only on Soullab's own server, this lives **inside the Studio**;
+the claude.ai review pages cannot hold it and must not.
+
+- It opens a real Work conversation (or, for a craft question, the live Teach-me path,
+  `lib/writersStudio/teachingTurn.ts`, already on 11 entry points). A question about that step or form
+  is **placed** in the composer. The writer edits it and presses Send; nothing is sent by itself.
+- MAIA already has the Studio guide in every Studio conversation (`studioGuide.ts`), so she can answer
+  "how does this step work?" by naming real controls. Craft questions ("what makes a good hook?") go
+  through Teach-me in her teaching posture.
+- The same boundaries apply: the Ordinary/Sanctuary posture is honoured, and nothing is kept for
+  Soullab unless the writer shares that exchange (§5 ruling).
+- **On the phone guide:** the guide itself needs no sign-in, but talking with MAIA does, because she
+  speaks with a member about their Work. "Talk with MAIA about this" on the phone therefore asks the
+  writer to sign in there. Recommended: keep the phone guide's MAIA area to "Ask MAIA on your
+  computer", which places the question in the computer's composer only through a sign-in on that
+  device. No device pairing. To decide when this is designed.
 
 ## 4. Proposed order of work (each step its own founder act)
 
