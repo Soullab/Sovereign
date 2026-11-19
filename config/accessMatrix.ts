@@ -50,6 +50,7 @@ export const ACCESS_RULES: AccessRule[] = [
   // /writers-studio, /studio, /maia/encounter, chart or API admission.
   { exact: '/explore', public: true, notes: 'Public Many Doors introduction; no member data' },
   { exact: '/explore/writers-studio', public: true, notes: 'Public writer vision; manuscript features remain gated' },
+  { exact: '/explore/writers-studio/guide', public: true, notes: "Studio guides (founder 2026-11-19): static step-by-step guides opened from the Studio's QR code on a phone; no member data, no API, records nothing" },
   { exact: '/explore/pro-studio', public: true, notes: 'Public professional preview; clinical workflows remain gated' },
   { exact: '/explore/astrology-pro', public: true, notes: 'Public professional astrology preview; private charts remain gated' },
   { exact: '/explore/maia', public: true, notes: 'Public MAIA introduction; member encounter remains gated' },

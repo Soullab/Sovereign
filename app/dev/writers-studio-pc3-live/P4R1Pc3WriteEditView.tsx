@@ -57,7 +57,9 @@ import P4R1FocusMaterials from './P4R1FocusMaterials';
 import P4R1BlankWritingArrival from './P4R1BlankWritingArrival';
 import StudioFirstPageMaia from './StudioFirstPageMaia';
 import { firstPageEligible, letterOfferVisible } from '@/lib/writersStudio/inspirationOpening';
-import { whatNextInWrite, WHAT_NEXT_LABEL, WHAT_NEXT_ASK_LABEL, WHAT_NEXT_CLOSE_LABEL } from '@/lib/writersStudio/whatNext';
+import { whatNextInWrite, WHAT_NEXT_LABEL, WHAT_NEXT_ASK_LABEL, WHAT_NEXT_CLOSE_LABEL, type WriteScreen } from '@/lib/writersStudio/whatNext';
+import { guideStepForWrite } from '@/lib/writersStudio/studioGuides';
+import GuideStepOffer from './GuideStepOffer';
 import CraftsmansTableR1 from './CraftsmansTableR1';
 import CraftFocusToolsR1 from './CraftFocusToolsR1';
 import MaiaCraftCompanionR1, { type MaiaCraftComposerPort, type MaiaCraftComposerSnapshot } from './MaiaCraftCompanionR1';
@@ -1393,7 +1395,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
     bodyOf: props.writing.bodyOf,
   });
   // Recomputed every render, so the answer always describes the screen as it is now.
-  const whatNext = whatNextInWrite({
+  const whatNextScreen: WriteScreen = {
     pageEmpty: currentBody.trim().length === 0,
     firstPage: firstPageEligible({ sections: props.context.sections.length, body: currentBody }),
     chosenPlace: railSelectionId && railSection ? railLabel : null,
@@ -1404,7 +1406,8 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       bodies: props.context.sections.map((section) => props.writing.bodyOf(section.draftSectionId)),
     }),
     talkWholeLabel: workStudioCopy ? workStudioCopy.whole : 'Talk about the whole Work',
-  });
+  };
+  const whatNext = whatNextInWrite(whatNextScreen);
   const writeMaia = props.work ? (
     <div className="fr-maia-inner p4r1-write-maia">
       <div className="fr-maia-head">
@@ -1538,7 +1541,9 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
             {whatNextOpen ? (
               <div role="status" data-write-what-next-answer="true" style={{ marginTop: 10, fontSize: 15, lineHeight: 1.5 }}>
                 {whatNext.say.map((line) => <p key={line} style={{ margin: '0 0 8px' }}>{line}</p>)}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <GuideStepOffer step={guideStepForWrite(whatNextScreen)}
+                  onTalk={(question) => { setWhatNextOpen(false); openWorkConversation(question); }} />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
                   <button type="button" className="p4r1-talk" data-write-what-next-ask="true"
                     onClick={() => { setWhatNextOpen(false); openWorkConversation(whatNext.ask); }}>
                     {WHAT_NEXT_ASK_LABEL}

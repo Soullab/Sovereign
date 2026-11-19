@@ -54,7 +54,9 @@ import { startersFor, type WorkKind } from '@/lib/writersStudio/workKindShared';
 import { getWorkKindClient } from '@/lib/writersStudio/workKindClient';
 import { fetchPlan, makePlanClient, editPlanClient, type PlanView, deletePlanClient } from '@/lib/writersStudio/planClient';
 import { readCurrentSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
-import { whatNextInDevelop, WHAT_NEXT_LABEL, WHAT_NEXT_ASK_LABEL, WHAT_NEXT_CLOSE_LABEL } from '@/lib/writersStudio/whatNext';
+import { whatNextInDevelop, WHAT_NEXT_LABEL, WHAT_NEXT_ASK_LABEL, WHAT_NEXT_CLOSE_LABEL, type DevelopScreen } from '@/lib/writersStudio/whatNext';
+import { guideStepForDevelop } from '@/lib/writersStudio/studioGuides';
+import GuideStepOffer from './GuideStepOffer';
 import type { Appearance } from '@/app/writers-studio/full-redesign/types';
 import {
   DEFAULT_WORKING_STYLE,
@@ -3506,17 +3508,20 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
           </button>
           {whatNextOpen ? (() => {
             const posture = readCurrentSanctuaryPosture();
-            const answer = whatNextInDevelop({
+            const screen: DevelopScreen = {
               chapterLabel: stageChapterLabel || null,
               reading: stageReading.status,
               noticed: stageReading.items.length,
               pass: stagePass.status,
               posture: !posture.resolved ? 'unresolved' : posture.sanctuary ? 'sanctuary' : 'ordinary',
-            });
+            };
+            const answer = whatNextInDevelop(screen);
             return (
               <div role="status" data-develop-what-next-answer="true" style={{ marginTop: 10, fontSize: 15, lineHeight: 1.5 }}>
                 {answer.say.map((line) => <p key={line} style={{ margin: '0 0 8px' }}>{line}</p>)}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <GuideStepOffer step={guideStepForDevelop(screen)}
+                  onTalk={(question) => { setWhatNextOpen(false); placeInStageConversation(question); }} />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
                   <button type="button" className="p4r1-talk" data-develop-what-next-ask="true"
                     onClick={() => { setWhatNextOpen(false); placeInStageConversation(answer.ask); }}>
                     {WHAT_NEXT_ASK_LABEL}
