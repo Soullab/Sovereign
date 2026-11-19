@@ -10,6 +10,7 @@ import { SpeechRecognition as NativeSpeechRecognition } from '@capacitor-communi
 import { VoiceController } from '@/lib/voice/AudioSessionManager';
 import { getFeatureFlag } from '@/lib/features/flags';
 import { logVoiceEvent, resetVoiceSession } from '@/lib/voice/voiceDiagnostics';
+import { mergeNativePartial } from '@/lib/voice/nativePartialContinuity';
 import { pushVoiceDebug } from '@/lib/voice/voiceDebugBus';
 import { WebSpeechRecognitionSession, classifyRecognitionError } from '@/lib/voice/webSpeechLifecycle';
 import {
@@ -3163,11 +3164,22 @@ export const ContinuousConversation = forwardRef<ContinuousConversationRef, Cont
             // 🔥 FIX: Reset restart counter when user actually speaks - prevents stopping during valid conversation
             consecutiveRestartCount.current = 0;
 
-            // Accumulate the live native segment. Explicit-floor turns survive
-            // native recognizer restarts by prepending segments already witnessed
-            // before the internal stop.
-            const heldPrefix = explicitTurnPrefixRef.current.trim();
-            accumulatedTranscript.current = heldPrefix ? `${heldPrefix} ${transcript}`.trim() : transcript;
+            // Accumulate the live native segment. Earlier segments survive both
+            // an internal recognizer stop and an iOS restart that reports no stop.
+            const mergedPartial = mergeNativePartial({
+              heldPrefix: explicitTurnPrefixRef.current,
+              accumulated: accumulatedTranscript.current,
+              incoming: transcript,
+            });
+            explicitTurnPrefixRef.current = mergedPartial.heldPrefix;
+            accumulatedTranscript.current = mergedPartial.accumulated;
+            if (mergedPartial.segmentReset) {
+              logVoiceEvent('ios_voice_segment_reset_preserved', {
+                previousSegmentLength: mergedPartial.previousSegmentLength,
+                incomingLength: transcript.length,
+                preservedLength: mergedPartial.heldPrefix.length,
+              });
+            }
 
             // Send the whole member-owned turn for live feedback, not just the
             // latest plugin segment.
