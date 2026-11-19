@@ -1544,7 +1544,8 @@ describe('KERNEL-00 Â· S2 batch-only orchestration (founder ruling 2026-09-15) â
   const FIXTURE = 'scripts/witness/fixtures/k00-s2-nearend-997hz-180s.wav';
   const SIDECAR = FIXTURE + '.sha256';
   const S2_STIMULUS_SHA256 = '1a505b3d38a97b75cb935f85bd33deb889628322e558f74af9a5f05afbfbd00e';   // pinned once; must equal the sidecar, the batch and the file
-  const S2_AFPLAY_SHA256 = '88f3b577790877524edc79a20de8838a019c0ca723a0eaa4a8612a860317cabb';     // the playback census's /usr/bin/afplay (playback-probe-20260915T020250Z)
+  const S2_AFPLAY_CENSUS_SHA256 = '88f3b577790877524edc79a20de8838a019c0ca723a0eaa4a8612a860317cabb';  // the playback census's /usr/bin/afplay (playback-probe-20260915T020250Z) â€” historical, never rewritten
+  const S2_AFPLAY_SHA256 = '85d3ee1676edf279b42f80222235a45c0533a4121273a8ee47afee226230a0a4';     // PLAYER-IDENTITY AMENDMENT-01 (founder, 2026-11-19): macOS 15.8.2 replaced /usr/bin/afplay on 2026-10-22
   const INSTRUMENT_K0506 = '8b111709b6e5010b4b6ee7281d257141945276ff';                            // the batch's last frozen state (K00-05/06 Option C)
   const INSTRUMENT_CD20 = '83a382a1455161996d499f30cbf00504bbd0332a';                             // the driver's frozen state (C-D20)
   const INSTRUMENT_VPIO02B = '08483cfe4f6c3e98198805337ced99bae92ce911';                          // entry classifier + reinstall frozen state
@@ -1584,7 +1585,7 @@ describe('KERNEL-00 Â· S2 batch-only orchestration (founder ruling 2026-09-15) â
   it('S2 player: /usr/bin/afplay is SHA-pinned to the playback census value; the ONE invocation is verbatim `/usr/bin/afplay -v 0.50 -t 180 "$S2_STIMULUS"`, lives only inside stimulus_start, and the recorded -v / -t constants equal it', () => {
     const bx = execLines(W(BATCH));
     const census = W('docs/programme/VOICE-2026/driver-ledger/playback-probe-20260915T020250Z/shasum-afplay.txt');
-    expect(census).toContain(`${S2_AFPLAY_SHA256}  /usr/bin/afplay`);
+    expect(census).toContain(`${S2_AFPLAY_CENSUS_SHA256}  /usr/bin/afplay`);
     expect(bx).toContain('S2_AFPLAY="/usr/bin/afplay"'); expect(bx).toContain(`S2_AFPLAY_SHA256="${S2_AFPLAY_SHA256}"`);
     expect(bx).toContain('S2_AFPLAY_VOLUME="0.50"'); expect(bx).toContain('S2_AFPLAY_SECONDS="180"');
     const inv = bx.match(/^\s*\/usr\/bin\/afplay -v 0\.50 -t 180 "\$S2_STIMULUS" <\/dev\/null > "\$LEDGER_DIR\/stimulus-sample-\$1-afplay\.log" 2>&1 &$/gm) ?? [];
