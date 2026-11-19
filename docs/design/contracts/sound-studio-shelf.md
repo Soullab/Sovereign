@@ -19,12 +19,12 @@ screenshot_desktop:
 screenshot_mobile:
   - docs/design/contracts/screenshots/sound-studio-shelf-live-mobile.png
 experience_verification: >
-  2026-11-19 isolated browser witness (tests/listening/shelf_live_view_browser_witness.cjs), 38/38: the real
+  2026-11-19 isolated browser witness (tests/listening/shelf_live_view_browser_witness.cjs), 40/40: the real
   ReceptiveFieldDesk inside the REAL PersistentListeningProvider, with their real stylesheets, in local Chrome at
   1440×1200 and 390×844. Before Play, the view says Not playing and no card is marked. Choosing a card marks only
   it. While playing, the card says Playing, the waveform moves, the real output level is shown, and the notes and
   settings appear. A different card shows different notes (G2 · D3 · G3 versus C3 · G3 · C4) and different
-  settings. Tailoring marks the card "tailored". Paused, the view says Paused and goes flat. An audio-graph edge
+  settings, each in the field's own colour. Tailoring marks the card "tailored". Paused, the view says Paused and goes flat. An audio-graph edge
   log shows the tap adds exactly one edge, master → analyser, that the analyser feeds nothing, and that only one
   path reaches the speakers. No overflow, no page errors and no outside requests. Measured in the same run: "A
   wider horizon" plays at about −53 to −55 dBFS RMS at the default level. The fixture mirrors the app shell's
@@ -40,6 +40,7 @@ A member wants to receive a generated sound field, shape it if they wish, and ke
 ## What the member can always rely on
 - **They can see that it is working.** While their field plays, a live view moves with the actual sound: the waveform itself, how it swells over the last ten seconds, and its real output level. Paused, it says so and goes flat.
 - **They can see what they are hearing.** The field's notes (for example G2 · D3 · G3) and its Organic Current, Open Water and Texture settings are shown, so different cards read differently.
+- **Each field has its own colour.** Lavender for A place to center, amber for A moving current, sea for A wider horizon, and rose for Room for catharsis. The chosen card and its live view take that colour; with no card chosen the view stays in house gold. The lines are soft, with a blurred halo under a thin line, rather than severe (founder, 2026-11-19).
 - **They know which card is sounding.** The chosen card is marked Chosen, then Playing, then "tailored" once a dial moves away from the card's own setting.
 - **Seeing changes nothing.** The view reads the one player's output through a tap that feeds nothing. It does not change the sound, its level or its notes, and it adds no control to the player bar.
 

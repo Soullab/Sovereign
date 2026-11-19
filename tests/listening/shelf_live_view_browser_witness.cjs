@@ -99,6 +99,7 @@ createRoot(document.getElementById('app')).render(
       });
       check(`${name}: the waveform moves (it is not a flat line)`, wave.span > wave.height * 0.3, wave);
       const settings = await p.locator('[data-live-settings]').textContent();
+      const tint1 = await p.locator('[data-listen23-live]').getAttribute('data-live-tint');
       check(`${name}: the field's settings are shown (the card's values on the dials' steps of 5)`, /Organic Current 30 · Open Water 90 · Texture & stillness 30/.test(settings), settings);
       const edges = await p.evaluate(() => window.__edges);
       const taps = edges.filter(([, d]) => d === 'analyser');
@@ -117,6 +118,7 @@ createRoot(document.getElementById('app')).render(
       check(`${name}: a different card shows different notes (A moving current: C3 · G3 · C4)`, notes2 === 'C3 · G3 · C4', notes2);
       const settings2 = await p.locator('[data-live-settings]').textContent();
       check(`${name}: and different settings`, settings2 !== settings && /Organic Current (75|80) · Open Water 50 · Texture & stillness 60/.test(settings2), settings2);
+      check(`${name}: each field has its own colour (sea for A wider horizon, amber for A moving current)`, tint1 === '110,190,200' && (await p.locator('[data-listen23-live]').getAttribute('data-live-tint')) === '226,170,92', [tint1]);
       check(`${name}: the newly chosen card is the one marked Playing`, (await p.locator('[data-listen23-invitation="warmth"] [data-listen23-chosen]').textContent()) === 'Playing'
         && (await p.locator('[data-listen23-invitation="open"] [data-listen23-chosen]').count()) === 0);
 
@@ -138,7 +140,7 @@ createRoot(document.getElementById('app')).render(
         for (let y = 0; y < height; y++) for (let x = 0; x < width; x += 4) if (data[(y * width + x) * 4 + 3] > 40) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
         return bottom - top;
       });
-      check(`${name}: paused, the waveform is a flat line`, flat <= 4, flat);
+      check(`${name}: paused, the waveform is a flat line (only its soft glow has height)`, flat <= 12, flat);
       check(`${name}: no horizontal overflow`, await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
       check(`${name}: no page errors and no outside requests`, errors.length === 0 && external.length === 0, { errors, external });
       await ctx.close();

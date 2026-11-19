@@ -35,14 +35,25 @@ export function noteName(hz:number):string {
 }
 
 type Output = { analyser: AnalyserNode; frequencies: number[]; mood: string };
+type Tint = readonly [number, number, number];
+/** Each field's own colour, beside the house gold (founder, 2026-11-19). Gold when no card is chosen. */
+export const FIELD_TINTS: Record<string, Tint> = {
+  settle: [167, 160, 214],  // A place to center: lavender
+  warmth: [226, 170, 92],   // A moving current: amber
+  open: [110, 190, 200],    // A wider horizon: sea
+  release: [214, 130, 130], // Room for catharsis: rose
+};
+const GOLD: Tint = [212, 175, 55];
+const rgba = (t: Tint, a: number) => `rgba(${t[0]},${t[1]},${t[2]},${a})`;
 
 /** What the field is doing right now: its waveform, its movement over the last seconds, and its level. */
-function LiveField({ getOutput, playing, paused }:{ getOutput:()=>Output|null; playing:boolean; paused:boolean }) {
+function LiveField({ getOutput, playing, paused, tint }:{ getOutput:()=>Output|null; playing:boolean; paused:boolean; tint:Tint }) {
   const wave=useRef<HTMLCanvasElement>(null);
   const motion=useRef<HTMLCanvasElement>(null);
   const [level,setLevel]=useState<number|null>(null);
   const [notes,setNotes]=useState<number[]>([]);
   const getRef=useRef(getOutput); getRef.current=getOutput;
+  const tintRef=useRef(tint); tintRef.current=tint;
   useEffect(()=>{
     const history:number[]=[];
     let raf=0, last=0, lastHist=0;
@@ -54,29 +65,47 @@ function LiveField({ getOutput, playing, paused }:{ getOutput:()=>Output|null; p
       for(const c of [w,m]){const cw=Math.round(c.clientWidth*dpr),ch=Math.round(c.clientHeight*dpr);if(c.width!==cw||c.height!==ch){c.width=cw;c.height=ch;}}
       const g=w.getContext('2d'), h=m.getContext('2d'); if(!g||!h) return;
       g.clearRect(0,0,w.width,w.height);
-      g.strokeStyle='rgba(212,175,55,.95)'; g.lineWidth=1.5*dpr; g.beginPath();
+      // Soft rather than severe (founder, 2026-11-19): a blurred halo under a thin, slightly translucent line.
+      const line=new Path2D();
       let rms=0;
       if(out){
         const data=new Float32Array(out.analyser.fftSize); out.analyser.getFloatTimeDomainData(data);
         let peak=0; for(const v of data){rms+=v*v; if(Math.abs(v)>peak)peak=Math.abs(v);} rms=Math.sqrt(rms/data.length);
-        // Drawn to the field's own size so a quiet field is still visible; the level bar shows how loud it really is.
-        const scale=(w.height*0.42)/Math.max(peak,1e-4);
+        // Drawn to the field's own size so a quiet field is still visible; the level shows how loud it really is.
+        const scale=(w.height*0.38)/Math.max(peak,1e-4);
         const shown=Math.min(data.length,1024);
-        for(let i=0;i<shown;i++){const x=(i/(shown-1))*w.width,y=w.height/2-data[i]*scale;i?g.lineTo(x,y):g.moveTo(x,y);}
+        for(let i=0;i<shown;i++){const x=(i/(shown-1))*w.width,y=w.height/2-data[i]*scale;i?line.lineTo(x,y):line.moveTo(x,y);}
         if(now-last>200){last=now;setNotes(old=>old.join()===out.frequencies.join()?old:out.frequencies);}
-      } else { g.moveTo(0,w.height/2); g.lineTo(w.width,w.height/2); }
-      g.stroke();
+      } else { line.moveTo(0,w.height/2); line.lineTo(w.width,w.height/2); }
+      const t=tintRef.current;
+      g.lineJoin='round'; g.lineCap='round';
+      g.save();
+      g.shadowColor=rgba(t,.55); g.shadowBlur=14*dpr;
+      g.strokeStyle=rgba(t,.16); g.lineWidth=7*dpr; g.stroke(line);
+      g.restore();
+      g.strokeStyle=rgba(t,.32); g.lineWidth=3*dpr; g.stroke(line);
+      g.strokeStyle=rgba([Math.min(255,t[0]+30),Math.min(255,t[1]+30),Math.min(255,t[2]+30)],.8); g.lineWidth=1.1*dpr; g.stroke(line);
       if(now-lastHist>66){lastHist=now;history.push(rms); if(history.length>150)history.shift();}
       h.clearRect(0,0,m.width,m.height);
       const top=Math.max(...history,1e-4);
-      h.fillStyle='rgba(127,209,200,.8)';
-      history.forEach((v,i)=>{const bar=Math.max(1,(v/top)*m.height*0.9);h.fillRect((i/150)*m.width,m.height-bar,Math.max(1,m.width/150-1),bar);});
+      const fade=h.createLinearGradient(0,0,0,m.height);
+      fade.addColorStop(0,rgba(t,0)); fade.addColorStop(1,rgba(t,.6));
+      h.save(); h.fillStyle=fade; h.shadowColor=rgba(t,.45); h.shadowBlur=6*dpr;
+      const step=m.width/150, r=Math.min(step*0.45,3*dpr);
+      history.forEach((v,i)=>{
+        const bar=Math.max(1,(v/top)*m.height*0.9), x=i*step, bw=Math.max(1,step*0.7);
+        h.beginPath();
+        if(typeof h.roundRect==='function') h.roundRect(x,m.height-bar,bw,bar,[r,r,0,0]); else h.rect(x,m.height-bar,bw,bar);
+        h.fill();
+      });
+      h.restore();
       setLevel(old=>{const db=rms>0?Math.round(20*Math.log10(rms)):null;return old===db?old:db;});
     };
     raf=requestAnimationFrame(draw);
     return ()=>cancelAnimationFrame(raf);
   },[playing]);
-  return <div className={styles.liveField} data-listen23-live="true" data-live-state={playing?'playing':paused?'paused':'stopped'}>
+  return <div className={styles.liveField} data-listen23-live="true" data-live-state={playing?'playing':paused?'paused':'stopped'}
+    data-live-tint={tint.join(',')} style={{borderColor:playing?rgba(tint,.45):undefined}}>
     <div className={styles.liveFieldHead}>
       <strong>{playing?'Playing now':paused?'Paused':'Not playing'}</strong>
       <span data-live-level="true">{playing&&level!==null?`Output ${level} dBFS`:'Silent'}</span>
@@ -257,8 +286,8 @@ export default function ReceptiveFieldDesk({
           aria-pressed={chosenOption?.id===option.id}
           className={chosenOption?.id===option.id?`${styles.tile} ${styles.tileChosen}`:styles.tile}
           onClick={()=>chooseInvitation(option)}
-          style={{minHeight:120,textAlign:'left',display:'flex',flexDirection:'column',justifyContent:'center',gap:8}}>
-          {chosenOption?.id===option.id && <span className={styles.tileBadge} data-listen23-chosen="true">
+          style={{...(chosenOption?.id===option.id?{borderColor:rgba(FIELD_TINTS[option.id]??GOLD,.85),boxShadow:`0 0 0 1px ${rgba(FIELD_TINTS[option.id]??GOLD,.4)} inset, 0 0 22px ${rgba(FIELD_TINTS[option.id]??GOLD,.12)}`}:{}),minHeight:120,textAlign:'left',display:'flex',flexDirection:'column',justifyContent:'center',gap:8}}>
+          {chosenOption?.id===option.id && <span className={styles.tileBadge} data-listen23-chosen="true" style={{background:rgba(FIELD_TINTS[option.id]??GOLD,1)}}>
             {matchingSketch?'Playing':'Chosen'}{tailored?' · tailored':''}</span>}
           <strong>{option.title}</strong>
           <span style={{fontSize:12,opacity:.83}}>{option.explanation}</span>
@@ -282,7 +311,7 @@ export default function ReceptiveFieldDesk({
       </button>
     </div>
     {persistent?.generatedOutput && <LiveField getOutput={persistent.generatedOutput}
-      playing={!!matchingSketch} paused={!!pausedSketch}/>}
+      playing={!!matchingSketch} paused={!!pausedSketch} tint={(chosenOption&&FIELD_TINTS[chosenOption.id])||GOLD}/>}
     {(matchingSketch||pausedSketch) && <p className={styles.muted} style={{fontSize:12,marginTop:4}} data-live-settings="true">
       {dials.map(d=>`${d.label} ${shape[d.key]}`).join(' · ')}
     </p>}
