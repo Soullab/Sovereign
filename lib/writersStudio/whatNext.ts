@@ -29,6 +29,13 @@ export type WriteScreen = {
   readonly isBook: boolean;
   /** The label on this column's whole-Work button, as rendered (a program Work may name it differently). */
   readonly talkWholeLabel: string;
+  /**
+   * What MAIA read of this page WITH the writer in this visit (CoverageLine `sessionReadFor`): 'current' = exactly the page as
+   * it is now, 'changed' = edited since, null/absent = not shown to her in this visit.
+   * Why (guided beta session 2026-11-19, F2): after "Show MAIA this page" had finished, this helper still told the writer to
+   * press it, the one thing she had just done.
+   */
+  readonly pageRead?: 'current' | 'changed' | null;
 };
 
 export type WhatNext = {
@@ -48,6 +55,12 @@ export function whatNextInWrite(s: WriteScreen): WhatNext {
   if (s.pageEmpty) {
     say.push('Your page is ready. Click in the middle of the page and start writing. You don’t need me for this part.');
     say.push(`When you’d like to think it through together, press “${s.talkWholeLabel}” here in this column.`);
+  } else if (s.firstPage && s.pageRead === 'current') {
+    say.push('I’ve read this page with you, so there is no need to show it to me again.');
+    say.push(`Keep writing, or press “${s.talkWholeLabel}” here in this column to talk it through with me.`);
+  } else if (s.firstPage && s.pageRead === 'changed') {
+    say.push('This page has changed since I read it with you.');
+    say.push('When you’d like me to read it as it is now, press “Show MAIA this page” here in this column. I won’t read it until you do.');
   } else if (s.firstPage) {
     say.push('You have a first page. When you’d like me to read it, press “Show MAIA this page” here in this column.');
     say.push('I won’t read it until you do.');
