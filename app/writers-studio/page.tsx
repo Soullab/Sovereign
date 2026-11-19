@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { Inter, Newsreader } from 'next/font/google';
 import P4R1StudioHost from '../dev/writers-studio-p4r1/P4R1StudioHost';
 import { shareEnabledFromEnv } from '@/lib/writersStudio/sharedExchanges';
+import { recordingsEnabledFromEnv } from '@/lib/writersStudio/journeyRecordings';
 import '../dev/writers-studio-full-redesign-review/full-redesign-review.css';
 import './insight/insight.css';
 import '../dev/writers-studio-p4r1/p4r1-live.css';
@@ -47,7 +48,7 @@ export default function WritersStudioPage() {
       <div className="fr-page">
         <div className="fr-capture-frame" data-capture-frame="">
           <Suspense fallback={<div style={{ padding: 32 }}>Opening your Writer’s Studio…</div>}>
-            <P4R1StudioHost defaultMode="home" shareEnabled={shareEnabledFromEnv(process.env)} />
+            <P4R1StudioHost defaultMode="home" shareEnabled={shareEnabledFromEnv(process.env)} recordingsEnabled={recordingsEnabledFromEnv(process.env)} />
           </Suspense>
         </div>
       </div>
