@@ -214,7 +214,7 @@ const OLD = {
   {h:'Have MAIA read a chapter in Develop',
    screen:S('Develop',LEFT(1)+`<div class="s-center"><div class="s-card"><b>What would you like to do?</b><div class="s-btns"><span class="s-btn cue">Go through what she noticed</span><span class="s-btn">Talk about one passage</span><span class="s-btn">Work toward a revision</span><span class="s-btn">Leave it for now</span></div></div></div>`+COL(`<p>…</p>`),{cueTab:'Develop'}),
    do:[`Choose ${P('Develop')} in the top bar, then press ${P('Read this chapter with MAIA')}.`,`When she’s done, choose what to do next. ${P('Go through what she noticed')} is a good place to start.`],
-   tip:['To work on exact words','Go back to Write, press Edit, select the words, and press “Talk with MAIA”.'],
+   tip:['To talk about exact words','Select them in the chapter here and press “Ask MAIA about this”. To change the words, press “Edit in Write”.'],
    src:'app/dev/writers-studio-pc3-live/DevelopStage.tsx:660-672, 719-725'},
   {h:'Have MAIA read the whole book',
    screen:S('Develop',LEFT(-1)+`<div class="s-center"><div class="s-card"><b>Whole book · editorial pass</b><span>This asks MAIA to read your whole book: up to nine paid readings and a paid letter (readings she already made of this draft are reused). It takes several minutes.</span><div class="s-btns"><span class="s-btn cue">Read it</span><span class="s-link">Not now</span></div></div></div>`+COL(`<p>…</p>`)),
