@@ -3,7 +3,8 @@
  * real stylesheets, in local Chrome. No Next, no session, no network, no member data.
  * Proves: save a design, it survives a reload, Use fills every choice and starts nothing, Remove and Forget
  * work, the stored record holds no private task label, the encrypted file hides the designs and restores
- * them, and blocked storage falls back to "this visit only".
+ * them, and blocked storage falls back to "this visit only". The session sound is saved BESIDE the design (not in
+ * it), Use selects it and plays nothing, and Remove / Forget all take it away (founder ruling 2026-11-19).
  *   node tests/listening/focus_designs_browser_witness.cjs [--serve PORT]      Env: CHROME_BIN
  */
 'use strict';
@@ -15,6 +16,7 @@ const shots = path.join(repo, 'docs/design/contracts/screenshots');
 const serveAt = process.argv.includes('--serve') ? Number(process.argv[process.argv.indexOf('--serve') + 1] || 4721) : null;
 const BUILD = String(Date.now());
 const KEY = 'soullab.listen.focus.designs.v1';
+const SOUNDS = 'soullab.listen.focus.design-sounds.v1'; // the sound saved BESIDE a design (founder ruling 2026-11-19)
 
 fs.writeFileSync(path.join(dir, 'entry.jsx'), `
 import React from 'react';
@@ -71,8 +73,16 @@ createRoot(document.getElementById('app')).render(
       await p.locator('#focus-task-label').fill('Chapter 4 secret');
       const summary = async () => p.locator('[class*="focusStartRow"]').first().textContent();
       const chosen = await summary();
+      await p.locator('[data-focus-sound="creative-flow"]').click(); // the session sound, chosen in the sound picker
       await p.locator('#focus-design-name').fill('Morning code');
       await p.locator('[data-focus-design-save]').click();
+      check(`${name}: the saved design shows the sound saved beside it`, /Sound: Creative flow/.test(await p.locator('[data-focus-design]').first().textContent()));
+      const pair = await p.evaluate((k) => JSON.parse(localStorage.getItem(k) || 'null'), SOUNDS);
+      const designId = await p.locator('[data-focus-design]').first().getAttribute('data-focus-design');
+      check(`${name}: the sound is stored beside the design, as the picker's choice name only`,
+        !!pair && pair.format === 'SOULLAB_FOCUS_DESIGN_SOUNDS_V1' && JSON.stringify(pair.sounds) === JSON.stringify({ [designId]: 'creative-flow' }), pair);
+      check(`${name}: the design record itself still holds no sound (LISTEN-48)`,
+        !/creative-flow|Creative flow|sound/i.test(await p.evaluate((k) => localStorage.getItem(k), KEY)));
       check(`${name}: the saved design is listed with its choices`, /Morning code/.test(await p.locator('[data-focus-design]').first().textContent())
         && /Create · .+ · Coding · Medium stimulation · 90 minutes/.test(await p.locator('[data-focus-design]').first().textContent()), await p.locator('[data-focus-design]').first().textContent());
       check(`${name}: saving says it is on this device and who can see it`, /on this device\. Anyone using this browser can see/.test(await p.locator('[data-focus-design-note]').textContent()));
@@ -86,8 +96,11 @@ createRoot(document.getElementById('app')).render(
       await p.getByRole('button', { name: 'Writing', exact: true }).click();
       await p.getByRole('button', { name: /^Deep/ }).click();
       await p.getByRole('button', { name: '25 minutes' }).click();
+      await p.locator('[data-focus-sound="none"]').click();
       check(`${name}: (the choices really changed)`, (await summary()) !== chosen);
       await p.getByRole('button', { name: 'Use this design' }).click();
+      check(`${name}: Use this design selects its saved sound in the picker`, (await p.locator('[data-focus-sound="creative-flow"]').getAttribute('aria-checked')) === 'true');
+      check(`${name}: and says the sound plays only on its own Play`, /with Creative flow chosen as its sound.*plays only when you press its Play/.test(await p.locator('[data-focus-design-note]').textContent()), await p.locator('[data-focus-design-note]').textContent());
       check(`${name}: Use this design fills in every choice`, (await summary()) === chosen, [await summary(), chosen]);
       check(`${name}: and starts nothing (no session, no sound)`, (await p.locator('[data-focus-field-session]').count()) === 0 && (await p.evaluate(() => window.__audioContexts)) === 0);
 
@@ -101,6 +114,7 @@ createRoot(document.getElementById('app')).render(
       check(`${name}: the exported file is encrypted (no design name, no choices in it)`, /SOULLAB_FOCUS_DESIGNS_PRIVATE_V1/.test(file) && !/Morning code|coding|cinematic/i.test(file));
       await p.locator('[data-focus-design-forget]').click();
       check(`${name}: Forget all removes them from this browser`, (await p.locator('[data-focus-design]').count()) === 0 && (await p.evaluate((k) => localStorage.getItem(k), KEY)) === null);
+      check(`${name}: and their saved sounds with them`, (await p.evaluate((k) => localStorage.getItem(k), SOUNDS)) === null);
       await p.locator('#focus-design-file').setInputFiles(filePath);
       await p.locator('#focus-design-passphrase').fill('a long private phrase');
       await p.getByRole('button', { name: 'Restore designs' }).click();
@@ -118,6 +132,7 @@ createRoot(document.getElementById('app')).render(
       await p.getByRole('button', { name: 'Start focus session' }).click();
       await p.waitForSelector('[data-focus-design-during]');
       await p.locator('select').first().selectOption('organic');
+      await p.locator('[data-focus-sound="open-ground"]').click(); // a recorded work: only its choice name is kept
       await p.locator('#focus-design-name-during').fill('Mid-session');
       await p.locator('[data-focus-design-save-during]').click();
       const midNote = await p.locator('[data-focus-design-note]').textContent();
@@ -133,7 +148,12 @@ createRoot(document.getElementById('app')).render(
       await p.locator('[data-focus-choose-another]').click();
       await p.waitForSelector('[data-focus-designs]');
       check(`${name}: the mid-session design is in My focus designs for the next session`, /Mid-session[\s\S]*Organic \/ acoustic/.test(await p.locator('[data-focus-design]').first().textContent()), await p.locator('[data-focus-design]').first().textContent());
+      check(`${name}: the mid-session design keeps Open Ground beside it, by name only`,
+        /Sound: Open Ground/.test(await p.locator('[data-focus-design]').first().textContent())
+        && Object.values((await p.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{"sounds":{}}'), SOUNDS)).sounds).join() === 'open-ground');
       await p.getByRole('button', { name: 'Remove', exact: true }).first().click();
+      check(`${name}: Remove takes its saved sound away too`, (await p.evaluate((k) => localStorage.getItem(k), SOUNDS)) === null);
+      await p.locator('[data-focus-sound="creative-flow"]').click();
       // A saved design back, for the screenshot (the encrypted-file section is folded again after the session).
       await p.locator('#focus-design-name').fill('Morning code'); await p.locator('[data-focus-design-save]').click();
       await p.locator('[data-focus-designs]').scrollIntoViewIfNeeded();

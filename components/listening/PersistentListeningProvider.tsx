@@ -15,6 +15,9 @@ import {
 } from '@/lib/listening/listeningLevel';
 import type { SoundscapeHandle } from '@/lib/listening/soundscapeEngine';
 import type { FocusSoundId } from '@/lib/listening/focusSoundChoices';
+import {
+  keepDesignSounds, readDesignSounds, withDesignSound, writeDesignSounds, type FocusDesignSounds,
+} from '@/lib/listening/focusDesignSounds';
 import type { FocusTimeDisplay } from '@/lib/listening/focusTimeDisplay';
 import PersistentListeningDock from './PersistentListeningDock';
 import { usePlatformAudioSession } from './usePlatformAudioSession';
@@ -155,6 +158,13 @@ export type ListeningTransport = {
   focusDraft: SoundscapeInput | null;
   setFocusDraft: (draft: SoundscapeInput) => void;
   setFocusSoundChoice: (id: FocusSoundId) => void;
+  /** The sound saved BESIDE each Focus design (founder ruling 2026-11-19, #1979 comment 7021457262). The Focus
+   * desk passes only a design's opaque id; the player stores the picker's choice name on this device. Recalling
+   * selects that choice and never plays. The design record itself stays the LISTEN-48 combination. */
+  rememberDesignSound: (designId: string) => boolean;
+  recallDesignSound: (designId: string) => FocusSoundId | null;
+  keepDesignSoundsFor: (designIds: readonly string[]) => void;
+  designSoundLabel: (designId: string) => string | null;
   /** Member-initiated: plays the chosen Focus sound through the one persistent player. */
   playFocusSound: () => Promise<boolean>;
   /** false where the platform fixes the media level (iOS): volume, presets and fade cannot work. */
@@ -418,6 +428,33 @@ export function PersistentListeningProvider({
   const [focusClockMs, setFocusClockMs] = useState(() => Date.now());
   const [focusTimeDisplay, setFocusTimeDisplay] = useState<FocusTimeDisplay>('countdown');
   const [focusSoundChoice, setFocusSoundChoice] = useState<FocusSoundId>('none');
+  const [designSounds, setDesignSounds] = useState<FocusDesignSounds>(() => Object.freeze({}));
+  useEffect(() => {
+    try { setDesignSounds(readDesignSounds(window.localStorage).sounds); } catch { /* storage unavailable: this visit only */ }
+  }, []);
+  const keepDesignSoundList = (next: FocusDesignSounds) => {
+    setDesignSounds(next);
+    let storage: Storage | null = null;
+    try { storage = window.localStorage; } catch { /* storage unavailable */ }
+    writeDesignSounds(storage, next);
+  };
+  const rememberDesignSound = (designId: string): boolean => {
+    try { keepDesignSoundList(withDesignSound(designSounds, designId, focusSoundChoice)); return true; }
+    catch { return false; }
+  };
+  // Selects the saved choice in the picker. Never plays: Play stays a separate member action.
+  const recallDesignSound = (designId: string): FocusSoundId | null => {
+    const saved = designSounds[designId];
+    if (!saved) return null;
+    setFocusSoundChoice(saved);
+    return saved;
+  };
+  const keepDesignSoundsFor = (designIds: readonly string[]) => {
+    const next = keepDesignSounds(designSounds, designIds);
+    if (Object.keys(next).length !== Object.keys(designSounds).length) keepDesignSoundList(next);
+  };
+  const designSoundLabel = (designId: string): string | null =>
+    designSounds[designId] ? focusSoundLabel(designSounds[designId]) : null;
   const [focusDraft, setFocusDraft] = useState<SoundscapeInput | null>(null);
   // iOS ignores a page's HTMLMediaElement.volume: an assignment reads back for an instant, then the
   // platform value returns to 1 (measured on device). Detect it after a beat, not in the same tick,
@@ -1404,6 +1441,7 @@ export function PersistentListeningProvider({
     focusSession, focusClockMs,
     focusTimeDisplay, setFocusTimeDisplay,
     focusSoundChoice, setFocusSoundChoice, playFocusSound, focusDraft, setFocusDraft,
+    rememberDesignSound, recallDesignSound, keepDesignSoundsFor, designSoundLabel,
     volumeAdjustable,
     startFocusSession: beginFocusSession,
     pauseFocusSession,

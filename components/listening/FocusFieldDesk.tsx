@@ -105,6 +105,7 @@ export default function FocusFieldDesk() {
   }, []);
   const keepDesigns = (next: FocusDesign[], said: string) => {
     setDesigns(next);
+    transport?.keepDesignSoundsFor(next.map((d) => d.id)); // a removed design's saved sound goes with it
     const kept = writeFocusDesigns(browserStorage(), next);
     setDesignsOnDevice(kept);
     setDesignNote(kept ? said : `${said} This browser is not keeping saved designs, so they last for this visit only.`);
@@ -197,6 +198,8 @@ export default function FocusFieldDesk() {
         id: `design-${crypto.randomUUID().replace(/-/g, '')}`, at: new Date(),
       });
       keepDesigns([design, ...designs], `Saved “${design.name}” on this device${during ? '; it will be in My focus designs when you choose your next session' : ''}. Anyone using this browser can see your saved designs.`);
+      // The player keeps the session sound beside it (founder ruling 2026-11-19); the desk passes only the id.
+      transport?.rememberDesignSound(design.id);
       setDesignName('');
     } catch (e) { setDesignNote(e instanceof Error ? e.message : 'This design could not be saved.'); }
   };
@@ -207,7 +210,9 @@ export default function FocusFieldDesk() {
     if (d.duration.mode === 'preset') { setDurationMode('preset'); setPresetMinutes(d.duration.minutes); }
     else if (d.duration.mode === 'custom') { setDurationMode('custom'); setCustomMinutes(d.duration.minutes); }
     else setDurationMode('untimed');
-    setDesignNote(`“${d.name}” is ready. Nothing starts until you press Start focus session.`);
+    // The player selects the sound saved beside this design, if any. Selecting plays nothing.
+    const sound = transport?.recallDesignSound(d.id) ? transport.designSoundLabel(d.id) : null;
+    setDesignNote(`“${d.name}” is ready${sound === 'No sound' ? ', with no sound chosen' : sound ? `, with ${sound} chosen as its sound` : ''}. Nothing starts until you press Start focus session${sound && sound !== 'No sound' ? ', and the sound plays only when you press its Play' : ''}.`);
   };
   const removeDesign = (id: string) => {
     const d = designs.find((x) => x.id === id);
@@ -416,7 +421,7 @@ export default function FocusFieldDesk() {
             <ul className={styles.focusDesignList}>
               {designs.map(d => <li key={d.id} data-focus-design={d.id}>
                 <div><strong>{d.name}</strong>
-                  <span>{NEED_LABELS[d.focusNeed]} · {WORLD_LABELS[d.musicalWorld]} · {TASK_LABELS[d.task]} · {STIMULATION_LABELS[d.stimulation]} stimulation · {durationText(d.duration)}</span></div>
+                  <span>{NEED_LABELS[d.focusNeed]} · {WORLD_LABELS[d.musicalWorld]} · {TASK_LABELS[d.task]} · {STIMULATION_LABELS[d.stimulation]} stimulation · {durationText(d.duration)}{transport?.designSoundLabel(d.id) ? ` · Sound: ${transport.designSoundLabel(d.id)}` : ''}</span></div>
                 <span className={styles.focusDesignActions}>
                   <button type="button" className={styles.focusChoiceActive} onClick={() => applyDesign(d)}>Use this design</button>
                   <button type="button" className={styles.focusChoice} onClick={() => removeDesign(d.id)}>Remove</button>
