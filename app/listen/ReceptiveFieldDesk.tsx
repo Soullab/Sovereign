@@ -41,6 +41,13 @@ type Output = { analyser: AnalyserNode; voices?: AnalyserNode[]; frequencies: nu
  * Open Water → the top note (and the shared filter).
  */
 const VOICE_DIALS: ReadonlyArray<'pulse'|'density'|'space'> = ['pulse','density','space'];
+/**
+ * The loudest any voice can be, as applyReceptiveShape sets it: the lowest voice at 0.24 × (0.5 + 1)
+ * plus its swell (≤ 0.032). Every lane is drawn against this one FIXED scale, so raising a dial, or
+ * all three together, always visibly grows its note (founder, 2026-11-19). Voices are tapped before
+ * the level control, so the picture does not change with Level.
+ */
+const VOICE_FULL_SCALE = 0.24 * 1.5 + 0.032;
 /** How much time each lane shows: enough for a few cycles of the lowest note. */
 const WINDOW_SEC = 0.025;
 type Tint = readonly [number, number, number];
@@ -81,7 +88,8 @@ function LiveField({ getOutput, playing, paused, tint, shape }:{ getOutput:()=>O
       const n=voiceTaps?3:1, laneH=w.height/n;
       const buffers=(voiceTaps??(out?[out.analyser]:[])).map(a=>{const d=new Float32Array(a.fftSize);a.getFloatTimeDomainData(d);return d;});
       const peaks=buffers.map(d=>{let p=0;for(const v of d)if(Math.abs(v)>p)p=Math.abs(v);return p;});
-      scale=Math.max(...peaks,scale*0.985,1e-4); // eases down, so the picture breathes rather than jumps
+      // Voices: one fixed scale. The whole-output fallback (no voice taps): drawn to its own size, easing down.
+      scale=voiceTaps?VOICE_FULL_SCALE:Math.max(...peaks,scale*0.985,1e-4);
       const shades:[number,number][]=[[0,0.9],[22,0.8],[44,0.7]]; // the field's colour, lighter for higher notes
       for(let k=0;k<n;k++){
         const mid=laneH*k+laneH/2, d=buffers[k];
@@ -146,7 +154,7 @@ function LiveField({ getOutput, playing, paused, tint, shape }:{ getOutput:()=>O
     <canvas ref={motion} className={styles.liveMotion} aria-hidden="true" data-live-motion="true"/>
     <p className={styles.muted} style={{fontSize:12,margin:'6px 0 0'}}>
       {showLanes
-        ? 'Each line is one of the three notes in this field, on one shared scale: move a dial and its own note grows or fades. Below: how the whole field moves over the last ten seconds.'
+        ? 'Each line is one of the three notes in this field, drawn to a fixed scale: raise a dial and its own note grows; lower it and the note fades. Below: how the whole field moves over the last ten seconds.'
         : 'Top: the sound itself, drawn to its own size. Below: how it moves over the last ten seconds.'}
       {notes.length>0 && <> Notes: <span data-live-notes="true">{notes.map(noteName).join(' · ')}</span>.</>}
     </p>

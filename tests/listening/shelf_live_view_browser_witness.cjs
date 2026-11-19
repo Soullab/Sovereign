@@ -149,6 +149,19 @@ createRoot(document.getElementById('app')).render(
       const lanesAfter = (await p.locator('[data-listen23-live]').getAttribute('data-lane-levels')).split(',').map(Number);
       const moved = lanesAfter.map((v, i) => v - lanesBefore[i]);
       check(`${name}: raising Texture & stillness grows the middle note and leaves the others`, moved[1] >= 2 && Math.abs(moved[0]) <= 1 && Math.abs(moved[2]) <= 1, { lanesBefore, lanesAfter });
+      // Raising ALL dials must grow ALL lanes on screen (the fixed scale), not leave the picture unchanged.
+      const laneSpans = () => p.evaluate(() => {
+        const c = document.querySelector('[data-live-wave]'); const g = c.getContext('2d');
+        const { data, width, height } = g.getImageData(0, 0, c.width, c.height);
+        return [0, 1, 2].map((k) => { let t = height, b = 0;
+          for (let y = Math.floor((k * height) / 3); y < Math.floor(((k + 1) * height) / 3); y++) for (let x = 0; x < width; x += 3) if (data[(y * width + x) * 4 + 3] > 120) { t = Math.min(t, y); b = Math.max(b, y); }
+          return b - t; });
+      });
+      for (const d of ['pulse', 'density', 'space']) await p.locator(`#receptive-${d}`).fill('20');
+      await p.waitForTimeout(1500); const low = await laneSpans();
+      for (const d of ['pulse', 'density', 'space']) await p.locator(`#receptive-${d}`).fill('100');
+      await p.waitForTimeout(1500); const high = await laneSpans();
+      check(`${name}: raising all three dials grows all three lanes on screen`, high.every((v, i) => v > low[i] * 1.25), { low, high });
       check(`${name}: the middle lane's label follows the dial`, /G3 · Texture & stillness 100%/.test(await p.locator('[data-live-lane="density"]').textContent()));
       await p.locator('[data-listen23-live]').screenshot({ path: path.join(dir, `${name}-live.png`) });
       await p.locator('[data-listen23-receptive-field]').screenshot({ path: path.join(shots, `sound-studio-shelf-live-${name}.png`) });
