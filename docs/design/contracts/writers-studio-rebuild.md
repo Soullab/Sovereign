@@ -41,6 +41,9 @@ surfaces:
   # proposes changes to the writer's words was governed by nothing. It belongs
   # to this room by its own human_activity: MAIA present at the writer's locus.
   - app/writers-studio/canvas/EditorialConversation.tsx
+  # STUDIO ACADEMY SLICE 6, 2026-11-19. "Share with Soullab" under one of MAIA's
+  # stored answers, in the same conversation. Built dark.
+  - app/writers-studio/canvas/ShareExchangeOffer.tsx
   # SANCTUARY-EDITORIAL-PERSISTENCE-01 / E1, 2026-09-23. The Canvas's own
   # editorial-open gesture lives here and was named by NO contract. E1 makes
   # that gesture read the member's current Sanctuary posture and refuse
