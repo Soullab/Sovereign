@@ -7,6 +7,10 @@ OWNER:      SEMANTIC-FIELD-01 — the member arm of the MAIA-field witness
             (founder ruling 2026-11-01; witness protocol of the same date).
 CANONICAL:  clean-main-no-secrets @ 853a21791 (census below cites that tree).
 NOT:        Build, schema, route or copy authorization. No tester is contacted by this note.
+NARROWED:   2026-11-19 by founder ruling (docs/programme/STUDIO_ACADEMY_EXPLORATION_2026-11-19.md §5,
+            option (a)). §3.3's "no reading of … MAIA conversations" now has one exception: an
+            exchange the writer explicitly shares with Soullab, one at a time, never in Sanctuary, and
+            withdrawable. Everything else in §3.3–3.4 is unchanged. Text below is left as ruled.
 ```
 
 ## 1. Founder request
