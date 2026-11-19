@@ -54,6 +54,7 @@ import { startersFor, type WorkKind } from '@/lib/writersStudio/workKindShared';
 import { getWorkKindClient } from '@/lib/writersStudio/workKindClient';
 import { fetchPlan, makePlanClient, editPlanClient, type PlanView, deletePlanClient } from '@/lib/writersStudio/planClient';
 import { readCurrentSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
+import { whatNextInDevelop, WHAT_NEXT_LABEL, WHAT_NEXT_ASK_LABEL, WHAT_NEXT_CLOSE_LABEL } from '@/lib/writersStudio/whatNext';
 import type { Appearance } from '@/app/writers-studio/full-redesign/types';
 import {
   DEFAULT_WORKING_STYLE,
@@ -2092,6 +2093,7 @@ function revealStudioPlace(target: string): () => void {
 }
 
 export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
+  const [whatNextOpen, setWhatNextOpen] = useState(false);
   const livePathname = usePathname() ?? '/dev/writers-studio-p4r1';
   const liveSearchParams = useSearchParams();
   const liveSearch = liveSearchParams?.toString() ?? '';
@@ -3495,6 +3497,38 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
         <div className="fr-maia-name"><h2>MAIA</h2><span>Editorial companion</span></div>
       </div>
       <div className="fr-mbody" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {/* "What do I do next?" (persona walk 2026-11-19): asked by the writer, answered from what is on screen. Posture is read at
+            the moment of asking and fails closed. Nothing is read, sent or kept; "Ask MAIA more" only places a question, unsent. */}
+        <div data-develop-what-next="true" style={{ flex: '0 0 auto', marginBottom: 10 }}>
+          <button type="button" className="p4r1-talk" aria-expanded={whatNextOpen} data-develop-what-next-button="true"
+            onClick={() => setWhatNextOpen((open) => !open)} style={{ width: '100%', fontSize: 15, fontWeight: 600 }}>
+            {WHAT_NEXT_LABEL}
+          </button>
+          {whatNextOpen ? (() => {
+            const posture = readCurrentSanctuaryPosture();
+            const answer = whatNextInDevelop({
+              chapterLabel: stageChapterLabel || null,
+              reading: stageReading.status,
+              noticed: stageReading.items.length,
+              pass: stagePass.status,
+              posture: !posture.resolved ? 'unresolved' : posture.sanctuary ? 'sanctuary' : 'ordinary',
+            });
+            return (
+              <div role="status" data-develop-what-next-answer="true" style={{ marginTop: 10, fontSize: 15, lineHeight: 1.5 }}>
+                {answer.say.map((line) => <p key={line} style={{ margin: '0 0 8px' }}>{line}</p>)}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <button type="button" className="p4r1-talk" data-develop-what-next-ask="true"
+                    onClick={() => { setWhatNextOpen(false); placeInStageConversation(answer.ask); }}>
+                    {WHAT_NEXT_ASK_LABEL}
+                  </button>
+                  <button type="button" className="p4r1-talk" data-develop-what-next-close="true" onClick={() => setWhatNextOpen(false)}>
+                    {WHAT_NEXT_CLOSE_LABEL}
+                  </button>
+                </div>
+              </div>
+            );
+          })() : null}
+        </div>
         <DevelopCompanion
           lastRead={lastRead}
           coverage={<CoverageLine manuscriptId={props.manuscriptId}
