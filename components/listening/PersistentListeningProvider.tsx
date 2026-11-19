@@ -104,6 +104,8 @@ type Sketch = {
   /** Soundscape output bus, and the stream tap that lets a media element carry the sound at screen lock. */
   out?: GainNode;
   stream?: MediaStreamAudioDestinationNode;
+  /** The synthetic sketch's soft overtones (founder ruling 2026-11-19, #1979): one follower per voice, a soft filter. */
+  overtones?: { voices: GainNode[]; soft: BiquadFilterNode; oscillators: OscillatorNode[] };
 };
 
 export type ListeningTransport = {
@@ -230,7 +232,7 @@ function endSketch(sketch: Sketch | null): void {
 function endSketchNow(sketch: Sketch): void {
   try { sketch.soundscape?.dispose(); } catch {}
   try { sketch.master.gain.setValueAtTime(0, sketch.context.currentTime); } catch {}
-  for (const osc of [...sketch.oscillators,sketch.movement]) {
+  for (const osc of [...sketch.oscillators,sketch.movement,...(sketch.overtones?.oscillators ?? [])]) {
     try { osc.stop(); } catch {}
   }
   void sketch.context.close().catch(() => undefined);
@@ -248,14 +250,50 @@ function endSketchNow(sketch: Sketch): void {
 function applyReceptiveShape(sketch: Sketch, shape: ReceptiveControls) {
   const t=sketch.context.currentTime;
   const gently=(parameter:AudioParam,value:number)=>parameter.setTargetAtTime(value,t,0.13);
-  gently(sketch.voices[0].gain,0.24*(0.5+shape.pulse/100));
-  gently(sketch.voices[1].gain,0.14*(0.5+shape.density/100));
-  gently(sketch.voices[2].gain,0.09*(0.5+shape.space/100));
+  const levels=[0.24*(0.5+shape.pulse/100),0.14*(0.5+shape.density/100),0.09*(0.5+shape.space/100)];
+  levels.forEach((level,index)=>{
+    gently(sketch.voices[index].gain,level);
+    if(sketch.overtones?.voices[index]) gently(sketch.overtones.voices[index].gain,level); // overtones follow their note's dial
+  });
   gently(sketch.filter.frequency,660+(shape.space-50)*5);
+  if(sketch.overtones) gently(sketch.overtones.soft.frequency,2400+(shape.space-50)*30); // Open Water also brightens them
   // Only AFTER the artist-sketch neutral 50 does a gentle periodic pulse enter.
   // It stays comfortably below the oscillator's always-positive baseline gain.
   gently(sketch.movementDepth.gain,Math.max(0,shape.pulse-50)/50*0.032);
   gently(sketch.movement.frequency,0.55+shape.pulse/100*0.55);
+}
+
+/** Soft overtones for the synthetic sketch (founder ruling 2026-11-19, #1979: "I like the overtones option!",
+ * then "Yes, at 100%", after a listening A/B recorded at #1979 comment 7021180314).
+ * The sketch's notes are 82–262 Hz, which laptop and phone speakers barely play. Each note gains quiet partials
+ * at exact whole-number multiples of its own pitch (2× … 8×, each 1/n² as loud, locked to the note's detune),
+ * so they fuse into the same tone instead of adding notes. They pass a soft low-pass and the ONE master, so
+ * the member's Level governs them, and they follow their note's dial and the swell. The level ceiling
+ * (GENERATED_OUTPUT_SCALE) is unchanged. Measured at Level 45%: content above ~300 Hz rises from below −69 LUFS
+ * to about −58…−52 LUFS; the whole sound rises about 6–8 dB. */
+const OVERTONE_PARTIALS = [2, 3, 4, 5, 6, 7, 8];
+const OVERTONE_BUS_GAIN = 6.0; // "Amount 100%" in the listening test
+const OVERTONE_HIGHEST_HZ = 4000;
+function newSketchOvertones(
+  context: AudioContext, master: GainNode, frequencies: number[], notes: OscillatorNode[],
+): NonNullable<Sketch['overtones']> {
+  const bus = context.createGain(); bus.gain.value = OVERTONE_BUS_GAIN;
+  const soft = context.createBiquadFilter(); soft.type = 'lowpass'; soft.frequency.value = 2400; soft.Q.value = 0.5;
+  soft.connect(bus); bus.connect(master);
+  const oscillators: OscillatorNode[] = [];
+  const voices = frequencies.map((frequency, index) => {
+    const follower = context.createGain(); follower.gain.value = 0; follower.connect(soft);
+    for (const n of OVERTONE_PARTIALS) {
+      if (frequency * n > OVERTONE_HIGHEST_HZ) continue;
+      const osc = context.createOscillator(); osc.type = 'sine';
+      osc.frequency.value = frequency * n; osc.detune.value = notes[index].detune.value;
+      const partial = context.createGain(); partial.gain.value = 1 / (n * n);
+      osc.connect(partial); partial.connect(follower); osc.start();
+      oscillators.push(osc);
+    }
+    return follower;
+  });
+  return { voices, soft, oscillators };
 }
 
 function newSketch(
@@ -297,7 +335,9 @@ function newSketch(
   movement.connect(movementDepth);
   movementDepth.connect(voices[0].gain); // modulation, NOT extra direct audio output
   movement.start();
-  const sketch={context,oscillators,master,voices,filter,movement,movementDepth,mood,frequencies};
+  const overtones=newSketchOvertones(context,master,frequencies,oscillators);
+  movementDepth.connect(overtones.voices[0].gain); // the lowest note's overtones swell with it
+  const sketch:Sketch={context,oscillators,master,voices,filter,movement,movementDepth,mood,frequencies,overtones};
   applyReceptiveShape(sketch,shape);
   return sketch;
 }
