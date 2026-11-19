@@ -68,13 +68,16 @@ Each path has:
 5. **Click-through guides on request** ("Show me around"), served from the Studio. No levels,
    progress, streaks or certificates (roadmap §19).
 
-### B. Soullab listens: three channels, each with its own consent
+### B. Soullab listens: four channels, each with its own consent
 
 | Channel | What Soullab sees | Consent | Standing |
 |---|---|---|---|
 | 1. Soullab asks (extends the Beta journey) | the writer's own answers, written or recorded | answering is the consent; see, change, withdraw | live (text); audio/video new |
 | 2. The writer asks MAIA | nothing; MAIA's answer is the writer's | none needed | live (studioGuide, #2344) |
-| 3. The writer shares an exchange with Soullab | only exchanges the writer chooses to share, one at a time | an explicit share each time; never in Sanctuary; withdrawable | **needs the §5 ruling** |
+| 3. The writer shares an exchange with Soullab | only exchanges the writer chooses to share, one at a time | an explicit share each time; never in Sanctuary; withdrawable | ruled 2026-11-19 (a); not built |
+| 4. The writer writes to Soullab in the Co-Lab (founder, 2026-11-19) | what the writer posts, in their own words, to the people in that channel | posting is the consent; the Co-Lab's own rules apply | live: a Beta journey answer can already be shared there one at a time, and bug reports mirror to the #bugs channel |
+
+Channel 4 is the writers' own space, shared with others, so the Listening page should **link to** Co-Lab posts rather than copy them, and a writer's withdrawal or deletion in the Co-Lab must hold there too.
 
 Rules for channel 1, drawn from the research:
 - Ask at a natural pause (after showing MAIA the first page, after a first reading), **never mid-draft**.
