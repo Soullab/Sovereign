@@ -103,7 +103,7 @@ createRoot(document.getElementById('app')).render(
       check(`${name}: the field's settings are shown (the card's values on the dials' steps of 5)`, /Organic Current 30 · Open Water 90 · Texture & stillness 30/.test(settings), settings);
       const edges = await p.evaluate(() => window.__edges);
       const taps = edges.filter(([, d]) => d === 'analyser');
-      check(`${name}: the tap adds exactly one edge, master gain → analyser`, taps.length === 1 && taps[0][0] === 'gain', taps);
+      check(`${name}: the taps add exactly four edges, each from a gain node into an analyser (the output and its three voices)`, taps.length === 4 && taps.every(([s]) => s === 'gain'), taps);
       check(`${name}: the analyser feeds nothing (read-only)`, edges.every(([s]) => s !== 'analyser'));
       check(`${name}: only one path reaches the speakers`, edges.filter(([, d]) => d === 'destination').length === 1, edges.filter(([, d]) => d === 'destination'));
       const lvl = Number(levelText.replace(/[^\d.-]/g, '').replace(/^-?/, '-'));
@@ -128,6 +128,28 @@ createRoot(document.getElementById('app')).render(
       await p.getByRole('button', { name: 'Tailor this sound' }).click();
       await p.locator('#receptive-pulse').fill('40');
       check(`${name}: tailoring a dial marks the card as tailored`, /Playing · tailored/.test(await p.locator('[data-listen23-chosen]').textContent()));
+      // Each lane shows a fixed 25 ms of time whatever the sample rate: count the top lane's cycles (C4 ≈ 261.6 Hz → ≈ 6.5).
+      const cycles = await p.evaluate(() => {
+        const c = document.querySelector('[data-live-wave]'); const g = c.getContext('2d');
+        const { data, width, height } = g.getImageData(0, 0, c.width, c.height);
+        const band = [Math.floor((2 * height) / 3), height]; const ys = [];
+        for (let x = 0; x < width; x += 2) { let sum = 0, n = 0; for (let y = band[0]; y < band[1]; y++) { const a = data[(y * width + x) * 4 + 3]; if (a > 120) { sum += y; n++; } } ys.push(n ? sum / n : null); }
+        const v = ys.filter((y) => y !== null); const mean = v.reduce((s, y) => s + y, 0) / v.length; let crossings = 0;
+        for (let i = 1; i < v.length; i++) if ((v[i - 1] - mean) * (v[i] - mean) < 0) crossings++;
+        return { cycles: crossings / 2, rate: new AudioContext().sampleRate };
+      });
+      check(`${name}: each lane shows 25 ms of time at this device's rate (${cycles.rate} Hz): about 6.5 cycles of C4`, cycles.cycles >= 5 && cycles.cycles <= 8, cycles);
+      // Each dial shapes its own voice: Texture & stillness moves the middle lane, and only it.
+      check(`${name}: three lanes are labelled with their notes and dials`, (await p.locator('[data-live-lane]').allTextContents()).join(' | ') === 'C3 · Organic Current 40% | G3 · Texture & stillness 60% | C4 · Open Water 50%',
+        await p.locator('[data-live-lane]').allTextContents());
+      await p.waitForTimeout(1200);
+      const lanesBefore = (await p.locator('[data-listen23-live]').getAttribute('data-lane-levels')).split(',').map(Number);
+      await p.locator('#receptive-density').fill('100');
+      await p.waitForTimeout(1500);
+      const lanesAfter = (await p.locator('[data-listen23-live]').getAttribute('data-lane-levels')).split(',').map(Number);
+      const moved = lanesAfter.map((v, i) => v - lanesBefore[i]);
+      check(`${name}: raising Texture & stillness grows the middle note and leaves the others`, moved[1] >= 2 && Math.abs(moved[0]) <= 1 && Math.abs(moved[2]) <= 1, { lanesBefore, lanesAfter });
+      check(`${name}: the middle lane's label follows the dial`, /G3 · Texture & stillness 100%/.test(await p.locator('[data-live-lane="density"]').textContent()));
       await p.locator('[data-listen23-live]').screenshot({ path: path.join(dir, `${name}-live.png`) });
       await p.locator('[data-listen23-receptive-field]').screenshot({ path: path.join(shots, `sound-studio-shelf-live-${name}.png`) });
 
@@ -140,9 +162,13 @@ createRoot(document.getElementById('app')).render(
         const c = document.querySelector('[data-live-wave]'); const g = c.getContext('2d');
         const { data, width, height } = g.getImageData(0, 0, c.width, c.height); let top = height, bottom = 0;
         for (let y = 0; y < height; y++) for (let x = 0; x < width; x += 4) if (data[(y * width + x) * 4 + 3] > 40) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
-        return bottom - top;
+        // Per lane: each third of the canvas holds one flat line.
+        const spans = [0, 1, 2].map((k) => { let t = height, b = 0;
+          for (let y = Math.floor((k * height) / 3); y < Math.floor(((k + 1) * height) / 3); y++) for (let x = 0; x < width; x += 4) if (data[(y * width + x) * 4 + 3] > 40) { t = Math.min(t, y); b = Math.max(b, y); }
+          return b - t; });
+        return Math.max(...spans);
       });
-      check(`${name}: paused, the waveform is a flat line (only its soft glow has height)`, flat <= 12, flat);
+      check(`${name}: paused, every lane is a flat line (only its soft glow has height)`, flat <= 12, flat);
       check(`${name}: no horizontal overflow`, await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
       check(`${name}: no page errors and no outside requests`, errors.length === 0 && external.length === 0, { errors, external });
       await ctx.close();

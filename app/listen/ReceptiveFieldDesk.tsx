@@ -34,7 +34,15 @@ export function noteName(hz:number):string {
   return `${NOTE_NAMES[((midi%12)+12)%12]}${Math.floor(midi/12)-1}`;
 }
 
-type Output = { analyser: AnalyserNode; frequencies: number[]; mood: string };
+type Output = { analyser: AnalyserNode; voices?: AnalyserNode[]; frequencies: number[]; mood: string };
+/**
+ * Which dial shapes which voice, as applyReceptiveShape in the one player does it:
+ * Organic Current → the lowest note (and its swell above 50), Texture & stillness → the middle note,
+ * Open Water → the top note (and the shared filter).
+ */
+const VOICE_DIALS: ReadonlyArray<'pulse'|'density'|'space'> = ['pulse','density','space'];
+/** How much time each lane shows: enough for a few cycles of the lowest note. */
+const WINDOW_SEC = 0.025;
 type Tint = readonly [number, number, number];
 /** Each field's own colour, beside the house gold (founder, 2026-11-19). Gold when no card is chosen. */
 export const FIELD_TINTS: Record<string, Tint> = {
@@ -47,16 +55,18 @@ const GOLD: Tint = [212, 175, 55];
 const rgba = (t: Tint, a: number) => `rgba(${t[0]},${t[1]},${t[2]},${a})`;
 
 /** What the field is doing right now: its waveform, its movement over the last seconds, and its level. */
-function LiveField({ getOutput, playing, paused, tint }:{ getOutput:()=>Output|null; playing:boolean; paused:boolean; tint:Tint }) {
+function LiveField({ getOutput, playing, paused, tint, shape }:{ getOutput:()=>Output|null; playing:boolean; paused:boolean; tint:Tint; shape:ReceptiveControls }) {
   const wave=useRef<HTMLCanvasElement>(null);
   const motion=useRef<HTMLCanvasElement>(null);
   const [level,setLevel]=useState<number|null>(null);
   const [notes,setNotes]=useState<number[]>([]);
+  const [lanes,setLanes]=useState<(number|null)[]>([]);
   const getRef=useRef(getOutput); getRef.current=getOutput;
   const tintRef=useRef(tint); tintRef.current=tint;
   useEffect(()=>{
     const history:number[]=[];
-    let raf=0, last=0, lastHist=0;
+    let raf=0, last=0, lastHist=0, scale=1e-4;
+    const db=(v:number)=>v>0?Math.round(20*Math.log10(v)):null;
     const draw=(now:number)=>{
       raf=requestAnimationFrame(draw);
       const out=playing?getRef.current():null;
@@ -64,27 +74,41 @@ function LiveField({ getOutput, playing, paused, tint }:{ getOutput:()=>Output|n
       const dpr=window.devicePixelRatio||1;
       for(const c of [w,m]){const cw=Math.round(c.clientWidth*dpr),ch=Math.round(c.clientHeight*dpr);if(c.width!==cw||c.height!==ch){c.width=cw;c.height=ch;}}
       const g=w.getContext('2d'), h=m.getContext('2d'); if(!g||!h) return;
+      const t=tintRef.current;
       g.clearRect(0,0,w.width,w.height);
-      // Soft rather than severe (founder, 2026-11-19): a blurred halo under a thin, slightly translucent line.
-      const line=new Path2D();
+      // One lane per voice, all on ONE shared scale, so turning a dial visibly grows or shrinks its own voice.
+      const voiceTaps=out?.voices?.length===3?out.voices:null;
+      const n=voiceTaps?3:1, laneH=w.height/n;
+      const buffers=(voiceTaps??(out?[out.analyser]:[])).map(a=>{const d=new Float32Array(a.fftSize);a.getFloatTimeDomainData(d);return d;});
+      const peaks=buffers.map(d=>{let p=0;for(const v of d)if(Math.abs(v)>p)p=Math.abs(v);return p;});
+      scale=Math.max(...peaks,scale*0.985,1e-4); // eases down, so the picture breathes rather than jumps
+      const shades:[number,number][]=[[0,0.9],[22,0.8],[44,0.7]]; // the field's colour, lighter for higher notes
+      for(let k=0;k<n;k++){
+        const mid=laneH*k+laneH/2, d=buffers[k];
+        const line=new Path2D();
+        if(d){
+          // A fixed 25 ms of time whatever the device's sample rate (a studio interface may run at 192 kHz).
+          const rate=(voiceTaps??[out!.analyser])[k].context.sampleRate;
+          const shown=Math.min(d.length,Math.round(rate*WINDOW_SEC)), points=Math.min(shown,1200), stride=shown/points;
+          for(let j=0;j<points;j++){const v=d[Math.floor(j*stride)],x=(j/(points-1))*w.width,y=mid-(v/scale)*laneH*0.42;j?line.lineTo(x,y):line.moveTo(x,y);}
+        }
+        else{line.moveTo(0,mid);line.lineTo(w.width,mid);}
+        const [lift,alpha]=shades[k]??[0,0.9]; const c:Tint=[Math.min(255,t[0]+lift),Math.min(255,t[1]+lift),Math.min(255,t[2]+lift)];
+        g.lineJoin='round'; g.lineCap='round';
+        g.save(); g.shadowColor=rgba(c,.5); g.shadowBlur=12*dpr; g.strokeStyle=rgba(c,.14); g.lineWidth=6*dpr; g.stroke(line); g.restore();
+        g.strokeStyle=rgba(c,.3); g.lineWidth=2.6*dpr; g.stroke(line);
+        g.strokeStyle=rgba(c,alpha*.9); g.lineWidth=1*dpr; g.stroke(line);
+      }
       let rms=0;
       if(out){
-        const data=new Float32Array(out.analyser.fftSize); out.analyser.getFloatTimeDomainData(data);
-        let peak=0; for(const v of data){rms+=v*v; if(Math.abs(v)>peak)peak=Math.abs(v);} rms=Math.sqrt(rms/data.length);
-        // Drawn to the field's own size so a quiet field is still visible; the level shows how loud it really is.
-        const scale=(w.height*0.38)/Math.max(peak,1e-4);
-        const shown=Math.min(data.length,1024);
-        for(let i=0;i<shown;i++){const x=(i/(shown-1))*w.width,y=w.height/2-data[i]*scale;i?line.lineTo(x,y):line.moveTo(x,y);}
-        if(now-last>200){last=now;setNotes(old=>old.join()===out.frequencies.join()?old:out.frequencies);}
-      } else { line.moveTo(0,w.height/2); line.lineTo(w.width,w.height/2); }
-      const t=tintRef.current;
-      g.lineJoin='round'; g.lineCap='round';
-      g.save();
-      g.shadowColor=rgba(t,.55); g.shadowBlur=14*dpr;
-      g.strokeStyle=rgba(t,.16); g.lineWidth=7*dpr; g.stroke(line);
-      g.restore();
-      g.strokeStyle=rgba(t,.32); g.lineWidth=3*dpr; g.stroke(line);
-      g.strokeStyle=rgba([Math.min(255,t[0]+30),Math.min(255,t[1]+30),Math.min(255,t[2]+30)],.8); g.lineWidth=1.1*dpr; g.stroke(line);
+        const d=new Float32Array(out.analyser.fftSize); out.analyser.getFloatTimeDomainData(d);
+        for(const v of d)rms+=v*v; rms=Math.sqrt(rms/d.length);
+        if(now-last>200){last=now;
+          setNotes(old=>old.join()===out.frequencies.join()?old:out.frequencies);
+          const next=voiceTaps?peaks.map(p=>db(p)):[];
+          setLanes(old=>old.join()===next.join()?old:next);
+        }
+      }
       if(now-lastHist>66){lastHist=now;history.push(rms); if(history.length>150)history.shift();}
       h.clearRect(0,0,m.width,m.height);
       const top=Math.max(...history,1e-4);
@@ -99,21 +123,31 @@ function LiveField({ getOutput, playing, paused, tint }:{ getOutput:()=>Output|n
         h.fill();
       });
       h.restore();
-      setLevel(old=>{const db=rms>0?Math.round(20*Math.log10(rms)):null;return old===db?old:db;});
+      setLevel(old=>{const v=db(rms);return old===v?old:v;});
     };
     raf=requestAnimationFrame(draw);
     return ()=>cancelAnimationFrame(raf);
   },[playing]);
+  const showLanes=playing&&notes.length===3&&lanes.length===3;
   return <div className={styles.liveField} data-listen23-live="true" data-live-state={playing?'playing':paused?'paused':'stopped'}
-    data-live-tint={tint.join(',')} style={{borderColor:playing?rgba(tint,.45):undefined}}>
+    data-live-tint={tint.join(',')} data-lane-levels={lanes.join(',')} style={{borderColor:playing?rgba(tint,.45):undefined}}>
     <div className={styles.liveFieldHead}>
       <strong>{playing?'Playing now':paused?'Paused':'Not playing'}</strong>
       <span data-live-level="true">{playing&&level!==null?`Output ${level} dBFS`:'Silent'}</span>
     </div>
-    <canvas ref={wave} className={styles.liveWave} aria-hidden="true" data-live-wave="true"/>
+    <div className={styles.liveLanes}>
+      <canvas ref={wave} className={styles.liveWave} aria-hidden="true" data-live-wave="true"/>
+      {showLanes && <ol className={styles.liveLaneLabels} data-live-lanes="true">
+        {VOICE_DIALS.map((dial,k)=><li key={dial} data-live-lane={dial}>
+          <strong>{noteName(notes[k])}</strong> · {dials.find(d=>d.key===dial)?.label} {shape[dial]}%
+        </li>)}
+      </ol>}
+    </div>
     <canvas ref={motion} className={styles.liveMotion} aria-hidden="true" data-live-motion="true"/>
     <p className={styles.muted} style={{fontSize:12,margin:'6px 0 0'}}>
-      Top: the sound itself, drawn to its own size. Below: how it moves over the last ten seconds.
+      {showLanes
+        ? 'Each line is one of the three notes in this field, on one shared scale: move a dial and its own note grows or fades. Below: how the whole field moves over the last ten seconds.'
+        : 'Top: the sound itself, drawn to its own size. Below: how it moves over the last ten seconds.'}
       {notes.length>0 && <> Notes: <span data-live-notes="true">{notes.map(noteName).join(' · ')}</span>.</>}
     </p>
   </div>;
@@ -311,7 +345,7 @@ export default function ReceptiveFieldDesk({
       </button>
     </div>
     {persistent?.generatedOutput && <LiveField getOutput={persistent.generatedOutput}
-      playing={!!matchingSketch} paused={!!pausedSketch} tint={(chosenOption&&FIELD_TINTS[chosenOption.id])||GOLD}/>}
+      playing={!!matchingSketch} paused={!!pausedSketch} tint={(chosenOption&&FIELD_TINTS[chosenOption.id])||GOLD} shape={shape}/>}
     {(matchingSketch||pausedSketch) && <p className={styles.muted} style={{fontSize:12,marginTop:4}} data-live-settings="true">
       {dials.map(d=>`${d.label} ${shape[d.key]}`).join(' · ')}
     </p>}

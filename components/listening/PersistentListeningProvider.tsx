@@ -137,7 +137,7 @@ export type ListeningTransport = {
    * 2026-11-19 (#1979). The analyser has no outputs: it changes no level and no
    * sound, and adds no control. Null when no generated sound exists.
    */
-  generatedOutput: () => { analyser: AnalyserNode; frequencies: number[]; mood: ListeningMood } | null;
+  generatedOutput: () => { analyser: AnalyserNode; voices: AnalyserNode[]; frequencies: number[]; mood: ListeningMood } | null;
   pause: () => void;
   /** Terminally clear just this member-bound music; does not stop Focus time. */
   stopMusic: () => void;
@@ -398,7 +398,7 @@ export function PersistentListeningProvider({
 
   const kind = useRef<Kind>('none');
   const sketch = useRef<Sketch | null>(null);
-  const outputTaps = useRef(new WeakMap<Sketch, AnalyserNode>());
+  const outputTaps = useRef(new WeakMap<Sketch, { analyser: AnalyserNode; voices: AnalyserNode[] }>());
   const media = useRef<HTMLAudioElement | null>(null);
   const blobURL = useRef<string | null>(null);
   const keepAlive = useRef<HTMLAudioElement | null>(null);
@@ -1061,16 +1061,21 @@ export function PersistentListeningProvider({
   const generatedOutput = useCallback(() => {
     const current = sketch.current;
     if (!current || current.context.state === 'closed') return null;
-    let analyser = outputTaps.current.get(current);
-    if (!analyser) {
+    let taps = outputTaps.current.get(current);
+    if (!taps) {
       try {
-        analyser = current.context.createAnalyser();
-        analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.5;
-        current.master.connect(analyser); // a tap: the analyser is connected to nothing
-        outputTaps.current.set(current, analyser);
+        const tap = (node: AudioNode) => {
+          const a = current.context.createAnalyser();
+          a.fftSize = 8192; a.smoothingTimeConstant = 0.5; // room for 25 ms even at a 192 kHz interface
+          node.connect(a); // a tap: the analyser is connected to nothing
+          return a;
+        };
+        // The whole output, and each voice before the shared filter (one voice per Shelf dial).
+        taps = { analyser: tap(current.master), voices: current.voices.map(tap) };
+        outputTaps.current.set(current, taps);
       } catch { return null; }
     }
-    return { analyser, frequencies: [...current.frequencies], mood: current.mood };
+    return { analyser: taps.analyser, voices: taps.voices, frequencies: [...current.frequencies], mood: current.mood };
   }, []);
 
   const localFilePosition = useCallback(() => {

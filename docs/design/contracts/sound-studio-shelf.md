@@ -19,13 +19,16 @@ screenshot_desktop:
 screenshot_mobile:
   - docs/design/contracts/screenshots/sound-studio-shelf-live-mobile.png
 experience_verification: >
-  2026-11-19 isolated browser witness (tests/listening/shelf_live_view_browser_witness.cjs), 42/42: the real
+  2026-11-19 isolated browser witness (tests/listening/shelf_live_view_browser_witness.cjs), 50/50: the real
   ReceptiveFieldDesk inside the REAL PersistentListeningProvider, with their real stylesheets, in local Chrome at
   1440×1200 and 390×844. Before Play, the view says Not playing and no card is marked. Choosing a card marks only
   it. While playing, the card says Playing, the waveform moves, the real output level is shown, and the notes and
   settings appear. A different card shows different notes (G2 · D3 · G3 versus C3 · G3 · C4) and different
-  settings, each in the field's own colour. Tailoring marks the card "tailored". Paused, the view says Paused and goes flat. An audio-graph edge
-  log shows the tap adds exactly one edge, master → analyser, that the analyser feeds nothing, and that only one
+  settings, each in the field's own colour. Three lanes, one per note, are labelled with the dial that shapes
+  each; raising Texture & stillness grows only the middle note. Each lane shows a fixed 25 ms at the device's
+  rate (192 kHz on the founder's Mac), about 6.5 cycles of C4. Tailoring marks the card "tailored". Paused, the view says Paused and goes flat. An audio-graph edge
+  log shows the taps add exactly four edges (the output and its three voices, each from a gain node into an
+  analyser), that no analyser feeds anything, and that only one
   path reaches the speakers. No overflow, no page errors and no outside requests. Measured in the same run: "A
   wider horizon" plays at about −53 to −55 dBFS RMS at the default level. The fixture mirrors the app shell's
   button reset, which it does not load. This is a fixture witness, not an authenticated walk of /listen and not
@@ -41,6 +44,7 @@ A member wants to receive a generated sound field, shape it if they wish, and ke
 - **They can see that it is working.** While their field plays, a live view moves with the actual sound: the waveform itself, how it swells over the last ten seconds, and its real output level. Paused, it says so and goes flat.
 - **They can see what they are hearing.** The field's notes (for example G2 · D3 · G3) and its Organic Current, Open Water and Texture settings are shown, so different cards read differently.
 - **Each field has its own colour.** Lavender for A place to center, amber for A moving current, sea for A wider horizon, and rose for Room for catharsis. The chosen card and its live view take that colour; with no card chosen the view stays in house gold. The lines are soft, with a blurred halo under a thin line, rather than severe (founder, 2026-11-19).
+- **They can see the three notes.** Each field is three notes, and each dial shapes one of them: Organic Current the lowest (and its swell above 50), Texture & stillness the middle, Open Water the top (and the shared filter). The live view draws one lane per note on one shared scale, labelled with its note and dial, so moving a dial visibly grows or fades its own note (founder, 2026-11-19). Each lane shows a fixed 25 ms of time, whatever the device's sample rate.
 - **They know which card is sounding.** The chosen card is marked Chosen, then Playing, then "tailored" once a dial moves away from the card's own setting.
 - **Seeing changes nothing.** The view reads the one player's output through a tap that feeds nothing. It does not change the sound, its level or its notes, and it adds no control to the player bar.
 
