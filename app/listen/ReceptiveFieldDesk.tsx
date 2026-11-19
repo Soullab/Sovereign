@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePersistentListening } from '@/components/listening/PersistentListeningProvider';
 import {
   ORIGINAL_RECEPTIVE_CONTROLS, RECEPTIVE_INVITATIONS, RECEPTIVE_INTENTIONS,
@@ -26,6 +26,69 @@ const dials: ReadonlyArray<{key:MixKey;label:string;meaning:string}>=[
   {key:'space',label:'Open Water',meaning:'Resonance, air and the length of the sound'},
   {key:'density',label:'Texture & stillness',meaning:'From a minimal sound to a fuller harmony'},
 ];
+
+const NOTE_NAMES=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+/** 98 Hz → "G2": the nearest note, for showing what a generated field is made of. */
+export function noteName(hz:number):string {
+  const midi=Math.round(69+12*Math.log2(hz/440));
+  return `${NOTE_NAMES[((midi%12)+12)%12]}${Math.floor(midi/12)-1}`;
+}
+
+type Output = { analyser: AnalyserNode; frequencies: number[]; mood: string };
+
+/** What the field is doing right now: its waveform, its movement over the last seconds, and its level. */
+function LiveField({ getOutput, playing, paused }:{ getOutput:()=>Output|null; playing:boolean; paused:boolean }) {
+  const wave=useRef<HTMLCanvasElement>(null);
+  const motion=useRef<HTMLCanvasElement>(null);
+  const [level,setLevel]=useState<number|null>(null);
+  const [notes,setNotes]=useState<number[]>([]);
+  const getRef=useRef(getOutput); getRef.current=getOutput;
+  useEffect(()=>{
+    const history:number[]=[];
+    let raf=0, last=0, lastHist=0;
+    const draw=(now:number)=>{
+      raf=requestAnimationFrame(draw);
+      const out=playing?getRef.current():null;
+      const w=wave.current, m=motion.current; if(!w||!m) return;
+      const dpr=window.devicePixelRatio||1;
+      for(const c of [w,m]){const cw=Math.round(c.clientWidth*dpr),ch=Math.round(c.clientHeight*dpr);if(c.width!==cw||c.height!==ch){c.width=cw;c.height=ch;}}
+      const g=w.getContext('2d'), h=m.getContext('2d'); if(!g||!h) return;
+      g.clearRect(0,0,w.width,w.height);
+      g.strokeStyle='rgba(212,175,55,.95)'; g.lineWidth=1.5*dpr; g.beginPath();
+      let rms=0;
+      if(out){
+        const data=new Float32Array(out.analyser.fftSize); out.analyser.getFloatTimeDomainData(data);
+        let peak=0; for(const v of data){rms+=v*v; if(Math.abs(v)>peak)peak=Math.abs(v);} rms=Math.sqrt(rms/data.length);
+        // Drawn to the field's own size so a quiet field is still visible; the level bar shows how loud it really is.
+        const scale=(w.height*0.42)/Math.max(peak,1e-4);
+        const shown=Math.min(data.length,1024);
+        for(let i=0;i<shown;i++){const x=(i/(shown-1))*w.width,y=w.height/2-data[i]*scale;i?g.lineTo(x,y):g.moveTo(x,y);}
+        if(now-last>200){last=now;setNotes(old=>old.join()===out.frequencies.join()?old:out.frequencies);}
+      } else { g.moveTo(0,w.height/2); g.lineTo(w.width,w.height/2); }
+      g.stroke();
+      if(now-lastHist>66){lastHist=now;history.push(rms); if(history.length>150)history.shift();}
+      h.clearRect(0,0,m.width,m.height);
+      const top=Math.max(...history,1e-4);
+      h.fillStyle='rgba(127,209,200,.8)';
+      history.forEach((v,i)=>{const bar=Math.max(1,(v/top)*m.height*0.9);h.fillRect((i/150)*m.width,m.height-bar,Math.max(1,m.width/150-1),bar);});
+      setLevel(old=>{const db=rms>0?Math.round(20*Math.log10(rms)):null;return old===db?old:db;});
+    };
+    raf=requestAnimationFrame(draw);
+    return ()=>cancelAnimationFrame(raf);
+  },[playing]);
+  return <div className={styles.liveField} data-listen23-live="true" data-live-state={playing?'playing':paused?'paused':'stopped'}>
+    <div className={styles.liveFieldHead}>
+      <strong>{playing?'Playing now':paused?'Paused':'Not playing'}</strong>
+      <span data-live-level="true">{playing&&level!==null?`Output ${level} dBFS`:'Silent'}</span>
+    </div>
+    <canvas ref={wave} className={styles.liveWave} aria-hidden="true" data-live-wave="true"/>
+    <canvas ref={motion} className={styles.liveMotion} aria-hidden="true" data-live-motion="true"/>
+    <p className={styles.muted} style={{fontSize:12,margin:'6px 0 0'}}>
+      Top: the sound itself, drawn to its own size. Below: how it moves over the last ten seconds.
+      {notes.length>0 && <> Notes: <span data-live-notes="true">{notes.map(noteName).join(' · ')}</span>.</>}
+    </p>
+  </div>;
+}
 
 function statusOf(error:unknown,fallback:string):string {
   return error instanceof Error ? error.message : fallback;
@@ -59,6 +122,7 @@ export default function ReceptiveFieldDesk({
   const [repeat,setRepeat]=useState('');
   const [selectedBackup,setSelectedBackup]=useState<File|null>(null);
   const [busy,setBusy]=useState(false);
+  const [chosen,setChosen]=useState<string|null>(null);
 
   const shape=persistent?.shape||fallbackShape;
   const fields=persistent?.fields||fallbackFields;
@@ -66,6 +130,12 @@ export default function ReceptiveFieldDesk({
   const playEnabled=Boolean(persistent) && !localFileSelected;
   const matchingSketch=persistent?.snapshot.kind==='sketch' &&
     persistent.snapshot.mood===journey && persistent.snapshot.playback==='playing';
+  const pausedSketch=persistent?.snapshot.kind==='sketch' &&
+    persistent.snapshot.mood===journey && persistent.snapshot.playback==='paused';
+  const chosenOption=RECEPTIVE_INVITATIONS.find(o=>o.id===chosen&&o.journey===journey);
+  // Compared after the same validation the dials apply (steps of 5), so choosing a card is not itself "tailored".
+  const chosenControls=chosenOption?validatedReceptiveControls(chosenOption.controls):null;
+  const tailored=!!chosenControls && (Object.keys(chosenControls) as MixKey[]).some(k=>chosenControls[k]!==shape[k]);
 
   const changeShape=(next:ReceptiveControls) => {
     const verified=validatedReceptiveControls(next);
@@ -75,6 +145,7 @@ export default function ReceptiveFieldDesk({
 
   const chooseInvitation=(option:typeof RECEPTIVE_INVITATIONS[number])=>{
     if(option.journey!==journey)onSelectJourney(option.journey);
+    setChosen(option.id);
     changeShape(option.controls);
     setTitle(option.title);
     setIntentions([option.intention]);
@@ -183,9 +254,12 @@ export default function ReceptiveFieldDesk({
       {RECEPTIVE_INVITATIONS.map(option=>
         <button type="button" key={option.id}
           data-listen23-invitation={option.id}
-          className={styles.tile}
+          aria-pressed={chosenOption?.id===option.id}
+          className={chosenOption?.id===option.id?`${styles.tile} ${styles.tileChosen}`:styles.tile}
           onClick={()=>chooseInvitation(option)}
           style={{minHeight:120,textAlign:'left',display:'flex',flexDirection:'column',justifyContent:'center',gap:8}}>
+          {chosenOption?.id===option.id && <span className={styles.tileBadge} data-listen23-chosen="true">
+            {matchingSketch?'Playing':'Chosen'}{tailored?' · tailored':''}</span>}
           <strong>{option.title}</strong>
           <span style={{fontSize:12,opacity:.83}}>{option.explanation}</span>
         </button>)}
@@ -207,6 +281,11 @@ export default function ReceptiveFieldDesk({
         Restore original sketch
       </button>
     </div>
+    {persistent?.generatedOutput && <LiveField getOutput={persistent.generatedOutput}
+      playing={!!matchingSketch} paused={!!pausedSketch}/>}
+    {(matchingSketch||pausedSketch) && <p className={styles.muted} style={{fontSize:12,marginTop:4}} data-live-settings="true">
+      {dials.map(d=>`${d.label} ${shape[d.key]}`).join(' · ')}
+    </p>}
     {!persistent && <p className={styles.muted}>
       Live shaping is available when the existing shared listening host is mounted.
       This standalone review displays settings but cannot change its separate sound.

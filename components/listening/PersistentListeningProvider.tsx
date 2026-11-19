@@ -131,6 +131,13 @@ export type ListeningTransport = {
    * local file is selected. Adds no control and changes nothing the dock shows.
    */
   localFilePosition: () => { title: string; seconds: number; duration: number | null; playing: boolean } | null;
+  /**
+   * Read-only: an AnalyserNode tapped from the generated sketch's master output,
+   * with the sketch's notes, for the Shelf's live view. Founder approval
+   * 2026-11-19 (#1979). The analyser has no outputs: it changes no level and no
+   * sound, and adds no control. Null when no generated sound exists.
+   */
+  generatedOutput: () => { analyser: AnalyserNode; frequencies: number[]; mood: ListeningMood } | null;
   pause: () => void;
   /** Terminally clear just this member-bound music; does not stop Focus time. */
   stopMusic: () => void;
@@ -391,6 +398,7 @@ export function PersistentListeningProvider({
 
   const kind = useRef<Kind>('none');
   const sketch = useRef<Sketch | null>(null);
+  const outputTaps = useRef(new WeakMap<Sketch, AnalyserNode>());
   const media = useRef<HTMLAudioElement | null>(null);
   const blobURL = useRef<string | null>(null);
   const keepAlive = useRef<HTMLAudioElement | null>(null);
@@ -1050,6 +1058,21 @@ export function PersistentListeningProvider({
     return { accepted: true, message: 'File selected locally; use the persistent player.' };
   }, [releaseOutput]);
 
+  const generatedOutput = useCallback(() => {
+    const current = sketch.current;
+    if (!current || current.context.state === 'closed') return null;
+    let analyser = outputTaps.current.get(current);
+    if (!analyser) {
+      try {
+        analyser = current.context.createAnalyser();
+        analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.5;
+        current.master.connect(analyser); // a tap: the analyser is connected to nothing
+        outputTaps.current.set(current, analyser);
+      } catch { return null; }
+    }
+    return { analyser, frequencies: [...current.frequencies], mood: current.mood };
+  }, []);
+
   const localFilePosition = useCallback(() => {
     const el = media.current;
     if (kind.current !== 'local-file' || !el || !selected.current) return null;
@@ -1296,7 +1319,7 @@ export function PersistentListeningProvider({
   const transport: ListeningTransport = {
     snapshot, volume, setVolume, looping, loopAvailable, setLooping, shape, setShape,
     fields, keepField, dropField, replaceFields,
-    playSketch, playExperienceMedia, selectLocalFile, playLocalFile, localFilePosition,
+    playSketch, playExperienceMedia, selectLocalFile, playLocalFile, localFilePosition, generatedOutput,
     pause, stopMusic: stopAll, listeningInstance, removeLocalFile,
     focusSession, focusClockMs,
     focusTimeDisplay, setFocusTimeDisplay,

@@ -214,3 +214,11 @@
 .transformField{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#ddd0bb;min-width:0;flex:1 1 140px;max-width:220px}
 .transformField input,.transformField select{box-sizing:border-box;background:#071217;color:#f1efe7;border:1px solid #415258;border-radius:10px;padding:10px;min-height:44px;width:100%;min-width:0}
 .transformActions{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+
+.liveField{margin:14px 0 4px;padding:12px 14px;border:1px solid #2b3a3f;border-radius:12px;background:#071217}
+.liveFieldHead{display:flex;justify-content:space-between;gap:10px;font-size:13px;font-variant-numeric:tabular-nums}
+.liveFieldHead span{color:#9aafb0}
+.liveWave{display:block;width:100%;height:72px;margin-top:8px}
+.liveMotion{display:block;width:100%;height:28px;margin-top:4px;border-top:1px solid #1d2b30}
+.tileChosen{border-color:rgba(212,175,55,.85)!important;box-shadow:0 0 0 1px rgba(212,175,55,.45) inset}
+.tile .tileBadge{align-self:flex-start;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#0b1418;background:#d4af37;border-radius:999px;padding:2px 8px}
