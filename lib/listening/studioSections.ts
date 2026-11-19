@@ -18,13 +18,26 @@ export function viewForSection(hashOrId: string | null | undefined): StudioView 
   return id === 'focus-field' || id === 'focus-sound' ? 'focus' : null;
 }
 
+/**
+ * Brings a section to the member visibly: scrolls to it, marks it for a moment (data-attention), and moves
+ * keyboard focus to its chosen option. Scrolling alone did nothing visible when the section was already on
+ * screen (founder, 2026-11-19: "nothing happens").
+ */
+export function revealStudioSection(element: HTMLElement): void {
+  element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  element.setAttribute('data-attention', 'true');
+  window.setTimeout(() => element.removeAttribute('data-attention'), 1800);
+  const target = element.querySelector<HTMLElement>('[aria-checked="true"], [aria-pressed="true"], button, a, input');
+  target?.focus({ preventScroll: true });
+}
+
 /** Click handler for a bar link to a section. Returns true when it handled the move in place. */
 export function openStudioSection(section: StudioSection, event: { preventDefault: () => void }): boolean {
   if (typeof document === 'undefined') return false;
   const here = document.getElementById(section);
   if (here) {
     event.preventDefault();
-    here.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    revealStudioSection(here);
     return true;
   }
   window.dispatchEvent(new CustomEvent(STUDIO_SECTION_EVENT, { detail: section }));

@@ -247,3 +247,8 @@
 
 /* In the running session the save row spans the whole card, not the clock's column. */
 .focusDesignDuring{grid-column:1/-1;max-width:720px;width:100%}
+
+/* A section opened from the player bar glows for a moment, so the move is visible even when already on screen. */
+@keyframes sectionAttention{0%{box-shadow:0 0 0 0 rgba(212,175,55,0)}25%{box-shadow:0 0 0 3px rgba(212,175,55,.75),0 0 28px rgba(212,175,55,.35)}100%{box-shadow:0 0 0 0 rgba(212,175,55,0)}}
+.focusSound[data-attention="true"],.focusField[data-attention="true"]{animation:sectionAttention 1.8s ease-out}
+@media(prefers-reduced-motion:reduce){.focusSound[data-attention="true"],.focusField[data-attention="true"]{animation:none;outline:2px solid rgba(212,175,55,.8);outline-offset:3px}}

@@ -19,7 +19,7 @@ import ToneLabDesk from './ToneLabDesk';
 import TransformDesk from './TransformDesk';
 import type { StudioView } from './SoundStudioNow';
 import FocusFieldDesk from '@/components/listening/FocusFieldDesk';
-import { STUDIO_SECTION_EVENT, viewForSection } from '@/lib/listening/studioSections';
+import { STUDIO_SECTION_EVENT, revealStudioSection, viewForSection } from '@/lib/listening/studioSections';
 import type { MemberCollection, TrackReference } from '@/lib/listening/portableCollections';
 import styles from './listen.module.css';
 import './listenGlobal.css';
@@ -113,7 +113,7 @@ export default function ListenRoom() {
       setView(next);
       const id = String(section).replace(/^#/, '');
       window.requestAnimationFrame(() => window.requestAnimationFrame(() =>
-        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })));
+        { const el = document.getElementById(id); if (el) revealStudioSection(el); }));
     };
     open(window.location.hash);
     const onSection = (event: Event) => open((event as CustomEvent<string>).detail);

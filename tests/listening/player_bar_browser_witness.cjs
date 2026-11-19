@@ -37,8 +37,9 @@ createRoot(document.getElementById('app')).render(
     '<style>body{margin:0;background:#0b1418;color:#f1efe7;font:15px Georgia,serif}button{background:transparent;color:inherit;font:inherit;cursor:pointer}</style>' +
     `</head><body><div id="app"></div><script src="/entry.js?v=${BUILD}"></script></body></html>`);
   const server = http.createServer((req, res) => {
-    const f = path.join(dir, req.url === '/' ? 'index.html' : req.url.split('?')[0].replace(/^\//, ''));
-    if (!f.startsWith(dir) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
+    // Any page address (such as /listen) serves the page itself, so a link the bar carries never lands on nothing.
+    const asked = path.join(dir, req.url.split('?')[0].replace(/^\//, ''));
+    const f = /\.(js|css)$/.test(asked) && asked.startsWith(dir) && fs.existsSync(asked) ? asked : path.join(dir, 'index.html');
     res.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': f.endsWith('.js') ? 'text/javascript' : f.endsWith('.css') ? 'text/css' : 'text/html' });
     fs.createReadStream(f).pipe(res);
   });
@@ -90,6 +91,14 @@ createRoot(document.getElementById('app')).render(
       await p.waitForTimeout(900);
       const picker = await p.locator('#focus-sound').boundingBox();
       check(`${name}: Choose a sound stays on the page and brings Sound for this session into view`, p.url() === before && picker && picker.y >= -2 && picker.y < viewport.height / 2, { url: p.url(), before, picker });
+      // Visible even when the section is already on screen: it is marked, and focus moves to the chosen sound.
+      await p.evaluate(() => window.scrollTo(0, 0));
+      await p.locator('[data-focus-dock-choose-sound]').click();
+      await p.waitForTimeout(150);
+      const seen = await p.evaluate(() => ({ marked: document.getElementById('focus-sound')?.getAttribute('data-attention'),
+        focused: document.activeElement?.getAttribute('data-focus-sound'), animation: getComputedStyle(document.getElementById('focus-sound')).animationName }));
+      check(`${name}: when Sound for this session is already on screen, the click still shows: it glows and focus moves to the chosen sound`,
+        seen.marked === 'true' && seen.focused === 'none' && seen.animation !== 'none', seen);
       // A generated sound: waveform in its colour, and how long it has played.
       await p.locator('[data-focus-sound="creative-flow"]').click();
       await p.locator('[data-focus-play-sound]').click();
