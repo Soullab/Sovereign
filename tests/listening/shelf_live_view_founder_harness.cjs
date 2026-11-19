@@ -4,6 +4,7 @@
  *   node tests/listening/shelf_live_view_founder_harness.cjs [port]
  */
 'use strict';
+const BUILD = String(Date.now()); // a new URL per harness start, so no browser can reuse an older bundle
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
 const esbuild = require('esbuild');
 const repo = path.resolve(__dirname, '../..');
@@ -38,9 +39,9 @@ createRoot(document.getElementById('app')).render(
     banner: { js: 'var process = { env: {} };' } }); // the provider reads optional NEXT_PUBLIC_ flags; none are set here
   fs.writeFileSync(path.join(dir, 'index.html'),
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<title>Shelf live view · isolated fixture</title><link rel="stylesheet" href="/entry.css">' +
+    '<title>Shelf live view · isolated fixture</title><link rel="stylesheet" href="/entry.css?v=' + BUILD + '">' +
     '<style>body{margin:0;background:#0b1418;color:#f1efe7;font:15px Georgia,serif}button{background:transparent;color:inherit;font:inherit;cursor:pointer}input[type=range]{accent-color:#d4af37}</style>' + // the app shell\'s button reset, which this fixture does not load
-    '</head><body><div id="app"></div><script src="/entry.js"></script></body></html>');
+    '</head><body><div id="app"></div><script src="/entry.js?v=' + BUILD + '"></script></body></html>');
   const server = http.createServer((req, res) => {
     const f = path.join(dir, req.url === '/' ? 'index.html' : req.url.split('?')[0].replace(/^\//, ''));
     if (!f.startsWith(dir) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
