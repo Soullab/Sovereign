@@ -238,3 +238,38 @@ valid to 2027-09-11. The signing certificate named in every September build reco
 not been tested. If a development-signed app does not launch after its certificate
 expires, the organism would need a rebuild, which is a new subject. Calibration and
 the population that follows it should therefore complete before that date.
+
+## 12. PLAYER-IDENTITY AMENDMENT-01 (founder-authorized, 2026-11-19)
+
+**What happened.** The first Calibration-02 preflight ran on 2026-11-19 at
+18:15:47Z. Device identity, installed identity, harness count, output device and
+volume all passed. It then refused at the player check: `/usr/bin/afplay` hashes to
+`85d3ee16…a0a4`, not the pinned `88f3b577…cabb`. macOS 15.8.2 (24H232) replaced the
+binary on 2026-10-22. The run pin was then invoked and refused at `wrong worktree
+pointer`, before its marker. No act marker exists. The authority is unspent, no tone
+played and the organism was not launched.
+
+**Why R5 could not hold.** R5 bound the pins to implementation `2f211f432`
+unchanged. The player hash is pinned inside that implementation, in
+`k00-source-calibration-batch.sh` and in `k00-driver-batch.sh`, and each refuses any
+other player. Re-pinning only the preflight would have let the run pin spend its
+marker and then stop in the batch before playback. Under R5 this was returned to the
+founder as a finding, and the founder authorized the amendment.
+
+**The amendment.** Commit `07eec3053` changes one line in each of the two batch
+scripts: the pinned player hash. Nothing else in the instrument changes. The pins
+now bind to `07eec30533c2d50cb9efd5b97104e7ad4e567a9a`, with new blob pins for the
+two scripts, the new player hash, and a recorded macOS version. A test proves that
+restoring the old hash in either script reproduces its September blob exactly.
+The September playback census, the 01 pins, earlier pin drafts and all ledger
+evidence keep the old hash and are not rewritten.
+
+**What it does not establish.** That the new player renders the fixture at the same
+level as the old one. Calibration measures the level as played, so the pin it
+produces is valid for this player. The population that follows must use the same
+player, which `k00-driver-batch.sh` now enforces. A further macOS update that
+replaces the player again would require another amendment.
+
+**Also different from September, recorded and not pinned.** The batch builds its
+test driver at run time under the current Xcode (recorded by C6). The organism under
+test is not rebuilt.

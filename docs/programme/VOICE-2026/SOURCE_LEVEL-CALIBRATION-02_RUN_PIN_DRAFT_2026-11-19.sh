@@ -1,7 +1,7 @@
 set -e
 set -o pipefail
 
-SHA=2f211f432394a236cc2bcdb4fea55ca1bd179713
+SHA=07eec30533c2d50cb9efd5b97104e7ad4e567a9a
 SUBJECT_SHA=faf918b5c5b2cd85f8e8a6c9cbda8bc76df11ce8
 ROOT="$HOME/voice-2026-witness/source-level-calibration-02"
 case "$ROOT" in /tmp/*|/private/tmp/*|/var/folders/*|/private/var/folders/*|/Volumes/*) echo "evidence root must be durable" >&2; exit 2;; esac

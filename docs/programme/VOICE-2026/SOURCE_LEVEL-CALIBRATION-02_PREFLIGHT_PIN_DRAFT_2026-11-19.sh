@@ -1,22 +1,22 @@
 set -e
 set -o pipefail
 
-SHA=2f211f432394a236cc2bcdb4fea55ca1bd179713
+SHA=07eec30533c2d50cb9efd5b97104e7ad4e567a9a
 SUBJECT_SHA=faf918b5c5b2cd85f8e8a6c9cbda8bc76df11ce8
 BID=life.soullab.voicekernel.vpio02sid
 SID_CONTAINER=85948DBD-BA8F-4679-950D-31767B1C24E5
 VOICEKERNEL_TREE=df48584178c67ca0ac0daeab2918fd57c571c4e8
 HARNESS_TREE=7a37892d2afdb56174ef367e99f2bc2f8e44c946
-DRIVER_BATCH_BLOB=bd6fb211dc85c2352b27168c2d3516af54d15746
+DRIVER_BATCH_BLOB=052cac67cf47fe202e948c5bbd5f3b1b4e2b7a77
 SOURCE_READER_BLOB=ff2924059de663a701f80b888e1611adad3c8159
 OUTPUT_READER_BLOB=a87c56d0a6073b177e160f8c92dc95ec2673b3ca
 ENTRY_READER_BLOB=abd26d05efd838cd87c93fcdb1d1706e2b671901
 FIXTURE_GENERATOR_BLOB=7ea01b1b4413e0b1de23db73941b3a6b80829033
 CAL_READER_BLOB=f4c71767aae7afe3f64a64cf95398bd7c358c128
-CAL_BATCH_BLOB=5a677c03161b1bfccfeb894a38137d2458cf6077
+CAL_BATCH_BLOB=eb998b119a0cf01528dfc028dc9e42feae26ae08
 CAL_TEST_BLOB=aed8fcb4f0f6ba11d2d623ee2666f0183dc97ae1
 AFPLAY=/usr/bin/afplay
-AFPLAY_SHA=88f3b577790877524edc79a20de8838a019c0ca723a0eaa4a8612a860317cabb
+AFPLAY_SHA=85d3ee1676edf279b42f80222235a45c0533a4121273a8ee47afee226230a0a4
 DEV="$(printenv K00_DEVICE 2>/dev/null || true)"
 [ -n "$DEV" ] || DEV=A0736AC8-793B-516F-AC72-C076DB6CEE38
 [ "$DEV" = A0736AC8-793B-516F-AC72-C076DB6CEE38 ] || { echo "SOURCE-LEVEL-CALIBRATION-02 refuses: K00_DEVICE is not the approved iPhone" >&2; exit 2; }
@@ -73,6 +73,7 @@ git rev-parse HEAD | tee "$PF/head.txt"
 printf '%s\n' "$SUBJECT_SHA" > "$PF/sid-subject.txt"
 xcodebuild -version > "$PF/xcode-version.txt"
 xcrun --sdk iphoneos --show-sdk-version > "$PF/iphoneos-sdk-version.txt"
+sw_vers > "$PF/macos-version.txt"
 
 python3 scripts/witness/k00-source-calibration-fixture.py --selftest > "$PF/fixture-selftest.txt"
 grep -q '^selftest: 4/4$' "$PF/fixture-selftest.txt"

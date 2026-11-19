@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,9 +26,15 @@ describe('SOURCE LEVEL-CALIBRATION-02 execution pins', () => {
     return a.split('\n').filter((line) => !kept.has(line));
   };
 
-  it('binds to the unchanged implementation and subject (R5)', () => {
+  // PLAYER-IDENTITY AMENDMENT-01 (founder, 2026-11-19): the implementation the pins bind to.
+  const AMENDED = '07eec30533c2d50cb9efd5b97104e7ad4e567a9a';
+  const SEPTEMBER = '2f211f432394a236cc2bcdb4fea55ca1bd179713';
+  const OLD_PLAYER = '88f3b577790877524edc79a20de8838a019c0ca723a0eaa4a8612a860317cabb';
+  const NEW_PLAYER = '85d3ee1676edf279b42f80222235a45c0533a4121273a8ee47afee226230a0a4';
+
+  it('binds to the amended implementation and the unchanged subject (R5, AMENDMENT-01)', () => {
     for (const pin of [preflight, run]) {
-      expect(pin).toContain('SHA=2f211f432394a236cc2bcdb4fea55ca1bd179713');
+      expect(pin).toContain(`SHA=${AMENDED}`);
       expect(pin).toContain('SUBJECT_SHA=faf918b5c5b2cd85f8e8a6c9cbda8bc76df11ce8');
     }
   });
@@ -36,7 +43,7 @@ describe('SOURCE LEVEL-CALIBRATION-02 execution pins', () => {
     const proofs = preflight01.split('\n').filter((l) => /^test "\$\(git rev-parse "\$SHA:/.test(l));
     expect(proofs.length).toBe(10);
     for (const line of proofs) expect(preflight).toContain(line);
-    for (const name of ['VOICEKERNEL_TREE', 'HARNESS_TREE', 'CAL_BATCH_BLOB', 'CAL_READER_BLOB', 'AFPLAY_SHA']) {
+    for (const name of ['VOICEKERNEL_TREE', 'HARNESS_TREE', 'CAL_READER_BLOB', 'CAL_TEST_BLOB', 'FIXTURE_GENERATOR_BLOB', 'SOURCE_READER_BLOB', 'OUTPUT_READER_BLOB', 'ENTRY_READER_BLOB']) {
       const pinned = preflight01.split('\n').find((l) => l.startsWith(`${name}=`));
       expect(pinned).toBeTruthy();
       expect(preflight).toContain(pinned as string);
@@ -127,11 +134,11 @@ describe('SOURCE LEVEL-CALIBRATION-02 execution pins', () => {
 
   it('changes nothing in the 01 pins beyond the ruled set', () => {
     // Every 01 line that did not carry over must be one of the ruled changes.
-    const allowed = /private\/tmp|CALIBRATION-01|GEOMETRY_CONFIRMATION|\[ -n "\$AUTH" \]/;
+    const allowed = /private\/tmp|CALIBRATION-01|GEOMETRY_CONFIRMATION|\[ -n "\$AUTH" \]|^SHA=|^DRIVER_BATCH_BLOB=|^CAL_BATCH_BLOB=|^AFPLAY_SHA=/;
     for (const line of removed(preflight01, preflight)) expect(line).toMatch(allowed);
     for (const line of removed(run01, run)) expect(line).toMatch(allowed);
     // And every added line is one of the ruled additions.
-    const added = /ROOT|CALIBRATION-02|FOUNDER-AUTHORIZED|FRESH_AT_PREFLIGHT|geometryDeclared|xcode-version|iphoneos-sdk-version/;
+    const added = /ROOT|CALIBRATION-02|FOUNDER-AUTHORIZED|FRESH_AT_PREFLIGHT|geometryDeclared|xcode-version|iphoneos-sdk-version|macos-version|^SHA=|^DRIVER_BATCH_BLOB=|^CAL_BATCH_BLOB=|^AFPLAY_SHA=/;
     // Revision 1: the installed-identity block is the only other addition to the preflight.
     const block = new Set(identityBlock());
     for (const line of removed(preflight, preflight01)) {
@@ -245,6 +252,38 @@ describe('SOURCE LEVEL-CALIBRATION-02 execution pins', () => {
     const strict = preflight.indexOf('# R2-IDENTITY-BEGIN');
     expect(strict).toBeGreaterThan(old);
     expect(strict).toBeLessThan(preflight.indexOf('xcrun devicectl device info processes'));
+  });
+
+  // ── PLAYER-IDENTITY AMENDMENT-01 ──
+
+  const gitBlob = (content: string) => {
+    const body = Buffer.from(content, 'utf8');
+    return createHash('sha1').update(`blob ${body.length}\0`).update(body).digest('hex');
+  };
+  const pinned = (src: string, name: string) => (src.split('\n').find((l) => l.startsWith(`${name}=`)) ?? '').split('=')[1];
+
+  it('AMENDMENT-01: each batch script differs from its September blob by the player hash and nothing else', () => {
+    for (const [file, name] of [
+      ['scripts/witness/k00-source-calibration-batch.sh', 'CAL_BATCH_BLOB'],
+      ['scripts/witness/k00-driver-batch.sh', 'DRIVER_BATCH_BLOB'],
+    ]) {
+      const now = read(file);
+      expect(now.split(NEW_PLAYER).length - 1).toBe(1);
+      expect(now).not.toContain(OLD_PLAYER);
+      // The file as it stands is what the 02 preflight pins…
+      expect(gitBlob(now)).toBe(pinned(preflight, name));
+      // …and putting the old hash back reproduces the September blob exactly.
+      expect(gitBlob(now.replace(NEW_PLAYER, OLD_PLAYER))).toBe(pinned(preflight01, name));
+    }
+  });
+
+  it('AMENDMENT-01: the preflight pins the same player the batch pins, and records the macOS version', () => {
+    expect(preflight).toContain(`AFPLAY_SHA=${NEW_PLAYER}`);
+    expect(read('scripts/witness/k00-source-calibration-batch.sh')).toContain(`AFPLAY_SHA=${NEW_PLAYER}`);
+    expect(preflight01).toContain(`AFPLAY_SHA=${OLD_PLAYER}`);
+    expect(preflight).toContain('sw_vers > "$PF/macos-version.txt"');
+    expect(AMENDED).not.toBe(SEPTEMBER);
+    for (const pin of [preflight, run]) expect(pin).not.toContain(SEPTEMBER);
   });
 
   it('both 02 pin scripts are shell-syntax clean', () => {
