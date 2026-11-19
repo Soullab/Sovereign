@@ -19,7 +19,7 @@ screenshot_desktop:
 screenshot_mobile:
   - docs/design/contracts/screenshots/sound-studio-shelf-live-mobile.png
 experience_verification: >
-  2026-11-19 isolated browser witness (tests/listening/shelf_live_view_browser_witness.cjs), 40/40: the real
+  2026-11-19 isolated browser witness (tests/listening/shelf_live_view_browser_witness.cjs), 42/42: the real
   ReceptiveFieldDesk inside the REAL PersistentListeningProvider, with their real stylesheets, in local Chrome at
   1440×1200 and 390×844. Before Play, the view says Not playing and no card is marked. Choosing a card marks only
   it. While playing, the card says Playing, the waveform moves, the real output level is shown, and the notes and

@@ -220,5 +220,6 @@
 .liveFieldHead span{color:#9aafb0}
 .liveWave{display:block;width:100%;height:72px;margin-top:8px}
 .liveMotion{display:block;width:100%;height:28px;margin-top:4px;border-top:1px solid #1d2b30}
-.tileChosen{border-color:rgba(212,175,55,.85)!important;box-shadow:0 0 0 1px rgba(212,175,55,.45) inset}
+/* The chosen card's outline colour is set inline from its own field colour. */
+.tileChosen{border-width:1px;border-style:solid}
 .tile .tileBadge{align-self:flex-start;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#0b1418;background:#d4af37;border-radius:999px;padding:2px 8px}

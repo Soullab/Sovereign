@@ -119,6 +119,8 @@ createRoot(document.getElementById('app')).render(
       const settings2 = await p.locator('[data-live-settings]').textContent();
       check(`${name}: and different settings`, settings2 !== settings && /Organic Current (75|80) · Open Water 50 · Texture & stillness 60/.test(settings2), settings2);
       check(`${name}: each field has its own colour (sea for A wider horizon, amber for A moving current)`, tint1 === '110,190,200' && (await p.locator('[data-listen23-live]').getAttribute('data-live-tint')) === '226,170,92', [tint1]);
+      const outline = await p.locator('[data-listen23-invitation="warmth"]').evaluate((el) => getComputedStyle(el).borderTopColor);
+      check(`${name}: the chosen card's outline is its own colour, not gold`, /^rgba?\(226, 170, 92/.test(outline), outline);
       check(`${name}: the newly chosen card is the one marked Playing`, (await p.locator('[data-listen23-invitation="warmth"] [data-listen23-chosen]').textContent()) === 'Playing'
         && (await p.locator('[data-listen23-invitation="open"] [data-listen23-chosen]').count()) === 0);
 
