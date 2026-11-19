@@ -231,7 +231,8 @@
 .focusDesigns{margin-top:18px;padding:16px;border:1px solid rgba(226,220,194,.14);border-radius:14px;display:grid;gap:10px}
 .focusDesigns h3{margin:6px 0 0;font-family:Georgia,serif;font-weight:400;font-size:20px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .focusDesigns h3 span{font-family:inherit;font-size:12px;color:#9aafb0;letter-spacing:.04em}
-.focusDesignSave{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+.focusDesignSave{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+.focusDesignSave label,.focusDesignSave input{min-width:0;width:100%;box-sizing:border-box}
 .focusDesignList{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .focusDesignList li{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid rgba(226,220,194,.14);border-radius:12px}
 .focusDesignList li div{display:grid;gap:3px}
@@ -243,3 +244,6 @@
 .focusSoundLevel{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;max-width:520px;font-size:13px;color:#d8cdb8}
 .focusSoundLevel input{width:100%;accent-color:#d4af37;min-height:32px}
 .focusSoundLevel output{font-variant-numeric:tabular-nums;color:#b9c3c4;min-width:3.5ch;text-align:right}
+
+/* In the running session the save row spans the whole card, not the clock's column. */
+.focusDesignDuring{grid-column:1/-1;max-width:720px;width:100%}

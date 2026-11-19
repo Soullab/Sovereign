@@ -1,5 +1,5 @@
 /** FOCUS DESIGNS · isolated browser witness (#1979, founder approval 2026-11-19).
- * The REAL components/listening/FocusFieldDesk.tsx inside the REAL PersistentListeningProvider, with their
+ * The REAL app/listen/FocusSoundPicker.tsx and components/listening/FocusFieldDesk.tsx (as on the real Focus page) inside the REAL PersistentListeningProvider, with their
  * real stylesheets, in local Chrome. No Next, no session, no network, no member data.
  * Proves: save a design, it survives a reload, Use fills every choice and starts nothing, Remove and Forget
  * work, the stored record holds no private task label, the encrypted file hides the designs and restores
@@ -21,8 +21,9 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { PersistentListeningProvider } from ${JSON.stringify(path.join(repo, 'components/listening/PersistentListeningProvider.tsx'))};
 import FocusFieldDesk from ${JSON.stringify(path.join(repo, 'components/listening/FocusFieldDesk.tsx'))};
+import FocusSoundPicker from ${JSON.stringify(path.join(repo, 'app/listen/FocusSoundPicker.tsx'))};
 createRoot(document.getElementById('app')).render(
-  <PersistentListeningProvider reviewMemberKey="fictional-focus-designs-witness"><main style={{padding:'24px',maxWidth:'1200px',margin:'0 auto'}}><FocusFieldDesk /></main></PersistentListeningProvider>);
+  <PersistentListeningProvider reviewMemberKey="fictional-focus-designs-witness"><main style={{padding:'24px',maxWidth:'1200px',margin:'0 auto'}}><FocusSoundPicker /><FocusFieldDesk /></main></PersistentListeningProvider>);
 `);
 
 (async () => {
@@ -122,6 +123,12 @@ createRoot(document.getElementById('app')).render(
       const midNote = await p.locator('[data-focus-design-note]').textContent();
       const midStored = await p.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{"designs":[]}').designs.find((d) => d.name === 'Mid-session'), KEY);
       check(`${name}: a design can be saved while a session runs, and it keeps the retuned world`, !!midStored && midStored.musicalWorld === 'organic' && /next session/.test(midNote), { midStored, midNote });
+      const row = await p.locator('[data-focus-design-during]').boundingBox();
+      const card = await p.locator('[data-focus-field-session]').boundingBox();
+      const btn = await p.locator('[data-focus-design-save-during]').boundingBox();
+      const field = await p.locator('#focus-design-name-during').boundingBox();
+      check(`${name}: the mid-session save row spans the card and its button does not overlap the name`,
+        row.width >= Math.min(card.width - 60, 640) && (btn.x >= field.x + field.width - 1 || btn.y >= field.y + field.height - 1), { row, card, btn, field });
       check(`${name}: saving mid-session leaves the session running`, (await p.locator('[data-focus-field-session="running"]').count()) === 1);
       await p.locator('[data-focus-choose-another]').click();
       await p.waitForSelector('[data-focus-designs]');

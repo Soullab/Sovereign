@@ -485,7 +485,7 @@ export default function FocusFieldDesk() {
                   </select>
                 </label>
               </div>
-              <div className={styles.focusDesignSave} data-focus-design-during="true">
+              <div className={`${styles.focusDesignSave} ${styles.focusDesignDuring}`} data-focus-design-during="true">
                 <label className={styles.focusTextLabel} htmlFor="focus-design-name-during">
                   Save this design
                   <input id="focus-design-name-during" maxLength={60} value={designName}
@@ -497,7 +497,7 @@ export default function FocusFieldDesk() {
                     musicalWorld: session.plan.musicalWorld, stimulation: session.plan.stimulation,
                     duration: session.plan.duration }, true)}>Save this design</button>
               </div>
-              {designNote && <p className={styles.focusStatus} role="status" data-focus-design-note="true">{designNote}</p>}
+              {designNote && <p className={`${styles.focusStatus} ${styles.focusDesignDuring}`} role="status" data-focus-design-note="true">{designNote}</p>}
               <div className={styles.focusActions}>
                 <p className={styles.focusExplanation}>
                   Pause and Stop for this session are in the player below.
