@@ -184,6 +184,21 @@ What it does **not** settle: the control's wording and placement, where shared e
 the retention limit, who on Soullab's side may read them, and the withdraw path. Those belong to a
 design and build that need their own founder act.
 
+**⭐ RULED 2026-11-19 (founder, in session: "Approve defaults"), for shared exchanges and for audio/video
+answers alike:**
+- **Readers:** the founder only. Not admins, and not MAIA.
+- **Retention:** until the end of the beta or 12 months after sharing or recording, whichever comes
+  first, then deleted automatically. The writer is told this before sharing or recording.
+- **Withdrawal:** deletes the shared exchange or recording, and its transcript, everywhere at once. No
+  copy is kept.
+- **Storage:** encrypted at rest on minisforum. Spoken answers are transcribed only by the local
+  `maia-whisper`.
+- **Sanctuary:** not available in a Sanctuary session (already ruled).
+
+Build authority: the founder's "go ahead given for all" (2026-11-19). Both builds are **Class A** and
+are built dark. **Merge waits for consent review** (R20, #1793); the founder's approval is not taken as
+that review.
+
 ## 6. Not authorized by this document
 
 Any build, migration, recording, storage or deploy. Any change to the 2026-11-01 ruling until the
