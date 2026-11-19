@@ -65,6 +65,13 @@ describe('undelivered MAIA turns', () => {
     expect(source).toContain('mergeUndeliveredIntoServerHistory(pgMessages, loadedMessages)');
   });
 
+  it('offers Resend after a sign-in failure, since the label outlives the sign-in', () => {
+    const label = source.slice(source.indexOf('>Not delivered to MAIA</span>'), source.indexOf('MAIA Feedback Widget'));
+    expect(label).toContain('Sign in to continue');
+    expect(label).toContain('handleResend(message.id)');
+    expect(label).not.toMatch(/\) : \(\s*<button/);
+  });
+
   it('opens sign-in through the app router so the native app can reach it', () => {
     const link = source.slice(source.indexOf('href="/signin"'), source.indexOf('Sign in to continue\n'));
     expect(link).toContain('e.preventDefault()');

@@ -10006,16 +10006,21 @@ I'm not sure what I'm feeling yet.`;
                             >
                               Sign in to continue
                             </a>
-                          ) : (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleResend(message.id); }}
-                              className="inline-flex items-center gap-1 underline decoration-dotted text-maia-spice-400/80 hover:text-maia-spice-400 transition-colors"
-                              aria-label="Resend this message"
-                            >
-                              <CornerUpLeft className="w-3 h-3" />
-                              Resend
-                            </button>
+                          ) : null}
+                          {/* Resend stays available after a sign-in failure: the saved
+                              label outlives the sign-in, and the member must still be
+                              able to deliver these exact words afterwards. */}
+                          {message.failureReason === 'auth' && (
+                            <span aria-hidden className="text-dune-sand/30">·</span>
                           )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleResend(message.id); }}
+                            className="inline-flex items-center gap-1 underline decoration-dotted text-maia-spice-400/80 hover:text-maia-spice-400 transition-colors"
+                            aria-label="Resend this message"
+                          >
+                            <CornerUpLeft className="w-3 h-3" />
+                            Resend
+                          </button>
                         </div>
                       )}
 
