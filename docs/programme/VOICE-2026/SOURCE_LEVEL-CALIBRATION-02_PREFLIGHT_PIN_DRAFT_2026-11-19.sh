@@ -19,6 +19,7 @@ AFPLAY=/usr/bin/afplay
 AFPLAY_SHA=88f3b577790877524edc79a20de8838a019c0ca723a0eaa4a8612a860317cabb
 DEV="$(printenv K00_DEVICE 2>/dev/null || true)"
 [ -n "$DEV" ] || DEV=A0736AC8-793B-516F-AC72-C076DB6CEE38
+[ "$DEV" = A0736AC8-793B-516F-AC72-C076DB6CEE38 ] || { echo "SOURCE-LEVEL-CALIBRATION-02 refuses: K00_DEVICE is not the approved iPhone" >&2; exit 2; }
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 ROOT="$HOME/voice-2026-witness/source-level-calibration-02"
 case "$ROOT" in /tmp/*|/private/tmp/*|/var/folders/*|/private/var/folders/*|/Volumes/*) echo "evidence root must be durable" >&2; exit 2;; esac
@@ -89,6 +90,31 @@ ok=s.count(sys.argv[2]) >= 1 and sys.argv[3] in s
 print("SID_APP_CONTAINER_MATCH",ok)
 raise SystemExit(0 if ok else 1)
 PY
+# R2-IDENTITY-BEGIN
+INSTALL_RECORD=docs/programme/VOICE-2026/driver-ledger/VPIO-02-SID-FIRST-INSTALL-04-20260916T014705Z/out/apps-after-vpio02sid.json
+INSTALL_RECORD_BLOB=6423123fb34f7fd43ea3bfd04e13853df3099418
+test "$(git rev-parse "$SHA:$INSTALL_RECORD")" = "$INSTALL_RECORD_BLOB"
+python3 - "$PF/apps-vpio02sid.json" "$INSTALL_RECORD" "$BID" "$SID_CONTAINER" > "$PF/installed-identity-check.txt" <<'PY'
+import json,sys
+now=json.load(open(sys.argv[1])).get('result',{}).get('apps',[])
+then=json.load(open(sys.argv[2])).get('result',{}).get('apps',[])
+bid,container=sys.argv[3],sys.argv[4]
+fields=('bundleIdentifier','name','version','bundleVersion','url','builtByDeveloper')
+where=lambda app: str(app.get('url','')).split('/Bundle/Application/')[-1].split('/')[0]
+fail=[]
+if len(then)!=1: fail.append('install record does not hold exactly one app')
+if len(now)!=1: fail.append('device lists %d apps for the bundle, not exactly one' % len(now))
+if not fail:
+    if then[0].get('bundleIdentifier')!=bid or where(then[0])!=container: fail.append('install record is not the pinned bundle and container')
+    if now[0].get('bundleIdentifier')!=bid or where(now[0])!=container: fail.append('installed app is not the pinned bundle at the pinned container')
+    for k in fields:
+        if k not in then[0] or now[0].get(k)!=then[0].get(k): fail.append(k+' differs from the install record')
+for f in fail: print('REFUSE',f)
+print('SID_INSTALLED_IDENTITY_MATCH',not fail)
+print('SCOPE install-record continuity; the installed executable is not hashed by this check')
+raise SystemExit(0 if not fail else 1)
+PY
+# R2-IDENTITY-END
 xcrun devicectl device info processes --device "$DEV" --json-output "$PF/processes.json"
 test "$(grep -ci VoiceKernelHarness "$PF/processes.json" || true)" = 0
 

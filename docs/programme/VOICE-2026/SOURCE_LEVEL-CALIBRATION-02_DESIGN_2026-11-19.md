@@ -176,3 +176,65 @@ Builder claim `s-67080b39`. Any change to the product app or its audio stack.
   not start (R2).
 - If any 01 threshold, level or count would need to move to make 02 pass, the act
   returns `NO LEVEL PIN`. It is not adapted.
+
+## 11. Revision 1 — R2 and R3 verification correction (ACCEPTED, 2026-11-19)
+
+**Status:** ACCEPTED — founder act, 2026-11-19 ("Yes, accept it"), including the
+ruling that install-record continuity is sufficient identity for calibration. The
+acceptance authorizes this records change only. It authorizes no device act. It changes the preflight pin and its tests only. The run pin,
+batch script, fixture, reader, thresholds, ladder and organism are untouched.
+
+**Why.** Review of the merged pins found two weaknesses.
+
+- **R3.** `K00_DEVICE` could name any device; the approved iPhone was only the
+  default. The preflight now refuses unless the device is
+  `A0736AC8-793B-516F-AC72-C076DB6CEE38`, before it writes anything.
+- **R2.** The inherited check passed if the bundle id and container id appeared
+  anywhere in the device's answer. It did not require exactly one record, and it
+  compared nothing else.
+
+**What R2 now compares.** The device's app record against the committed install
+record of `SID FIRST-INSTALL-04`
+(`driver-ledger/VPIO-02-SID-FIRST-INSTALL-04-20260916T014705Z/out/apps-after-vpio02sid.json`,
+pinned by blob at the frozen implementation). It requires exactly one record, the
+pinned bundle id at the pinned container, and equality of name, version, build
+number, install URL and the developer-built flag. This is link 4 of the identity
+chain in `KERNEL-00_VPIO-02_SID_ENTRY_WITNESS_DESIGN_2026-09-15.md` §7, now bound to
+the committed witness of link 3.
+
+**What R2 does not prove (finding, not approximated).** No read-only device command
+returns a hash of the installed executable. `devicectl` exposes the app record and
+the app's data container; it does not expose the bundle container. The binary's
+identity therefore rests on the September chain: compiled identity (MAC-COMPILE-02),
+custody at the install verb (FIRST-INSTALL-04), and the container that install
+produced. An unchanged container is evidence that no install has replaced the app
+since. That rests on iOS assigning a new bundle container at each install, which
+this programme has observed (`977ED940-…`, `E3B88028-…`, `85948DBD-…`) and not
+proven as a rule. The check prints this limit into its own evidence file.
+
+**Read on 2026-11-19.** Today's read-only app record equals the committed install
+record on all eleven fields and passes the revised check.
+
+**Ruled by the founder (accepted as recommended).** Whether install-record continuity is
+sufficient identity for calibration, or whether a stronger proof is required. A
+stronger proof needs either a launch that self-reports build identity (a source
+change, so a new subject) or a reinstall from the pinned artifact (a new
+`MAC-COMPILE` and install act). *Recommend:* accept continuity for calibration, with
+the limit recorded, since calibration pins a source level and does not itself
+qualify the organism.
+
+**Evidence handling (owner to verify).** The preflight stores the phone's full
+process list (`processes.json`) in the preflight folder: about 300 entries, of which
+some are installed apps on the founder's phone. The pin needs only the count of
+harness processes. September's acts committed such lists to this branch. Under C3
+the finished run root is committed in a separate reviewed commit, so the list can be
+left out at that commit without changing any pin. *Recommend:* commit the harness
+count and the list's SHA-256, and keep the raw list only in the durable root.
+
+**Signing deadline (read on the Mac, 2026-11-19; not witnessed on the phone).** The
+profile embedded in the September builds (`08a653d1-…`, SHA-256 `25e33e51…`) is
+valid to 2027-09-11. The signing certificate named in every September build record
+(`42E2C8D8…85B4`) expires 2026-11-26 13:38 UTC. Launch of the installed organism has
+not been tested. If a development-signed app does not launch after its certificate
+expires, the organism would need a rebuild, which is a new subject. Calibration and
+the population that follows it should therefore complete before that date.

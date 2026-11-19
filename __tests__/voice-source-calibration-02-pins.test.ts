@@ -1,5 +1,7 @@
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 const D = 'docs/programme/VOICE-2026/';
@@ -91,6 +93,9 @@ describe('SOURCE LEVEL-CALIBRATION-02 execution pins', () => {
       expect(preflight).toContain(line);
     }
     expect(preflight).toContain('print("SID_APP_CONTAINER_MATCH",ok)');
+    expect(preflight).toContain(
+      '[ "$DEV" = A0736AC8-793B-516F-AC72-C076DB6CEE38 ] || { echo "SOURCE-LEVEL-CALIBRATION-02 refuses: K00_DEVICE is not the approved iPhone" >&2; exit 2; }',
+    );
     expect(preflight).not.toMatch(/devicectl device (install|process launch|process terminate|uninstall)/);
     expect(preflight).not.toMatch(/xcodebuild (build|test)|afplay -v/);
   });
@@ -127,7 +132,11 @@ describe('SOURCE LEVEL-CALIBRATION-02 execution pins', () => {
     for (const line of removed(run01, run)) expect(line).toMatch(allowed);
     // And every added line is one of the ruled additions.
     const added = /ROOT|CALIBRATION-02|FOUNDER-AUTHORIZED|FRESH_AT_PREFLIGHT|geometryDeclared|xcode-version|iphoneos-sdk-version/;
-    for (const line of removed(preflight, preflight01)) expect(line).toMatch(added);
+    // Revision 1: the installed-identity block is the only other addition to the preflight.
+    const block = new Set(identityBlock());
+    for (const line of removed(preflight, preflight01)) {
+      if (!block.has(line)) expect(line).toMatch(added);
+    }
     for (const line of removed(run, run01)) expect(line).toMatch(added);
   });
 
@@ -139,6 +148,103 @@ describe('SOURCE LEVEL-CALIBRATION-02 execution pins', () => {
     expect(read(`${D}SOURCE_LEVEL-CALIBRATION-01_RETRY-01_RUN_PIN_DRAFT_2026-09-21.sh`)).toContain(
       'FOUNDER-REAUTHORIZED-SOURCE-LEVEL-CALIBRATION-01-RETRY-01',
     );
+  });
+
+  // ── Revision 1 (review 2026-11-19): R2 installed identity, R3 device guard ──
+
+  const INSTALL_RECORD = `${D}driver-ledger/VPIO-02-SID-FIRST-INSTALL-04-20260916T014705Z/out/apps-after-vpio02sid.json`;
+  const BID = 'life.soullab.voicekernel.vpio02sid';
+  const CONTAINER = '85948DBD-BA8F-4679-950D-31767B1C24E5';
+  const APPROVED = 'A0736AC8-793B-516F-AC72-C076DB6CEE38';
+
+  function identityBlock(): string[] {
+    const lines = preflight.split('\n');
+    const from = lines.indexOf('# R2-IDENTITY-BEGIN');
+    const to = lines.indexOf('# R2-IDENTITY-END');
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    return lines.slice(from, to + 1);
+  }
+
+  /** Runs the pin's own identity checker, lifted verbatim, against a device reading. */
+  function runIdentity(mutate: (apps: any[]) => any[], record = INSTALL_RECORD) {
+    const block = identityBlock();
+    const py = block.slice(block.findIndex((l) => l.endsWith("<<'PY'")) + 1, block.lastIndexOf('PY')).join('\n');
+    const dir = mkdtempSync(join(tmpdir(), 'cal02-identity-'));
+    const reading = JSON.parse(read(INSTALL_RECORD));
+    reading.result.apps = mutate(JSON.parse(JSON.stringify(reading.result.apps)));
+    writeFileSync(join(dir, 'now.json'), JSON.stringify(reading));
+    const r = spawnSync('python3', ['-', join(dir, 'now.json'), record, BID, CONTAINER], { input: py, encoding: 'utf8' });
+    return { status: r.status, out: r.stdout };
+  }
+
+  /** Runs the pin's own device-selection lines, lifted verbatim. */
+  function runDeviceGuard(env: Record<string, string>) {
+    const lines = preflight.split('\n');
+    const from = lines.findIndex((l) => l.startsWith('DEV="$(printenv K00_DEVICE'));
+    const script = ['set -e', ...lines.slice(from, from + 3), 'printf "DEV=%s\\n" "$DEV"'].join('\n');
+    const r = spawnSync('bash', ['-c', script], { env: { PATH: process.env.PATH ?? '', ...env }, encoding: 'utf8' });
+    return { status: r.status, out: r.stdout, err: r.stderr };
+  }
+
+  it('R3: the device guard uses the approved iPhone when unset and accepts it when named', () => {
+    expect(runDeviceGuard({})).toMatchObject({ status: 0, out: `DEV=${APPROVED}\n` });
+    expect(runDeviceGuard({ K00_DEVICE: '' })).toMatchObject({ status: 0, out: `DEV=${APPROVED}\n` });
+    expect(runDeviceGuard({ K00_DEVICE: APPROVED })).toMatchObject({ status: 0, out: `DEV=${APPROVED}\n` });
+  });
+
+  it('R3 negative: any other device named in K00_DEVICE is refused before anything is written', () => {
+    for (const other of ['00008140-00163D9922E0801C', 'A0736AC8-793B-516F-AC72-C076DB6CEE39', `${APPROVED} `, APPROVED.toLowerCase(), 'iPhone']) {
+      const r = runDeviceGuard({ K00_DEVICE: other });
+      expect(r.status).toBe(2);
+      expect(r.out).toBe('');
+      expect(r.err).toContain('not the approved iPhone');
+    }
+    const guard = preflight.indexOf('refuses: K00_DEVICE is not the approved iPhone');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(preflight.indexOf('mkdir -p "$ROOT"'));
+    expect(guard).toBeLessThan(preflight.indexOf('xcrun devicectl'));
+  });
+
+  it('R2: a device reading equal to the committed install record passes, and says what it does not prove', () => {
+    const r = runIdentity((apps) => apps);
+    expect(r.status).toBe(0);
+    expect(r.out).toContain('SID_INSTALLED_IDENTITY_MATCH True');
+    expect(r.out).toContain('the installed executable is not hashed by this check');
+  });
+
+  it('R2 negative: every departure from the install record is refused', () => {
+    const cases: Array<[string, (apps: any[]) => any[]]> = [
+      ['reinstalled (new container)', (a) => [{ ...a[0], url: a[0].url.replace(CONTAINER, 'E3B88028-A10F-46B1-AB27-CF0A1F83FB78') }]],
+      ['different version', (a) => [{ ...a[0], version: '0.0.2' }]],
+      ['different build number', (a) => [{ ...a[0], bundleVersion: '2' }]],
+      ['different display name', (a) => [{ ...a[0], name: 'VoiceKernel VPIO-02' }]],
+      ['look-alike bundle id', (a) => [{ ...a[0], bundleIdentifier: `${BID}x` }]],
+      ['not developer-built', (a) => [{ ...a[0], builtByDeveloper: false }]],
+      ['app absent', () => []],
+      ['listed twice', (a) => [a[0], a[0]]],
+      ['pinned ids present only in stray fields', (a) => [{ bundleIdentifier: 'other.app', note: `${BID} ${CONTAINER}`, url: 'file:///x/' }]],
+    ];
+    for (const [label, mutate] of cases) {
+      const r = runIdentity(mutate);
+      expect([label, r.status]).toEqual([label, 1]);
+      expect(r.out).toContain('SID_INSTALLED_IDENTITY_MATCH False');
+      expect(r.out).toContain('REFUSE');
+    }
+  });
+
+  it('R2: the install record itself is pinned by blob and read from the frozen implementation', () => {
+    const block = identityBlock().join('\n');
+    const blob = execFileSync('git', ['hash-object', INSTALL_RECORD], { encoding: 'utf8' }).trim();
+    expect(block).toContain(`INSTALL_RECORD=${INSTALL_RECORD}`);
+    expect(block).toContain(`INSTALL_RECORD_BLOB=${blob}`);
+    expect(block).toContain('test "$(git rev-parse "$SHA:$INSTALL_RECORD")" = "$INSTALL_RECORD_BLOB"');
+    expect(block).not.toMatch(/devicectl|xcodebuild/);
+    // The stricter check runs after the 01 check and before the process read; the 01 check is kept.
+    const old = preflight.indexOf('print("SID_APP_CONTAINER_MATCH",ok)');
+    const strict = preflight.indexOf('# R2-IDENTITY-BEGIN');
+    expect(strict).toBeGreaterThan(old);
+    expect(strict).toBeLessThan(preflight.indexOf('xcrun devicectl device info processes'));
   });
 
   it('both 02 pin scripts are shell-syntax clean', () => {
