@@ -57,6 +57,7 @@ import P4R1FocusMaterials from './P4R1FocusMaterials';
 import P4R1BlankWritingArrival from './P4R1BlankWritingArrival';
 import StudioFirstPageMaia from './StudioFirstPageMaia';
 import { firstPageEligible, letterOfferVisible } from '@/lib/writersStudio/inspirationOpening';
+import { whatNextInWrite, WHAT_NEXT_LABEL, WHAT_NEXT_ASK_LABEL, WHAT_NEXT_CLOSE_LABEL } from '@/lib/writersStudio/whatNext';
 import CraftsmansTableR1 from './CraftsmansTableR1';
 import CraftFocusToolsR1 from './CraftFocusToolsR1';
 import MaiaCraftCompanionR1, { type MaiaCraftComposerPort, type MaiaCraftComposerSnapshot } from './MaiaCraftCompanionR1';
@@ -357,6 +358,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
   const pendingCraftDeparture = useRef<{ action: () => void; proof: string; label: string } | null>(null);
   const [craftDiscardOffer, setCraftDiscardOffer] = useState<string | null>(null);
   const [railSelectionId, setRailSelectionId] = useState<string | null>(null);
+  const [whatNextOpen, setWhatNextOpen] = useState(false);
   const [proseView, setProseView] = useState(() => !props.held && !props.carriedInsight);
   const wholeEditRef = useRef<WholeManuscriptSurfaceHandle | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -1390,6 +1392,19 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
     focusId: props.focusId,
     bodyOf: props.writing.bodyOf,
   });
+  // Recomputed every render, so the answer always describes the screen as it is now.
+  const whatNext = whatNextInWrite({
+    pageEmpty: currentBody.trim().length === 0,
+    firstPage: firstPageEligible({ sections: props.context.sections.length, body: currentBody }),
+    chosenPlace: railSelectionId && railSection ? railLabel : null,
+    proseSwitchShown: proseAvailable && !canvas,
+    proseView,
+    isBook: letterOfferVisible({
+      sections: props.context.sections.length,
+      bodies: props.context.sections.map((section) => props.writing.bodyOf(section.draftSectionId)),
+    }),
+    talkWholeLabel: workStudioCopy ? workStudioCopy.whole : 'Talk about the whole Work',
+  });
   const writeMaia = props.work ? (
     <div className="fr-maia-inner p4r1-write-maia">
       <div className="fr-maia-head">
@@ -1511,6 +1526,31 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
             </button>
           </>
         )}
+        {/* "What do I do next?" (persona walk 2026-11-19): MAIA's answer from what is on screen, at full size. It reads no
+            manuscript text and sends nothing; "Ask MAIA about this" only places a question for the writer to send. */}
+        {!workConversationOpen ? (
+          <div data-write-what-next="true" style={{ marginTop: 12 }}>
+            <button type="button" className="p4r1-talk" aria-expanded={whatNextOpen} data-write-what-next-button="true"
+              onClick={() => setWhatNextOpen((open) => !open)}
+              style={{ width: '100%', fontSize: 15, fontWeight: 600 }}>
+              {WHAT_NEXT_LABEL}
+            </button>
+            {whatNextOpen ? (
+              <div role="status" data-write-what-next-answer="true" style={{ marginTop: 10, fontSize: 15, lineHeight: 1.5 }}>
+                {whatNext.say.map((line) => <p key={line} style={{ margin: '0 0 8px' }}>{line}</p>)}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <button type="button" className="p4r1-talk" data-write-what-next-ask="true"
+                    onClick={() => { setWhatNextOpen(false); openWorkConversation(whatNext.ask); }}>
+                    {WHAT_NEXT_ASK_LABEL}
+                  </button>
+                  <button type="button" className="p4r1-talk" data-write-what-next-close="true" onClick={() => setWhatNextOpen(false)}>
+                    {WHAT_NEXT_CLOSE_LABEL}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {maiaRelationshipCard}
       </div>
       <div className="fr-foot">{programCopy ? programCopy.foot : 'The manuscript stays primary; support follows your attention.'}</div>
