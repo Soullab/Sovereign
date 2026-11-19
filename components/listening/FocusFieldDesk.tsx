@@ -20,6 +20,10 @@ import {
   type FocusTaskKind,
 } from '@/lib/listening/focusFieldSession';
 import { suggestFocusWorlds } from '@/lib/listening/focusFieldGuide';
+import {
+  FOCUS_DESIGNS_MAX, MAX_FOCUS_DESIGNS_PRIVATE_BYTES, decryptFocusDesigns, encryptFocusDesigns,
+  newFocusDesign, readFocusDesigns, writeFocusDesigns, type FocusDesign,
+} from '@/lib/listening/focusDesigns';
 import { focusTimeLabel } from '@/lib/listening/focusTimeDisplay';
 import { usePersistentListening } from './PersistentListeningProvider';
 import styles from '@/app/listen/listen.module.css';
@@ -58,6 +62,14 @@ const FEEDBACK_LABELS: Record<FocusFeedbackTag, string> = {
   'session-too-long': 'Session felt too long',
 };
 
+function browserStorage(): Storage | null {
+  try { return typeof window === 'undefined' ? null : window.localStorage; } catch { return null; }
+}
+
+function durationText(d: FocusDuration): string {
+  return d.mode === 'untimed' ? 'Untimed' : `${d.minutes} minutes`;
+}
+
 function formatClock(milliseconds: number | null): string {
   if (milliseconds === null) return 'Untimed';
   const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
@@ -78,6 +90,25 @@ export default function FocusFieldDesk() {
   const [presetMinutes, setPresetMinutes] = useState<25 | 50 | 90>(50);
   const [customMinutes, setCustomMinutes] = useState(45);
   const [feedbackTags, setFeedbackTags] = useState<FocusFeedbackTag[]>([]);
+  // Saved designs: kept in this browser on this device (founder approval 2026-11-19, #1979).
+  const [designs, setDesigns] = useState<FocusDesign[]>([]);
+  const [designsOnDevice, setDesignsOnDevice] = useState(true);
+  const [designName, setDesignName] = useState('');
+  const [designNote, setDesignNote] = useState<string | null>(null);
+  const [passphrase, setPassphrase] = useState('');
+  const [passphraseAgain, setPassphraseAgain] = useState('');
+  const [designFile, setDesignFile] = useState<File | null>(null);
+  const [designBusy, setDesignBusy] = useState(false);
+  useEffect(() => {
+    const read = readFocusDesigns(browserStorage());
+    setDesigns(read.designs); setDesignsOnDevice(read.available); setDesignNote(read.problem);
+  }, []);
+  const keepDesigns = (next: FocusDesign[], said: string) => {
+    setDesigns(next);
+    const kept = writeFocusDesigns(browserStorage(), next);
+    setDesignsOnDevice(kept);
+    setDesignNote(kept ? said : `${said} This browser is not keeping saved designs, so they last for this visit only.`);
+  };
   const [message, setMessage] = useState(
     'Choose a session. This review starts a private in-memory clock; rights-cleared focus channels are the next gate.',
   );
@@ -152,6 +183,62 @@ export default function FocusFieldDesk() {
     if (next.musicalWorld) setMusicalWorld(next.musicalWorld);
     if (next.stimulation) setStimulation(next.stimulation);
     setMessage('The session changed without resetting its clock or task.');
+  };
+
+  const saveDesign = () => {
+    if (designs.length >= FOCUS_DESIGNS_MAX) { setDesignNote(`You can keep up to ${FOCUS_DESIGNS_MAX} designs. Remove one first.`); return; }
+    if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') { setDesignNote('Saving needs a secure browser context.'); return; }
+    try {
+      const design = newFocusDesign({
+        name: designName, task, focusNeed, musicalWorld, stimulation, duration,
+        id: `design-${crypto.randomUUID().replace(/-/g, '')}`, at: new Date(),
+      });
+      keepDesigns([design, ...designs], `Saved “${design.name}” on this device. Anyone using this browser can see your saved designs.`);
+      setDesignName('');
+    } catch (e) { setDesignNote(e instanceof Error ? e.message : 'This design could not be saved.'); }
+  };
+  const applyDesign = (d: FocusDesign) => {
+    // Browse keeps the design's own musical world rather than re-suggesting one.
+    setEntryMode('browse');
+    setTask(d.task); setFocusNeed(d.focusNeed); setMusicalWorld(d.musicalWorld); setStimulation(d.stimulation);
+    if (d.duration.mode === 'preset') { setDurationMode('preset'); setPresetMinutes(d.duration.minutes); }
+    else if (d.duration.mode === 'custom') { setDurationMode('custom'); setCustomMinutes(d.duration.minutes); }
+    else setDurationMode('untimed');
+    setDesignNote(`“${d.name}” is ready. Nothing starts until you press Start focus session.`);
+  };
+  const removeDesign = (id: string) => {
+    const d = designs.find((x) => x.id === id);
+    keepDesigns(designs.filter((x) => x.id !== id), d ? `Removed “${d.name}”.` : 'Removed.');
+  };
+  const forgetDesigns = () => {
+    if (!designs.length) return;
+    if (!window.confirm('Forget every focus design saved in this browser? This cannot be undone unless you have an encrypted file.')) return;
+    keepDesigns([], 'Forgot every focus design saved in this browser.');
+  };
+  const exportDesigns = async () => {
+    if (passphrase !== passphraseAgain) { setDesignNote('The two passphrases do not match.'); return; }
+    setDesignBusy(true);
+    try {
+      const sealed = await encryptFocusDesigns(designs, passphrase);
+      const url = URL.createObjectURL(new Blob([sealed], { type: 'application/json' }));
+      const a = document.createElement('a'); a.href = url; a.download = 'soullab-my-focus-designs-private.json';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setDesignNote('Encrypted designs saved to your device. Only your passphrase can unlock them; Soullab cannot recover it.');
+      setPassphrase(''); setPassphraseAgain('');
+    } catch (e) { setDesignNote(e instanceof Error ? e.message : 'Could not export your designs.'); }
+    finally { setDesignBusy(false); }
+  };
+  const restoreDesigns = async () => {
+    if (!designFile) { setDesignNote('Choose your focus designs file first.'); return; }
+    if (designFile.size > MAX_FOCUS_DESIGNS_PRIVATE_BYTES) { setDesignNote('This is not a Soullab focus designs file.'); return; }
+    setDesignBusy(true);
+    try {
+      const restored = await decryptFocusDesigns(await designFile.text(), passphrase);
+      if (designs.length && !window.confirm('Replace the designs saved in this browser with the ones in this file?')) { setDesignNote('Restore canceled. Nothing changed.'); return; }
+      keepDesigns(restored, `Restored ${restored.length} focus design${restored.length === 1 ? '' : 's'} into this browser.`);
+      setPassphrase(''); setPassphraseAgain('');
+    } catch (e) { setDesignNote(e instanceof Error ? e.message : 'Could not restore your designs.'); }
+    finally { setDesignBusy(false); }
   };
 
   const toggleFeedbackTag = (tag: FocusFeedbackTag) => {
@@ -308,6 +395,55 @@ export default function FocusFieldDesk() {
             <button type="button" className={styles.play} onClick={start}
               disabled={!transport}>Start focus session</button>
           </div>
+
+          <div className={styles.focusDesigns} data-focus-designs="true">
+            <div className={styles.focusDesignSave}>
+              <label className={styles.focusTextLabel} htmlFor="focus-design-name">
+                Save this design
+                <input id="focus-design-name" maxLength={60} value={designName}
+                  onChange={event => setDesignName(event.target.value)}
+                  placeholder="Morning code, evening reading…" />
+              </label>
+              <button type="button" className={styles.secondary} onClick={saveDesign}
+                data-focus-design-save="true">Save this design</button>
+            </div>
+            <h3>My focus designs <span>{designs.length}/{FOCUS_DESIGNS_MAX}{designsOnDevice ? ' · on this device' : ' · this visit only'}</span></h3>
+            {designs.length === 0 && <p className={styles.focusExplanation}>Designs you save appear here, kept in this browser on this device. Nothing is sent to a server.</p>}
+            <ul className={styles.focusDesignList}>
+              {designs.map(d => <li key={d.id} data-focus-design={d.id}>
+                <div><strong>{d.name}</strong>
+                  <span>{NEED_LABELS[d.focusNeed]} · {WORLD_LABELS[d.musicalWorld]} · {TASK_LABELS[d.task]} · {STIMULATION_LABELS[d.stimulation]} stimulation · {durationText(d.duration)}</span></div>
+                <span className={styles.focusDesignActions}>
+                  <button type="button" className={styles.focusChoiceActive} onClick={() => applyDesign(d)}>Use this design</button>
+                  <button type="button" className={styles.focusChoice} onClick={() => removeDesign(d.id)}>Remove</button>
+                </span>
+              </li>)}
+            </ul>
+            {designs.length > 0 && <button type="button" className={styles.focusChoice} onClick={forgetDesigns}
+              data-focus-design-forget="true">Forget all on this device</button>}
+            <details className={styles.focusTune}>
+              <summary>Keep a copy · passphrase-encrypted file</summary>
+              <p className={styles.focusExplanation}>Save your designs as an encrypted file to back them up or bring them to another device. There is no account sync or passphrase recovery.</p>
+              <div className={styles.focusDesignPair}>
+                <label className={styles.focusTextLabel} htmlFor="focus-design-passphrase">Private passphrase
+                  <input id="focus-design-passphrase" type="password" autoComplete="off" maxLength={500}
+                    value={passphrase} onChange={event => setPassphrase(event.target.value)} placeholder="At least 12 characters" /></label>
+                <label className={styles.focusTextLabel} htmlFor="focus-design-passphrase-again">Repeat to export
+                  <input id="focus-design-passphrase-again" type="password" autoComplete="off" maxLength={500}
+                    value={passphraseAgain} onChange={event => setPassphraseAgain(event.target.value)} placeholder="Repeat your passphrase" /></label>
+              </div>
+              <div className={styles.focusDesignActions}>
+                <button type="button" className={styles.secondary} disabled={designBusy || !designs.length}
+                  onClick={() => void exportDesigns()}>{designBusy ? 'Working…' : 'Export my encrypted designs'}</button>
+                <label className={styles.focusChoice} htmlFor="focus-design-file">Choose a designs file
+                  <input id="focus-design-file" type="file" accept=".json,application/json" style={{ display: 'none' }}
+                    onChange={event => setDesignFile(event.target.files?.[0] ?? null)} /></label>
+                <button type="button" className={styles.focusChoice} disabled={designBusy || !designFile}
+                  onClick={() => void restoreDesigns()}>Restore designs</button>
+              </div>
+            </details>
+            {designNote && <p className={styles.focusStatus} role="status" data-focus-design-note="true">{designNote}</p>}
+          </div>
         </>
       )}
 
@@ -390,7 +526,7 @@ export default function FocusFieldDesk() {
 
       <p className={styles.focusStatus} role="status" aria-live="polite">{message}</p>
       <p className={styles.focusBoundaryNote}>
-        Session state stays only in this authenticated in-memory field. It is not global MAIA memory and contains no page content, keystrokes, biometrics, productivity score or audio entitlement.
+        A running session stays only in this authenticated in-memory field. Designs you choose to save are kept in this browser on this device, never on a server. Neither is MAIA memory, and neither holds page content, keystrokes, biometrics, a productivity score or an audio entitlement.
       </p>
     </section>
   );

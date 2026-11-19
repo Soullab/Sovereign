@@ -14,6 +14,7 @@ surfaces:
   - components/reader/AudiobookReader.tsx
   - components/reader/ReflectionDrawer.tsx
   - lib/listening/focusFieldSession.ts
+  - lib/listening/focusDesigns.ts
   - lib/listening/focusFieldGuide.ts
 change_class: experiential
 principles:
@@ -128,3 +129,13 @@ The Focus Field catalog begins with eight production briefs: Deep Classical, Pia
 Their names and creative briefs are not playback authority. Every initial entry is unplayable, contains no media URL, and requires independently verified master, composition, performer, sample, territory, term, on-demand, timed-session, cross-route, background, mobile, editing/looping, credit, and revocation receipts. Even a structurally complete package remains blocked pending the independent media authority.
 
 No download, offline Cabin, public broadcast, shared session, unbounded remix, stem isolation, AI analysis, model training, or voice imitation is included in this gate. The 48-second synthetic review studies are not channel masters.
+
+## Saved focus designs (founder approval 2026-11-19, #1979)
+- **What it is for.** A member who finds a Focus design that works can name it, keep it, and return to it, with a list they can add to and remove from.
+- **What a design holds.** Exactly the existing `SOULLAB_FOCUS_FIELD_COMBINATION_V1` choices: name, activity, support, musical world, stimulation and duration. Never the private task label, feedback, session history or anything heard.
+- **Where it lives.** In this browser on this device (`soullab.listen.focus.designs.v1`, at most 24), never on a server. The desk says so, and that anyone using this browser can see them. If the browser blocks storage, designs last for this visit only and the desk says that instead.
+- **Use this design** fills in every choice and starts nothing: no session and no sound until Start. **Remove** deletes one; **Forget all on this device** deletes the list after a confirmation.
+- **Keep a copy.** The list can be saved as a passphrase-encrypted file (PBKDF2-SHA256 600,000 rounds, AES-256-GCM), following the Shelf's design, to back it up or move it to another device. There is no recovery, and an unlocked file is revalidated before use.
+- **The boundary note** now reads: a running session stays only in memory; designs the member chooses to save are kept in this browser, never on a server.
+- **Verification.** 2026-11-19, `tests/listening/focus_designs.test.mjs` 8/8 and `tests/listening/focus_designs_browser_witness.cjs` 33/33: the real FocusFieldDesk inside the real PersistentListeningProvider in local Chrome at 1440 and 390 px. Save, reload, Use (every choice restored, no session, no AudioContext), Remove, Forget, an encrypted export that hides names and choices, restore, a refused wrong passphrase, and the blocked-storage fallback. Screenshots: `docs/design/contracts/screenshots/sound-field-focus-designs-desktop.png` and `-mobile.png`. This is a fixture witness, not an authenticated walk of /listen and not the founder's use.
+- **Not included.** The "Sound for this session" choice is not part of the combination format and is not saved.
