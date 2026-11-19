@@ -44,7 +44,7 @@ createRoot(document.getElementById('app')).render(
   const server = http.createServer((req, res) => {
     const f = path.join(dir, req.url === '/' ? 'index.html' : req.url.split('?')[0].replace(/^\//, ''));
     if (!f.startsWith(dir) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-    res.writeHead(200, { 'Content-Type': f.endsWith('.js') ? 'text/javascript' : f.endsWith('.css') ? 'text/css' : 'text/html' });
+    res.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': f.endsWith('.js') ? 'text/javascript' : f.endsWith('.css') ? 'text/css' : 'text/html' });
     fs.createReadStream(f).pipe(res);
   });
   await new Promise((r) => server.listen(Number(process.argv[2] || 4720), '127.0.0.1', r));
