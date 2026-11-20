@@ -612,7 +612,12 @@ function ScopedWorkConversation({
       style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}
     >
       {/* D3 (ruling A): with holdings hidden, an ACTIVE permission is still shown with its Stop; the unset choice stays behind More. */}
-      {manuscriptId ? <ReadScopeControl manuscriptId={manuscriptId} compact={hideHoldings} /> : null}
+      {/* Founder ruling 2026-11-19 (WS B0 + D3 laptop experience): elsewhere the permission is one persistent status line (Change,
+          and Stop always visible when active), not a choice put to the writer before they have said anything. The choice is offered
+          when they turn to the whole book, where a reading permission could serve the question. */}
+      {manuscriptId ? (hideHoldings
+        ? <ReadScopeControl manuscriptId={manuscriptId} compact />
+        : <ReadScopeControl manuscriptId={manuscriptId} status offerNow={carryScope === 'whole_book'} />) : null}
       {!hideHoldings ? <SettledDecisions workId={work.id} /> : null}
       {/* ── The Work this exchange is in, where the member can see it. ── */}
       {showSecondary && <div
@@ -1071,6 +1076,7 @@ function ScopedWorkConversation({
           placeholder={WORK_CONVERSATION_PLACEHOLDER}
           rows={3}
           aria-label="Message MAIA"
+          data-maia-composer-input="true"
           data-send-mode={mode.kind === 'blocked' ? `blocked:${mode.why}` : mode.kind}
           style={{
             ...typeStyle('maiaReading'), width: '100%', resize: 'vertical',
