@@ -45,7 +45,8 @@ const RECORDER = () => {
   const taps = new WeakMap();
   AudioNode.prototype.connect = function (target, ...rest) {
     const result = original.call(this, target, ...rest);
-    if (target instanceof AudioDestinationNode && !taps.has(this)) {
+    // The speakers directly, or the stream the keep-alive element plays (every generated sound since 2026-11-20).
+    if ((target instanceof AudioDestinationNode || target instanceof MediaStreamAudioDestinationNode) && !taps.has(this)) {
       const ctx = this.context; window.__rec.rate = ctx.sampleRate;
       const sp = ctx.createScriptProcessor(4096, 1, 1);
       sp.onaudioprocess = (e) => { if (window.__rec.on) window.__rec.chunks.push(Float32Array.from(e.inputBuffer.getChannelData(0))); };
@@ -53,6 +54,9 @@ const RECORDER = () => {
     }
     return result;
   };
+  // Rerouting (out.disconnect() then connect to the stream) must not unhook the recorder.
+  const disconnect = AudioNode.prototype.disconnect;
+  AudioNode.prototype.disconnect = function (...args) { const r = disconnect.apply(this, args); if (taps.has(this)) original.call(this, taps.get(this)); return r; };
 };
 
 (async () => {

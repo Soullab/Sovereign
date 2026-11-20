@@ -323,7 +323,13 @@ function newSketch(
   const filter = context.createBiquadFilter();
   filter.type = 'lowpass';
   filter.frequency.value = 660;
-  filter.connect(master); master.connect(context.destination);
+  // The same output bus and stream tap a soundscape has, so the keep-alive element can carry a sketch too. A
+  // browser reports a page to the system's Now Playing and media keys only while a media ELEMENT plays
+  // (founder witness 2026-11-20, #1979: Velvet Current was absent from macOS Now Playing).
+  const out = context.createGain();
+  out.connect(context.destination);
+  const stream = typeof context.createMediaStreamDestination === 'function' ? context.createMediaStreamDestination() : undefined;
+  filter.connect(master); master.connect(out);
   const voices:GainNode[]=[];
   const oscillators = frequencies.map((frequency, index) => {
     const osc = context.createOscillator();
@@ -347,7 +353,7 @@ function newSketch(
   movement.start();
   const overtones=newSketchOvertones(context,master,frequencies,oscillators);
   movementDepth.connect(overtones.voices[0].gain); // the lowest note's overtones swell with it
-  const sketch:Sketch={context,oscillators,master,voices,filter,movement,movementDepth,mood,frequencies,overtones};
+  const sketch:Sketch={context,oscillators,master,voices,filter,movement,movementDepth,mood,frequencies,overtones,out,stream};
   applyReceptiveShape(sketch,shape);
   return sketch;
 }
@@ -905,9 +911,10 @@ export function PersistentListeningProvider({
     if (outputLease.current) pause();
     // Started here, before any await: iOS only lets a media element begin inside the member's tap, and the output
     // lease and context resume below both await. Every refusal path below releases it.
-    if (soundscape) {
+    {
       // One element for the life of the room: once a tap has let it play, iOS lets it play again later, which a
-      // lock-screen Play needs. It starts on silence, then carries the soundscape once the sketch is running.
+      // lock-screen Play needs. It starts on silence, then carries the generated sound once it is running: a
+      // soundscape, and since 2026-11-20 every sketch too, so the system's Now Playing and media keys see it.
       const el = keepAlive.current ?? silentKeepAlive();
       if (el) {
         keepAlive.current = el;
@@ -956,7 +963,7 @@ export function PersistentListeningProvider({
         if (isMaiaSpeechActive()) refuseDuringMaiaSpeech();
         return false;
       }
-      if (soundscape && active.out && active.stream && keepAlive.current) {
+      if (active.out && active.stream && keepAlive.current) {
         const el = keepAlive.current;
         try {
           el.srcObject = active.stream.stream;
