@@ -721,6 +721,9 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
   .fr-shell[data-mode='write'][data-left-open='false'] .fr-manuscript { display: none; }
   .fr-shell[data-mode='write'][data-canvas='full'] .fr-room { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .fr-shell[data-mode='write'][data-canvas='full'] .fr-work { grid-row: 1; }
+  /* B0 laptop follow-up (founder ruling 2026-11-19): while a conversation is open in MAIA's column it gets room to be read and
+     answered (at least 340px, at most 42vw); the page keeps the rest and stays primary. A writer's own wider width is kept. */
+  .fr-shell[data-mode='write']:has([data-write-conversation-beside='true']) .fr-room { grid-template-columns: minmax(0, 1fr) clamp(340px, var(--fr-maia-w), 42vw); }
 }
 @media (max-width: 720px) {
   .fr-shell[data-mode='write'] .fr-room { display: flex; flex-direction: column; gap: 0; padding: 0; }
