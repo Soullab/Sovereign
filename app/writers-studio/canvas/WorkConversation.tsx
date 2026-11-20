@@ -142,6 +142,17 @@ const REORIENTATION_PROMPT = [
   'If any of that is unknown, say so. Do not introduce a new interpretation yet.',
 ].join('\n');
 
+/**
+ * D3 (R3.4.4 founder ruling A, 2026-11-19): the per-answer disclosure. `read` is exactly what the server says it handed MAIA
+ * (WS-WORK-CONTINUITY Part B receipts); nothing here infers or widens it. "None of your saved work" is said plainly, because
+ * without a permission (or in Sanctuary) that is the truth, and it is the writer's assurance.
+ */
+export function answerReadSentence(read: readonly { sectionId: string; label: string | null }[]): string {
+  if (read.length === 0) return 'For this answer MAIA read none of your saved work.';
+  const names = read.map((s) => s.label?.trim() || 'an untitled section');
+  return `For this answer MAIA read your saved ${names.length === 1 ? 'section' : 'sections'}: ${names.join(', ')}.`;
+}
+
 /* Review (2026-11-09): a failed Teach me never touched the box, so it must not say the question is still there. */
 const TEACH_NOT_ANSWERED = 'MAIA couldn’t answer the Teach me this time. Nothing you wrote was changed; press it again when you’re ready.';
 const REFUSAL_SAYS: Record<string, string> = {
@@ -247,6 +258,9 @@ function ScopedWorkConversation({
   /* Sanctuary exchanges: shown for this moment only, held in this component's memory, never stored anywhere. */
   /* `after` = how many kept turns the conversation had when this exchange happened, so it is shown in its place in time. */
   const [sanctuaryTurns, setSanctuaryTurns] = useState<{ question: string; answer: string; after: number }[]>([]);
+  /* D3: which saved sections the server handed MAIA for her latest answer (ids + headings, never text), tied to the conversation
+     generation and the turn count it arrived with, so it is never shown under a different answer or conversation. */
+  const [answerRead, setAnswerRead] = useState<{ gen: number; turns: number; read: readonly { sectionId: string; label: string | null }[] } | null>(null);
   /* ⭐ G4 isolation: every switch of conversation (adopt, start fresh) starts a new generation. An async result from an earlier
      generation — a late thread load, a late reading — is dropped, never applied to the conversation now on screen. */
   const conversationGenRef = useRef(0);
@@ -534,6 +548,7 @@ function ScopedWorkConversation({
         }
         setThreadId(r.threadId);
         setThread(r.thread);
+        setAnswerRead({ gen, turns: r.thread.turns.length, read: r.read ?? [] });
         if (onRead && manuscriptId) onRead(r.read ?? []);
         return;
       }
@@ -596,7 +611,8 @@ function ScopedWorkConversation({
       data-maia-focus={focusMode ? 'true' : 'false'}
       style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}
     >
-      {!hideHoldings && manuscriptId ? <ReadScopeControl manuscriptId={manuscriptId} /> : null}
+      {/* D3 (ruling A): with holdings hidden, an ACTIVE permission is still shown with its Stop; the unset choice stays behind More. */}
+      {manuscriptId ? <ReadScopeControl manuscriptId={manuscriptId} compact={hideHoldings} /> : null}
       {!hideHoldings ? <SettledDecisions workId={work.id} /> : null}
       {/* ── The Work this exchange is in, where the member can see it. ── */}
       {showSecondary && <div
@@ -744,6 +760,14 @@ function ScopedWorkConversation({
             >
               {t.speaker === 'maia' ? parseStudioActions(t.body, 'work-conversation').text : t.body}
             </StudioText>
+            {/* D3 (R3.4.4 ruling A, 2026-11-19): every answer shows which saved sections MAIA read for it. Hosts that show
+                this themselves (onRead, e.g. the Develop stage) keep theirs; everywhere else it is said here, under her answer. */}
+            {!onRead && t.speaker === 'maia' && t.index === latestMaiaIndex && answerRead
+              && answerRead.gen === conversationGenRef.current && answerRead.turns === turns.length ? (
+              <StudioText role="metadata" as="p" data-answer-read={answerRead.read.length > 0 ? 'sections' : 'none'}>
+                {answerReadSentence(answerRead.read)}
+              </StudioText>
+            ) : null}
             {(() => {
               /* Design 1B: only MAIA's latest reply may offer a control, and only
                  one this room can honour. Clicking only takes the writer there. */
