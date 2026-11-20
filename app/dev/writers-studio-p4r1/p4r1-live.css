@@ -5396,3 +5396,10 @@
   .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-mbody > :not([data-write-conversation-beside='true']){flex:0 0 auto}
   .p4r1-root .fr-maia .fr-mbody > [data-write-conversation-beside='true']{flex:1 1 auto;min-height:0;height:auto}
 }
+/* Contract, item 6 (guide yields): while talking, MAIA's column header keeps her name and drops its subtitle, and the column body's
+   top padding tightens. 900x600 walk 2026-11-19: fixed chrome left the messages 18px. */
+@media(min-width:721px){
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-maia-head{height:44px}
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-maia-name span{display:none}
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-mbody{padding-top:10px}
+}
