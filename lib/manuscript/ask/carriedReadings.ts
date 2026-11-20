@@ -10,7 +10,7 @@
  * (sha256 of the stored section text, the same bytes her reading digested), so no chapter text is loaded into the app to answer it.
  */
 import { query } from '@/lib/db/postgres';
-import { selectSections, type SectionHeadLite } from './workReadScope';
+import { asksWholeWork, sectionsNamedIn, type SectionHeadLite } from './workReadScope';
 
 /* "here" scope (the passage the writer is at, or chapters named): the G6 limits, unchanged. */
 export const MAX_CARRIED_READINGS = 3;
@@ -197,7 +197,14 @@ export function pickCarried<T extends { lens: string; frozenAt: string; bodySect
 
 /** PURE: the chapters in play for a question: where the writer is, chapters named in the question, or all of them for a whole-book question. */
 export function chaptersInPlay(question: string, locusId: string | null, sections: readonly SectionHeadLite[]): string[] {
-  return [...selectSections({ level: 'work', question, locusId, sections, sizes: new Map() }).ids];
+  /* Unchanged behaviour (WS-STEP4 A is about SAVED text only): this picks which earlier readings to carry, by wording. */
+  const known = new Set(sections.map((s) => s.id));
+  const out: string[] = [];
+  const add = (id: string) => { if (known.has(id) && !out.includes(id)) out.push(id); };
+  if (locusId) add(locusId);
+  for (const id of sectionsNamedIn(question, sections)) add(id);
+  if (asksWholeWork(question)) for (const s of sections) add(s.id);
+  return out;
 }
 
 export const READINGS_SEARCHED = 30;

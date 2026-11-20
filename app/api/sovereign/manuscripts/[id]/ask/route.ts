@@ -691,8 +691,9 @@ async function workTurn(input: {
   const grant = (posture.sanctuary || !postureKnown) ? null : await loadActiveGrant(memberId, built.facts.work.id);
   if (grant && built.facts.manuscript) {
     const sizes = await loadSectionSizes(manuscriptId, memberId);
+    /* WS-STEP4 A: the writer's declared "About" scope governs which saved sections are read, within the server-held grant. */
     const picked = selectSections({
-      level: grant.level, question, locusId: sectionId,
+      level: grant.level, scope: carryScope, question, locusId: sectionId,
       sections: built.facts.sections, sizes,
     });
     /* Bound the number of receipts minted per Ask; the rest is reported as not supplied. */

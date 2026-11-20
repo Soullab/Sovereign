@@ -47,10 +47,10 @@ describe('the stage conversation is one conversation', () => {
     expect(VIEW).toMatch(/onStarter=\{placeInStageConversation\}/);
     expect(VIEW).toMatch(/onAskAbout=\{\(words\) => placeInStageConversation\(/);
   });
-  it('⭐ MUST FAIL IF placed words replace the writer\'s own unsent text: they are added below it', () => {
-    const effect = CONV.slice(CONV.indexOf('const placedRef'), CONV.indexOf('}, [placeDraft, starter]);'));
-    expect(effect).toMatch(/if \(current\.length === 0 \|\| current === starter\) \{ setDraft\(text\); setStarter\(text\); \}/);
-    expect(effect).toMatch(/else setDraft\(`\$\{current\}\\n\\n\$\{text\}`\);/);
+  it('⭐ MUST FAIL IF placed words touch the writer\'s own unsent text: they become a suggestion outside the box (WS-STEP4 B)', () => {
+    const effect = CONV.slice(CONV.indexOf('const placedRef'), CONV.indexOf('}, [placeDraft]);'));
+    expect(effect).toMatch(/if \(placeDraft\.text\.trim\(\)\) setSuggestion\(placeDraft\.text\);/);
+    expect(effect).not.toMatch(/setDraft\(/);
     expect(effect).not.toMatch(/ask\(|send\(/);
   });
 });

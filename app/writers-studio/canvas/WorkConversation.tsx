@@ -37,6 +37,7 @@ import {
 import { setStudioReadingSize } from '@/lib/writersStudio/readingSizePreference';
 import { CONVERSATION_DEPARTURE_EVENT, requestConversationDeparture } from '@/lib/writersStudio/conversationDeparture';
 import { WRITER_CORRECTION_KINDS, WRITER_CORRECTION_LABEL, type WriterCorrectionKind } from '@/lib/writersStudio/writerCorrections';
+import { CORRECTION_OFFER_ACCEPT, CORRECTION_OFFER_COPY, CORRECTION_OFFER_DECLINE, correctionOfferFor } from '@/lib/writersStudio/correctionOffer';
 import { studioPathById } from '@/lib/writersStudio/studioPaths';
 
 /**
@@ -142,6 +143,17 @@ const REORIENTATION_PROMPT = [
   'If any of that is unknown, say so. Do not introduce a new interpretation yet.',
 ].join('\n');
 
+/**
+ * D3 (R3.4.4 founder ruling A, 2026-11-19): the per-answer disclosure. `read` is exactly what the server says it handed MAIA
+ * (WS-WORK-CONTINUITY Part B receipts); nothing here infers or widens it. "None of your saved work" is said plainly, because
+ * without a permission (or in Sanctuary) that is the truth, and it is the writer's assurance.
+ */
+export function answerReadSentence(read: readonly { sectionId: string; label: string | null }[]): string {
+  if (read.length === 0) return 'For this answer MAIA read none of your saved work.';
+  const names = read.map((s) => s.label?.trim() || 'an untitled section');
+  return `For this answer MAIA read your saved ${names.length === 1 ? 'section' : 'sections'}: ${names.join(', ')}.`;
+}
+
 /* Review (2026-11-09): a failed Teach me never touched the box, so it must not say the question is still there. */
 const TEACH_NOT_ANSWERED = 'MAIA couldn’t answer the Teach me this time. Nothing you wrote was changed; press it again when you’re ready.';
 const REFUSAL_SAYS: Record<string, string> = {
@@ -170,7 +182,7 @@ export interface WorkConversationProps {
    * it is handed to the server on each turn and it is not part of the anchor.
    */
   sectionId: string | null;
-  /** Optional member-facing starter held in the composer. Never auto-sent. */
+  /** Optional member-facing starter, offered OUTSIDE the composer as a suggestion ("Use this"). Never auto-sent. Never placed in the box by itself. */
   initialDraft?: string;
   /**
    * The draft opens a NEW topic the writer brought from elsewhere (e.g. "Show MAIA this note" from a College Essay stage). When the
@@ -178,10 +190,9 @@ export interface WorkConversationProps {
    * 2026-11-16). One existing conversation is still continued, exactly as before. Never sends anything by itself.
    */
   startFresh?: boolean;
-  /** Place words into the EXISTING composer (a starter, or the writer's selected words) without re-creating the conversation.
-   *  A new `n` places `text` once: into an empty composer it replaces; after the writer's own unsent text it is added below, never
-   *  replacing it. Never sent. (Founder P0 direction 2026-11-11: a late or placed text must not reset the conversation or clear
-   *  the writer's unsent prompt.) */
+  /** Offer words (a starter, or the writer's selected words) to the EXISTING conversation without re-creating it. A new `n` shows
+   *  `text` once as the suggestion outside the composer; the composer itself is never touched (WS-STEP4 B). Never sent. (Founder P0
+   *  direction 2026-11-11: a late or placed text must not reset the conversation or clear the writer's unsent prompt.) */
   placeDraft?: { text: string; n: number };
   /** Design 1B: open a Develop place MAIA offered (navigation only). Absent → no such button. */
   onStudioPlace?: (place: 'develop-overview' | 'editorial-pass') => void;
@@ -247,6 +258,9 @@ function ScopedWorkConversation({
   /* Sanctuary exchanges: shown for this moment only, held in this component's memory, never stored anywhere. */
   /* `after` = how many kept turns the conversation had when this exchange happened, so it is shown in its place in time. */
   const [sanctuaryTurns, setSanctuaryTurns] = useState<{ question: string; answer: string; after: number }[]>([]);
+  /* D3: which saved sections the server handed MAIA for her latest answer (ids + headings, never text), tied to the conversation
+     generation and the turn count it arrived with, so it is never shown under a different answer or conversation. */
+  const [answerRead, setAnswerRead] = useState<{ gen: number; turns: number; read: readonly { sectionId: string; label: string | null }[] } | null>(null);
   /* ⭐ G4 isolation: every switch of conversation (adopt, start fresh) starts a new generation. An async result from an earlier
      generation — a late thread load, a late reading — is dropped, never applied to the conversation now on screen. */
   const conversationGenRef = useRef(0);
@@ -292,27 +306,33 @@ function ScopedWorkConversation({
     setActStatus({ busy: false, text: r.ok ? r.text : r.message });
   }, [onStudioAct]);
 
-  const [draft, setDraft] = useState(initialDraft);
+  /* WS-STEP4 B (founder decision B, 2026-11-20): the composer holds ONLY the writer's own words. It always opens empty. A starter
+     the Studio offers (the starter prop, or a placed text) is shown OUTSIDE the box as a suggestion and enters it only by the writer's
+     explicit "Use this", never merged into text she has typed (Benchmark 01: a pre-filled starter merged with S4/S6). */
+  const [draft, setDraft] = useState('');
+  const [suggestion, setSuggestion] = useState<string | null>(initialDraft.trim() ? initialDraft : null);
   /* WS-WHOLE-BOOK-CONVERSATION (founder approval 2026-11-10, D1): the writer DECLARES what a question is about. "where I am" is the
      default; "the whole book" carries her complete account. ⛔ A phrase in the draft may only OFFER the whole book, never switch to it. */
   /* Held in component state only: this surface reads and writes no browser storage (identity-is-server-truth law). It lasts while the
      conversation is open and resets to "where I am" when it is reopened. */
   const [carryScope, setCarryScope] = useState<'here' | 'whole_book'>('here');
   const offerWholeBook = carryScope === 'here' && WHOLE_BOOK_OFFER.test(draft);
-  // The Studio's starter, as placed; never sent on its own.
-  const [starter, setStarter] = useState(initialDraft);
+  /* A new `placeDraft.n` offers its text as the suggestion; it never touches the composer, so a late or placed text can neither
+     reset the conversation nor alter the writer's unsent words (founder P0 direction 2026-11-11 still holds). */
   const placedRef = useRef(placeDraft?.n ?? 0);
-  const draftNowRef = useRef(draft);
-  draftNowRef.current = draft;
   useEffect(() => {
     if (!placeDraft || placeDraft.n === placedRef.current) return;
     placedRef.current = placeDraft.n;
-    const text = placeDraft.text;
-    if (!text) return;
-    const current = draftNowRef.current;
-    if (current.length === 0 || current === starter) { setDraft(text); setStarter(text); }
-    else setDraft(`${current}\n\n${text}`);
-  }, [placeDraft, starter]);
+    if (placeDraft.text.trim()) setSuggestion(placeDraft.text);
+  }, [placeDraft]);
+  /* "Use this": into an empty composer it is placed; over the writer's own words it replaces them only if she confirms. Never appended. */
+  const useSuggestion = useCallback(() => {
+    if (suggestion === null) return;
+    if (draft.length > 0 && !window.confirm('Replace what you have written with this suggestion?')) return;
+    draftRevisionRef.current += 1;
+    setDraft(suggestion);
+    setSuggestion(null);
+  }, [suggestion, draft]);
   const [reorientationOffered, setReorientationOffered] = useState(false);
   const [presentationConfirmation, setPresentationConfirmation] = useState<SafePresentationProposal | null>(null);
   const [presentationNotice, setPresentationNotice] = useState<string | null>(null);
@@ -323,6 +343,8 @@ function ScopedWorkConversation({
   const [correctionDraft, setCorrectionDraft] = useState('');
   const [correctionBusy, setCorrectionBusy] = useState(false);
   const [correctionStatus, setCorrectionStatus] = useState<string | null>(null);
+  /* Correction offer (2026-11-19): MAIA turns whose offer the writer has answered (accepted or "Not now"), so it never nags. */
+  const [offerAnswered, setOfferAnswered] = useState<ReadonlySet<number>>(() => new Set());
   const endRef = useRef<HTMLDivElement | null>(null);
   // A draft belongs to its edit generation, not to text equality.
   const draftRevisionRef = useRef(0);
@@ -332,9 +354,8 @@ function ScopedWorkConversation({
   useEffect(() => {
     // Unsent text stays in the mounted conversation. Leaving is an explicit
     // discard; neither browser storage nor a server turn is created for it.
-    // A starter the Studio placed in the box is not the writer's text until they
-    // change it; counting it trapped every other button behind a discard prompt.
-    const writerDraft = draft.length > 0 && draft !== starter;
+    // The box holds only the writer's words (a suggestion lives outside it), so any text in it is hers.
+    const writerDraft = draft.length > 0;
     const hasUnsentText = writerDraft || correctionDraft.length > 0 || pending !== null;
     if (!hasUnsentText) return;
     const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
@@ -353,7 +374,7 @@ function ScopedWorkConversation({
       window.removeEventListener('beforeunload', warnBeforeLeaving);
       window.removeEventListener(CONVERSATION_DEPARTURE_EVENT, confirmDeparture);
     };
-  }, [draft, starter, correctionDraft, pending]);
+  }, [draft, correctionDraft, pending]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
@@ -534,6 +555,7 @@ function ScopedWorkConversation({
         }
         setThreadId(r.threadId);
         setThread(r.thread);
+        setAnswerRead({ gen, turns: r.thread.turns.length, read: r.read ?? [] });
         if (onRead && manuscriptId) onRead(r.read ?? []);
         return;
       }
@@ -596,7 +618,13 @@ function ScopedWorkConversation({
       data-maia-focus={focusMode ? 'true' : 'false'}
       style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}
     >
-      {!hideHoldings && manuscriptId ? <ReadScopeControl manuscriptId={manuscriptId} /> : null}
+      {/* D3 (ruling A): with holdings hidden, an ACTIVE permission is still shown with its Stop; the unset choice stays behind More. */}
+      {/* Founder ruling 2026-11-19 (WS B0 + D3 laptop experience): elsewhere the permission is one persistent status line (Change,
+          and Stop always visible when active), not a choice put to the writer before they have said anything. The choice is offered
+          when they turn to the whole book, where a reading permission could serve the question. */}
+      {manuscriptId ? (hideHoldings
+        ? <ReadScopeControl manuscriptId={manuscriptId} compact />
+        : <ReadScopeControl manuscriptId={manuscriptId} status offerNow={carryScope === 'whole_book'} />) : null}
       {!hideHoldings ? <SettledDecisions workId={work.id} /> : null}
       {/* ── The Work this exchange is in, where the member can see it. ── */}
       {showSecondary && <div
@@ -608,11 +636,13 @@ function ScopedWorkConversation({
           borderBottom: `1px solid ${RULE.soft}`, flexWrap: 'wrap',
         }}
       >
-        <StudioText role="metadata" as="span" tone="quiet">In relation to</StudioText>
-        <StudioText role="navItem" as="span" tone="secondary">
+        {/* data-situated-label: at laptop widths MAIA's column already names the Work, so this label steps aside (CSS) and the
+            conversation's controls keep to one row (founder ruling 2026-11-19, laptop experience). */}
+        <StudioText role="metadata" as="span" tone="quiet" data-situated-label="true">In relation to</StudioText>
+        <StudioText role="navItem" as="span" tone="secondary" data-situated-label="true">
           {work.title ?? 'your work'}
         </StudioText>
-        <span style={{ flex: 1 }} />
+        <span style={{ flex: 1 }} data-situated-label="true" />
         <button
           type="button"
           onClick={reorient}
@@ -744,6 +774,14 @@ function ScopedWorkConversation({
             >
               {t.speaker === 'maia' ? parseStudioActions(t.body, 'work-conversation').text : t.body}
             </StudioText>
+            {/* D3 (R3.4.4 ruling A, 2026-11-19): every answer shows which saved sections MAIA read for it. Hosts that show
+                this themselves (onRead, e.g. the Develop stage) keep theirs; everywhere else it is said here, under her answer. */}
+            {!onRead && t.speaker === 'maia' && t.index === latestMaiaIndex && answerRead
+              && answerRead.gen === conversationGenRef.current && answerRead.turns === turns.length ? (
+              <StudioText role="metadata" as="p" data-answer-read={answerRead.read.length > 0 ? 'sections' : 'none'}>
+                {answerReadSentence(answerRead.read)}
+              </StudioText>
+            ) : null}
             {(() => {
               /* Design 1B: only MAIA's latest reply may offer a control, and only
                  one this room can honour. Clicking only takes the writer there. */
@@ -797,6 +835,43 @@ function ScopedWorkConversation({
                 >
                   <StudioText role="metadata" as="span">{offered.id === 'grant-reading' && parsed.level === 'work' ? 'Let MAIA read my whole saved work' : offered.id === 'grant-reading' ? 'Let MAIA read this saved chapter' : offered.id === 'show' && (SHOW_PLACES as readonly string[]).includes(parsed.target ?? '') ? showLabel(parsed.target as ShowPlace) : offered.id === 'go-chapter' ? `Go to ${chapterName}` : offered.label}</StudioText>
                 </button>
+              );
+            })()}
+            {(() => {
+              /* Correction offer (WS real-model walk 01): a plain-words disagreement was revised in the moment but lost in the next
+                 conversation; kept through "Correct MAIA" it carried. So under MAIA's LATEST reply to a message that plainly
+                 disagreed, offer to keep it. Accepting only opens the existing form with the writer's own words and a pre-selected
+                 kind; nothing is kept until they press "Keep correction". Kept turns only (Sanctuary exchanges are never kept turns),
+                 and never while Sanctuary is on or the posture is undeclared. */
+              if (t.speaker !== 'maia' || !threadId || t.index !== latestMaiaIndex || correctingTurn === t.index) return null;
+              if (offerAnswered.has(t.index)) return null;
+              const prev = position > 0 ? turns[position - 1] : null;
+              if (!prev || prev.speaker !== 'author') return null;
+              const offer = correctionOfferFor(prev.body);
+              const posture = readCurrentSanctuaryPosture();
+              if (!offer || !posture.resolved || posture.sanctuary) return null;
+              const answer = (accept: boolean) => {
+                setOfferAnswered((s) => new Set(s).add(t.index));
+                if (!accept) return;
+                setCorrectingTurn(t.index);
+                setCorrectionKind(offer.kind);
+                setCorrectionDraft(prev.body.trim());
+                setCorrectionStatus(null);
+              };
+              return (
+                <div data-correction-offer={t.index} role="status"
+                  style={{ marginTop: SPACE.tight, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: SPACE.tight }}>
+                  <StudioText role="metadata" tone="secondary" as="span">{CORRECTION_OFFER_COPY}</StudioText>
+                  <button type="button" data-correction-offer-accept="true" onClick={() => answer(true)}
+                    style={{ background: 'transparent', border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm,
+                      padding: `${SPACE.hairline}px ${SPACE.tight}px`, cursor: 'pointer', color: INK.secondary }}>
+                    <StudioText role="metadata" as="span">{CORRECTION_OFFER_ACCEPT}</StudioText>
+                  </button>
+                  <button type="button" data-correction-offer-decline="true" onClick={() => answer(false)}
+                    style={{ background: 'transparent', border: 0, cursor: 'pointer', color: INK.quiet }}>
+                    <StudioText role="metadata" as="span">{CORRECTION_OFFER_DECLINE}</StudioText>
+                  </button>
+                </div>
               );
             })()}
             {t.speaker === 'maia' && threadId ? (
@@ -1035,6 +1110,23 @@ function ScopedWorkConversation({
             ) : null}
           </div>
         ) : null}
+        {suggestion !== null ? (
+          <div data-composer-starter="true" role="group" aria-label="Suggested start"
+            style={{ border: `1px dashed ${RULE.soft}`, borderRadius: RADIUS.sm, padding: SPACE.snug, marginBottom: SPACE.tight }}>
+            <StudioText role="metadata" tone="quiet" as="span">Suggested start (not in your message)</StudioText>
+            <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', margin: '6px 0' }}>{suggestion}</p>
+            <div style={{ display: 'flex', gap: SPACE.tight }}>
+              <button type="button" data-composer-starter-use="true" onClick={useSuggestion}
+                style={{ fontSize: 12, padding: '2px 8px', borderRadius: RADIUS.sm, border: `1px solid ${INK.primary}`, background: 'transparent', color: INK.primary, cursor: 'pointer' }}>
+                Use this
+              </button>
+              <button type="button" data-composer-starter-dismiss="true" onClick={() => setSuggestion(null)}
+                style={{ fontSize: 12, padding: '2px 8px', border: 'none', background: 'transparent', color: INK.secondary, textDecoration: 'underline', cursor: 'pointer' }}>
+                Not now
+              </button>
+            </div>
+          </div>
+        ) : null}
         <textarea
           value={draft}
           onChange={(e) => { draftRevisionRef.current += 1; setDraft(e.target.value); setPresentationConfirmation(null); setPresentationNotice(null); }}
@@ -1047,6 +1139,7 @@ function ScopedWorkConversation({
           placeholder={WORK_CONVERSATION_PLACEHOLDER}
           rows={3}
           aria-label="Message MAIA"
+          data-maia-composer-input="true"
           data-send-mode={mode.kind === 'blocked' ? `blocked:${mode.why}` : mode.kind}
           style={{
             ...typeStyle('maiaReading'), width: '100%', resize: 'vertical',
