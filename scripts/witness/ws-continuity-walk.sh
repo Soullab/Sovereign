@@ -24,8 +24,29 @@ down() {
   [ -f "$STATE/next.pid" ] && kill "$(cat "$STATE/next.pid")" 2>/dev/null || true
   [ -f "$STATE/stub.pid" ] && kill "$(cat "$STATE/stub.pid")" 2>/dev/null || true
   [ -d "$STATE/pg" ] && "$PGBIN/pg_ctl" -D "$STATE/pg" -m immediate stop >/dev/null 2>&1 || true
+  # VERIFY, don't assume (2026-11-19: a run printed "stopped" while its Postgres, stand-in model and next-server were still
+  # listening; `npx` records its own pid, and the next-server grandchild was recorded only if it was already listening).
+  # Anything still listening on this harness's ports is stopped ONLY if it is provably this run's: its command line names this
+  # STATE, or its working directory is this worktree. Anything else is left alone and reported.
+  sleep 1
+  local port pid cmd cwd left=""
+  for port in "$PGPORT" "$APPPORT" "$STUBPORT"; do
+    for pid in $(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null); do
+      cmd=$(ps -o command= -p "$pid" 2>/dev/null || true)
+      cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' || true)
+      case "$cmd|$cwd" in *"$STATE"*|*"|$ROOT"|*"|$ROOT/"*) kill "$pid" 2>/dev/null || true ;; esac
+    done
+  done
+  sleep 1
+  for port in "$PGPORT" "$APPPORT" "$STUBPORT"; do
+    for pid in $(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null); do left="$left $port:$pid"; done
+  done
+  if [ -n "$left" ]; then
+    echo "walk harness NOT fully stopped: still listening on a harness port:$left. State kept at $STATE for inspection." >&2
+    return 4
+  fi
   case "$STATE" in /tmp/ws-continuity-walk*) rm -rf "$STATE";; esac
-  echo "walk harness stopped; state removed."
+  echo "walk harness stopped (ports $PGPORT, $APPPORT, $STUBPORT verified free); state removed."
 }
 
 write_stub() {

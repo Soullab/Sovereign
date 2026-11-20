@@ -120,6 +120,11 @@ export type WriteRoomProps = {
   onCanvasChange: (canvas: boolean) => void;
   onAct?: (act: string) => void;
   live?: WriteRoomLivePorts;
+  /**
+   * The writer's own line from "What's calling this one?" (living_works.purpose), shown above their page (live walk
+   * WS-LIVE-WALK-01 W11: the idea was kept but appeared nowhere inside the Work). Display only; never sent or edited here.
+   */
+  spark?: string | null;
 };
 
 /** A saved selection, as live DOM positions inside the editor. */
@@ -130,7 +135,7 @@ function countWords(text: string): number {
   return t ? t.split(/\s+/).length : 0;
 }
 
-export function WriteRoom({ fixture, copy, canvas, onCanvasChange, onAct, live }: WriteRoomProps) {
+export function WriteRoom({ fixture, copy, canvas, onCanvasChange, onAct, live, spark }: WriteRoomProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const held = useRef<Held | null>(null);
   const liveRef = useRef<WriteRoomLivePorts | undefined>(live);
@@ -263,6 +268,12 @@ export function WriteRoom({ fixture, copy, canvas, onCanvasChange, onAct, live }
 
       <div className="fr-write-scroll">
         <div className="fr-write-page">
+          {spark?.trim() ? (
+            <p className="fr-write-spark" data-write-spark="true"
+              style={{ margin: '0 0 6px', fontStyle: 'italic', opacity: 0.72, fontSize: '0.95em' }}>
+              What’s calling this one: “{spark.trim()}”
+            </p>
+          ) : null}
           <h1 className="fr-write-title">{fixture.title}</h1>
           {fixture.activeStatus === 'conflict' ? (
             <p className="fr-write-ch-title" data-conflict-marker-section role="note">

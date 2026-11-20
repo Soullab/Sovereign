@@ -5402,3 +5402,27 @@
 @media(min-width:721px) and (max-height:760px){
   .p4r1-root .fr-maia [data-maia-focus='false'] [data-maia-composer='true'] textarea{min-height:52px!important}
 }
+
+/* CONVERSATION SPACE CONTRACT (founder direction 2026-11-19). While a conversation is open in MAIA's column:
+   1. the manuscript is untouched (it is its own grid track, never resized for MAIA beyond the column clamp);
+   2. the conversation owns the column's vertical space (it is the only flexible child of the column body);
+   3. its composer stays inside the column;
+   4./5. permission status and settled decisions are the D3 follow-on's (compact line; decisions overlay, never compress);
+   6. the guide, letter and footer yield: the relationship note and footer step aside, the letter is one line, on demand.
+   One rule set for every width above a phone; phones (<=720px) keep their stacked order, page first. */
+.p4r1-root .fr-maia:has([data-write-conversation-beside='true']) [data-p4r1-maia-relationship]{display:none}
+.p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-foot{display:none}
+.p4r1-root .fr-maia [data-write-letter='true'][data-letter-yields='true'] > :not([data-write-letter-toggle]){display:none}
+.p4r1-root .fr-maia [data-write-letter='true'][data-letter-yields='false'] > [data-write-letter-toggle] ~ *{max-height:40vh;overflow:auto}
+@media(min-width:721px){
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-mbody{display:flex;flex-direction:column;overflow:hidden}
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-mbody > :not([data-write-conversation-beside='true']){flex:0 0 auto}
+  .p4r1-root .fr-maia .fr-mbody > [data-write-conversation-beside='true']{flex:1 1 auto;min-height:0;height:auto}
+}
+/* Contract, item 6 (guide yields): while talking, MAIA's column header keeps her name and drops its subtitle, and the column body's
+   top padding tightens. 900x600 walk 2026-11-19: fixed chrome left the messages 18px. */
+@media(min-width:721px){
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-maia-head{height:44px}
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-maia-name span{display:none}
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-mbody{padding-top:10px}
+}

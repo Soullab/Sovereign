@@ -710,9 +710,9 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
 }
 /* Laptop widths, write mode (beta evidence 2026-11: a MacBook Air window under 1024px showed an empty centre labelled "Talking with
    MAIA" while the conversation was crammed to the side). The earlier override set `rail | page | 0` and never re-placed MAIA's column,
-   so the tablet rule dropped it onto the page's track. Here MAIA keeps a column of her own, the chapter rail becomes a slim strip
-   above the page, and when the conversation is open in the centre it takes the whole width: the stage. "Back to the page" restores
-   the rail and the guide. Phones (<=720px) keep their own one-column order below. */
+   so the tablet rule dropped it onto the page's track. Here MAIA keeps a column of her own and the chapter rail becomes a slim strip
+   above the page. B0 (founder ruling 2026-11-19): the conversation lives in MAIA's column, so the page is never hidden for it; the
+   former "stage" rules that hid the rail and MAIA's column are removed. Phones (<=720px) keep their own one-column order below. */
 @media (min-width: 721px) and (max-width: 1023px) {
   .fr-shell[data-mode='write'] .fr-room { grid-template-columns: minmax(0, 1fr) min(var(--fr-maia-w), 340px); grid-template-rows: auto minmax(0, 1fr); row-gap: 10px; }
   .fr-shell[data-mode='write'] .fr-manuscript { grid-column: 1; grid-row: 1; max-height: 160px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--fr-field-line); }
@@ -721,10 +721,9 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
   .fr-shell[data-mode='write'][data-left-open='false'] .fr-manuscript { display: none; }
   .fr-shell[data-mode='write'][data-canvas='full'] .fr-room { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .fr-shell[data-mode='write'][data-canvas='full'] .fr-work { grid-row: 1; }
-  .fr-shell[data-mode='write']:has([data-write-centre-conversation='true']) .fr-room { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); row-gap: 0; }
-  .fr-shell[data-mode='write']:has([data-write-centre-conversation='true']) .fr-manuscript { display: none; }
-  .fr-shell[data-mode='write']:has([data-write-centre-conversation='true']) .fr-maia { display: none; }
-  .fr-shell[data-mode='write']:has([data-write-centre-conversation='true']) .fr-work { grid-column: 1; grid-row: 1; }
+  /* B0 laptop follow-up (founder ruling 2026-11-19): while a conversation is open in MAIA's column it gets room to be read and
+     answered (at least 340px, at most 42vw); the page keeps the rest and stays primary. A writer's own wider width is kept. */
+  .fr-shell[data-mode='write']:has([data-write-conversation-beside='true']) .fr-room { grid-template-columns: minmax(0, 1fr) clamp(340px, var(--fr-maia-w), 42vw); }
 }
 @media (max-width: 720px) {
   .fr-shell[data-mode='write'] .fr-room { display: flex; flex-direction: column; gap: 0; padding: 0; }
@@ -1064,3 +1063,9 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
    save state ("Sectio●Saved"). The crumb now yields: it may take at most half the row and truncates with an ellipsis. */
 .fr-write-crumb { max-width: 50%; min-width: 0; overflow: hidden; }
 .fr-write-crumb > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* B0 (founder ruling 2026-11-19): at desktop widths too, an open conversation gets at least 340px of MAIA's column (at most
+   40vw); the manuscript rail and the page keep the rest. A writer's own wider width is kept, and Focus (p4r1-live.css) still
+   widens it further. 1440px walk: with the default 250px column the messages had 5px. */
+@media (min-width: 1024px) {
+  .fr-shell[data-mode='write']:has([data-write-conversation-beside='true']) .fr-room { grid-template-columns: var(--fr-ms-w) minmax(0, 1fr) clamp(340px, var(--fr-maia-w), 40vw); }
+}
