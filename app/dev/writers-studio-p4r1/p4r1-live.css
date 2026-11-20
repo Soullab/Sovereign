@@ -3802,6 +3802,8 @@
    The composer starts at three lines and grows with what is typed (it stays resizable); Focus keeps its larger box. */
 @media(min-width:761px) and (max-width:1279px){
   .p4r1-root [data-maia-focus='false'] [data-maia-composer='true'] textarea{min-height:76px!important;max-height:180px!important}
+  .p4r1-root .fr-maia [data-studio-conversation='situated'] [data-situated-label='true']{display:none}
+  .p4r1-root .fr-maia [data-studio-conversation='situated']{gap:6px!important;margin-bottom:6px!important;padding-bottom:6px!important}
 }
 
 /* WRITE PROSE VIEW — the chapter reads like a book; edit machinery stays one gesture away. */
