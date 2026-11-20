@@ -68,3 +68,23 @@ describe('relationship visibility on return (WS-LIVE-WALK-01 W5)', () => {
     expect(eff).not.toMatch(/\bask\(|askLivingWork\(|adopt\(|method: 'POST'/);
   });
 });
+
+describe('conversation space contract (founder direction 2026-11-19)', () => {
+  const css = read('app/dev/writers-studio-p4r1/p4r1-live.css');
+  const contract = css.slice(css.indexOf('CONVERSATION SPACE CONTRACT'));
+  it('⭐ MUST FAIL IF the open conversation is not the only flexible child of MAIA\'s column body', () => {
+    expect(contract).toMatch(/\.fr-mbody\{display:flex;flex-direction:column;overflow:hidden\}/);
+    expect(contract).toMatch(/\.fr-mbody > :not\(\[data-write-conversation-beside='true'\]\)\{flex:0 0 auto\}/);
+    expect(contract).toMatch(/\.fr-mbody > \[data-write-conversation-beside='true'\]\{flex:1 1 auto;min-height:0;height:auto\}/);
+  });
+  it('the letter yields while talking: one line, on demand, still mounted', () => {
+    expect(view).toMatch(/data-letter-yields=\{workConversationOpen && !letterShownWhileTalking \? 'true' : 'false'\}/);
+    expect(contract).toMatch(/\[data-letter-yields='true'\] > :not\(\[data-write-letter-toggle\]\)\{display:none\}/);
+    expect(view).toMatch(/if \(!workConversationOpen\) setLetterShownWhileTalking\(false\)/);
+  });
+  it('the footer and the relationship note step aside at every width while a conversation is open', () => {
+    expect(contract).toMatch(/:has\(\[data-write-conversation-beside='true'\]\) \.fr-foot\{display:none\}/);
+    expect(contract).toMatch(/:has\(\[data-write-conversation-beside='true'\]\) \[data-p4r1-maia-relationship\]\{display:none\}/);
+    expect(contract).not.toMatch(/max-width:1279px/);
+  });
+});

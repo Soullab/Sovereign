@@ -5380,16 +5380,19 @@
 .p4r1-stage-diff del { opacity: .7; }
 .p4r1-stage-diff ins { text-decoration: underline; text-decoration-thickness: 2px; }
 
-/* B0 laptop follow-up (founder ruling 2026-11-19, "WS B0 + D3 laptop experience"): with a conversation open in MAIA's column the
-   conversation gets the space. The relationship note ("a continuing thread… is optional") is redundant while one is open. Below
-   1280px the column footer steps aside and MAIA's letter stays in view as a short scrollable strip (2026-11-12: the letter stays
-   in view while the writer talks). The page is never touched. */
+/* CONVERSATION SPACE CONTRACT (founder direction 2026-11-19). While a conversation is open in MAIA's column:
+   1. the manuscript is untouched (it is its own grid track, never resized for MAIA beyond the column clamp);
+   2. the conversation owns the column's vertical space (it is the only flexible child of the column body);
+   3. its composer stays inside the column;
+   4./5. permission status and settled decisions are the D3 follow-on's (compact line; decisions overlay, never compress);
+   6. the guide, letter and footer yield: the relationship note and footer step aside, the letter is one line, on demand.
+   One rule set for every width above a phone; phones (<=720px) keep their stacked order, page first. */
 .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) [data-p4r1-maia-relationship]{display:none}
-@media(max-width:1279px){
-  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-foot{display:none}
-  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) [data-write-letter='true']{max-height:72px;overflow:auto}
+.p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-foot{display:none}
+.p4r1-root .fr-maia [data-write-letter='true'][data-letter-yields='true'] > :not([data-write-letter-toggle]){display:none}
+.p4r1-root .fr-maia [data-write-letter='true'][data-letter-yields='false'] > [data-write-letter-toggle] ~ *{max-height:40vh;overflow:auto}
+@media(min-width:721px){
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-mbody{display:flex;flex-direction:column;overflow:hidden}
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-mbody > :not([data-write-conversation-beside='true']){flex:0 0 auto}
+  .p4r1-root .fr-maia .fr-mbody > [data-write-conversation-beside='true']{flex:1 1 auto;min-height:0;height:auto}
 }
-/* B0 laptop follow-up: the open conversation fills what is LEFT of MAIA's column below the coverage line and letter, so its
-   composer and Send stay inside the window (900px walk 2026-11-19: Send sat below the fold). */
-.p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-mbody{display:flex;flex-direction:column}
-.p4r1-root .fr-maia .fr-mbody > [data-write-conversation-beside='true']{flex:1 1 auto;min-height:0;height:auto}

@@ -365,6 +365,9 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
      instead of being greeted as on day one. Discovery only READS which threads exist (the same GET WorkConversation makes); it opens,
      adopts and sends nothing. An unavailable answer offers nothing, never "no conversations". Re-read when a conversation closes. */
   const [priorConversation, setPriorConversation] = useState<PriorConversationOffer>({ kind: 'none' });
+  /* Conversation space contract: the letter is on demand while a conversation is open; closing the conversation resets it. */
+  const [letterShownWhileTalking, setLetterShownWhileTalking] = useState(false);
+  useEffect(() => { if (!workConversationOpen) setLetterShownWhileTalking(false); }, [workConversationOpen]);
   const priorWorkId = props.work?.id ?? null;
   const priorManuscriptId = props.context.manuscriptId ?? null;
   useEffect(() => {
@@ -1468,7 +1471,16 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
           sections: props.context.sections.length,
           bodies: props.context.sections.map((section) => props.writing.bodyOf(section.draftSectionId)),
         }) ? (
-          <div data-write-letter="true" style={{ marginBottom: 12 }}>
+          <div data-write-letter="true" data-letter-yields={workConversationOpen && !letterShownWhileTalking ? 'true' : 'false'} style={{ marginBottom: 12 }}>
+            {/* Conversation space contract (founder direction 2026-11-19): while a conversation is open the letter yields to it and
+                is one line away, on demand. It stays mounted (nothing it holds is lost) and returns in full when the conversation
+                closes. */}
+            {workConversationOpen ? (
+              <button type="button" className="p4r1-talk" data-write-letter-toggle="true" aria-expanded={letterShownWhileTalking}
+                onClick={() => setLetterShownWhileTalking((v) => !v)} style={{ fontSize: 12, padding: '2px 10px', marginBottom: 6 }}>
+                {letterShownWhileTalking ? 'Hide MAIA’s letter' : 'MAIA’s letter'}
+              </button>
+            ) : null}
             <EditorialLetterPanel
               revisionsPaused={workRevisionsPaused}
               manuscriptId={props.context.manuscriptId}
