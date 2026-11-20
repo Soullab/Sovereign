@@ -38,6 +38,10 @@ import { setStudioReadingSize } from '@/lib/writersStudio/readingSizePreference'
 import { CONVERSATION_DEPARTURE_EVENT, requestConversationDeparture } from '@/lib/writersStudio/conversationDeparture';
 import { WRITER_CORRECTION_KINDS, WRITER_CORRECTION_LABEL, type WriterCorrectionKind } from '@/lib/writersStudio/writerCorrections';
 import { studioPathById } from '@/lib/writersStudio/studioPaths';
+import ShareExchangeOffer from './ShareExchangeOffer';
+import { useShareExchangeEnabled } from '@/lib/writersStudio/ShareExchangeContext';
+import { listMyShares } from '@/lib/writersStudio/sharedExchangesClient';
+import type { OwnShare } from '@/lib/writersStudio/sharedExchangesServer';
 
 /**
  * MAIA-CONVERGENCE-01 · CANVAS — MAIA's ordinary conversation about the Work,
@@ -323,6 +327,15 @@ function ScopedWorkConversation({
   const [correctionDraft, setCorrectionDraft] = useState('');
   const [correctionBusy, setCorrectionBusy] = useState(false);
   const [correctionStatus, setCorrectionStatus] = useState<string | null>(null);
+  /* Studio Academy slice 6 (built dark): which of MAIA's stored answers the writer has shared with Soullab. Loaded only when on. */
+  const shareEnabled = useShareExchangeEnabled();
+  const [shares, setShares] = useState<OwnShare[]>([]);
+  useEffect(() => {
+    if (!shareEnabled || !threadId) return;
+    let live = true;
+    void listMyShares(work.id).then((list) => { if (live) setShares(list); });
+    return () => { live = false; };
+  }, [shareEnabled, threadId, work.id]);
   const endRef = useRef<HTMLDivElement | null>(null);
   // A draft belongs to its edit generation, not to text equality.
   const draftRevisionRef = useRef(0);
@@ -878,6 +891,18 @@ function ScopedWorkConversation({
                   </div>
                 )}
               </div>
+            ) : null}
+            {shareEnabled && t.speaker === 'maia' && threadId ? (
+              <ShareExchangeOffer
+                workId={work.id}
+                threadId={threadId}
+                maiaTurnIndex={t.index}
+                question={turns[position - 1]?.index === t.index - 1 && turns[position - 1]?.speaker === 'author' ? turns[position - 1]!.body : null}
+                answer={parseStudioActions(t.body, 'work-conversation').text}
+                shared={shares.find((x) => x.threadId === threadId && x.maiaTurnIndex === t.index)}
+                onShared={(share) => setShares((list) => [...list.filter((x) => x.id !== share.id), share])}
+                onWithdrawn={(id) => setShares((list) => list.filter((x) => x.id !== id))}
+              />
             ) : null}
           </div>
           {position + 1 < turns.length ? sanctuaryAt((after) => after === position + 1) : null}

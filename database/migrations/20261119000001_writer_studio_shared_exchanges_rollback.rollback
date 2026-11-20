@@ -1,0 +1,30 @@
+-- Rollback for writer_studio_shared_exchanges.
+--
+-- ⭐ THE SUPPORTED ROLLBACK IS APP-ONLY: roll the image back and leave this table. Nothing else reads it.
+-- ⛔ This schema rollback deletes exchanges writers chose to share, so it REFUSES while any exist.
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+DO $$ BEGIN
+  IF to_regclass('public.writer_studio_shared_exchanges') IS NOT NULL THEN
+    LOCK TABLE public.writer_studio_shared_exchanges IN ACCESS EXCLUSIVE MODE;
+  END IF;
+END $$;
+DO $$
+DECLARE carried bigint;
+BEGIN
+  IF to_regclass('writer_studio_shared_exchanges') IS NOT NULL THEN
+    SELECT count(*) INTO carried FROM writer_studio_shared_exchanges;
+    IF carried > 0 THEN
+      RAISE EXCEPTION 'refusing destructive rollback: % shared exchange(s) exist. Use the app-only rollback (image).', carried;
+    END IF;
+  END IF;
+END $$;
+DROP INDEX IF EXISTS writer_studio_shared_exchanges_expiry_idx;
+DROP INDEX IF EXISTS writer_studio_shared_exchanges_member_idx;
+DROP TABLE IF EXISTS writer_studio_shared_exchanges;
+DO $$ BEGIN
+  IF to_regclass('public.schema_migrations') IS NOT NULL THEN
+    DELETE FROM public.schema_migrations WHERE filename = '20261119000001_writer_studio_shared_exchanges.sql';
+  END IF;
+END $$;
+COMMIT;
