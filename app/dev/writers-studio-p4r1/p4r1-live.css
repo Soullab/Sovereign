@@ -5389,3 +5389,7 @@
   .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-foot{display:none}
   .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) [data-write-letter='true']{max-height:72px;overflow:auto}
 }
+/* B0 laptop follow-up: the open conversation fills what is LEFT of MAIA's column below the coverage line and letter, so its
+   composer and Send stay inside the window (900px walk 2026-11-19: Send sat below the fold). */
+.p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-mbody{display:flex;flex-direction:column}
+.p4r1-root .fr-maia .fr-mbody > [data-write-conversation-beside='true']{flex:1 1 auto;min-height:0;height:auto}
