@@ -1510,11 +1510,10 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
               <button
                 type="button"
                 className="p4r1-talk"
-                onClick={() => openWorkConversation([
-                  `I selected “${railLabel}” and want to work with this place directly.`,
-                  'Start with what is happening here and ask me one useful question about what I want from it.',
-                  'Do not rewrite anything unless I ask.',
-                ].join('\n\n'))}
+                /* WS-STEP4 B (founder decision B, 2026-11-20): the door opens the conversation EMPTY. The chapter travels as
+                   context (the "You selected" panel and the conversation's sectionId); no app-written words are placed in the
+                   writer's composer, where they could be sent under her name (Benchmark 01, S4/S6). */
+                onClick={() => openWorkConversation('')}
               >
                 Talk about this place
               </button>
