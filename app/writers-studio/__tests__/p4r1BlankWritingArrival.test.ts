@@ -111,7 +111,9 @@ test('Write mounts the threshold only for a true blank Work and keeps MAIA start
   expect(write).toContain('Do not assume you have read any Idea or Source');
 
   expect(conversation).toContain("initialDraft?: string");
-  expect(conversation).toContain("const [draft, setDraft] = useState(initialDraft);");
+  // WS-STEP4 B: the composer opens empty; the starter is a suggestion outside it.
+  expect(conversation).toContain("const [draft, setDraft] = useState('');");
+  expect(conversation).toContain("const [suggestion, setSuggestion] = useState<string | null>(initialDraft.trim() ? initialDraft : null);");
 
   // The optional starter is presentation state only. Sending still happens only
   // inside the existing explicit send() function.

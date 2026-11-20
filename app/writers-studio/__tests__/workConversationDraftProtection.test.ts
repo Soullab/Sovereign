@@ -39,10 +39,13 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); jest.restoreAllMocks(); });
-async function mount(initialDraft = '', manuscriptId: string | null = 'fictional-manuscript') {
+/* WS-STEP4 B: the composer always opens empty and a Studio starter is only a suggestion. `mount(draft)` therefore models the
+   WRITER having typed `draft` (her own words in the box), which is what these draft-protection cases are about. */
+async function mount(writerDraft = '', manuscriptId: string | null = 'fictional-manuscript') {
   await act(async () => { root.render(React.createElement(WorkConversation, {
-    work, manuscriptId, sectionId: 'section-a', initialDraft, onClose: mockClose,
+    work, manuscriptId, sectionId: 'section-a', onClose: mockClose,
   })); });
+  if (writerDraft) await type(writerDraft);
 }
 const input = () => host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message MAIA"]')!;
 const button = (label: string) => Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
@@ -110,13 +113,44 @@ it('protects Studio departures and reload while text is unsent, and removes the 
   expect(requestConversationDeparture()).toBe(true); expect(confirm).not.toHaveBeenCalled();
   expect(window.dispatchEvent(new Event('beforeunload', { cancelable: true }))).toBe(true);
 });
-it('a starter the Studio placed in the box never blocks leaving; once the writer changes it, it is theirs', async () => {
+it('a Studio starter is offered OUTSIDE the box: it never blocks leaving, and enters the box only by "Use this" (WS-STEP4 B)', async () => {
   // Production 2026-11-05: "Talk with MAIA first" filled the box, then every other button asked to discard it.
-  await mount('I’m in “Finding Our Place”.');
+  // Benchmark 01 (2026-11-20): typed text merged into a pre-filled starter and was sent under the writer's name.
+  await act(async () => { root.render(React.createElement(WorkConversation, {
+    work, manuscriptId: 'fictional-manuscript', sectionId: 'section-a', initialDraft: 'I’m in “Finding Our Place”.', onClose: mockClose,
+  })); });
+  expect(input().value).toBe('');
+  expect(host.querySelector('[data-composer-starter]')?.textContent).toContain('I’m in “Finding Our Place”.');
   const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
   expect(requestConversationDeparture()).toBe(true); expect(confirm).not.toHaveBeenCalled();
-  await type('I’m in “Finding Our Place”. And I want to cut it.');
+  await click('Use this');
+  expect(input().value).toBe('I’m in “Finding Our Place”.');
+  expect(host.querySelector('[data-composer-starter]')).toBeNull();
+  // Chosen and in the box, it is now hers.
   expect(requestConversationDeparture()).toBe(false); expect(confirm).toHaveBeenCalled();
+});
+it('typing never merges with a suggestion, and "Use this" never appends to the writer\'s words (WS-STEP4 B8)', async () => {
+  await act(async () => { root.render(React.createElement(WorkConversation, {
+    work, manuscriptId: 'fictional-manuscript', sectionId: 'section-a', initialDraft: 'Studio suggestion', onClose: mockClose,
+  })); });
+  await type('My own exact question');
+  expect(input().value).toBe('My own exact question');
+  const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+  await click('Use this');
+  expect(confirm).toHaveBeenCalled();
+  expect(input().value).toBe('My own exact question');
+  mockAsk.mockResolvedValue({ ok: false, refusal: 'unreachable' });
+  await click('Send');
+  expect(mockAsk).toHaveBeenCalledWith(expect.objectContaining({ question: 'My own exact question' }));
+});
+it('"Not now" dismisses a suggestion without touching the box', async () => {
+  await act(async () => { root.render(React.createElement(WorkConversation, {
+    work, manuscriptId: 'fictional-manuscript', sectionId: 'section-a', initialDraft: 'Studio suggestion', onClose: mockClose,
+  })); });
+  await type('Mine');
+  await click('Not now');
+  expect(host.querySelector('[data-composer-starter]')).toBeNull();
+  expect(input().value).toBe('Mine');
 });
 it('cancels Open in MAIA when the author keeps the unsent draft', async () => {
   await mount(); await type('Keep this question here'); jest.spyOn(window, 'confirm').mockReturnValue(false);
@@ -182,9 +216,11 @@ it('does not carry a draft or late response into a different Work', async () => 
     manuscriptId: 'other-fictional-manuscript', sectionId: 'other-section',
     initialDraft: 'Question for the other Work', onClose: mockClose,
   })));
-  expect(input().value).toBe('Question for the other Work');
+  // WS-STEP4 B: the other Work's starter is a suggestion; the first Work's draft is not carried into the box.
+  expect(input().value).toBe('');
+  expect(host.querySelector('[data-composer-starter]')?.textContent).toContain('Question for the other Work');
   await act(async () => resolve(response));
-  expect(input().value).toBe('Question for the other Work');
+  expect(input().value).toBe('');
   expect(host.querySelector('[data-turn="0"]')).toBeNull();
 });
 
