@@ -105,7 +105,9 @@ describe('per-answer disclosure', () => {
     expect(src).toContain('{answerReadSentence(answerRead.read)}');
   });
   test('with holdings hidden, the read-scope control is still mounted in compact form', () => {
-    expect(src).toContain('<ReadScopeControl manuscriptId={manuscriptId} compact={hideHoldings} />');
+    /* Founder ruling 2026-11-19 (laptop experience): hidden holdings keep compact; elsewhere the persistent status line. */
+    expect(src).toContain('? <ReadScopeControl manuscriptId={manuscriptId} compact />');
+    expect(src).toContain(": <ReadScopeControl manuscriptId={manuscriptId} status offerNow={carryScope === 'whole_book'} />");
     expect(src).not.toMatch(/!hideHoldings && manuscriptId \? <ReadScopeControl/);
   });
 });

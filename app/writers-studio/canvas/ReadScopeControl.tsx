@@ -17,12 +17,26 @@ export const READ_SCOPE_STOPPED_COPY = 'Stopped. MAIA now reads only the passage
  * nothing until a permission is ACTIVE, and then always shows it with its one-action Stop: an active permission is never out of
  * sight. Giving a permission stays where the full control is (More → What MAIA can read); compact never offers it.
  */
-export default function ReadScopeControl({ manuscriptId, compact = false }: { manuscriptId: string; compact?: boolean }) {
+/**
+ * `status` (founder ruling 2026-11-19, "WS B0 + D3 laptop experience"): the default in a conversation. One persistent line says
+ * whether saved-Work reading is allowed, with Change, and with Stop directly visible whenever a permission is active (never behind
+ * More or an expansion). The choice itself is NOT shown before the writer has said anything (no premature gate): it opens under
+ * Change, or when the writer turns to a question that a reading permission could serve (`offerNow`). It states permission only;
+ * what MAIA actually read for an answer stays D3's per-answer line.
+ */
+export const READ_SCOPE_STATUS_LABEL = 'Saved Work reading:';
+export const READ_SCOPE_OFFER_COPY = 'Talking about the whole book? You can let MAIA read your saved work for it. Nothing is read until you ask a question.';
+
+export default function ReadScopeControl({ manuscriptId, compact = false, status = false, offerNow = false }: {
+  manuscriptId: string; compact?: boolean; status?: boolean; offerNow?: boolean;
+}) {
   const [, setPostureTick] = useState(0); // re-read the posture after the writer chooses it
   const [scope, setScope] = useState<ReadScope | undefined>(undefined);
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [changing, setChanging] = useState(false);
+  const [offerDeclined, setOfferDeclined] = useState(false);
   const load = useCallback(() => { void getReadScope(manuscriptId).then((s) => { setScope(s); setChecked(true); }); }, [manuscriptId]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const f = () => load(); window.addEventListener('focus', f); return () => window.removeEventListener('focus', f); }, [load]);
@@ -59,6 +73,51 @@ export default function ReadScopeControl({ manuscriptId, compact = false }: { ma
   const postureNote = !posture.resolved
     ? 'For now MAIA is reading only the passage you are in, because she doesn’t yet know how to hold this session.'
     : posture.sanctuary ? 'Sanctuary is on, so MAIA is reading only the passage you are in. Your setting is kept for when Sanctuary is off.' : null;
+
+  if (status) {
+    /* scope: null = no permission; { level } = active. (undefined was handled above: "could not be checked" + Try again.) */
+    const level = scope ? scope.level : null;
+    const active = level !== null;
+    const state = level === null ? 'Off' : level === 'work' ? 'Allowed' : 'This passage’s saved version';
+    const offering = !active && offerNow && !offerDeclined;
+    const chooserOpen = changing || offering;
+    return (
+      <div data-read-scope-control="status" data-read-scope-state={level ?? 'off'}
+        style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>{READ_SCOPE_STATUS_LABEL} <strong data-read-scope-status="true">{state}</strong></span>
+          <button type="button" disabled={busy} style={btn} aria-expanded={chooserOpen} data-read-scope-change="true"
+            onClick={() => { setChanging((v) => !v); setOfferDeclined(true); }}>Change</button>
+          {active ? (
+            /* ⭐ An active permission always carries its one-action Stop in plain sight. */
+            <button type="button" disabled={busy} style={btn} data-read-scope-stop="true"
+              onClick={() => { setChanging(false); void change({ action: 'revoke' }); }}>Stop</button>
+          ) : null}
+        </div>
+        {active && postureNote ? <span data-read-scope-posture-note="true" role="status">{postureNote}</span> : null}
+        {active && !posture.resolved ? <SessionPostureChoice compact onChosen={() => { setNote(null); setPostureTick((t) => t + 1); }} /> : null}
+        {chooserOpen ? (
+          <div data-read-scope-chooser={offering ? 'offer' : 'change'} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span>{offering ? READ_SCOPE_OFFER_COPY : active
+              ? (level === 'work' ? 'MAIA may read your saved work when your question needs it.' : 'MAIA may read the saved version of the passage you are in.')
+              : 'MAIA reads only the passage you are in.'}</span>
+            {level !== 'work' ? (
+              <button type="button" disabled={busy} style={btn} onClick={() => { setChanging(false); void change({ action: 'grant', level: 'work' }); }}>
+                Let MAIA read my saved work
+              </button>
+            ) : null}
+            {level !== 'chapter' ? (
+              <button type="button" disabled={busy} style={btn} onClick={() => { setChanging(false); void change({ action: 'grant', level: 'chapter' }); }}>
+                Only the passage I am in
+              </button>
+            ) : null}
+            {offering ? <button type="button" disabled={busy} style={btn} onClick={() => setOfferDeclined(true)}>Not now</button> : null}
+          </div>
+        ) : null}
+        {note ? <span data-read-scope-change-note="true" role="status">{note}</span> : null}
+      </div>
+    );
+  }
 
   return (
     <div data-read-scope-control="true" style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
