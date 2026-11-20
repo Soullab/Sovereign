@@ -629,11 +629,13 @@ function ScopedWorkConversation({
           borderBottom: `1px solid ${RULE.soft}`, flexWrap: 'wrap',
         }}
       >
-        <StudioText role="metadata" as="span" tone="quiet">In relation to</StudioText>
-        <StudioText role="navItem" as="span" tone="secondary">
+        {/* data-situated-label: at laptop widths MAIA's column already names the Work, so this label steps aside (CSS) and the
+            conversation's controls keep to one row (founder ruling 2026-11-19, laptop experience). */}
+        <StudioText role="metadata" as="span" tone="quiet" data-situated-label="true">In relation to</StudioText>
+        <StudioText role="navItem" as="span" tone="secondary" data-situated-label="true">
           {work.title ?? 'your work'}
         </StudioText>
-        <span style={{ flex: 1 }} />
+        <span style={{ flex: 1 }} data-situated-label="true" />
         <button
           type="button"
           onClick={reorient}
