@@ -37,6 +37,7 @@ import {
 import { setStudioReadingSize } from '@/lib/writersStudio/readingSizePreference';
 import { CONVERSATION_DEPARTURE_EVENT, requestConversationDeparture } from '@/lib/writersStudio/conversationDeparture';
 import { WRITER_CORRECTION_KINDS, WRITER_CORRECTION_LABEL, type WriterCorrectionKind } from '@/lib/writersStudio/writerCorrections';
+import { CORRECTION_OFFER_ACCEPT, CORRECTION_OFFER_COPY, CORRECTION_OFFER_DECLINE, correctionOfferFor } from '@/lib/writersStudio/correctionOffer';
 import { studioPathById } from '@/lib/writersStudio/studioPaths';
 
 /**
@@ -337,6 +338,8 @@ function ScopedWorkConversation({
   const [correctionDraft, setCorrectionDraft] = useState('');
   const [correctionBusy, setCorrectionBusy] = useState(false);
   const [correctionStatus, setCorrectionStatus] = useState<string | null>(null);
+  /* Correction offer (2026-11-19): MAIA turns whose offer the writer has answered (accepted or "Not now"), so it never nags. */
+  const [offerAnswered, setOfferAnswered] = useState<ReadonlySet<number>>(() => new Set());
   const endRef = useRef<HTMLDivElement | null>(null);
   // A draft belongs to its edit generation, not to text equality.
   const draftRevisionRef = useRef(0);
@@ -828,6 +831,43 @@ function ScopedWorkConversation({
                 >
                   <StudioText role="metadata" as="span">{offered.id === 'grant-reading' && parsed.level === 'work' ? 'Let MAIA read my whole saved work' : offered.id === 'grant-reading' ? 'Let MAIA read this saved chapter' : offered.id === 'show' && (SHOW_PLACES as readonly string[]).includes(parsed.target ?? '') ? showLabel(parsed.target as ShowPlace) : offered.id === 'go-chapter' ? `Go to ${chapterName}` : offered.label}</StudioText>
                 </button>
+              );
+            })()}
+            {(() => {
+              /* Correction offer (WS real-model walk 01): a plain-words disagreement was revised in the moment but lost in the next
+                 conversation; kept through "Correct MAIA" it carried. So under MAIA's LATEST reply to a message that plainly
+                 disagreed, offer to keep it. Accepting only opens the existing form with the writer's own words and a pre-selected
+                 kind; nothing is kept until they press "Keep correction". Kept turns only (Sanctuary exchanges are never kept turns),
+                 and never while Sanctuary is on or the posture is undeclared. */
+              if (t.speaker !== 'maia' || !threadId || t.index !== latestMaiaIndex || correctingTurn === t.index) return null;
+              if (offerAnswered.has(t.index)) return null;
+              const prev = position > 0 ? turns[position - 1] : null;
+              if (!prev || prev.speaker !== 'author') return null;
+              const offer = correctionOfferFor(prev.body);
+              const posture = readCurrentSanctuaryPosture();
+              if (!offer || !posture.resolved || posture.sanctuary) return null;
+              const answer = (accept: boolean) => {
+                setOfferAnswered((s) => new Set(s).add(t.index));
+                if (!accept) return;
+                setCorrectingTurn(t.index);
+                setCorrectionKind(offer.kind);
+                setCorrectionDraft(prev.body.trim());
+                setCorrectionStatus(null);
+              };
+              return (
+                <div data-correction-offer={t.index} role="status"
+                  style={{ marginTop: SPACE.tight, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: SPACE.tight }}>
+                  <StudioText role="metadata" tone="secondary" as="span">{CORRECTION_OFFER_COPY}</StudioText>
+                  <button type="button" data-correction-offer-accept="true" onClick={() => answer(true)}
+                    style={{ background: 'transparent', border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm,
+                      padding: `${SPACE.hairline}px ${SPACE.tight}px`, cursor: 'pointer', color: INK.secondary }}>
+                    <StudioText role="metadata" as="span">{CORRECTION_OFFER_ACCEPT}</StudioText>
+                  </button>
+                  <button type="button" data-correction-offer-decline="true" onClick={() => answer(false)}
+                    style={{ background: 'transparent', border: 0, cursor: 'pointer', color: INK.quiet }}>
+                    <StudioText role="metadata" as="span">{CORRECTION_OFFER_DECLINE}</StudioText>
+                  </button>
+                </div>
               );
             })()}
             {t.speaker === 'maia' && threadId ? (
