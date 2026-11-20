@@ -1063,3 +1063,9 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
    save state ("Sectio●Saved"). The crumb now yields: it may take at most half the row and truncates with an ellipsis. */
 .fr-write-crumb { max-width: 50%; min-width: 0; overflow: hidden; }
 .fr-write-crumb > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* B0 (founder ruling 2026-11-19): at desktop widths too, an open conversation gets at least 340px of MAIA's column (at most
+   40vw); the manuscript rail and the page keep the rest. A writer's own wider width is kept, and Focus (p4r1-live.css) still
+   widens it further. 1440px walk: with the default 250px column the messages had 5px. */
+@media (min-width: 1024px) {
+  .fr-shell[data-mode='write']:has([data-write-conversation-beside='true']) .fr-room { grid-template-columns: var(--fr-ms-w) minmax(0, 1fr) clamp(340px, var(--fr-maia-w), 40vw); }
+}
