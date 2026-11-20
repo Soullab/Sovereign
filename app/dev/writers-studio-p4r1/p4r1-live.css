@@ -3805,6 +3805,11 @@
   .p4r1-root .fr-maia [data-studio-conversation='situated'] [data-situated-label='true']{display:none}
   .p4r1-root .fr-maia [data-studio-conversation='situated']{gap:6px!important;margin-bottom:6px!important;padding-bottom:6px!important}
 }
+/* "Collapse the decision list, not the relationship" (founder ruling 2026-11-19): opened in MAIA's column, the settled decisions
+   are a capped, scrollable strip, so the conversation and its composer stay in view (900px walk: an open list squeezed the
+   messages to nothing). Every decision and its Withdraw stay reachable by scrolling the strip. */
+.p4r1-root .fr-maia [data-maia-work-conversation] [data-settled-decisions='true'] > [id]{max-height:30vh;overflow:auto;flex:0 0 auto}
+.p4r1-root .fr-maia [data-maia-work-conversation] [data-settled-decisions='true']{flex:0 0 auto}
 
 /* WRITE PROSE VIEW — the chapter reads like a book; edit machinery stays one gesture away. */
 .p4r1-root .p4r1-prose-host,.p4r1-root .p4r1-edit-host{position:relative;min-height:0;height:100%}
