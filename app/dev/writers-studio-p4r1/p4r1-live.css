@@ -5397,7 +5397,7 @@
 /* Contract, item 3 (composer stays usable without eating the conversation): in MAIA's column the composer's hint line steps aside
    (the box's placeholder and Send already say it), and on short windows the box starts at two lines and grows as the writer types. */
 @media(min-width:721px){
-  .p4r1-root .fr-maia [data-maia-composer='true'] > div:first-child{display:none}
+  .p4r1-root .fr-maia [data-maia-composer='true'] > div:first-child{display:none!important}
 }
 @media(min-width:721px) and (max-height:760px){
   .p4r1-root .fr-maia [data-maia-focus='false'] [data-maia-composer='true'] textarea{min-height:52px!important}
