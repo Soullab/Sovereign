@@ -708,6 +708,9 @@ function ReadingField({
 }
 
 
+/** Said when "Add your theme" is pressed with the box empty. */
+export const THEME_NEEDS_NAME_COPY = 'Type a theme in the box first, in your own words, then press “Add your theme”.';
+
 function ThemeField({ payload, busy, error, onMutation, onTalkCandidate }: {
   payload: LiveThemesPayload | null | undefined;
   busy: boolean;
@@ -716,6 +719,10 @@ function ThemeField({ payload, busy, error, onMutation, onTalkCandidate }: {
   onTalkCandidate: (candidate: LiveThemeCandidate) => void;
 }) {
   const [draft, setDraft] = useState('');
+  /* Guided beta session 2026-11-19, F4: pressing "Add your theme" with the box empty did nothing visible (the button was
+     disabled without a reason). Now the press answers: it puts the cursor in the box and says what to do. */
+  const [needsName, setNeedsName] = useState(false);
+  const themeInputRef = useRef<HTMLInputElement>(null);
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null);
   const [pace, setPace] = useState<WorkingPace>(DEFAULT_WORKING_STYLE.pace);
   const [explanationDepth, setExplanationDepth] = useState<ExplanationDepth>(DEFAULT_WORKING_STYLE.explanation);
@@ -844,14 +851,19 @@ function ThemeField({ payload, busy, error, onMutation, onTalkCandidate }: {
       {error ? <p className="p4r1-error" role="status">{error}</p> : null}
 
       <div className="p4r1-theme-declare">
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Name a theme you want to hold…" />
-        <button type="button" disabled={busy || !draft.trim()} onClick={() => {
+        <input ref={themeInputRef} value={draft} onChange={(e) => { setDraft(e.target.value); if (e.target.value.trim()) setNeedsName(false); }}
+          placeholder="Name a theme you want to hold…" aria-describedby="p4r1-theme-declare-hint" />
+        <button type="button" disabled={busy} onClick={() => {
           const label = draft.trim();
-          if (!label) return;
+          if (!label) { setNeedsName(true); themeInputRef.current?.focus(); return; }
+          setNeedsName(false);
           onMutation({ action: 'declare', label });
           setDraft('');
         }}>Add your theme</button>
       </div>
+      <p id="p4r1-theme-declare-hint" className="p4r1-theme-declare-hint" role="status" data-theme-needs-name={needsName ? 'true' : undefined}>
+        {needsName ? THEME_NEEDS_NAME_COPY : ''}
+      </p>
 
       {payload.themes.length === 0 ? (
         <p className="p4r1-empty">No governed themes yet. You can name one yourself or commission a Themes reading.</p>
