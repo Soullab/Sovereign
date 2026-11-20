@@ -74,7 +74,7 @@ async function postHandler(req: NextRequest, { params }: { params: Promise<{ id:
   }
   const heads = await loadSectionHeads(id, memberId);
   const sizes = await loadSectionSizes(id, memberId);
-  const picked = selectSections({ level: 'work', question: 'the whole book', locusId: null, sections: heads, sizes });
+  const picked = selectSections({ level: 'work', scope: 'whole_book', question: 'the whole book', locusId: null, sections: heads, sizes });
   const ids = picked.ids.slice(0, MAX_READ_SECTIONS);
   if (ids.length === 0) return NextResponse.json({ refusal: 'nothing_to_read' }, { status: 409 });
 
