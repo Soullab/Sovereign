@@ -182,7 +182,7 @@ export interface WorkConversationProps {
    * it is handed to the server on each turn and it is not part of the anchor.
    */
   sectionId: string | null;
-  /** Optional member-facing starter held in the composer. Never auto-sent. */
+  /** Optional member-facing starter, offered OUTSIDE the composer as a suggestion ("Use this"). Never auto-sent. Never placed in the box by itself. */
   initialDraft?: string;
   /**
    * The draft opens a NEW topic the writer brought from elsewhere (e.g. "Show MAIA this note" from a College Essay stage). When the
@@ -190,10 +190,9 @@ export interface WorkConversationProps {
    * 2026-11-16). One existing conversation is still continued, exactly as before. Never sends anything by itself.
    */
   startFresh?: boolean;
-  /** Place words into the EXISTING composer (a starter, or the writer's selected words) without re-creating the conversation.
-   *  A new `n` places `text` once: into an empty composer it replaces; after the writer's own unsent text it is added below, never
-   *  replacing it. Never sent. (Founder P0 direction 2026-11-11: a late or placed text must not reset the conversation or clear
-   *  the writer's unsent prompt.) */
+  /** Offer words (a starter, or the writer's selected words) to the EXISTING conversation without re-creating it. A new `n` shows
+   *  `text` once as the suggestion outside the composer; the composer itself is never touched (WS-STEP4 B). Never sent. (Founder P0
+   *  direction 2026-11-11: a late or placed text must not reset the conversation or clear the writer's unsent prompt.) */
   placeDraft?: { text: string; n: number };
   /** Design 1B: open a Develop place MAIA offered (navigation only). Absent → no such button. */
   onStudioPlace?: (place: 'develop-overview' | 'editorial-pass') => void;
@@ -307,27 +306,33 @@ function ScopedWorkConversation({
     setActStatus({ busy: false, text: r.ok ? r.text : r.message });
   }, [onStudioAct]);
 
-  const [draft, setDraft] = useState(initialDraft);
+  /* WS-STEP4 B (founder decision B, 2026-11-20): the composer holds ONLY the writer's own words. It always opens empty. A starter
+     the Studio offers (the starter prop, or a placed text) is shown OUTSIDE the box as a suggestion and enters it only by the writer's
+     explicit "Use this", never merged into text she has typed (Benchmark 01: a pre-filled starter merged with S4/S6). */
+  const [draft, setDraft] = useState('');
+  const [suggestion, setSuggestion] = useState<string | null>(initialDraft.trim() ? initialDraft : null);
   /* WS-WHOLE-BOOK-CONVERSATION (founder approval 2026-11-10, D1): the writer DECLARES what a question is about. "where I am" is the
      default; "the whole book" carries her complete account. ⛔ A phrase in the draft may only OFFER the whole book, never switch to it. */
   /* Held in component state only: this surface reads and writes no browser storage (identity-is-server-truth law). It lasts while the
      conversation is open and resets to "where I am" when it is reopened. */
   const [carryScope, setCarryScope] = useState<'here' | 'whole_book'>('here');
   const offerWholeBook = carryScope === 'here' && WHOLE_BOOK_OFFER.test(draft);
-  // The Studio's starter, as placed; never sent on its own.
-  const [starter, setStarter] = useState(initialDraft);
+  /* A new `placeDraft.n` offers its text as the suggestion; it never touches the composer, so a late or placed text can neither
+     reset the conversation nor alter the writer's unsent words (founder P0 direction 2026-11-11 still holds). */
   const placedRef = useRef(placeDraft?.n ?? 0);
-  const draftNowRef = useRef(draft);
-  draftNowRef.current = draft;
   useEffect(() => {
     if (!placeDraft || placeDraft.n === placedRef.current) return;
     placedRef.current = placeDraft.n;
-    const text = placeDraft.text;
-    if (!text) return;
-    const current = draftNowRef.current;
-    if (current.length === 0 || current === starter) { setDraft(text); setStarter(text); }
-    else setDraft(`${current}\n\n${text}`);
-  }, [placeDraft, starter]);
+    if (placeDraft.text.trim()) setSuggestion(placeDraft.text);
+  }, [placeDraft]);
+  /* "Use this": into an empty composer it is placed; over the writer's own words it replaces them only if she confirms. Never appended. */
+  const useSuggestion = useCallback(() => {
+    if (suggestion === null) return;
+    if (draft.length > 0 && !window.confirm('Replace what you have written with this suggestion?')) return;
+    draftRevisionRef.current += 1;
+    setDraft(suggestion);
+    setSuggestion(null);
+  }, [suggestion, draft]);
   const [reorientationOffered, setReorientationOffered] = useState(false);
   const [presentationConfirmation, setPresentationConfirmation] = useState<SafePresentationProposal | null>(null);
   const [presentationNotice, setPresentationNotice] = useState<string | null>(null);
@@ -349,9 +354,8 @@ function ScopedWorkConversation({
   useEffect(() => {
     // Unsent text stays in the mounted conversation. Leaving is an explicit
     // discard; neither browser storage nor a server turn is created for it.
-    // A starter the Studio placed in the box is not the writer's text until they
-    // change it; counting it trapped every other button behind a discard prompt.
-    const writerDraft = draft.length > 0 && draft !== starter;
+    // The box holds only the writer's words (a suggestion lives outside it), so any text in it is hers.
+    const writerDraft = draft.length > 0;
     const hasUnsentText = writerDraft || correctionDraft.length > 0 || pending !== null;
     if (!hasUnsentText) return;
     const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
@@ -370,7 +374,7 @@ function ScopedWorkConversation({
       window.removeEventListener('beforeunload', warnBeforeLeaving);
       window.removeEventListener(CONVERSATION_DEPARTURE_EVENT, confirmDeparture);
     };
-  }, [draft, starter, correctionDraft, pending]);
+  }, [draft, correctionDraft, pending]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
@@ -1104,6 +1108,23 @@ function ScopedWorkConversation({
                 Ask about {wholeScope}?
               </button>
             ) : null}
+          </div>
+        ) : null}
+        {suggestion !== null ? (
+          <div data-composer-starter="true" role="group" aria-label="Suggested start"
+            style={{ border: `1px dashed ${RULE.soft}`, borderRadius: RADIUS.sm, padding: SPACE.snug, marginBottom: SPACE.tight }}>
+            <StudioText role="metadata" tone="quiet" as="span">Suggested start (not in your message)</StudioText>
+            <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', margin: '6px 0' }}>{suggestion}</p>
+            <div style={{ display: 'flex', gap: SPACE.tight }}>
+              <button type="button" data-composer-starter-use="true" onClick={useSuggestion}
+                style={{ fontSize: 12, padding: '2px 8px', borderRadius: RADIUS.sm, border: `1px solid ${INK.primary}`, background: 'transparent', color: INK.primary, cursor: 'pointer' }}>
+                Use this
+              </button>
+              <button type="button" data-composer-starter-dismiss="true" onClick={() => setSuggestion(null)}
+                style={{ fontSize: 12, padding: '2px 8px', border: 'none', background: 'transparent', color: INK.secondary, textDecoration: 'underline', cursor: 'pointer' }}>
+                Not now
+              </button>
+            </div>
           </div>
         ) : null}
         <textarea
