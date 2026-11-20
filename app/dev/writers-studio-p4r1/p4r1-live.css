@@ -5379,3 +5379,13 @@
 .p4r1-stage-diff { margin: 0; line-height: 1.7; overflow-wrap: anywhere; }
 .p4r1-stage-diff del { opacity: .7; }
 .p4r1-stage-diff ins { text-decoration: underline; text-decoration-thickness: 2px; }
+
+/* B0 laptop follow-up (founder ruling 2026-11-19, "WS B0 + D3 laptop experience"): with a conversation open in MAIA's column the
+   conversation gets the space. The relationship note ("a continuing thread… is optional") is redundant while one is open. Below
+   1280px the column footer steps aside and MAIA's letter stays in view as a short scrollable strip (2026-11-12: the letter stays
+   in view while the writer talks). The page is never touched. */
+.p4r1-root .fr-maia:has([data-write-conversation-beside='true']) [data-p4r1-maia-relationship]{display:none}
+@media(max-width:1279px){
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) .fr-foot{display:none}
+  .p4r1-root .fr-maia:has([data-write-conversation-beside='true']) [data-write-letter='true']{max-height:72px;overflow:auto}
+}
