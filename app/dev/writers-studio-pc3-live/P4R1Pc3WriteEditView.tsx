@@ -1404,6 +1404,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       bodies: props.context.sections.map((section) => props.writing.bodyOf(section.draftSectionId)),
     }),
     talkWholeLabel: workStudioCopy ? workStudioCopy.whole : 'Talk about the whole Work',
+    pageRead: sessionRead,
   });
   const writeMaia = props.work ? (
     <div className="fr-maia-inner p4r1-write-maia">
@@ -1584,6 +1585,8 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
         onReadback: onWriteReadback,
         onPrevious: () => go(projection.previousId),
         onNext: () => go(projection.nextId),
+        hasPrevious: Boolean(projection.previousId),
+        hasNext: Boolean(projection.nextId),
         onOpenChapter: go,
       }}
     />
