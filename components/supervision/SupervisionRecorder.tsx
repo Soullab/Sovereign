@@ -14,7 +14,7 @@ import {
   Wifi,
   WifiOff
 } from 'lucide-react';
-import { apiUrl } from '@/lib/http/apiBase';
+import { apiFetch } from '@/lib/http/apiBase';
 
 interface SupervisionRecorderProps {
   practitionerId?: string;
@@ -74,7 +74,10 @@ export function SupervisionRecorder({
     setStatus('connecting');
 
     try {
-      const response = await fetch(apiUrl('/api/supervision/session/start'), {
+      // apiFetch, not fetch: session/start now REQUIRES the session (every session it creates is owned by
+      // the signed-in practitioner), and a bare fetch carries no x-session-token on a native / Safari
+      // cross-origin WebView (the Capacitor cookie trap in CLAUDE.md).
+      const response = await apiFetch('/api/supervision/session/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -125,7 +128,7 @@ export function SupervisionRecorder({
       if (timerRef.current) clearInterval(timerRef.current);
       if (pollRef.current) clearInterval(pollRef.current);
 
-      const response = await fetch(apiUrl('/api/supervision/session/stop'), {
+      const response = await apiFetch('/api/supervision/session/stop', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -163,7 +166,7 @@ export function SupervisionRecorder({
   // Poll for transcript updates
   const pollTranscript = async (sid: string) => {
     try {
-      const response = await fetch(apiUrl(`/api/supervision/transcript/list?sessionId=${sid}&limit=50`));
+      const response = await apiFetch(`/api/supervision/transcript/list?sessionId=${sid}&limit=50`);
       const data = await response.json();
 
       if (data.success && data.transcript) {

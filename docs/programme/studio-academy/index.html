@@ -1,0 +1,168 @@
+<title>Studio Academy</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: a single reading column; the six forms are a switcher; the listening channels and the ruling are set apart as the two things to decide. */
+:root{
+  --bg:#f5f4f0; --panel:#ffffff; --fg:#1d1f27; --muted:#5a5f6e; --line:#dcdbd5; --accent:#2f5d62; --accent-bg:#e2eeee;
+  --warn:#8a5a12; --warn-bg:#f6ead3; --ok:#2f6d4a; --ok-bg:#e2f1e8; --no:#9a3434; --no-bg:#f7e2e2;
+  --display:"Newsreader",Georgia,"Times New Roman",serif; --body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#111316; --panel:#1a1d22; --fg:#eceef2; --muted:#a3a8b5; --line:#2c3038; --accent:#7fc0c6; --accent-bg:#17302f; --warn:#e8b65a; --warn-bg:#3a2c12; --ok:#7ccf9c; --ok-bg:#163223; --no:#ef9a9a; --no-bg:#3a1c1c; color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#111316; --panel:#1a1d22; --fg:#eceef2; --muted:#a3a8b5; --line:#2c3038; --accent:#7fc0c6; --accent-bg:#17302f; --warn:#e8b65a; --warn-bg:#3a2c12; --ok:#7ccf9c; --ok-bg:#163223; --no:#ef9a9a; --no-bg:#3a1c1c; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:17px;line-height:1.6;margin:0}
+.wrap{max-width:980px;margin:0 auto;padding-block:32px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:40px}
+h1,h2,h3{font-family:var(--display);font-weight:600;margin:0;text-wrap:balance}
+h1{font-size:clamp(34px,5vw,50px);line-height:1.05}
+h2{font-size:28px}
+h3{font-size:20px}
+p{margin:0}
+.eyebrow{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{font-size:19px;color:var(--muted);max-width:64ch}
+section{display:grid;gap:16px}
+.status{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:12px 16px;font-size:15px;color:var(--muted)}
+.status b{color:var(--fg)}
+.stand{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:grid;gap:6px;align-content:start;min-width:0}
+.card .ref{font-size:12px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;overflow-wrap:anywhere}
+.pill{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 9px;justify-self:start}
+.pill.live{background:var(--ok-bg);color:var(--ok)} .pill.design{background:var(--accent-bg);color:var(--accent)} .pill.open{background:var(--warn-bg);color:var(--warn)} .pill.no{background:var(--no-bg);color:var(--no)}
+
+/* Forms switcher */
+.forms{display:grid;gap:14px}
+.tabs{display:flex;flex-wrap:wrap;gap:8px}
+.tabs button{font:inherit;font-size:16px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:999px;padding:6px 16px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tabs button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.journey{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:grid;gap:6px;align-content:start}
+.stage .n{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.stage ul{margin:0;padding-left:18px}
+.maia{border-left:3px solid var(--accent);padding:4px 0 4px 14px;font-family:var(--display);font-size:21px;line-height:1.35}
+.maia small{display:block;font-family:var(--body);font-size:13px;color:var(--muted)}
+.always{font-size:15px;color:var(--muted)}
+
+/* Channels */
+.channels{display:grid;gap:12px}
+.ch{display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.ch .num{font-family:var(--display);font-size:30px;color:var(--accent);line-height:1}
+.ch dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 14px;margin:6px 0 0;font-size:15px}
+.ch dt{color:var(--muted)}
+.ch dd{margin:0}
+.rules{columns:2 300px;column-gap:28px;margin:0;padding-left:20px}
+.rules li{break-inside:avoid;margin-bottom:6px}
+
+/* Ruling */
+.ruling{background:var(--panel);border:2px solid var(--warn);border-radius:12px;padding:20px;display:grid;gap:14px}
+.opts{display:grid;gap:10px}
+.opt{border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:4px}
+.opt.rec{border-color:var(--ok);background:var(--ok-bg)}
+.opt h3{font-size:18px}
+ol.order{margin:0;padding-left:22px;display:grid;gap:8px}
+.foot{font-size:13px;color:var(--muted)}
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:12px">
+    <span class="eyebrow">Exploration for the founder · 19 November 2026 · code read at 02f10f662</span>
+    <h1>Studio Academy</h1>
+    <p class="lede">An optional way in for each kind of writing, so the start feels possible. And a way for Soullab to hear from writers as they work, with their consent at every step.</p>
+    <div class="status"><b>This authorizes nothing.</b> It builds on the Writers Academy roadmap of 2 November, which already names Jondi’s walk as the step that decides what comes next. You ruled the one question of principle on 19 November: the writer shares each exchange herself. Everything she hasn’t shared stays under your 1 November ruling: Soullab doesn’t read it.</div>
+  </header>
+
+  <section>
+    <h2>What already stands</h2>
+    <div class="stand">
+      <div class="card"><span class="pill design">Roadmap</span><b>Writers Academy, Phases 0–5</b><p>Teach-me is live in 11 places. Jondi’s walk sets the order of what follows. An explicit Academy room opens only by your act. No levels, progress, streaks or certificates.</p><span class="ref">docs/programme/WRITERS-ACADEMY_ROADMAP_2026-11-02.md</span></div>
+      <div class="card"><span class="pill design">Canon</span><b>No genre prerequisite</b><p>First value comes without a tutorial. Avoid genre taxonomy as a prerequisite, experience levels, and mandatory templates.</p><span class="ref">FIRST_ARRIVAL_AND_ONBOARDING_CANON_v1.md:190</span></div>
+      <div class="card"><span class="pill design">Your ruling, 1 Nov</span><b>Tester questions</b><p>Soullab asks, in Soullab’s voice, separate from MAIA. No reading of manuscripts or MAIA conversations for research. No click or completion tracking. Self-hosted.</p><span class="ref">…TESTER_JOURNEY_FIELD_DESIGN_NOTE_2026-11-01.md §3.3–3.4</span></div>
+      <div class="card"><span class="pill live">Live</span><b>Beta journey</b><p>Five questions. Writers can see, change and withdraw their answers, and share one to the Beta Co-Lab. You see all writers’ answers.</p><span class="ref">P4R1BetaJourney.tsx · lib/writersStudio/journey.ts</span></div>
+      <div class="card"><span class="pill live">Live</span><b>Studio paths</b><p>One path today (College Essay), with its own stages, MAIA posture and wording. Each form can become a path here, so no new system is needed.</p><span class="ref">lib/writersStudio/studioPaths.ts:108-150</span></div>
+      <div class="card"><span class="pill no">Defect found</span><b>Feedback from Publish and Listen won’t save</b><p>The route accepts those rooms, but the database refuses them. Not fixed yet.</p><span class="ref">beta-feedback/route.ts:9 vs migration 20260929000005:21</span></div>
+    </div>
+  </section>
+
+  <section class="forms">
+    <h2>A way in for each form</h2>
+    <p>Each form is a Studio path you choose to enter. “Just let me write” and “I don’t know yet” stay on every door. Research found that intro tours pushed at people don’t help. What works is learning inside the real document, a little at a time, with help on request.</p>
+    <div class="tabs" role="tablist" aria-label="Forms" id="tabs"></div>
+    <div id="form" role="tabpanel"></div>
+    <p class="always">Every path also gets its own “What do I do next?” answers (the pattern in PR #2344) and a click-through “Show me around” guide on request.</p>
+  </section>
+
+  <section>
+    <h2>Soullab listens</h2>
+    <p>Three channels, each with its own consent. You see responses on a Listening page as they arrive, so no emails or texts are needed.</p>
+    <div class="channels">
+      <div class="ch"><span class="num">1</span><div><h3>Soullab asks <span class="pill live">live as text</span> <span class="pill open">audio/video new</span></h3>
+        <dl><dt>Soullab sees</dt><dd>The writer’s own answers: written, spoken or on video</dd><dt>Consent</dt><dd>Answering is the consent. A yes for each recording, playback before sending, and see, change or withdraw at any time</dd><dt>Builds on</dt><dd>The Beta journey. Recordings stored on your own server and transcribed by your local speech service</dd></dl></div></div>
+      <div class="ch"><span class="num">2</span><div><h3>The writer asks MAIA <span class="pill live">live</span></h3>
+        <dl><dt>Soullab sees</dt><dd>Nothing. MAIA’s help belongs to the writer</dd><dt>Consent</dt><dd>None needed</dd><dt>Builds on</dt><dd>MAIA’s Studio guide and “What do I do next?”</dd></dl></div></div>
+      <div class="ch"><span class="num">3</span><div><h3>The writer shares an exchange <span class="pill live">ruled 19 Nov</span> <span class="pill open">not built</span></h3>
+        <dl><dt>Soullab sees</dt><dd>Only the exchanges a writer chooses to share, one at a time</dd><dt>Consent</dt><dd>An explicit share each time. Never in Sanctuary, and withdrawable</dd><dt>Builds on</dt><dd>The per-answer Co-Lab share that already exists</dd></dl></div></div>
+    </div>
+    <h3>How to ask well</h3>
+    <ul class="rules">
+      <li>Ask at a natural pause, such as after showing MAIA the first page. Never mid-draft.</li>
+      <li>At most once per question wave, as your 1 November design already says, enforced in the code.</li>
+      <li>Stop asking a question once you have enough answers.</li>
+      <li>Always in Soullab’s voice. MAIA never asks for feedback.</li>
+      <li>No click, time or completion tracking. Presses of “What do I do next?” aren’t counted either.</li>
+      <li>Themes may be drafted by a model, but a person checks them before anyone acts.</li>
+      <li>Nothing changes automatically. Every change is a human decision (Invariant 15).</li>
+      <li>Writers see a “What we heard and what changed” page.</li>
+    </ul>
+  </section>
+
+  <section class="ruling">
+    <span class="eyebrow">The one decision of principle · ruled 19 November: (a)</span>
+    <h2>May Soullab learn from writers’ conversations with MAIA, and how?</h2>
+    <div class="opts">
+      <div class="opt rec"><h3>(a) The writer shares one exchange at a time <span class="pill live">your ruling</span></h3><p>A “Share this with Soullab” control on an exchange or conversation. Soullab sees only what was handed over. It’s never available in Sanctuary, and it can be withdrawn. Everything not shared stays protected by your 1 November ruling.</p></div>
+      <div class="opt"><h3>(b) A standing research opt-in</h3><p>Turn on the existing “Research Participation” setting, so Soullab could read all of a consenting writer’s non-Sanctuary conversations. It’s broader and easy to forget once given. It’s also the most criticized pattern in AI products, and it would need a “what you’ve shared” page, a retention limit and regular reminders.</p></div>
+      <div class="opt"><h3>(c) Access by default</h3><p><span class="pill no">not open</span> That would be stealth memory under the Oath’s consent rule.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Proposed order</h2>
+    <ol class="order">
+      <li>Fix the feedback defect.</li>
+      <li>Merge and deploy “What do I do next?” (PR #2344). Then Jondi’s walk, with the guides at hand. Her answers set the next steps, as the roadmap already says.</li>
+      <li>One path first: nonfiction, the first beta writers’ path, with its practice page, film and questions. Walk it with her, then with a second writer.</li>
+      <li>Add audio and video answers to the Beta journey.</li>
+      <li>Shared exchanges: design the control, storage, retention and withdrawal, then build them, each step by your act.</li>
+      <li>The other forms one at a time, each walked by a writer. Then the explicit Academy room, by your act.</li>
+    </ol>
+    <p class="foot">The full write-up with sources: docs/programme/STUDIO_ACADEMY_EXPLORATION_2026-11-19.md. Research sources include NN/g on onboarding and tutorials, a 2023 review of design guidelines for users aged 60 and over, W3C WAI, experience-sampling burden studies, Stanford HAI on chatbot training defaults, EDPB 2026 research guidance (not legal advice), ISO/IEC TS 27560 consent receipts, and dark-pattern taxonomies. Craft guidance is practitioner consensus.</p>
+  </section>
+</div>
+
+<script>
+const FORMS=[
+ {k:'Nonfiction',essentials:['Who the reader is, and their problem','The promise: what they’ll be able to do','One paragraph per chapter'],q:'Who is this book for, and what will they be able to do after reading it?',practice:'A sample page with a reader, a promise and three chapter lines, each with a note on what it’s doing. Delete it or keep it.',film:'What a nonfiction book needs first, in 45 seconds.'},
+ {k:'Novel & fantasy',essentials:['A premise','One character’s goal and what’s in the way','Only the world the story touches'],q:'Who wants something here, and what’s in the way?',practice:'A short opening scene with notes on goal, obstacle and one detail of the world.',film:'Why you don’t need the whole world before chapter one.'},
+ {k:'Song',essentials:['The hook','A verse and a chorus','Words that sit with the melody'],q:'What line would you want people singing back to you?',practice:'A verse and a chorus, with the hook marked and a note on how the words sit with the melody.',film:'Hook, verse, chorus: the shape of most songs.'},
+ {k:'Stage play',essentials:['One scene','Character names and stage directions','What one person needs from another'],q:'Who is on stage, and what does one of them need from the other?',practice:'A half-page scene in play format, with the conventions explained in the margin.',film:'How a play looks on the page.'},
+ {k:'Screenplay',essentials:['A scene heading (INT. / EXT.)','Action, then dialogue','Standard screenplay format'],q:'Where are we, and what do we see first?',practice:'One page in screenplay format, with a note on each element.',film:'One page, roughly one minute: screenplay basics.'},
+ {k:'Poetry',essentials:['One concrete image','Then the line','Form comes later'],q:'What’s one thing you can see, hear or touch that this poem is about?',practice:'A short poem with notes on where each line breaks and why.',film:'Images first: starting a poem.'},
+];
+let cur=0;
+function draw(){
+  document.getElementById('tabs').innerHTML=FORMS.map((f,i)=>`<button role="tab" aria-selected="${i===cur}" data-i="${i}">${f.k}</button>`).join('');
+  document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{cur=+b.dataset.i;draw();});
+  const f=FORMS[cur];
+  document.getElementById('form').innerHTML=`<div style="display:grid;gap:14px">
+    <p class="maia">“${f.q}”<small>MAIA’s first question on this path (draft)</small></p>
+    <div class="journey">
+      <div class="stage"><span class="n">1 · Optional film</span><p>${f.film}</p><p class="always">On request, never autoplayed. Made with the Lemo-Opuscar skill, showing only what’s live.</p></div>
+      <div class="stage"><span class="n">2 · Practice page</span><p>${f.practice}</p></div>
+      <div class="stage"><span class="n">3 · First essentials</span><ul>${f.essentials.map(e=>`<li>${e}</li>`).join('')}</ul><p class="always">The rest stays out of view until it’s needed.</p></div>
+      <div class="stage"><span class="n">4 · Write</span><p>Your own page. MAIA is beside it, and “What do I do next?” is always there.</p></div>
+    </div></div>`;
+}
+document.addEventListener('keydown',e=>{if(!e.target.closest('#tabs'))return;if(e.key==='ArrowRight'){cur=(cur+1)%FORMS.length;draw();document.querySelector('#tabs [aria-selected="true"]').focus();}if(e.key==='ArrowLeft'){cur=(cur+FORMS.length-1)%FORMS.length;draw();document.querySelector('#tabs [aria-selected="true"]').focus();}});
+draw();
+</script>

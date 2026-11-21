@@ -52,7 +52,7 @@ async function postHandler(
     const refused = await keepRefusal(memberId, body);
     if (refused) letterKept = refused.body.refusal;
     else {
-      const opening = await composeOpening(memberId, manuscriptId, readingIds);
+      const opening = await composeOpening(memberId, manuscriptId, readingIds, synthesis.observationKeys);
       letterId = await saveLetter(memberId, manuscriptId, revisionNumber, { ...map, ...openingFields(opening) });
       Object.assign(map, openingFields(opening));
       letterKept = 'kept';

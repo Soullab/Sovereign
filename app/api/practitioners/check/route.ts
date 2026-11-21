@@ -7,10 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db/postgres';
-
-interface CheckPractitionerInput {
-  memberId: string;
-}
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 interface PractitionerResult {
   id: string;
@@ -23,20 +20,18 @@ interface PractitionerResult {
 /**
  * POST /api/practitioners/check
  *
- * Checks if member has an existing practitioner account.
+ * Checks if the SIGNED-IN member has an existing practitioner account.
  * Returns hasPractitioner boolean and practitioner data if exists.
+ *
+ * The member is the SESSION member. A `memberId` in the body is ignored: this route is public in
+ * the access matrix (the slug check below is), so the handler is the only gate, and it used to
+ * return any member's practice slug, name and email for a body-supplied id.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body: CheckPractitionerInput = await request.json();
-    const { memberId } = body;
-
-    if (!memberId) {
-      return NextResponse.json(
-        { error: 'memberId is required' },
-        { status: 400 }
-      );
-    }
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
 
     // Check for existing practitioner
     const result = await query<PractitionerResult>(

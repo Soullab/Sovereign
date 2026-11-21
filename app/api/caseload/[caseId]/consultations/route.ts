@@ -15,6 +15,7 @@ export function generateStaticParams() {
 import { NextRequest, NextResponse } from 'next/server';
 import { CaseStore } from '@/lib/caseload/CaseStore';
 import { CaseConsultationService, ConsultationType } from '@/lib/caseload/CaseConsultationService';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 interface RouteParams {
   params: Promise<{ caseId: string }>;
@@ -34,8 +35,9 @@ const VALID_CONSULTATION_TYPES: ConsultationType[] = [
  *
  * List consultations for a case.
  *
+ * The practitioner is the SESSION member (a `memberId` query param is ignored).
+ *
  * Query params:
- * - memberId (required): Practitioner's member ID
  * - limit: Max results (default 10)
  */
 export async function GET(request: NextRequest, context: RouteParams) {
@@ -44,16 +46,11 @@ export async function GET(request: NextRequest, context: RouteParams) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await context.params;
     const { searchParams } = new URL(request.url);
-    const memberId = searchParams.get('memberId');
-
-    if (!memberId) {
-      return NextResponse.json(
-        { error: 'memberId required' },
-        { status: 400 }
-      );
-    }
 
     // Verify case exists and belongs to practitioner
     const caseData = await CaseStore.getCase(caseId, memberId);
@@ -91,23 +88,19 @@ export async function GET(request: NextRequest, context: RouteParams) {
  *
  * Generate a new MAIA consultation.
  *
+ * The practitioner is the SESSION member (a `memberId` in the body is ignored).
+ *
  * Body:
- * - memberId (required): Practitioner's member ID
  * - consultationType: Type of consultation (default: pattern_analysis)
  * - focus: Optional practitioner query/focus question
  */
 export async function POST(request: NextRequest, context: RouteParams) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await context.params;
-    const body = await request.json();
-    const { memberId, consultationType, focus } = body;
-
-    if (!memberId) {
-      return NextResponse.json(
-        { error: 'memberId required' },
-        { status: 400 }
-      );
-    }
+    const { consultationType, focus } = await request.json();
 
     // Validate consultation type if provided
     if (consultationType && !VALID_CONSULTATION_TYPES.includes(consultationType)) {

@@ -2,10 +2,15 @@
  * GET/POST /api/practice/session/worlds
  *
  * Track which worlds were used in a specific session
+ *
+ * The session must be the caller's own (404 otherwise, identical to an absent id):
+ * PRACTITIONER-SESSION-OWNERSHIP-01.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionWorlds, recordSessionWorld } from '@/lib/practice/WorldsStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +20,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
     const { searchParams } = new URL(req.url);
     const sessionId = searchParams.get('sessionId');
 
@@ -24,6 +31,9 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     const worlds = await getSessionWorlds(sessionId);
 
@@ -51,6 +61,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
     const body = await req.json();
     const { sessionId, worldId, usageType, segmentRefs, markerCount } = body;
 
@@ -60,6 +72,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     const sessionWorld = await recordSessionWorld({
       sessionId,

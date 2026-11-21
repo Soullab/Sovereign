@@ -813,6 +813,24 @@ export const ACCESS_RULES: AccessRule[] = [
   { prefix: '/api/admin/partners/prelude/', minTier: 'free', rolesAnyOf: ['admin'], notes: 'Partner prelude administration — admin only; route also verifies authority directly' },
   { prefix: '/api/supervision', minTier: 'free', notes: 'Supervision API' },
 
+  /* PRACTITIONER-API-IDENTITY-01 — the caseload and practice APIs, declared EXPLICITLY.
+     /caseload (the PAGE) carried a rule; /api/caseload and /api/practice carried none, so in the
+     default permissive mode an unmapped path reached its handler with no session at all, and in
+     strict mode was refused only as `no-rule-match`. `minTier: 'free'` is the AUTHENTICATION
+     boundary only — the posture /api/supervision and /api/invites/ already declare. Who may act,
+     and on which rows, is enforced INDEPENDENTLY by each handler (session identity via
+     requireSessionMember + an ownership predicate); the matrix is not the handlers' excuse and the
+     handlers do not rely on it.
+
+     ⛔ No role requirement: the handlers never had one, and `rolesAnyOf: ['practitioner']` would
+     refuse the member whose first case auto-enables practitioner mode. ⛔ ACCESS_CONTROL_MODE and
+     the permissive default are unchanged.
+
+     The trailing slash is deliberate: matchRule uses raw `startsWith`, so a bare '/api/practice'
+     would also capture a sibling such as '/api/practices-admin'. */
+  { prefix: '/api/caseload/', minTier: 'free', notes: 'Caseload API — authenticated members only (PRACTITIONER-API-IDENTITY-01); each handler derives the acting practitioner from the session and checks case ownership itself' },
+  { prefix: '/api/practice/', minTier: 'free', notes: 'Practice API — authenticated members only (PRACTITIONER-API-IDENTITY-01); every handler derives the practitioner from the session, and a handler that names a session by id is owner-only (PRACTITIONER-SESSION-OWNERSHIP-01, lib/auth/requireOwnedSession.ts; pinned by app/api/__tests__/practitionerFamiliesIdentityGuard.test.ts)' },
+
   // Scribe API - session review, summaries
   { prefix: '/api/scribe', minTier: 'free', notes: 'Scribe API' },
 

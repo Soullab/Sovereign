@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, ChevronDown } from 'lucide-react';
-import { apiUrl } from '@/lib/http/apiBase';
+import { apiFetch, apiUrl } from '@/lib/http/apiBase';
 
 interface TranscriptSegment {
   id: string;
@@ -172,8 +172,10 @@ export function TranscriptViewer({
     (async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(
-          apiUrl(`/api/supervision/transcript/list?sessionId=${encodeURIComponent(sessionId!)}&afterMs=-1&limit=500`),
+        // apiFetch: transcript/list is owner-only (and Lab Tools-gated for GET); a bare fetch carries no
+        // x-session-token on a native / Safari cross-origin WebView.
+        const res = await apiFetch(
+          `/api/supervision/transcript/list?sessionId=${encodeURIComponent(sessionId!)}&afterMs=-1&limit=500`,
           { cache: 'no-store' }
         );
         const data = (await res.json()) as TranscriptResponse;
@@ -246,8 +248,8 @@ export function TranscriptViewer({
       if (!alive) return;
 
       try {
-        const res = await fetch(
-          apiUrl(`/api/supervision/transcript/list?sessionId=${encodeURIComponent(sessionId!)}&afterMs=${afterMsRef.current}&limit=200`),
+        const res = await apiFetch(
+          `/api/supervision/transcript/list?sessionId=${encodeURIComponent(sessionId!)}&afterMs=${afterMsRef.current}&limit=200`,
           { cache: 'no-store' }
         );
         const data = (await res.json()) as TranscriptResponse;

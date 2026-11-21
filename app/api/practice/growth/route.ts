@@ -3,6 +3,10 @@
  *
  * Cross-session practitioner growth observations
  * What MAIA notices about the practitioner's development over time
+ *
+ * The practitioner is the SESSION member on every method. A `practitionerId` in the query or
+ * body is ignored; the growth row id on PATCH is a resource id, acknowledged only when the
+ * session member owns it.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -13,6 +17,7 @@ import {
   getRecentSessionsForGrowthAnalysis,
   type GrowthType
 } from '@/lib/practice/PracticeStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,18 +27,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
     const { searchParams } = new URL(req.url);
-    const practitionerId = searchParams.get('practitionerId');
     const acknowledgedParam = searchParams.get('acknowledged');
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const includeSessionData = searchParams.get('includeSessionData') === 'true';
-
-    if (!practitionerId) {
-      return NextResponse.json(
-        { success: false, error: 'practitionerId required' },
-        { status: 400 }
-      );
-    }
 
     const acknowledged = acknowledgedParam === null
       ? undefined
@@ -66,18 +66,19 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
     const {
-      practitionerId,
       growthType,
       observation,
       sessionRefs,
       confidence
-    } = body;
+    } = await req.json();
 
-    if (!practitionerId || !growthType || !observation) {
+    if (!growthType || !observation) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields: practitionerId, growthType, observation' },
+        { success: false, error: 'Missing required fields: growthType, observation' },
         { status: 400 }
       );
     }
@@ -105,8 +106,10 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { growthId, notes } = body;
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
+    const { growthId, notes } = await req.json();
 
     if (!growthId) {
       return NextResponse.json(
@@ -115,8 +118,9 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    // Acknowledge growth observation (practitioner has seen it)
-    const growth = await acknowledgeGrowth(growthId, notes);
+    // Acknowledge growth observation (practitioner has seen it) — only the session
+    // practitioner's own row; another practitioner's id is indistinguishable from none.
+    const growth = await acknowledgeGrowth(growthId, notes, practitionerId);
 
     if (!growth) {
       return NextResponse.json(

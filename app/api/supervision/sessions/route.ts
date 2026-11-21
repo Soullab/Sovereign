@@ -1,9 +1,13 @@
 /**
  * List Clinical Supervision Sessions
- * GET /api/supervision/sessions?practitionerId=xxx&limit=50
+ * GET /api/supervision/sessions?limit=50
  *
- * Returns list of supervision sessions with pagination.
+ * Returns the SESSION practitioner's own supervision sessions, with pagination.
  * All data from local PostgreSQL - HIPAA compliant.
+ *
+ * The list is always the session member's: a `practitionerId` query param is ignored, and with none
+ * supplied it no longer lists every practitioner's sessions. Legacy sessions whose owner is NULL are
+ * not listed (PRACTITIONER-SESSION-OWNERSHIP-01, fail closed).
  */
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +15,7 @@ export const revalidate = false;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { listSessions } from '@/lib/supervision/SupervisionStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 export async function GET(request: NextRequest) {
   // Static export: return stub response during pre-rendering
@@ -18,8 +23,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
     const searchParams = request.nextUrl.searchParams;
-    const practitionerId = searchParams.get('practitionerId') || undefined;
     const caseId = searchParams.get('caseId') || undefined;
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);

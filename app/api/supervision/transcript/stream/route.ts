@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTranscriptSegments, addTranscriptSegment, getLastChunkTail, getRecentTranscriptTexts, getSession } from '@/lib/supervision/SupervisionStore';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 import { isLikelyPhantomDuplicate } from '@/lib/scribe/transcriptCleaner';
 import { evaluate as evaluateSegmentGate } from '@/lib/supervision/segmentGate';
 import {
@@ -120,6 +121,11 @@ export async function POST(request: NextRequest) {
         error: 'sessionId is required'
       }, { status: 400 });
     }
+
+    // Owner-only (PRACTITIONER-SESSION-OWNERSHIP-01): a session that is not the caller's, an unowned legacy
+    // session and an absent id answer the same 404, before the audio is examined or anything is read.
+    const owned = await requireOwnedSession(memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     if (!audioFile || audioFile.size === 0) {
       return NextResponse.json({
@@ -513,6 +519,11 @@ export async function GET(req: NextRequest) {
   if (!sessionId) {
     return new Response('Missing sessionId', { status: 400 });
   }
+
+  // Owner-only (PRACTITIONER-SESSION-OWNERSHIP-01): the same 404 as an absent id for any session that is
+  // not the caller's.
+  const owned = await requireOwnedSession(memberId, sessionId);
+  if ('error' in owned) return owned.error;
 
   // Support Last-Event-ID for automatic reconnect resume
   const lastEventId = req.headers.get('last-event-id');

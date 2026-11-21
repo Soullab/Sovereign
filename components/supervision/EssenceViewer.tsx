@@ -18,7 +18,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { apiUrl } from '@/lib/http/apiBase';
+import { apiFetch } from '@/lib/http/apiBase';
 
 interface ElementalSignature {
   fire: number;
@@ -85,8 +85,10 @@ export default function EssenceViewer({ sessionId, compact = false }: EssenceVie
     }
 
     try {
-      const url = apiUrl(`/api/supervision/session/${sessionId}/essence${regenerate ? '?regenerate=true' : ''}`);
-      const response = await fetch(url);
+      // apiFetch, not fetch: this route is owner-only now, and a bare fetch carries no x-session-token on a
+      // native / Safari cross-origin WebView (the Capacitor cookie trap in CLAUDE.md).
+      const path = `/api/supervision/session/${sessionId}/essence${regenerate ? '?regenerate=true' : ''}`;
+      const response = await apiFetch(path);
       const data = await response.json();
 
       if (data.success) {

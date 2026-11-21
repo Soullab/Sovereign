@@ -57,6 +57,9 @@ import { askMaia, withoutCarriedReadings, type StandingRead } from '@/lib/manusc
 import { loadActiveGrant, loadSectionSizes, loadSuppliedSections, loadEarlierDigests, loadEarlierLocusDigests } from '@/lib/disclosure/workReadScopeRead';
 import { chaptersInPlay, loadCarriedReadings, type CarryScope } from '@/lib/manuscript/ask/carriedReadings';
 import { selectSections, movedSince, digestOf, MAX_READ_SECTIONS } from '@/lib/manuscript/ask/workReadScope';
+import { writerSectionLabel } from '@/lib/manuscript/ask/writerSectionLabel';
+import { readRecordOf } from '@/lib/manuscript/ask/readingReceipt';
+import { withReceipts, withoutProvenance } from '@/lib/disclosure/readingReceiptProjection';
 import { decisionContextForWork, dismissedObservationKeys } from '@/lib/writersStudio/decisionRecord';
 import { livingWorkKind } from '@/lib/writersStudio/workKind';
 import { ANONYMISE_OFFER_INSTRUCTION, anonymiseOfferAlreadyMade } from '@/lib/writersStudio/practiceOffers';
@@ -234,7 +237,8 @@ export async function GET(
     if (!t || t.manuscriptId !== id) {
       return NextResponse.json({ refusal: 'not_found' }, { status: 404 });
     }
-    return NextResponse.json({ thread: t });
+    /* Package C2: the browser gets each answer's reading receipt, never raw provenance (R20 decisions 1 and 3). */
+    return NextResponse.json({ thread: await withReceipts(t, id, memberId) });
   }
 
   const raw = req.nextUrl.searchParams.get('anchor');
@@ -552,7 +556,7 @@ async function postHandler(
   });
 
   const thread = await loadThread(liveThreadId, memberId);
-  return NextResponse.json({ threadId: liveThreadId, thread, staleness });
+  return NextResponse.json({ threadId: liveThreadId, thread: thread && withoutProvenance(thread), staleness });
 }
 
 export const POST = meteredRoute('ask', postHandler);
@@ -691,8 +695,9 @@ async function workTurn(input: {
   const grant = (posture.sanctuary || !postureKnown) ? null : await loadActiveGrant(memberId, built.facts.work.id);
   if (grant && built.facts.manuscript) {
     const sizes = await loadSectionSizes(manuscriptId, memberId);
+    /* WS-STEP4 A: the writer's declared "About" scope governs which saved sections are read, within the server-held grant. */
     const picked = selectSections({
-      level: grant.level, question, locusId: sectionId,
+      level: grant.level, scope: carryScope, question, locusId: sectionId,
       sections: built.facts.sections, sizes,
     });
     /* Bound the number of receipts minted per Ask; the rest is reported as not supplied. */
@@ -815,7 +820,7 @@ async function workTurn(input: {
     /* Sanctuary: her answer is returned for this moment only and is not kept anywhere. The client shows it without a thread. */
     return NextResponse.json({
       threadId: existing ? existing.id : null,
-      thread: existing ? await loadThread(existing.id, memberId) : null,
+      thread: existing ? await withReceipts(await loadThread(existing.id, memberId), manuscriptId, memberId) : null,
       sanctuary: { notKept: true, question, answer: outcome.answer },
       staleness, read: [],
     });
@@ -836,14 +841,22 @@ async function workTurn(input: {
       /* WB7 · the writer's declared scope is part of what this answer was made from. */
       ...(carryScope === 'whole_book' ? { carryScope } : {}),
       ...(supplied.length > 0 ? { suppliedSections: supplied.map((x) => ({ sectionId: x.id, digest: x.digest })) } : {}),
+      /* Package C3: what was supplied AND what was left out for length, always present (an empty list records "none"). Ids and
+         body digests only; inside this immutable row, so it lives and is deleted exactly with the answer. */
+      readRecord: readRecordOf(supplied, standingRead ? standingRead.notSupplied.map((n) => n.id) : []),
       /* The passage the writer is at, as she was given it this turn (digest only), so a later turn can tell her it changed. */
       ...(built.facts.locus ? { locus: { sectionId: built.facts.locus.sectionId, digest: digestOf(built.facts.locus.body) } } : {}),
     },
   });
 
-  const thread = await loadThread(liveThreadId, memberId);
-  /* ⭐ L8 · what she actually read stays visible: ids + headings only, never text. */
-  const read = supplied.map((x) => ({ sectionId: x.id, label: x.label }));
+  const thread = await withReceipts(await loadThread(liveThreadId, memberId), manuscriptId, memberId);
+  /* ⭐ L8 · what she actually read stays visible: ids + headings only, never text.
+     WS-F2: named for the WRITER as the manuscript list names it (an unheaded section is "Section N", never "an untitled section").
+     The model's own labels above are untouched. */
+  const read = supplied.map((x) => ({
+    sectionId: x.id,
+    label: writerSectionLabel(built.facts.sections.find((s) => s.id === x.id)) ?? x.label,
+  }));
   return NextResponse.json({ threadId: liveThreadId, thread, staleness, read, ...(carryScope === 'whole_book' ? { carryScope } : {}) });
 }
 
@@ -1047,7 +1060,8 @@ async function developmentalTurn(input: {
        `interrupted` requires a FRESH member act and is never resumable here. */
     const st = claim.state;
     if (st.kind === 'completed') {
-      const thread = await loadThread(liveThreadId, memberId);
+      const loaded = await loadThread(liveThreadId, memberId);
+      const thread = loaded && withoutProvenance(loaded);
       return NextResponse.json({
         result: 'ALREADY_COMPLETED',
         threadId: liveThreadId, thread, staleness,
@@ -1234,7 +1248,8 @@ async function answerFrom(
     }, { status: 500 });
   }
 
-  const thread = await loadThread(o.liveThreadId, o.memberId);
+  const loaded = await loadThread(o.liveThreadId, o.memberId);
+  const thread = loaded && withoutProvenance(loaded);
   return NextResponse.json({
     threadId: o.liveThreadId,
     thread,

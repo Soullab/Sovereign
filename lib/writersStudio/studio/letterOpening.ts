@@ -142,13 +142,18 @@ export function passagesFor(evidenceRefs: unknown, sections: ReadonlyMap<string,
  * Compose the opening for a letter built from these readings. Never throws. When the opening cannot be kept, the reason is named
  * (and logged without content) so the letter can say it went without one, instead of the opening simply vanishing.
  */
-export async function composeOpening(memberId: string, manuscriptId: string, readingIds: readonly string[]): Promise<OpeningOutcome> {
-  const out = await composeOpeningInner(memberId, manuscriptId, readingIds);
+/**
+ * `kept` (§20): the `${readingId}:${observationKey}` list the synthesis sent to the model. When given, the opening is offered exactly
+ * those observations, so it never rests on an older reading's observation about text that has changed since. Absent: every observation
+ * of the given readings, as before.
+ */
+export async function composeOpening(memberId: string, manuscriptId: string, readingIds: readonly string[], kept?: readonly string[]): Promise<OpeningOutcome> {
+  const out = await composeOpeningInner(memberId, manuscriptId, readingIds, kept ? new Set(kept) : null);
   if (!out.ok) console.warn('[letter-opening] not kept', { refusal: out.refusal, readings: readingIds.length });
   return out;
 }
 
-async function composeOpeningInner(memberId: string, manuscriptId: string, readingIds: readonly string[]): Promise<OpeningOutcome> {
+async function composeOpeningInner(memberId: string, manuscriptId: string, readingIds: readonly string[], kept: ReadonlySet<string> | null): Promise<OpeningOutcome> {
   try {
     const live = (await query<{ id: string; text: string }>(
       `SELECT s.id, s.text FROM manuscript_draft_sections s JOIN manuscript_working_drafts d ON d.id = s.draft_id
@@ -159,6 +164,7 @@ async function composeOpeningInner(memberId: string, manuscriptId: string, readi
       const reading = await loadReading(id, memberId);
       if (!reading || reading.manuscriptId !== manuscriptId || reading.outcome !== 'reading') continue;
       for (const o of reading.observations) {
+        if (kept && !kept.has(`${reading.id}:${o.key}`)) continue;
         const passages = passagesFor(o.evidenceRefs, byId);
         observations.push({ ref: `E${observations.length + 1}`, lens: o.lens, observation: o.observation, ...(passages.length ? { passages } : {}) });
       }

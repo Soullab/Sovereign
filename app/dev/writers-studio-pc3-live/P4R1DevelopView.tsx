@@ -54,6 +54,7 @@ import { startersFor, type WorkKind } from '@/lib/writersStudio/workKindShared';
 import { getWorkKindClient } from '@/lib/writersStudio/workKindClient';
 import { fetchPlan, makePlanClient, editPlanClient, type PlanView, deletePlanClient } from '@/lib/writersStudio/planClient';
 import { readCurrentSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
+import { whatNextInDevelop, WHAT_NEXT_LABEL, WHAT_NEXT_ASK_LABEL, WHAT_NEXT_CLOSE_LABEL } from '@/lib/writersStudio/whatNext';
 import type { Appearance } from '@/app/writers-studio/full-redesign/types';
 import {
   DEFAULT_WORKING_STYLE,
@@ -707,6 +708,9 @@ function ReadingField({
 }
 
 
+/** Said when "Add your theme" is pressed with the box empty. */
+export const THEME_NEEDS_NAME_COPY = 'Type a theme in the box first, in your own words, then press “Add your theme”.';
+
 function ThemeField({ payload, busy, error, onMutation, onTalkCandidate }: {
   payload: LiveThemesPayload | null | undefined;
   busy: boolean;
@@ -715,6 +719,10 @@ function ThemeField({ payload, busy, error, onMutation, onTalkCandidate }: {
   onTalkCandidate: (candidate: LiveThemeCandidate) => void;
 }) {
   const [draft, setDraft] = useState('');
+  /* Guided beta session 2026-11-19, F4: pressing "Add your theme" with the box empty did nothing visible (the button was
+     disabled without a reason). Now the press answers: it puts the cursor in the box and says what to do. */
+  const [needsName, setNeedsName] = useState(false);
+  const themeInputRef = useRef<HTMLInputElement>(null);
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null);
   const [pace, setPace] = useState<WorkingPace>(DEFAULT_WORKING_STYLE.pace);
   const [explanationDepth, setExplanationDepth] = useState<ExplanationDepth>(DEFAULT_WORKING_STYLE.explanation);
@@ -843,14 +851,19 @@ function ThemeField({ payload, busy, error, onMutation, onTalkCandidate }: {
       {error ? <p className="p4r1-error" role="status">{error}</p> : null}
 
       <div className="p4r1-theme-declare">
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Name a theme you want to hold…" />
-        <button type="button" disabled={busy || !draft.trim()} onClick={() => {
+        <input ref={themeInputRef} value={draft} onChange={(e) => { setDraft(e.target.value); if (e.target.value.trim()) setNeedsName(false); }}
+          placeholder="Name a theme you want to hold…" aria-describedby="p4r1-theme-declare-hint" />
+        <button type="button" disabled={busy} onClick={() => {
           const label = draft.trim();
-          if (!label) return;
+          if (!label) { setNeedsName(true); themeInputRef.current?.focus(); return; }
+          setNeedsName(false);
           onMutation({ action: 'declare', label });
           setDraft('');
         }}>Add your theme</button>
       </div>
+      <p id="p4r1-theme-declare-hint" className="p4r1-theme-declare-hint" role="status" data-theme-needs-name={needsName ? 'true' : undefined}>
+        {needsName ? THEME_NEEDS_NAME_COPY : ''}
+      </p>
 
       {payload.themes.length === 0 ? (
         <p className="p4r1-empty">No governed themes yet. You can name one yourself or commission a Themes reading.</p>
@@ -2092,6 +2105,7 @@ function revealStudioPlace(target: string): () => void {
 }
 
 export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
+  const [whatNextOpen, setWhatNextOpen] = useState(false);
   const livePathname = usePathname() ?? '/dev/writers-studio-p4r1';
   const liveSearchParams = useSearchParams();
   const liveSearch = liveSearchParams?.toString() ?? '';
@@ -3495,6 +3509,38 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
         <div className="fr-maia-name"><h2>MAIA</h2><span>Editorial companion</span></div>
       </div>
       <div className="fr-mbody" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {/* "What do I do next?" (persona walk 2026-11-19): asked by the writer, answered from what is on screen. Posture is read at
+            the moment of asking and fails closed. Nothing is read, sent or kept; "Ask MAIA more" only places a question, unsent. */}
+        <div data-develop-what-next="true" style={{ flex: '0 0 auto', marginBottom: 10 }}>
+          <button type="button" className="p4r1-talk" aria-expanded={whatNextOpen} data-develop-what-next-button="true"
+            onClick={() => setWhatNextOpen((open) => !open)} style={{ width: '100%', fontSize: 15, fontWeight: 600 }}>
+            {WHAT_NEXT_LABEL}
+          </button>
+          {whatNextOpen ? (() => {
+            const posture = readCurrentSanctuaryPosture();
+            const answer = whatNextInDevelop({
+              chapterLabel: stageChapterLabel || null,
+              reading: stageReading.status,
+              noticed: stageReading.items.length,
+              pass: stagePass.status,
+              posture: !posture.resolved ? 'unresolved' : posture.sanctuary ? 'sanctuary' : 'ordinary',
+            });
+            return (
+              <div role="status" data-develop-what-next-answer="true" style={{ marginTop: 10, fontSize: 15, lineHeight: 1.5 }}>
+                {answer.say.map((line) => <p key={line} style={{ margin: '0 0 8px' }}>{line}</p>)}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <button type="button" className="p4r1-talk" data-develop-what-next-ask="true"
+                    onClick={() => { setWhatNextOpen(false); placeInStageConversation(answer.ask); }}>
+                    {WHAT_NEXT_ASK_LABEL}
+                  </button>
+                  <button type="button" className="p4r1-talk" data-develop-what-next-close="true" onClick={() => setWhatNextOpen(false)}>
+                    {WHAT_NEXT_CLOSE_LABEL}
+                  </button>
+                </div>
+              </div>
+            );
+          })() : null}
+        </div>
         <DevelopCompanion
           lastRead={lastRead}
           coverage={<CoverageLine manuscriptId={props.manuscriptId}

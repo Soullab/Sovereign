@@ -87,6 +87,16 @@ describe('what MAIA is told', () => {
   });
 });
 
+describe('MAIA speaks to the astrologer, not about them', () => {
+  it('in Ask and in Mentor', () => {
+    for (const mode of ['ask', 'mentor'] as const) {
+      const prompt = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', { mode });
+      expect(prompt).toContain('Address the astrologer directly as "you"');
+      expect(prompt).not.toContain('hand meaning back to the astrologer and their client');
+    }
+  });
+});
+
 describe('the Pro Ask prompt carries the guide', () => {
   it('in Ask and in Mentor', () => {
     for (const mode of ['ask', 'mentor'] as const) {
