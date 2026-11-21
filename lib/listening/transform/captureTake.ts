@@ -9,9 +9,10 @@
  *
  * This is the FILE'S OWN CLAIM. It is copied into the derived take's provenance
  * so the lineage travels with the new file, and it is labelled `asserted:
- * 'by-file'`: nothing here checks it against the take's `.provenance.json`,
- * and anyone can write these bytes. The original's SHA-256 (already in the
- * source record) is the anchor that lets the two be reconciled later.
+ * 'by-file'`: anyone can write these bytes. The original's SHA-256 (already in
+ * the source record) is the anchor that lets the two be reconciled: when the
+ * member also hands over the take's `.provenance.json`, checkCaptureSidecar
+ * (J4b-2) compares them.
  *
  * Nothing is fetched, uploaded or looked up. The member still chooses the file
  * themselves (acceptMemberFile); this only reads bytes they handed over.
@@ -38,9 +39,18 @@ export type CaptureOrigin = {
   codingHistory: string;
   /** Discontinuities Capture marked in the file (cue points). 0 when none were marked. */
   markedGaps: number;
-  /** This is what the file says about itself; it was not checked against the take's provenance.json. */
-  asserted: 'by-file';
+  /**
+   * 'by-file': what the file says about itself, not checked against anything.
+   * 'sidecar-matched' / 'sidecar-mismatch' (J4b-2): the member also handed over the take's
+   * `.provenance.json` and it was compared with these bytes. A match means that record names
+   * these exact bytes; it does not authenticate either file (neither is signed).
+   */
+  asserted: 'by-file' | 'sidecar-matched' | 'sidecar-mismatch';
+  /** Present only after a sidecar comparison: what the record said, and which fields disagreed. */
+  sidecar?: { schema: string; takeId: string; sha256: string; recovered: boolean | null; mismatched: string[] };
 };
+
+export const CAPTURE_PROVENANCE_SCHEMA = 'soullab.capture.provenance.v1';
 
 /** Printable ASCII only, NULs and padding trimmed, bounded. Anything else in these fields is dropped. */
 function text(bytes: Uint8Array, start: number, length: number): string {
@@ -99,4 +109,38 @@ export function describeCaptureOrigin(o: CaptureOrigin): string {
   const when = o.recordedAt ? ` on ${o.recordedAt.slice(0, 16)}` : '';
   const gaps = o.markedGaps === 0 ? '' : ` · ${o.markedGaps} gap${o.markedGaps === 1 ? '' : 's'} marked by Capture`;
   return `A Soullab Capture take, recorded${when}${o.recovered ? ' (recovered after an interruption)' : ''}${gaps}.`;
+}
+
+/**
+ * J4b-2: compare a take's own claim with the `.provenance.json` the Capture helper wrote beside
+ * it, which the member chose themselves. `fileSha256` is the SHA-256 of the whole WAV as opened.
+ * Returns a new origin; the input is not changed. Throws (with a plain message) when the text is
+ * not a Soullab Capture provenance record, so the origin stays 'by-file'.
+ */
+export function checkCaptureSidecar(origin: CaptureOrigin, fileSha256: string, sidecarText: string): CaptureOrigin {
+  let r: unknown;
+  try { r = JSON.parse(sidecarText); } catch { throw new Error('This is not a Soullab Capture provenance file.'); }
+  const rec = (r && typeof r === 'object' ? r : {}) as Record<string, unknown>;
+  if (rec.schema !== CAPTURE_PROVENANCE_SCHEMA || typeof rec.sha256 !== 'string' || typeof rec.takeId !== 'string') {
+    throw new Error('This is not a Soullab Capture provenance file.');
+  }
+  const sha256 = rec.sha256.toLowerCase().slice(0, 64);
+  const takeId = rec.takeId.slice(0, 64);
+  const recovered = typeof rec.recovered === 'boolean' ? rec.recovered : null;
+  const mismatched: string[] = [];
+  if (sha256 !== fileSha256.toLowerCase()) mismatched.push('sha256');
+  if (takeId !== origin.takeId) mismatched.push('takeId');
+  if (recovered !== origin.recovered) mismatched.push('recovered');
+  return {
+    ...origin,
+    asserted: mismatched.length ? 'sidecar-mismatch' : 'sidecar-matched',
+    sidecar: { schema: CAPTURE_PROVENANCE_SCHEMA, takeId, sha256, recovered, mismatched },
+  };
+}
+
+/** One plain sentence about the sidecar comparison, or '' when none was made. */
+export function describeCaptureSidecar(o: CaptureOrigin): string {
+  if (o.asserted === 'sidecar-matched') return 'Its Capture provenance file names these exact bytes (SHA-256 match). Neither file is signed.';
+  if (o.asserted === 'sidecar-mismatch') return `Its Capture provenance file does not match this recording (${o.sidecar?.mismatched.join(', ')}). The recording is treated as unverified.`;
+  return '';
 }

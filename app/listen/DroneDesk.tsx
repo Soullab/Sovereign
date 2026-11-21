@@ -15,6 +15,7 @@ import { frameCount, type Audio } from '@/lib/listening/transform/audio';
 import { readWav, wavAudioBytes, withProvenance } from '@/lib/listening/transform/wav';
 import { acceptMemberFile, sha256Hex, type SideInfo } from '@/lib/listening/transform/provenance';
 import { validateLocalAudio } from '@/lib/listening/localAudio';
+import { checkCaptureSidecar, describeCaptureOrigin, describeCaptureSidecar, readCaptureOrigin, type CaptureOrigin } from '@/lib/listening/transform/captureTake';
 import * as engine from '@/lib/listening/drone/engine.js';
 import type { Ambience, DroneSettings, FieldElement, FieldPath, LayerMix, PresetId, RenderResult } from '@/lib/listening/drone/engine';
 import {
@@ -34,7 +35,9 @@ async function load(file: File): Promise<Loaded> {
   const bytes = await file.arrayBuffer();
   const sha = await sha256Hex(bytes);
   let audio: Audio; let decodedBy: SideInfo['decodedBy'] = 'soullab-wav';
-  if (/\.wav$/i.test(file.name)) audio = readWav(bytes);
+  // J4b-2: a Soullab Capture take's own claim travels into the drone's provenance, as in Transform.
+  let capture: CaptureOrigin | null = null;
+  if (/\.wav$/i.test(file.name)) { audio = readWav(bytes); capture = readCaptureOrigin(bytes); }
   else {
     decodedBy = 'browser';
     const ctx = new OfflineAudioContext(2, 1, 48000);
@@ -42,7 +45,7 @@ async function load(file: File): Promise<Loaded> {
     audio = { sampleRate: d.sampleRate, channels: Array.from({ length: Math.min(2, d.numberOfChannels) }, (_, i) => d.getChannelData(i).slice()) };
   }
   if (frameCount(audio) / audio.sampleRate > MAX_SECONDS) throw new Error('This recording is longer than 20 minutes.');
-  return { file, audio, info: { name: file.name, sha256: sha, sampleRate: audio.sampleRate, frames: frameCount(audio), channels: audio.channels.length, decodedBy } };
+  return { file, audio, info: { name: file.name, sha256: sha, sampleRate: audio.sampleRate, frames: frameCount(audio), channels: audio.channels.length, decodedBy, ...(capture ? { capture } : {}) } };
 }
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, '0')}`;
@@ -185,6 +188,16 @@ export default function DroneDesk() {
         setStatus(`Ambience: ${loaded.file.name}. It plays as its own element in the field.`);
       }
     } catch (e) { setStatus(e instanceof Error ? e.message : 'This file could not be read.'); } finally { setBusy(false); }
+  };
+
+  // J4b-2: the member may also hand over the take's .provenance.json; it is compared, never fetched.
+  const chooseSidecar = async (input: File | null | undefined) => {
+    if (!input || !source?.info.capture) return;
+    try {
+      const capture = checkCaptureSidecar(source.info.capture, source.info.sha256, await input.text());
+      setSource({ ...source, info: { ...source.info, capture } }); setSaved(null);
+      setStatus(describeCaptureSidecar(capture));
+    } catch (e) { setStatus(e instanceof Error ? e.message : 'This file could not be read.'); }
   };
 
   const make = async (): Promise<RenderResult> => {
@@ -353,6 +366,15 @@ export default function DroneDesk() {
       <div className={styles.localAudioCard}>
         <strong>{source.file.name}</strong>
         <p className={styles.muted}>{clock(len)} · {source.info.sampleRate / 1000} kHz · {source.info.channels === 2 ? 'stereo, folded to one voice for the drone' : 'mono'}</p>
+        {source.info.capture && <>
+          <p className={styles.muted} data-capture-origin>{describeCaptureOrigin(source.info.capture)} A drone you save records where it came from.</p>
+          {source.info.capture.asserted === 'by-file'
+            ? <label className={styles.fileLabel} htmlFor="drone-capture-sidecar">Check it against its Capture provenance file (optional)
+                <input id="drone-capture-sidecar" type="file" accept=".json,application/json" disabled={busy}
+                  onChange={(e) => { void chooseSidecar(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} />
+              </label>
+            : <p className={styles.muted} data-capture-sidecar={source.info.capture.asserted}>{describeCaptureSidecar(source.info.capture)}</p>}
+        </>}
         <Wave audio={source.audio} region={s.region ? [s.region.startSeconds, s.region.endSeconds] : null}
           playhead={handed?.which === 'original' && pos ? pos.seconds : undefined}
           view={zoom && s.region ? [Math.min(s.region.startSeconds, s.region.endSeconds) - 0.5, Math.max(s.region.startSeconds, s.region.endSeconds) + 0.5] : null}

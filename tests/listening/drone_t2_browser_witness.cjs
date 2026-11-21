@@ -24,6 +24,17 @@ const riffChunk = (b, id) => {
 };
 
 // A 4-second 24-bit stereo WAV at 48 kHz: a sung-like tone with slow vibrato (the member's "own recording").
+// J4b-2: the same samples with the bext fields Soullab Capture writes (WAVLayout.swift / CaptureSession.swift).
+const CAPTURE_TAKE_ID = '2026-11-21T10-00-00Z-j4b2';
+function captureTakeWav() {
+  const plain = memberWav();
+  const bext = Buffer.alloc(8 + 602); bext.write('bext'); bext.writeUInt32LE(602, 4);
+  bext.write(`Soullab Capture take ${CAPTURE_TAKE_ID}`, 8, 256, 'latin1'); bext.write('Soullab Capture', 8 + 256, 32, 'latin1');
+  bext.write('2026-11-21', 8 + 320, 10, 'latin1'); bext.write('10:00:00', 8 + 330, 8, 'latin1');
+  const body = Buffer.concat([plain.subarray(8, 36), bext, plain.subarray(36)]);
+  const riff = Buffer.alloc(8); riff.write('RIFF'); riff.writeUInt32LE(body.length, 4);
+  return Buffer.concat([riff, body]);
+}
 function memberWav() {
   const rate = 48000, frames = rate * 4, data = Buffer.alloc(frames * 6);
   for (let i = 0; i < frames; i++) {
@@ -84,6 +95,10 @@ const check = (name, pass, detail) => { results.push({ name, pass: !!pass }); co
   const url = `http://127.0.0.1:${server.address().port}/`;
   const wavPath = path.join(dir, 'My voice.wav'); const wavBytes = memberWav(); fs.writeFileSync(wavPath, wavBytes);
   const textPath = path.join(dir, 'notes.txt'); fs.writeFileSync(textPath, 'not audio');
+  const takePath = path.join(dir, 'My take.wav'); const takeBytes = captureTakeWav(); fs.writeFileSync(takePath, takeBytes);
+  const sidecar = (sha256) => JSON.stringify({ schema: 'soullab.capture.provenance.v1', takeId: CAPTURE_TAKE_ID, sha256, recovered: false });
+  const sidecarPath = path.join(dir, 'My take.provenance.json'); fs.writeFileSync(sidecarPath, sidecar(sha(takeBytes)));
+  const badSidecarPath = path.join(dir, 'Other take.provenance.json'); fs.writeFileSync(badSidecarPath, sidecar(sha(wavBytes)));
 
   // The same render under Node, through the same modules, for the bit-identity check.
   const { register } = await import('node:module'); const { pathToFileURL } = await import('node:url');
@@ -111,6 +126,7 @@ const check = (name, pass, detail) => { results.push({ name, pass: !!pass }); co
       await p.waitForSelector('[data-drone-wave]');
       const st = await p.locator('[data-drone-desk] [role="status"]').textContent();
       check(`${name}: the member's own recording opens, with a passage to mark`, /My voice\.wav: 0:04\.00/.test(st || ''), st);
+      check(`${name}: a recording that is not a Capture take shows no Capture origin (J4b-2)`, (await p.locator('[data-capture-origin]').count()) === 0);
       check(`${name}: a passage of the first 3 s is marked to start`, /0:03\.00/.test(await p.locator('[data-drone-control="Passage ends"]').textContent() || ''));
       await p.getByRole('button', { name: 'Deep Earth' }).click();
       check(`${name}: Deep Earth names its three voices`, (await p.locator('[data-drone-layer="1"] strong').first().textContent()) === 'Deep sub-octave');
@@ -219,6 +235,36 @@ const check = (name, pass, detail) => { results.push({ name, pass: !!pass }); co
       check(`${name}: B · Zoom into the passage is a pressed toggle`, (await p.locator('[data-drone-zoom]').getAttribute('aria-pressed')) === 'true');
       if (name === 'desktop') await p.screenshot({ path: path.join(shots, 'sound-studio-drone-detail-desktop.png'), fullPage: true });
       else await p.screenshot({ path: path.join(shots, 'sound-studio-drone-detail-mobile.png'), fullPage: true });
+
+      // ---- J4b-2: a Soullab Capture take on the Drone desk ----
+      await p.setInputFiles('#drone-file', takePath);
+      await p.waitForFunction(() => /My take\.wav/.test(document.querySelector('[data-drone-desk] [role="status"]')?.textContent || ''), null, { timeout: 10000 });
+      const origin = await p.locator('[data-capture-origin]').textContent().catch(() => null);
+      check(`${name}: J4b-2 · a Capture take is named as one, with when it was recorded`,
+        origin === 'A Soullab Capture take, recorded on 2026-11-21 10:00. A drone you save records where it came from.', origin);
+      await p.setInputFiles('#drone-capture-sidecar', badSidecarPath);
+      const bad = await p.locator('[data-capture-sidecar]').textContent().catch(() => null);
+      check(`${name}: J4b-2 · a provenance file for other bytes is named a mismatch`, /does not match this recording \(sha256\)/.test(bad || ''), bad);
+      await p.setInputFiles('#drone-file', takePath); // reopen: the origin is back to the file's own claim
+      await p.waitForSelector('#drone-capture-sidecar');
+      await p.setInputFiles('#drone-capture-sidecar', sidecarPath);
+      const good = await p.locator('[data-capture-sidecar]').textContent().catch(() => null);
+      check(`${name}: J4b-2 · its own provenance file matches, and says no more than a byte match`,
+        good === 'Its Capture provenance file names these exact bytes (SHA-256 match). Neither file is signed.', good);
+      played = await p.evaluate(() => window.__played);
+      await p.getByRole('button', { name: 'Make the drone and play it' }).click();
+      await lastSel(played);
+      const dl2 = []; p.on('download', (d) => dl2.push(d));
+      await p.getByRole('button', { name: 'Save as new' }).click();
+      await p.waitForSelector('[data-drone-saved]', { timeout: 30000 }); await p.waitForTimeout(500);
+      const f2 = {}; for (const d of dl2) f2[d.suggestedFilename()] = fs.readFileSync(await d.path());
+      const tSaved = f2['My take (drone).wav'], tJson = f2['My take (drone).provenance.json'];
+      const tIn = tSaved && riffChunk(tSaved, 'slpv'); const r1 = tIn && JSON.parse(tIn.toString('utf8').replace(/\0+$/, ''));
+      const r2 = tJson && JSON.parse(tJson.toString('utf8'));
+      check(`${name}: J4b-2 · both drone records carry the take's origin and the sidecar match`,
+        r1 && r2 && r1.source.sha256 === sha(takeBytes) && r1.source.capture?.takeId === CAPTURE_TAKE_ID && r1.source.capture.asserted === 'sidecar-matched'
+        && JSON.stringify(r1.source.capture) === JSON.stringify(r2.source.capture), r1 && r1.source.capture);
+      check(`${name}: J4b-2 · the take was re-read and is unchanged`, /unchanged/.test(await p.locator('[data-drone-saved]').textContent() || '') && sha(fs.readFileSync(takePath)) === sha(takeBytes));
 
       const overflow = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       check(`${name}: no horizontal overflow`, overflow <= 0, overflow);
