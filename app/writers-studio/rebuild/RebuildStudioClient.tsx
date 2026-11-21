@@ -34,6 +34,7 @@ import { useEditingLatitude } from '../insight/EditingLatitude';
 import { INSIGHT_READING, INSIGHT_OBSERVATION, loadCanvasInsight, type CanvasInsight, type InsightPassage } from '@/lib/writersStudio/insightCanvas';
 import type { SectionWriting } from '@/lib/writersStudio/useSectionWriting';
 import { asOutline, chapterSpanFor, isConfirmedChapterRoot, wordCount, type RebuildSection } from '@/lib/writersStudio/rebuild/model';
+import { RebuildLoadFailure, rebuildLoadStage, rebuildLoadStatus } from '@/lib/writersStudio/rebuild/loadFailure';
 import type { OutlineNode } from '@/lib/writersStudio/focus/outlineTree';
 import { DEVELOPMENTAL_LENSES, type DevelopmentalLens } from '@/lib/manuscript/developmentalReader/contract';
 import { focusOn, focusRequest, composerPrompt } from '@/lib/writersStudio/focus/studioFocus';
@@ -433,7 +434,7 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
       if (!manuscriptId) {
         const list = await apiFetch('/api/sovereign/manuscripts', { method: 'GET' });
         if (list.status === 401) { setPhase('unauthorized'); return; }
-        if (!list.ok) throw new Error('manuscript list');
+        if (!list.ok) throw new RebuildLoadFailure('manuscript-list', list.status);
         const body = await list.json();
         const manuscripts = Array.isArray(body?.manuscripts) ? body.manuscripts : [];
         if (manuscripts.length !== 1) {
@@ -444,11 +445,11 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
         manuscriptId = manuscripts[0].id;
       }
       const resolvedManuscriptId = manuscriptId;
-      if (!resolvedManuscriptId) throw new Error('manuscript identity');
+      if (!resolvedManuscriptId) throw new RebuildLoadFailure('manuscript-identity');
       const contextUrl = `/api/writers-studio/rebuild/context?manuscriptId=${encodeURIComponent(resolvedManuscriptId)}`;
       let res = await apiFetch(contextUrl);
       if (res.status === 401) { setPhase('unauthorized'); return; }
-      if (!res.ok) throw new Error('context');
+      if (!res.ok) throw new RebuildLoadFailure('context', res.status);
       let body = await res.json() as ContextPayload;
       /* A fresh import arrives here with Source sections and NO working draft:
          import redirects straight to this room, and nothing on that path makes
@@ -464,10 +465,10 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
           setMessage('This manuscript has no text to open yet. Import it again with its content.');
           return;
         }
-        if (begun.kind === 'error') throw new Error('begin draft');
+        if (begun.kind === 'error') throw new RebuildLoadFailure('begin-draft');
         res = await apiFetch(contextUrl);
         if (res.status === 401) { setPhase('unauthorized'); return; }
-        if (!res.ok) throw new Error('context');
+        if (!res.ok) throw new RebuildLoadFailure('context-after-begin', res.status);
         body = await res.json() as ContextPayload;
       }
       if (body.state !== 'section_aware') {
@@ -494,7 +495,15 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
       }
       setMaiaMode(isConfirmedChapterRoot(initial) ? 'chapter' : 'passage');
       setPhase('ready');
-    } catch {
+    } catch (error) {
+      /* The member's sentence does not name the stage, and must not: we do not
+         know what they would make of a stage name, and the honest floor is the
+         copy below. The SYSTEM records it, classified — stage and status only,
+         never the body, the error or any authored character (loadFailure.ts). */
+      console.error('[MAIA/writers-studio] rebuild load failed', {
+        stage: rebuildLoadStage(error),
+        status: rebuildLoadStatus(error),
+      });
       setPhase('error');
       setMessage('The rebuilt Studio could not read this manuscript just now. Nothing has changed.');
     }
