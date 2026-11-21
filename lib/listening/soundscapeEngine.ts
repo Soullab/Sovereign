@@ -34,7 +34,7 @@ const PLUCK_RATIOS = [1, 1.125, 1.5, 1.6667, 2, 1.5, 1.125, 1];
 // follow each voice's level and the slow pulse, and pass through the one master, so the Level governs them.
 // Focus soundscapes only: a Tone Lab sound stays a pure tone.
 export const SOUNDSCAPE_OVERTONE_PARTIALS = [2, 3, 4] as const;
-export const SOUNDSCAPE_OVERTONE_SOFT_HZ = 900;
+export const SOUNDSCAPE_OVERTONE_SOFT_HZ = 900; // on the default choices; each choice sets its own (spec.overtoneSoftHz)
 export const SOUNDSCAPE_OVERTONE_BUS_GAIN = 3.0; // 50% of the Shelf's 6.0
 const SOUNDSCAPE_OVERTONE_HIGHEST_HZ = 4000;
 const overtoneGain = (n: number, hz: number) => (hz > SOUNDSCAPE_OVERTONE_HIGHEST_HZ ? 0 : 1 / (n * n));
@@ -104,9 +104,10 @@ export function buildSoundscape(
   // Warm overtones (see SOUNDSCAPE_OVERTONE_PARTIALS). Not for a Tone Lab sound.
   const overtoneOscillators: OscillatorNode[] = [];
   const overtoneVoices: { follower: GainNode; partials: { osc: OscillatorNode; gain: GainNode; n: number }[] }[] = [];
+  let overtoneSoft: BiquadFilterNode | null = null;
   if (!spec.tone) {
-    const soft = context.createBiquadFilter();
-    soft.type = 'lowpass'; soft.frequency.value = SOUNDSCAPE_OVERTONE_SOFT_HZ; soft.Q.value = 0.5;
+    const soft = context.createBiquadFilter(); overtoneSoft = soft;
+    soft.type = 'lowpass'; soft.frequency.value = spec.overtoneSoftHz ?? SOUNDSCAPE_OVERTONE_SOFT_HZ; soft.Q.value = 0.5;
     const swell = context.createGain(); swell.gain.value = 1;
     movementDepth.connect(swell.gain); // the same slow pulse as the voices
     const overtoneBus = context.createGain(); overtoneBus.gain.value = SOUNDSCAPE_OVERTONE_BUS_GAIN;
@@ -283,6 +284,7 @@ export function buildSoundscape(
         }
       });
       gently(filter.frequency, next.lowpassHz);
+      if (overtoneSoft) gently(overtoneSoft.frequency, next.overtoneSoftHz ?? SOUNDSCAPE_OVERTONE_SOFT_HZ);
       gently(movement.frequency, Math.max(0.0001, next.pulseHz));
       gently(movementDepth.gain, next.pulseHz > 0 ? next.pulseDepth : 0);
       gently(driftGain.gain, next.lowpassHz * 0.22 * next.driftDepth);

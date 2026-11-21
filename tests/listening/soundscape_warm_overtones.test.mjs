@@ -41,10 +41,29 @@ const build = (spec) => { const ctx = fakeContext(); const handle = E.buildSound
 test.after(() => { for (const h of built) h.dispose(); }); // clears each sound's event timer even when a check fails
 const overtoneOscs = (ctx, handle) => ctx.nodes.filter((n) => n.kind === 'osc' && n.frequency.value > 0 && !handle.oscillators.includes(n) && n !== handle.movement && n.frequency.value > 1);
 
-test('the ruled setting: 2×, 3×, 4×, a soft 900 Hz low-pass, at 50% of the Shelf amount', () => {
+test('the ruled setting: 2×, 3×, 4×, a soft low-pass (900 Hz on the default choices), at 50% of the Shelf amount', () => {
   assert.deepEqual([...E.SOUNDSCAPE_OVERTONE_PARTIALS], [2, 3, 4]);
   assert.equal(E.SOUNDSCAPE_OVERTONE_SOFT_HZ, 900);
   assert.equal(E.SOUNDSCAPE_OVERTONE_BUS_GAIN, 3.0);
+});
+
+test('their softness follows each choice: exactly the 900 Hz heard on the default, brighter for Activate, softest for Deep', () => {
+  assert.equal(E.focusSoundscapeSpec(E.DEFAULT_SOUNDSCAPE_INPUT).overtoneSoftHz, 900);
+  const at = (need, stimulation = 'medium') => E.focusSoundscapeSpec({ need, stimulation, world: 'classical', task: 'coding' }).overtoneSoftHz;
+  for (const other of ['arrive', 'steady', 'deep', 'create', 'reset']) assert.ok(at('activate') > at(other), `activate above ${other}`);
+  for (const other of ['arrive', 'steady', 'activate', 'create', 'reset']) assert.ok(at('deep') < at(other), `deep below ${other}`);
+  assert.ok(at('steady', 'low') < at('steady') && at('steady') < at('steady', 'high'), 'stimulation brightens them');
+  const all = ['arrive', 'steady', 'deep', 'activate', 'create', 'reset'].flatMap((n) => ['low', 'medium', 'high'].map((s) => at(n, s)));
+  assert.ok(Math.min(...all) >= 500 && Math.max(...all) <= 3200);
+});
+
+test('a live change moves their softness', () => {
+  const a = E.focusSoundscapeSpec({ need: 'steady', stimulation: 'low', world: 'ambient', task: 'writing' });
+  const b = E.focusSoundscapeSpec({ need: 'steady', stimulation: 'high', world: 'ambient', task: 'writing' });
+  const { ctx, handle } = build(a);
+  const soft = ctx.nodes.find((n) => n.kind === 'filter' && n.frequency.value === a.overtoneSoftHz && n.Q.value === 0.5);
+  assert.ok(soft); handle.update(b);
+  assert.ok(soft.frequency.targets.includes(b.overtoneSoftHz));
 });
 
 test('every Focus soundscape voice carries exact whole-number overtones, detune-locked, at 1/n²', () => {
@@ -70,7 +89,7 @@ test('they pass the soft filter, the slow pulse and the one master (the Level go
   const spec = E.focusSoundscapeSpec({ need: 'activate', stimulation: 'medium', world: 'electronic', task: 'coding' }); // a world with a pulse
   const { ctx, handle } = build(spec);
   const ot = overtoneOscs(ctx, handle)[0];
-  const soft = ctx.nodes.find((n) => n.kind === 'filter' && n.frequency.value === 900);
+  const soft = ctx.nodes.find((n) => n.kind === 'filter' && n.frequency.value === spec.overtoneSoftHz);
   assert.ok(soft && soft.Q.value === 0.5);
   assert.ok(reaches(ot, soft) && reaches(soft, handle.master));
   const bus = ctx.nodes.find((n) => n.kind === 'gain' && n.gain.value === 3.0);

@@ -35,6 +35,8 @@ export type SoundscapeSpec = {
   noise: NoiseSpec | null;
   tick: TickSpec | null;
   fadeInSec: number;
+  /** Where the warm overtones are rounded off, in Hz. The engine gives a Tone Lab sound no overtones, whatever this says. */
+  overtoneSoftHz?: number;
   /** Tone Lab only: a pure tone (and optional pulse) carried by the same engine. Absent for every Focus soundscape. */
   tone?: ToneSpec;
 };
@@ -138,8 +140,15 @@ export function focusSoundscapeSpec(input: SoundscapeInput): SoundscapeSpec {
     noise: palette.noise ? { ...palette.noise, gain: round(palette.noise.gain * (input.need === 'activate' ? 1.4 : input.need === 'deep' ? .7 : 1) * stim.tick) } : null,
     tick,
     fadeInSec: need.fade,
+    // The warm overtones keep each choice's own brightness (founder, #1979, 2026-11-21: "Yes, try it"): their
+    // softening follows the same need, stimulation and task brightness as the tone, and is exactly the 900 Hz the
+    // founder heard on the default choices (deep · medium · writing). Brighter choices (Activate, and
+    // high stimulation) open past the Shelf's 2400 Hz, never past 3200 Hz, so Activate stays the brightest (listen72).
+    overtoneSoftHz: round(clamp(OVERTONE_SOFT_AT_DEFAULT_HZ * (need.lp * stim.lp * taskLp) / DEFAULT_BRIGHTNESS, 500, 3200), 1),
   };
 }
+export const OVERTONE_SOFT_AT_DEFAULT_HZ = 900;
+const DEFAULT_BRIGHTNESS = NEED.deep.lp * STIM.medium.lp * .9; // the default choices: deep · medium · a verbal task
 
 /** Whether a live change can be applied smoothly to the running sound, or needs a new one (a different palette). */
 export function soundscapeNeedsRebuild(a: SoundscapeSpec, b: SoundscapeSpec): boolean {
