@@ -1,0 +1,489 @@
+// LISTEN-01 · Liquid Harmonics — sketch 09 as a Sound Studio procedural study (founder go-ahead 2026-11-21:
+// "Yes, review branch").
+//
+// REVIEW-ONLY. A founder-steered instrument, generated in the browser with no recorded media. It plays only
+// through the persistent player (see proceduralStudy.ts): the player owns the context, the output lease, the level,
+// Pause and Stop. The engine follows liquid-harmonics-sketch-09.html closely, so that what the founder heard locally
+// is what plays here. No state, effect or health outcome is claimed, and no AI composes anything: a journey is a
+// score the listener writes, and every score is checked here, whoever wrote it.
+
+import type { ProceduralStudy, ProceduralStudyAPI, ProceduralStudyHandle } from './proceduralStudy';
+
+// ── Controls ──────────────────────────────────────────────────────────────────────────────────────────
+export type Group = 'Voice' | 'Oscillation' | 'Frequency shifts' | 'Rise' | 'Pressure' | 'Space';
+export type Control = {
+  g: Group; k: string; label: string; v: number | string;
+  min?: number; max?: number; step?: number; log?: boolean; unit?: string; hint?: string;
+  options?: readonly string[]; format?: 'vowel' | 'int' | 'ratio';
+};
+
+export const VOWELS: readonly (readonly number[])[] = [[300, 870, 2240], [500, 700, 2400], [730, 1090, 2440], [530, 1840, 2480], [270, 2290, 3010]]; // u o a e i
+export const BREAKTHROUGHS = ['open into stillness', 'silence', 'pop, then stillness'] as const;
+
+// Defaults are the founder's settings from 21 Nov 2026 (addendum obs 27, sawtooth throb).
+export const CONTROLS: readonly Control[] = Object.freeze([
+  { g: 'Voice', k: 'f0', label: 'Fundamental', min: 55, max: 440, v: 209, log: true, unit: 'Hz', hint: 'The low tone everything grows from.' },
+  { g: 'Voice', k: 'vowel', label: 'Vowel inside the tone', min: 0, max: 4, v: 4, step: 0.01, format: 'vowel', hint: 'oo → oh → ah → eh → ee' },
+  { g: 'Voice', k: 'vowelMove', label: 'Vowel drift', min: 0, max: 1, v: 0.94, hint: 'The vowel wanders by itself: liquid movement inside one pitch.' },
+  { g: 'Voice', k: 'overtone', label: 'Singing overtone', min: 0, max: 1, v: 0.94, hint: 'A whistle-like harmonic emerging above the tone.' },
+  { g: 'Voice', k: 'otMove', label: 'Overtone movement', min: 0, max: 8, v: 2.99, unit: '/s', hint: 'How often the overtone steps to a new harmonic.' },
+  { g: 'Voice', k: 'sub', label: 'Subharmonic', min: 0, max: 1, v: 0.96, hint: 'A rough octave below.' },
+  { g: 'Voice', k: 'voices', label: 'Voices (multitonal)', min: 1, max: 8, v: 6, step: 1, format: 'int', hint: 'Stacks extra tones over the fundamental.' },
+  { g: 'Voice', k: 'body', label: 'Body (bold, visceral)', min: 0, max: 1, v: 0.4, hint: 'Drive and weight. Pushes the sound forward.' },
+  { g: 'Voice', k: 'second', label: 'Second tone', min: 0, max: 1, v: 0.43 },
+  { g: 'Voice', k: 'ratio', label: 'Second tone interval', min: 1, max: 2, v: 1.959, step: 0.001, format: 'ratio' },
+  { g: 'Voice', k: 'beat', label: 'Beating', min: 0, max: 20, v: 8, unit: 'Hz', hint: 'Slight detuning that throbs against itself.' },
+  { g: 'Oscillation', k: 'rate', label: 'Throb rate', min: 0.5, max: 60, v: 3.46, log: true, unit: '/s' },
+  { g: 'Oscillation', k: 'depth', label: 'Throb depth', min: 0, max: 1, v: 0.72 },
+  { g: 'Oscillation', k: 'shape', label: 'Throb shape', options: ['sine', 'triangle', 'square', 'sawtooth'], v: 'sawtooth' },
+  { g: 'Oscillation', k: 'wobble', label: 'Pitch wobble', min: 0, max: 400, v: 150, unit: 'cents', hint: 'The pitch bends at the throb rate.' },
+  { g: 'Oscillation', k: 'binaural', label: 'Inside the head (binaural)', min: 0, max: 1.5, v: 1, hint: 'Headphones only. Two steady tones, one per ear, differing by the throb rate.' },
+  { g: 'Frequency shifts', k: 'spiral', label: 'Endless spiral', min: 0, max: 1.5, v: 1, hint: 'Many tones a full octave apart, gliding forever.' },
+  { g: 'Frequency shifts', k: 'spiralSpeed', label: 'Spiral speed', min: -5, max: 5, v: 2, step: 0.01, unit: 'oct / 10 s', hint: 'Positive rises forever, negative falls forever.' },
+  { g: 'Frequency shifts', k: 'shift', label: 'Shift per echo', min: -200, max: 200, v: 80, step: 0.5, unit: 'Hz', hint: 'Each echo moves every partial by this many Hz.' },
+  { g: 'Frequency shifts', k: 'fb', label: 'Echo feedback', min: 0, max: 0.9, v: 0.88 },
+  { g: 'Frequency shifts', k: 'time', label: 'Echo time', min: 0.04, max: 0.8, v: 0.25, log: true, unit: 's' },
+  { g: 'Frequency shifts', k: 'wet', label: 'Shifted echoes mix', min: 0, max: 1, v: 1 },
+  { g: 'Rise', k: 'peakRate', label: 'Peak throb rate', min: 5, max: 60, v: 40, log: true, unit: '/s', hint: 'Where the throb rate arrives at the crescendo.' },
+  { g: 'Rise', k: 'riseTime', label: 'Length of the rise (s)', options: ['30', '60', '120', '300'], v: '60' },
+  { g: 'Rise', k: 'brk', label: 'Breakthrough', options: BREAKTHROUGHS, v: 'open into stillness' },
+  { g: 'Rise', k: 'riseGather', label: 'Gather to centre while rising', options: ['yes', 'no'], v: 'yes' },
+  { g: 'Pressure', k: 'press', label: 'Sub-bass pressure', min: 0, max: 1.3, v: 1, hint: 'For speakers with a subwoofer. Headphones carry little of it. Raise slowly, and keep the room level sensible.' },
+  { g: 'Pressure', k: 'pressF', label: 'Pressure pitch', min: 25, max: 80, v: 73, log: true, unit: 'Hz' },
+  { g: 'Pressure', k: 'pressRate', label: 'Pressure pulse', min: 0.1, max: 12, v: 9.09, log: true, unit: '/s', hint: 'How fast the pressure swells and draws back.' },
+  { g: 'Pressure', k: 'pressLink', label: 'Follow the throb', min: 0, max: 1, v: 1, hint: '1: the pressure pulses at the throb rate instead.' },
+  { g: 'Space', k: 'swirl', label: 'Swirl', min: 0, max: 1, v: 1, hint: 'A flanging, liquid wash.' },
+  { g: 'Space', k: 'swirlRate', label: 'Swirl speed', min: 0.03, max: 8, v: 3, log: true, unit: 'Hz' },
+  { g: 'Space', k: 'rotate', label: 'Rotation around you', min: 0, max: 1.5, v: 0.26, unit: 'Hz' },
+  { g: 'Space', k: 'verb', label: 'Space', min: 0, max: 1.3, v: 0.94 },
+  { g: 'Space', k: 'center', label: 'Periphery → centre', min: 0, max: 1, v: 0.34, hint: '0: all around you. 1: gathered to one point. Or use Gather / Release.' },
+  { g: 'Space', k: 'glass', label: 'Glass shimmer', min: 0, max: 1.5, v: 0.96, hint: 'High crystalline partials.' },
+] as Control[]);
+
+export type Params = Record<string, number | string>;
+export const DEFAULT_PARAMS: Readonly<Params> = Object.freeze(Object.fromEntries(CONTROLS.map(c => [c.k, c.v])));
+
+export const LIQUID_STUDY_ID = 'liquid-harmonics-sketch-09';
+export const LIQUID_STUDY_TITLE = 'Liquid Harmonics';
+export const LIQUID_NOTES = Object.freeze({
+  claim: 'An artistic sound study for review, shaped by the founder’s listening. It does not reproduce or induce any state and makes no health claim.',
+  safety: 'Start at a low level. A rise gets faster, brighter and fuller until it breaks, and the breakthrough can be sudden silence. Sub-bass pressure is felt more than heard on speakers: raise it slowly. Stop always works.',
+  score: 'A journey is a score you write. The player checks every score itself: values stay in safe ranges, changes stay gradual, anything unknown is ignored.',
+  local: 'Kept settings and your journey are saved only in this browser on this device.',
+});
+
+// ── Pure helpers (tested) ─────────────────────────────────────────────────────────────────────────────
+const byKey = new Map(CONTROLS.map(c => [c.k, c]));
+export const control = (k: string) => byKey.get(k);
+export function toSlider(c: Control, v: number): number {
+  const lo = c.min!, hi = c.max!;
+  return c.log ? Math.log(v / lo) / Math.log(hi / lo) : (v - lo) / (hi - lo);
+}
+export function fromSlider(c: Control, x: number): number {
+  const lo = c.min!, hi = c.max!;
+  return c.log ? lo * Math.pow(hi / lo, x) : lo + x * (hi - lo);
+}
+export function formatValue(c: Control, v: number | string): string {
+  if (c.options) return String(v);
+  const n = Number(v);
+  if (c.format === 'vowel') return 'u o a e i'.split(' ')[Math.round(n)];
+  if (c.format === 'int') return String(Math.round(n));
+  if (c.format === 'ratio') return n.toFixed(3) + '×';
+  return (Math.abs(n) >= 10 ? n.toFixed(0) : n.toFixed(2)) + (c.unit ? ' ' + c.unit : '');
+}
+export function vowelAt(x: number): number[] {
+  const i = Math.min(3, Math.max(0, Math.floor(x))), f = Math.min(1, Math.max(0, x - i));
+  return VOWELS[i].map((v, j) => v + (VOWELS[i + 1][j] - v) * f);
+}
+const clampN = (v: unknown, lo: number, hi: number, d: number) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+
+/** Every known control, clamped to its range; unknown keys dropped. `withRise` keeps the free-rise controls. */
+export function cleanParams(src: unknown, withRise = false): Params {
+  const s = (src && typeof src === 'object' ? src : {}) as Record<string, unknown>, out: Params = {};
+  for (const c of CONTROLS) {
+    if ((!withRise && c.g === 'Rise') || !(c.k in s)) continue;
+    if (c.options) { if (c.options.includes(String(s[c.k]))) out[c.k] = String(s[c.k]); }
+    else out[c.k] = clampN(s[c.k], c.min!, c.max!, c.v as number);
+  }
+  return out;
+}
+
+export type MorphStep = { type: 'morph'; name: string; params: Params; seconds: number; hold: number };
+export type CentreStep = { type: 'gather' | 'release'; seconds: number; hold: number };
+export type RiseStep = {
+  type: 'rise'; peak: number; length: number; brk: typeof BREAKTHROUGHS[number]; gather: 'yes' | 'no'; hold: number;
+  pitch: number; emerge: number; transform: number; throbAccel: number; pitchAccel: number; harmAccel: number;
+};
+export type EndStep = { type: 'end'; seconds: number };
+export type Step = MorphStep | CentreStep | RiseStep | EndStep;
+export type Score = { format: 'liquid-harmonics-score/1'; title: string; author: string; steps: Step[] };
+
+export const SCORE_LIMITS = Object.freeze({ steps: 40, totalSeconds: 7200 });
+
+export function cleanStep(x: unknown): Step | null {
+  const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>, t = o.type;
+  if (t === 'morph') return { type: t, name: String(o.name || 'setting').slice(0, 80), params: cleanParams(o.params), seconds: clampN(o.seconds, 5, 1800, 20), hold: clampN(o.hold, 0, 1800, 30) };
+  if (t === 'gather' || t === 'release') return { type: t, seconds: clampN(o.seconds, 5, 600, 10), hold: clampN(o.hold, 0, 1800, 20) };
+  if (t === 'rise') return {
+    type: t, peak: clampN(o.peak, 5, 60, 40), length: clampN(o.length, 30, 600, 120),
+    brk: (BREAKTHROUGHS as readonly string[]).includes(String(o.brk)) ? o.brk as RiseStep['brk'] : BREAKTHROUGHS[0],
+    gather: o.gather === 'no' ? 'no' : 'yes', hold: clampN(o.hold, 0, 1800, 30),
+    pitch: clampN(o.pitch, 0, 24, 12), emerge: clampN(o.emerge, 0, 1, 0.7), transform: clampN(o.transform, 0, 1, 0.5),
+    throbAccel: clampN(o.throbAccel, 1, 5, 1.6), pitchAccel: clampN(o.pitchAccel, 1, 5, 3), harmAccel: clampN(o.harmAccel, 1, 5, 3),
+  };
+  if (t === 'end') return { type: t, seconds: clampN(o.seconds, 3, 120, 15) };
+  return null;
+}
+export const stepSeconds = (st: Step) => st.type === 'rise' ? st.length + st.hold : st.type === 'end' ? st.seconds : st.seconds + st.hold;
+export function cleanScore(x: unknown): Score {
+  const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
+  const steps = (Array.isArray(o.steps) ? o.steps : []).slice(0, SCORE_LIMITS.steps).map(cleanStep).filter((s): s is Step => Boolean(s));
+  let total = 0; const kept: Step[] = [];
+  for (const st of steps) { const d = stepSeconds(st); if (total + d > SCORE_LIMITS.totalSeconds) break; total += d; kept.push(st); }
+  return { format: 'liquid-harmonics-score/1', title: String(o.title || 'Untitled journey').slice(0, 120), author: String(o.author || 'founder').slice(0, 80), steps: kept };
+}
+export const scoreSeconds = (s: Score) => s.steps.reduce((a, st) => a + stepSeconds(st), 0);
+
+/** A starter score to edit. Labelled as a template, never as the founder's composition. */
+export function starterScore(name: string, params: Params): Score {
+  const p = cleanParams(params);
+  return cleanScore({ title: 'First journey (starter template)', author: 'starter template by Claude: edit freely', steps: [
+    { type: 'morph', name, params: p, seconds: 20, hold: 60 },
+    { type: 'gather', seconds: 10, hold: 30 },
+    { type: 'rise', peak: 40, length: 120, brk: 'open into stillness', gather: 'yes', hold: 40 },
+    { type: 'release', seconds: 20, hold: 20 },
+    { type: 'morph', name, params: p, seconds: 30, hold: 30 },
+    { type: 'end', seconds: 15 },
+  ] });
+}
+
+/** Where a journey rise arrives: the takeoff targets. Pure, so the shape of the ascent is testable. */
+export function riseTargets(P: Params, st: RiseStep): Record<string, number> {
+  const n = (k: string) => Number(P[k]);
+  const E = st.emerge, X = st.transform, sgn = n('shift') >= 0 ? 1 : -1;
+  const to: Record<string, number> = {
+    rate: Math.max(st.peak, n('rate')), depth: 1, body: Math.min(1, n('body') + 0.35),
+    f0: Math.min(440, n('f0') * Math.pow(2, st.pitch / 12)),
+    voices: Math.max(n('voices'), 6 + 2 * E), overtone: Math.max(n('overtone'), E), otMove: n('otMove') + (8 - n('otMove')) * E,
+    glass: n('glass') + (1.5 - n('glass')) * E * 0.6,
+    shift: n('shift') + (sgn * 200 - n('shift')) * X, spiralSpeed: n('spiralSpeed') + (5 - n('spiralSpeed')) * X, vowel: n('vowel') + (4 - n('vowel')) * X,
+  };
+  if (st.gather === 'yes') to.center = 1;
+  return to;
+}
+/** Interpolate one key: rate and pitch move on a log scale, everything else linearly. */
+export function lerpKey(k: string, a: number, b: number, e: number): number {
+  return ((k === 'rate' || k === 'f0') && a > 0 && b > 0) ? a * Math.pow(b / a, e) : a + (b - a) * e;
+}
+export const accel = (p: number) => (f: number) => Math.pow(f, p);
+const smooth = (f: number) => f * f * (3 - 2 * f);
+
+// ── Engine ────────────────────────────────────────────────────────────────────────────────────────────
+export type Phase = 'free' | 'journey' | 'rising' | 'after' | 'returning';
+export type LiquidView = {
+  phase: Phase; note: string; centreNote: string;
+  journey: { i: number; n: number; type: string; elapsed: number; total: number; held: boolean; ending: boolean } | null;
+};
+export type LiquidEngine = ProceduralStudyHandle & {
+  params: Params;
+  /** Call after changing `params` directly. */
+  apply: () => void;
+  gather: () => void; release: () => void; rise: () => void; returnFromRise: () => void; nudge: () => void;
+  playJourney: (score: Score) => boolean;
+  hold: () => void; extend: () => void; next: () => void;
+  view: () => LiquidView;
+  energy: () => number;
+  analyser: AnalyserNode;
+};
+
+// The study's own output trim, before the player's shared level (as for Orbit & Threshold).
+export const LIQUID_OUTPUT_TRIM = 0.5;
+const STACK = [1.189, 1.5, 1.782, 2.245, 2.997, 3.564, 4.49];
+const HA = [0.6923878, 0.9360654322959, 0.9882295226860, 0.9987488452737], HB = [0.4021921162426, 0.8561710882420, 0.9722909545651, 0.9952884791278];
+const RETURN_KEYS = ['rate', 'depth', 'body', 'voices', 'center', 'wobble', 'spiralSpeed', 'shift', 'verb', 'rotate', 'f0', 'overtone', 'otMove', 'glass', 'vowel'];
+
+type Tween = { t0: number; dur: number; from: Record<string, number>; to: Record<string, number>; ease: (f: number) => number;
+  easeFor?: Record<string, (f: number) => number>; done?: () => void };
+type Journey = { steps: Step[]; i: number; t0: number; lastT: number | null; waitUntil: number | null; next: number | 'stop'; ending: boolean; held: boolean };
+
+export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, params: Params, api: ProceduralStudyAPI): LiquidEngine {
+  const P = params;
+  const num = (k: string) => Number(P[k]);
+  const srcs: OscillatorNode[] = [], nodes: AudioNode[] = [];
+  const keep = <T extends AudioNode>(n: T): T => (nodes.push(n), n);
+  const osc = (f: number, type: OscillatorType = 'sine') => { const o = keep(ctx.createOscillator()); o.type = type; o.frequency.value = f; srcs.push(o); return o; };
+  const gain = (v = 1) => { const g = keep(ctx.createGain()); g.gain.value = v; return g; };
+  const biquad = (type: BiquadFilterType, f: number, q?: number) => { const b = keep(ctx.createBiquadFilter()); b.type = type; b.frequency.value = f; if (q !== undefined) b.Q.value = q; return b; };
+
+  // Presence: the study's own fades (silence, return, end) under the player's level.
+  const presence = gain(0);
+  const out = gain(LIQUID_OUTPUT_TRIM);
+  const lim = keep(ctx.createDynamicsCompressor()); lim.threshold.value = -14; lim.ratio.value = 12; lim.attack.value = 0.003; lim.release.value = 0.25;
+  presence.connect(lim); lim.connect(out); out.connect(destination);
+  const analyser = keep(ctx.createAnalyser()); analyser.fftSize = 4096; analyser.smoothingTimeConstant = 0.8; lim.connect(analyser);
+
+  // Single-sideband frequency shifter (Niemitalo's Hilbert pair as IIR allpass chains): plain Web Audio nodes, no worklet.
+  const freqShifter = () => {
+    const input = gain(), output = gain();
+    const chain = (co: number[], from: AudioNode) => co.reduce<AudioNode>((n, a) => { const f = keep(ctx.createIIRFilter([a * a, 0, -1], [1, 0, -a * a])); n.connect(f); return f; }, from);
+    const one = keep(ctx.createDelay(0.01)); one.delayTime.value = 1 / ctx.sampleRate; input.connect(one);
+    const I = chain(HA, one), Q = chain(HB, input);
+    const cos = osc(0); cos.setPeriodicWave(ctx.createPeriodicWave(new Float32Array([0, 1]), new Float32Array([0, 0]), { disableNormalization: true }));
+    const sin = osc(0), mI = gain(0), mQ = gain(0), sign = gain(1);
+    cos.connect(mI.gain); sin.connect(mQ.gain); I.connect(mI); Q.connect(mQ); mI.connect(output); mQ.connect(sign); sign.connect(output);
+    return { input, output, set(hz: number, k: number) {
+      const t = ctx.currentTime, a = Math.max(Math.abs(hz), 0.001);
+      cos.frequency.setTargetAtTime(a, t, k); sin.frequency.setTargetAtTime(a, t, k); sign.gain.setValueAtTime(hz >= 0 ? 1 : -1, t);
+    } };
+  };
+
+  // Voice
+  const f0 = num('f0');
+  const voice = gain(1);
+  const saw = osc(f0, 'sawtooth'), sawG = gain(0.4); saw.connect(sawG);
+  const form = VOWELS[0].map((_, j) => { const b = biquad('bandpass', 500, 6), g = gain([0.6, 0.4, 0.2][j]); sawG.connect(b); b.connect(g); g.connect(voice); return b; });
+  const ot = biquad('bandpass', f0 * 8, 45), otG = gain(0); sawG.connect(ot); ot.connect(otG); otG.connect(voice); let otN = 8;
+  const subO = osc(f0 / 2, 'sawtooth'), subG = gain(0), subLp = biquad('lowpass', 600); subO.connect(subLp); subLp.connect(subG); subG.connect(voice);
+  const sec = osc(f0 * num('ratio'), 'sawtooth'), secG = gain(0), secF = biquad('bandpass', 1200, 1.2); sec.connect(secF); secF.connect(secG); secG.connect(voice);
+  const stack = STACK.map(r => { const o = osc(f0 * r, 'sawtooth'), g = gain(0); o.connect(g); g.connect(sawG); return { o, g, r }; });
+  const beatO = osc(f0, 'sawtooth'), beatG = gain(0.25); beatO.connect(beatG); beatG.connect(sawG);
+
+  // Oscillation: throb (amplitude) and wobble (pitch), one LFO
+  const lfo = osc(num('rate'), P.shape as OscillatorType), am = gain(1), amDepth = gain(0); lfo.connect(amDepth); amDepth.connect(am.gain);
+  const wob = gain(0); lfo.connect(wob); [saw, subO, sec, beatO, ...stack.map(x => x.o)].forEach(o => wob.connect(o.detune));
+  const drive = gain(1), ws = keep(ctx.createWaveShaper()), driveOut = gain(1);
+  const wc = new Float32Array(2048); for (let i = 0; i < 2048; i++) { const x = i / 1023.5 - 1; wc[i] = Math.tanh(1.5 * x); }
+  ws.curve = wc; ws.oversample = '2x';
+  voice.connect(drive); drive.connect(ws); ws.connect(driveOut); driveOut.connect(am);
+  // Endless spiral (Shepard–Risset): 8 tones an octave apart, gain shaped by position, wrapping while silent.
+  const spG = gain(0), sp = Array.from({ length: 8 }, () => { const o = osc(100), g = gain(0); o.connect(g); g.connect(spG); return { o, g }; }); let spPos = 0; spG.connect(am);
+  // Glass shimmer
+  const glassG = gain(0);
+  for (let i = 0; i < 14; i++) {
+    const o = osc(2000 * Math.pow(4, (i + Math.random()) / 14)), g = gain(0.01), p = keep(ctx.createStereoPanner()); p.pan.value = Math.random() * 2 - 1;
+    const l = osc(0.05 + Math.random() * 0.2), lg = gain(0.008); l.connect(lg); lg.connect(g.gain); o.connect(g); g.connect(p); p.connect(glassG);
+  }
+  glassG.connect(am);
+  // Frequency-shift echo loop
+  const mix = gain(1), dry = gain(1); am.connect(dry); dry.connect(mix);
+  const sum = gain(1); am.connect(sum); const dl = keep(ctx.createDelay(1)); sum.connect(dl);
+  const fs = freqShifter(); dl.connect(fs.input);
+  const lp = biquad('lowpass', 7000), hp = biquad('highpass', 60);
+  fs.output.connect(lp); lp.connect(hp); const fb = gain(0); hp.connect(fb); fb.connect(sum); const wet = gain(0); hp.connect(wet); wet.connect(mix);
+  // Swirl (flanger)
+  const post = gain(1); mix.connect(post);
+  const fl = keep(ctx.createDelay(0.05)); fl.delayTime.value = 0.004; const flLfo = osc(num('swirlRate')), flDepth = gain(0.0035); flLfo.connect(flDepth); flDepth.connect(fl.delayTime);
+  const flFb = gain(0); mix.connect(fl); fl.connect(flFb); flFb.connect(fl); const flWet = gain(0); fl.connect(flWet); flWet.connect(post);
+  // Rotation around the listener, then space
+  const pan = keep(ctx.createStereoPanner()), rot = osc(num('rotate')), rotD = gain(0.85); rot.connect(rotD); rotD.connect(pan.pan); post.connect(pan);
+  pan.connect(presence);
+  // Sub-bass pressure: mono, centred, straight to presence (the limiter still guards it).
+  const pO = osc(num('pressF')), pAm = gain(0.5), pL = osc(num('pressRate')), pLd = gain(0.5); pL.connect(pLd); pLd.connect(pAm.gain);
+  const pG = gain(0), pHp = biquad('highpass', 20); pO.connect(pAm); pAm.connect(pHp); pHp.connect(pG); pG.connect(presence);
+  // Binaural core goes straight to presence so it stays centred.
+  const binL = osc(f0 * 2), binR = osc(f0 * 2 + 7), mg = keep(ctx.createChannelMerger(2)); binL.connect(mg, 0, 0); binR.connect(mg, 0, 1);
+  const binG = gain(0); mg.connect(binG); binG.connect(presence);
+  const sr = ctx.sampleRate, len = Math.floor(sr * 3.2), ir = ctx.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5) * 0.5; }
+  const cv = keep(ctx.createConvolver()); cv.buffer = ir; const verb = gain(0); pan.connect(verb); verb.connect(cv); cv.connect(presence);
+
+  const apply = (now = false) => {
+    const t = ctx.currentTime, k = now ? 0.01 : 0.08, set = (param: AudioParam, v: number) => param.setTargetAtTime(v, t, k);
+    const F = num('f0'), rate = num('rate'), center = num('center'), rotate = num('rotate');
+    set(saw.frequency, F); set(subO.frequency, F / 2); set(sec.frequency, F * num('ratio')); set(beatO.frequency, F + num('beat'));
+    set(otG.gain, num('overtone') * 2.2); set(subG.gain, num('sub') * 0.5); set(secG.gain, num('second') * 0.35); set(beatG.gain, num('beat') > 0.05 ? 0.25 : 0);
+    set(ot.frequency, F * otN);
+    lfo.type = P.shape as OscillatorType; set(lfo.frequency, rate);
+    set(am.gain, 1 - num('depth') / 2); set(amDepth.gain, num('depth') / 2); set(wob.gain, num('wobble'));
+    fs.set(num('shift'), k); set(dl.delayTime, num('time')); set(fb.gain, num('fb')); set(wet.gain, num('wet')); set(dry.gain, 1 - num('wet') * 0.4);
+    set(flWet.gain, num('swirl') * 0.8); set(flFb.gain, num('swirl') * 0.7); set(flLfo.frequency, num('swirlRate')); set(post.gain, 1 - num('swirl') * 0.3);
+    set(rot.frequency, Math.max(rotate, 0.0001));
+    set(verb.gain, num('verb') * 0.8 * (1 - 0.7 * center)); set(glassG.gain, num('glass') * (1 - 0.5 * center));
+    set(rotD.gain, rotate > 0.001 ? 0.85 * (1 - center) : 0);
+    stack.forEach((x, i) => { set(x.g.gain, i < Math.round(num('voices')) - 1 ? 0.22 : 0); set(x.o.frequency, F * x.r); });
+    set(drive.gain, 1 + num('body') * 5); set(driveOut.gain, 1 / (1 + num('body') * 1.6));
+    set(binL.frequency, F * 2); set(binR.frequency, F * 2 + Math.min(45, rate)); set(binG.gain, num('binaural') * 0.12 * (0.6 + 0.4 * center));
+    set(spG.gain, num('spiral'));
+    set(pO.frequency, num('pressF')); set(pL.frequency, num('pressRate') + (rate - num('pressRate')) * num('pressLink')); set(pG.gain, num('press') * 0.6);
+    if (now) form.forEach((b, j) => b.frequency.setValueAtTime(vowelAt(num('vowel'))[j], t));
+  };
+
+  // ── State ──
+  let phase: Phase = 'free', note = '', centreNote = '', silenced = false, disposed = false;
+  let tween: Tween | null = null, preRise: Params | null = null, J: Journey | null = null;
+  let gatherTo: number | null = null, gatherFrom = 0, gatherT0 = 0, vowelPos: number | null = null, lastStep = 0;
+
+  const fadePresence = (to: number, seconds: number) => {
+    const t = ctx.currentTime, g = presence.gain;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(to, t + seconds);
+  };
+  const startTween = (to: Record<string, number>, dur: number, ease: (f: number) => number, done?: () => void) => {
+    tween = { t0: ctx.currentTime, dur, from: Object.fromEntries(Object.keys(to).map(k => [k, num(k)])), to, ease, done };
+    return tween;
+  };
+  const stepTween = (t: number) => {
+    if (!tween) return;
+    const f = Math.min(1, (t - tween.t0) / tween.dur), e = tween.ease(f);
+    for (const k in tween.to) P[k] = lerpKey(k, tween.from[k], tween.to[k], tween.easeFor?.[k] ? tween.easeFor[k](f) : e);
+    apply();
+    if (phase === 'rising') note = `Rising… ${Math.round(f * 100)}%`;
+    if (phase === 'returning') note = `Returning… ${Math.round(f * 100)}%`;
+    if (f >= 1) { const d = tween.done; tween = null; d?.(); }
+  };
+  const pop = () => {
+    const t = ctx.currentTime, n = Math.floor(ctx.sampleRate * 0.06), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (n / 6));
+    const s = ctx.createBufferSource(); s.buffer = b; const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3000; const g = ctx.createGain(); g.gain.value = 0.5;
+    s.connect(f); f.connect(g); g.connect(presence); s.start(t);
+    const o = ctx.createOscillator(), og = ctx.createGain(); og.gain.value = 0;
+    o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.08);
+    og.gain.setValueAtTime(0, t); og.gain.linearRampToValueAtTime(0.4, t + 0.003); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+    o.connect(og); og.connect(presence); o.start(t); o.stop(t + 0.12);
+  };
+  const stillness = () => { Object.assign(P, { depth: 0, wobble: 0, spiralSpeed: 0, shift: 0, center: 0, verb: 0.85, rotate: 0.03 }); apply(true); };
+  const breakthrough = () => {
+    phase = 'after';
+    const next = J ? 'The journey continues.' : 'Press Return when you are ready, or Stop.';
+    if (P.brk === 'silence') { silenced = true; fadePresence(0, 0.008); note = `Silence. ${next}`; }
+    else { if (P.brk === 'pop, then stillness') pop(); stillness(); note = `Stillness. ${next}`; }
+  };
+
+  const finishJourney = () => { J = null; phase = 'free'; note = 'Journey complete.'; };
+  const runStep = (i: number) => {
+    if (!J) return;
+    J.i = i; const st = J.steps[i];
+    const wait = (h: number) => () => { if (J) { J.waitUntil = ctx.currentTime + h; J.next = i + 1; } };
+    if (!st) { finishJourney(); return; }
+    if (silenced) { silenced = false; presence.gain.cancelScheduledValues(ctx.currentTime); presence.gain.setValueAtTime(0, ctx.currentTime); presence.gain.linearRampToValueAtTime(1, ctx.currentTime + 8); }
+    phase = 'journey'; note = '';
+    if (st.type === 'morph') {
+      const to: Record<string, number> = {};
+      for (const k in st.params) { const c = control(k); if (c?.options) P[k] = st.params[k]; else to[k] = Number(st.params[k]); }
+      startTween(to, st.seconds, smooth, wait(st.hold));
+    } else if (st.type === 'gather' || st.type === 'release') {
+      startTween({ center: st.type === 'gather' ? 1 : 0 }, st.seconds, f => f, wait(st.hold));
+    } else if (st.type === 'rise') {
+      preRise = { ...P }; P.brk = st.brk; phase = 'rising';
+      const tw = startTween(riseTargets(P, st), st.length, accel(st.throbAccel), () => { breakthrough(); wait(st.hold)(); });
+      const pi = accel(st.pitchAccel), ha = accel(st.harmAccel);
+      tw.easeFor = { f0: pi, voices: ha, overtone: ha, otMove: ha, glass: ha, shift: ha, spiralSpeed: ha, vowel: ha };
+    } else {
+      J.ending = true; fadePresence(0, st.seconds); J.waitUntil = ctx.currentTime + st.seconds; J.next = 'stop';
+    }
+  };
+
+  const TICK_MS = 100;
+  const interval = setInterval(() => {
+    if (disposed || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    if (J) {
+      const dt = t - (J.lastT ?? t); J.lastT = t;
+      if (J.held) { if (tween) tween.t0 += dt; if (J.waitUntil !== null) J.waitUntil += dt; J.t0 += dt; }
+    }
+    stepTween(t);
+    if (J && !J.held && J.waitUntil !== null && t >= J.waitUntil) {
+      J.waitUntil = null;
+      if (J.next === 'stop') { J = null; phase = 'free'; note = 'Journey complete.'; api.ended('Liquid Harmonics: journey complete.'); return; }
+      runStep(J.next);
+    }
+    spPos = (spPos + num('spiralSpeed') / 10 * 0.1 + 8) % 8;
+    sp.forEach((x, k) => {
+      const pos = (k + spPos) % 8;
+      x.o.frequency.setTargetAtTime(40 * Math.pow(2, pos), t, 0.03);
+      x.g.gain.setTargetAtTime(0.06 * Math.pow(Math.sin(Math.PI * pos / 8), 2), t, 0.03);
+    });
+    if (gatherTo !== null) {
+      const f = Math.min(1, (t - gatherT0) / 10); P.center = gatherFrom + (gatherTo - gatherFrom) * f; apply();
+      centreNote = (gatherTo ? 'Gathering… ' : 'Releasing… ') + Math.round(f * 100) + '%';
+      if (f >= 1) { gatherTo = null; centreNote = ''; }
+    }
+    if (vowelPos === null) vowelPos = num('vowel');
+    const v = num('vowel'), vm = num('vowelMove'), span = vm * 2;
+    vowelPos += (Math.random() - 0.5) * 0.08 * vm; vowelPos += (v - vowelPos) * 0.02;
+    vowelPos = Math.max(Math.max(0, v - span), Math.min(Math.min(4, v + span), vowelPos));
+    vowelAt(vowelPos).forEach((f, j) => form[j].frequency.setTargetAtTime(f, t, 0.12));
+    const om = num('otMove');
+    if (om > 0.01 && t - lastStep > 1 / om) {
+      lastStep = t; otN = Math.max(5, Math.min(16, otN + [-2, -1, 1, 2][Math.floor(Math.random() * 4)]));
+      ot.frequency.setTargetAtTime(num('f0') * otN, t, 0.06);
+    }
+  }, TICK_MS);
+
+  srcs.forEach(o => o.start());
+  apply(true);
+  fadePresence(1, 2);
+
+  const free = () => phase === 'free' && !J;
+  return {
+    params: P, analyser,
+    apply: () => apply(),
+    gather: () => { if (!free()) return; gatherFrom = num('center'); gatherTo = 1; gatherT0 = ctx.currentTime; },
+    release: () => { if (!free()) return; gatherFrom = num('center'); gatherTo = 0; gatherT0 = ctx.currentTime; },
+    nudge: () => {
+      if (!free()) return;
+      for (const c of CONTROLS) { if (c.options || c.g === 'Rise') continue; P[c.k] = fromSlider(c, Math.min(1, Math.max(0, toSlider(c, num(c.k)) + (Math.random() - 0.5) * 0.16))); }
+      apply();
+    },
+    // A rise always goes through: once begun, only Stop ends it.
+    rise: () => {
+      if (!free()) return;
+      preRise = { ...P }; phase = 'rising'; gatherTo = null; centreNote = '';
+      const to: Record<string, number> = { rate: Math.max(num('peakRate'), num('rate')), depth: 1, body: Math.min(1, num('body') + 0.35), voices: Math.max(6, num('voices')) };
+      if (P.riseGather === 'yes') to.center = 1;
+      startTween(to, Number(P.riseTime), accel(1.6), breakthrough);
+    },
+    returnFromRise: () => {
+      if (phase !== 'after' || J || !preRise) return;
+      phase = 'returning'; silenced = false; fadePresence(1, 8);
+      const back = preRise;
+      startTween(Object.fromEntries(RETURN_KEYS.map(k => [k, Number(back[k])])), 30, smooth, () => { phase = 'free'; note = 'Back where you began.'; });
+    },
+    playJourney: (score: Score) => {
+      const s = cleanScore(score);
+      if (J || !s.steps.length || !(phase === 'free' || phase === 'after')) return false;
+      if (silenced) { silenced = false; fadePresence(1, 8); }
+      gatherTo = null; centreNote = ''; tween = null;
+      J = { steps: s.steps, i: 0, t0: ctx.currentTime, lastT: null, waitUntil: null, next: 0, ending: false, held: false };
+      runStep(0);
+      return true;
+    },
+    hold: () => { if (J && phase !== 'rising' && !J.ending) J.held = !J.held; },
+    extend: () => { if (!J || phase === 'rising' || J.ending) return; if (J.waitUntil !== null) J.waitUntil += 30; else if (tween) tween.dur += 30; },
+    next: () => {
+      if (!J || phase === 'rising' || J.ending) return;
+      J.held = false;
+      if (tween) { const d = tween.done, tw = tween; tw.dur = Math.max(0.1, ctx.currentTime - tw.t0 + 3); tw.done = () => { d?.(); if (J) J.waitUntil = ctx.currentTime; }; }
+      else if (J.waitUntil !== null) J.waitUntil = ctx.currentTime;
+    },
+    view: () => {
+      let journey: LiquidView['journey'] = null;
+      if (J) {
+        const total = J.steps.reduce((a, st) => a + stepSeconds(st), 0);
+        journey = { i: J.i, n: J.steps.length, type: J.steps[J.i]?.type ?? '', elapsed: Math.min(total, Math.max(0, ctx.currentTime - J.t0)), total, held: J.held, ending: J.ending };
+      }
+      return { phase, note, centreNote, journey };
+    },
+    energy: () => { const b = new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(b); return b.reduce((a, x) => a + x, 0); },
+    dispose: () => {
+      if (disposed) return;
+      disposed = true; clearInterval(interval); J = null; tween = null;
+      for (const o of srcs) { try { o.stop(); } catch { /* already stopped */ } }
+      for (const n of nodes) { try { n.disconnect(); } catch { /* gone */ } }
+    },
+  };
+}
+
+/** The study the persistent player plays. `onEngine` lets the desk read and steer the running engine. */
+export function liquidHarmonicsStudy(params: Params, onEngine: (engine: LiquidEngine | null) => void): ProceduralStudy {
+  return {
+    id: LIQUID_STUDY_ID,
+    title: LIQUID_STUDY_TITLE,
+    subtitle: 'Sketch 09 · founder review',
+    message: 'Original sound generated in your browser · review sketch · no state or effect is claimed.',
+    build: (context, destination, api) => {
+      const engine = createLiquidEngine(context, destination, params, api);
+      onEngine(engine);
+      return { dispose: () => { engine.dispose(); onEngine(null); } };
+    },
+  };
+}

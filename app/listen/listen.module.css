@@ -211,3 +211,8 @@
 .orbitPoint{margin:0;min-height:1.5em;font-size:13px;color:#b3b3ac;text-align:center}
 .orbitCanvas{width:100%;max-width:340px;aspect-ratio:3/4;border-radius:14px;border:1px solid rgba(226,216,194,.14);background:rgba(4,12,16,.5)}
 @media (max-width:640px){.orbitCtl{grid-template-columns:1fr 44px}.orbitCtl>span:first-child{grid-column:1/-1}}
+/* LISTEN-01 · Liquid Harmonics (sketch 09), review-only */
+.liquidSpectrum{display:block;width:100%;max-width:720px;height:auto;aspect-ratio:720/110;border-radius:10px;border:1px solid rgba(226,216,194,.14);margin:12px 0}
+.liquidList{list-style:none;margin:8px 0;padding:0;display:flex;flex-direction:column;gap:8px;font-size:13px;color:#ddd0bb}
+.liquidList li{border-top:1px solid rgba(226,216,194,.1);padding-top:8px}
+.liquidList input[type=number],.orbitRow input:not([type]){box-sizing:border-box;background:#071217;color:#f1efe7;border:1px solid #415258;border-radius:8px;padding:8px;min-height:40px;max-width:100%}
