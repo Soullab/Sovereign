@@ -160,12 +160,13 @@ const DELIVERED_AFTER_DROP = 'The connection dropped, but your question did reac
 /* Review (2026-11-09): a failed Teach me never touched the box, so it must not say the question is still there. */
 const TEACH_NOT_ANSWERED = 'MAIA couldn’t answer the Teach me this time. Nothing you wrote was changed; press it again when you’re ready.';
 const REFUSAL_SAYS: Record<string, string> = {
-  /* WS-F1: said ONLY after the server was re-read and the question is not there (deliveryAfterDrop → not_arrived). */
-  unreachable: 'That didn’t reach her. Nothing was lost — try again.',
-  /* WS-F1: the connection dropped and the server could not be asked, so whether it arrived is not known. Never claimed either way. */
+  /* WS-F1: "That didn't reach her" was removed. Every 'unreachable' now goes through afterDrop, and neither a transport error nor
+     one re-read showing nothing new proves the question never arrived (it may still be on its way).
+     WS-F1: the connection dropped and it is not established whether the question arrived (no re-read, or nothing visible yet). */
   unconfirmed: 'The connection dropped before her reply came back, so it isn’t known whether that reached her. Your question is still in the box. Reopen this conversation to see whether she answered before you send it again.',
-  /* WS-F1: the question is on the thread (kept before the model runs) and no answer exists. An unchanged resend reuses it (retry.ts). */
-  held: 'The connection dropped. Your question reached her, but her answer didn’t come back. It’s kept in the conversation above; send it again unchanged and she’ll answer it there.',
+  /* WS-F1 (review 2026-11-21): the question is saved (kept before the model runs) and no answer is visible YET. It may still be
+     processing, so the writer is NOT told to resend: a second press could start a second model call while the first runs. */
+  held: 'Your question is saved, but MAIA’s answer isn’t available yet. Check the conversation again before sending another request.',
   empty_answer: 'MAIA returned nothing. Try asking again.',
   /* WS-ASK-ANSWER-TRUNCATION: she ran out of room before finishing, so the cut answer was not kept or shown. */
   answer_incomplete: 'MAIA ran out of room before she finished, so that answer wasn’t kept. Nothing you wrote was lost — ask again, or ask about a narrower part of the book.',
@@ -542,10 +543,11 @@ function ScopedWorkConversation({
         setDeliveryNote(DELIVERED_AFTER_DROP);
         return;
       }
-      // 'held' keeps the words in the box: an unchanged resend reuses the held turn rather than adding a second one.
+      // 'held' keeps the words in the box (an unchanged resend would reuse the held turn), but does not invite a resend: the first
+      // request may still be running. 'not_arrived' after a transport error is only "nothing visible yet", never proof, so it is
+      // said as unconfirmed (review 2026-11-21).
       setRefusal(teach ? TEACH_NOT_ANSWERED
         : delivery === 'held' ? REFUSAL_SAYS.held
-        : delivery === 'not_arrived' ? REFUSAL_SAYS.unreachable
         : REFUSAL_SAYS.unconfirmed);
     };
     inFlightRef.current = true;

@@ -340,17 +340,20 @@ describe('WS-F1 · a dropped connection on a resumed conversation', () => {
       { index: 2, speaker: 'author', body: 'Across the whole book?', staleness: 'current' }] });
     await click('Send');
     const alert = host.querySelector('[role="alert"][data-maia-refusal]')!;
-    expect(alert.textContent).toContain('reached her, but her answer didn’t come back');
+    expect(alert.textContent).toContain('Your question is saved, but MAIA’s answer isn’t available yet');
+    expect(alert.textContent).not.toMatch(/send it again/i);       // the first request may still be running: never invite a resend
     expect(host.querySelector('[data-maia-delivery-note]')).toBeNull();
     expect(host.querySelector('[data-turn="2"]')?.textContent).toContain('Across the whole book?');
     expect(input().value).toBe('Across the whole book?');          // unchanged, so a resend reuses the held turn
     expect(mockAsk).toHaveBeenCalledTimes(1);
   });
-  it('says it did not reach her only after the server was asked and nothing was added', async () => {
+  it('⭐ MUST FAIL IF one re-read showing nothing new is reported as "didn\u2019t reach her" (it may still be on its way)', async () => {
     await mount('Across the whole book?');
     mockAsk.mockResolvedValueOnce({ ok: false, refusal: 'unreachable' });
     await click('Send');
-    expect(host.querySelector('[role="alert"][data-maia-refusal]')?.textContent).toContain('That didn’t reach her');
+    const alert = host.querySelector('[role="alert"][data-maia-refusal]')!;
+    expect(alert.textContent).toContain('it isn’t known whether that reached her');
+    expect(alert.textContent).not.toContain('didn’t reach her');
     expect(input().value).toBe('Across the whole book?');
   });
   /* Intake item 3 (live walk): after the drop, pressing Send looked like a no-op in data-send-mode=resume. This pins what the client does. */
