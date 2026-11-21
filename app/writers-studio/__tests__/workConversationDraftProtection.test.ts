@@ -382,3 +382,24 @@ describe('WS-F1 · a dropped connection on a resumed conversation', () => {
     expect(mockAsk).toHaveBeenCalledTimes(1);
   });
 });
+
+/* Package C (R20 decision 1): what MAIA read is shown under EVERY answer and survives reopening; it comes from the server's receipt. */
+describe('Package C · reading receipts on a reopened conversation', () => {
+  const recorded = (supplied: string[]) => ({ evidence: 'recorded', reading: supplied.length ? 'some_supplied' : 'none_supplied', current: null,
+    supplied: supplied.map((name) => ({ name, textChangedSince: false })), notSupplied: [] });
+  it('⭐ MUST FAIL IF a reopened conversation loses the per-answer reading lines (Benchmark 01 finding)', async () => {
+    mockThreads.mockResolvedValue({ kind: 'threads', threads: [{ id: 'thread-a', anchor: { on: 'work' }, openedAt: '2026-11-09T10:00:00Z', turnCount: 4 }] });
+    mockLoadThread.mockResolvedValue({ id: 'thread-a', anchor: { on: 'work' }, openedAt: '2026-11-09T10:00:00Z', turns: [
+      { index: 0, speaker: 'author', body: 'First', staleness: 'current' },
+      { index: 1, speaker: 'maia', body: 'Answer one', staleness: 'current', receipt: recorded(['The Harbour', 'Salt']) },
+      { index: 2, speaker: 'author', body: 'Second', staleness: 'current' },
+      { index: 3, speaker: 'maia', body: 'Answer two', staleness: 'current', receipt: { evidence: 'not_recorded', reading: 'unknown', current: null, supplied: [], notSupplied: 'not_recorded' } },
+    ] });
+    await mount();
+    const lines = Array.from(host.querySelectorAll('[data-answer-receipt]')).map((e) => e.textContent);
+    expect(lines).toEqual([
+      'For this answer MAIA read your saved sections: The Harbour, Salt.',
+      'What MAIA read for this answer was not recorded.',            // an older answer: never shown as "none"
+    ]);
+  });
+});

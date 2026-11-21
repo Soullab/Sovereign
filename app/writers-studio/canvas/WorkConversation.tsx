@@ -23,6 +23,7 @@ import {
   type AskThreadView,
 } from '@/lib/writersStudio/askClient';
 import { deliveryAfterDrop } from '@/lib/writersStudio/deliveryAfterDrop';
+import { receiptSentence } from '@/lib/manuscript/ask/readingReceipt';
 import {
   resumeDecision, sendMode, threadChoiceLabel,
   type ResumeDecision, type ThreadDiscovery,
@@ -818,7 +819,14 @@ function ScopedWorkConversation({
             </StudioText>
             {/* D3 (R3.4.4 ruling A, 2026-11-19): every answer shows which saved sections MAIA read for it. Hosts that show
                 this themselves (onRead, e.g. the Develop stage) keep theirs; everywhere else it is said here, under her answer. */}
-            {!onRead && t.speaker === 'maia' && t.index === latestMaiaIndex && answerRead
+            {/* Package C (R20 decision 1): the server now sends each answer's own receipt, so the line is under EVERY answer and
+                survives reopening. The live `read` remains the fallback for a server that sends no receipt. */}
+            {!onRead && t.speaker === 'maia' && t.receipt ? (
+              <StudioText role="metadata" as="p" data-answer-read={t.receipt.evidence === 'not_recorded' ? 'not_recorded' : t.receipt.reading === 'some_supplied' ? 'sections' : 'none'}
+                data-answer-receipt={t.receipt.evidence}>
+                {receiptSentence(t.receipt)}
+              </StudioText>
+            ) : !onRead && t.speaker === 'maia' && t.index === latestMaiaIndex && answerRead
               && answerRead.gen === conversationGenRef.current && answerRead.turns === turns.length ? (
               <StudioText role="metadata" as="p" data-answer-read={answerRead.read.length > 0 ? 'sections' : 'none'}>
                 {answerReadSentence(answerRead.read)}
