@@ -8,7 +8,9 @@
  * modified and nothing is uploaded.
  */
 import * as engine from './engine.js';
+import * as engine3 from './engine3.js';
 import type { Ambience, DroneSettings, DroneSource, PresetId, RenderResult } from './engine';
+import { completeDetail, isNeutralDetail } from './detail';
 import type { Audio } from '../transform/audio';
 import type { SideInfo } from '../transform/provenance';
 
@@ -84,8 +86,15 @@ export function effectiveSettings(s: DroneSettings): DroneSettings {
 export async function renderDrone(src: DroneSource, s: DroneSettings, ambience: Ambience | null, onProgress?: (f: number, label: string) => void): Promise<RenderResult> {
   const problem = settingsProblem(s, src.data.length / src.rate);
   if (problem) throw new Error(problem);
-  return engine.render(src, effectiveSettings(s), onProgress, { ambience });
+  const { detail, ...rest } = effectiveSettings(s);
+  // Step B: with every detail control where v0.3.4 has it, the ACCEPTED engine renders, unchanged, and the
+  // recipe carries no detail block. Otherwise engine3 (derived by counted patches) renders with the detail.
+  if (isNeutralDetail(detail)) return engine.render(src, rest, onProgress, { ambience });
+  return engine3.render(src, { ...rest, detail: completeDetail(detail) }, onProgress, { ambience });
 }
+
+/** Which engine a setting renders through, for provenance. */
+export const engineFor = (s: DroneSettings) => (isNeutralDetail(s.detail) ? 'v0.3.4 revision 2 (accepted, verbatim)' : 'v0.3.4 revision 2 + Resonance & Detail (engine3, derived)');
 
 /**
  * A recipe the member saved earlier (from this desk or the lab). Only Voice to Drone recipes
@@ -99,11 +108,13 @@ export function parseDroneRecipe(text: string): { ok: true; settings: DroneSetti
   const p = (r as { processing?: { preset?: unknown } }).processing;
   if (!p || !Object.prototype.hasOwnProperty.call(engine.presets, String(p.preset))) return { ok: false, reason: 'This recipe names a preset this desk does not have.' };
   const s = engine.recipeToSettings(r);
+  const detail = (p as { detail?: unknown }).detail;
   return {
     ok: true,
     settings: {
       ...s, field: engine.completeField(s.field), clean: engine.completeClean(s.clean), level: engine.completeLevel(s.level), tune: engine.completeTune(s.tune),
       duration: Math.min(DRONE_SECONDS.max, Math.max(DRONE_SECONDS.min, Number(s.duration) || 30)),
+      detail: detail == null ? null : completeDetail(detail),
     },
   };
 }
@@ -124,7 +135,11 @@ export function buildDroneProvenance(p: {
     derived: true,
     createdAt: p.createdAt,
     onDevice: true,
-    engine: DRONE_ENGINE,
+    engine: {
+      ...DRONE_ENGINE,
+      // Step B: present only when a Resonance & Detail control moved; the render then came from engine3 (derived).
+      ...((p.recipe as { processing?: { detail?: unknown } }).processing?.detail ? { resonanceAndDetail: 'engine3: engine.js + counted patches (scripts/listening/vendor_drone_engine.mjs)' } : {}),
+    },
     source: p.source,
     ...(p.ambience ? { ambience: p.ambience } : {}),
     recipe: p.recipe,

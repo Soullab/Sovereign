@@ -9,7 +9,7 @@
  * uploaded, and Soullab/catalogue works cannot be opened here (acceptMemberFile).
  * Every control is one the lab already had; Resonance & Detail (step B) is not here yet.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePersistentListening } from '@/components/listening/PersistentListeningProvider';
 import { frameCount, type Audio } from '@/lib/listening/transform/audio';
 import { readWav, wavAudioBytes, withProvenance } from '@/lib/listening/transform/wav';
@@ -21,6 +21,10 @@ import {
   DRONE_SECONDS, buildDroneProvenance, defaultSettings, droneAmbience, droneRecipe, droneSource,
   parseDroneRecipe, renderDrone, settingsProblem, withPreset,
 } from '@/lib/listening/drone/drone';
+import {
+  ANSWER_SAYS, NEUTRAL_DETAIL, SPECTRUM_RANGE, analyseDetail, answerReading, bandOnly, completeDetail, excerptLoop,
+  harmonics, isNeutralDetail, matchLoudness, spectrum, toWavBlob, type Answer, type Detail,
+} from '@/lib/listening/drone/detail';
 import styles from './listen.module.css';
 
 type Loaded = { file: File; audio: Audio; info: SideInfo };
@@ -55,35 +59,64 @@ function Slider({ label, value, min, max, step, onChange, show, hint }: {
   </label>;
 }
 
-/** The source waveform with the chosen passage. Click and drag to mark a passage. Display only otherwise. */
-function Wave({ audio, region, playhead, onRegion }: { audio: Audio; region: [number, number] | null; playhead?: number; onRegion?: (a: number, b: number) => void }) {
+/**
+ * A waveform with the chosen passage. Click and drag to mark a passage. `view` zooms to a stretch of time
+ * (step B: "enter the sound"); `marks` are moments the Detail meter found.
+ */
+function Wave({ audio, region, playhead, onRegion, view, marks }: {
+  audio: Audio; region: [number, number] | null; playhead?: number; onRegion?: (a: number, b: number) => void;
+  view?: [number, number] | null; marks?: { at: number; kind: 'click' | 'flutter' }[];
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   const start = useRef<number | null>(null);
   const total = frameCount(audio) / audio.sampleRate;
+  const v0 = view ? Math.max(0, view[0]) : 0, v1 = view ? Math.min(total, view[1]) : total, span = Math.max(1e-3, v1 - v0);
   useEffect(() => {
     const c = ref.current; if (!c) return;
     const dpr = window.devicePixelRatio || 1; const w = c.width = Math.max(1, Math.round(c.clientWidth * dpr)); const h = c.height = Math.round(80 * dpr);
     const g = c.getContext('2d'); if (!g) return;
-    const n = frameCount(audio); const peaks = new Float32Array(w); let top = 0;
+    const n = frameCount(audio), sr = audio.sampleRate, peaks = new Float32Array(w); let top = 0;
     for (let x = 0; x < w; x++) {
-      let m = 0; const a = Math.floor((x * n) / w), b = Math.max(a + 1, Math.floor(((x + 1) * n) / w));
+      let m = 0; const a = Math.floor((v0 + (x / w) * span) * sr), b = Math.max(a + 1, Math.floor((v0 + ((x + 1) / w) * span) * sr));
       for (const ch of audio.channels) for (let i = a; i < Math.min(n, b); i++) { const v = Math.abs(ch[i]); if (v > m) m = v; }
       peaks[x] = m; if (m > top) top = m;
     }
     const scale = top > 0 ? 0.92 / top : 1; g.clearRect(0, 0, w, h);
+    const X = (t: number) => Math.round(((t - v0) / span) * w);
     for (let x = 0; x < w; x++) {
-      const t = (x / w) * total; const on = !region || (t >= region[0] && t <= region[1]);
+      const t = v0 + (x / w) * span; const on = !region || (t >= region[0] && t <= region[1]);
       g.fillStyle = on ? 'rgba(212, 175, 55, 0.9)' : 'rgba(212, 175, 55, 0.22)';
       const bar = Math.max(1, peaks[x] * scale * h); g.fillRect(x, (h - bar) / 2, 1, bar);
     }
-    if (playhead !== undefined) { g.fillStyle = 'rgba(127, 209, 200, 0.95)'; g.fillRect(Math.round((Math.min(total, playhead) / total) * w) - dpr, 0, 2 * dpr, h); }
-  }, [audio, total, region, playhead]);
-  const at = (e: React.PointerEvent<HTMLCanvasElement>) => { const r = e.currentTarget.getBoundingClientRect(); return Math.round(Math.min(total, Math.max(0, ((e.clientX - r.left) / r.width) * total)) * 100) / 100; };
+    for (const mk of marks ?? []) if (mk.at >= v0 && mk.at <= v1) { g.fillStyle = mk.kind === 'click' ? 'rgba(233, 140, 120, 0.95)' : 'rgba(170, 160, 230, 0.9)'; g.fillRect(X(mk.at) - dpr, 0, 2 * dpr, 10 * dpr); }
+    if (playhead !== undefined && playhead >= v0 && playhead <= v1) { g.fillStyle = 'rgba(127, 209, 200, 0.95)'; g.fillRect(X(playhead) - dpr, 0, 2 * dpr, h); }
+  }, [audio, v0, span, v1, region, playhead, marks]);
+  const at = (e: React.PointerEvent<HTMLCanvasElement>) => { const r = e.currentTarget.getBoundingClientRect(); return Math.round(Math.min(total, Math.max(0, v0 + ((e.clientX - r.left) / r.width) * span)) * 100) / 100; };
   return <canvas ref={ref} className={styles.transformWave} aria-hidden="true" data-drone-wave="true"
     style={{ touchAction: onRegion ? 'none' : 'auto', cursor: onRegion ? 'crosshair' : 'default' }}
     onPointerDown={(e) => { if (!onRegion) return; start.current = at(e); e.currentTarget.setPointerCapture(e.pointerId); }}
     onPointerMove={(e) => { if (onRegion && start.current !== null) { const t = at(e); onRegion(Math.min(start.current, t), Math.max(start.current, t)); } }}
     onPointerUp={() => { start.current = null; }} onPointerCancel={() => { start.current = null; }} />;
+}
+
+/** The drone's average spectrum on a log-frequency axis, its harmonics marked; a click places the resonance band. */
+function Spectrum({ spec, harmonicsHz, band, onPick }: { spec: { hz: number[]; db: number[] }; harmonicsHz: number[]; band: { on: boolean; hz: number; q: number }; onPick: (hz: number) => void }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const { lo, hi } = SPECTRUM_RANGE; const fx = (hz: number) => Math.log(hz / lo) / Math.log(hi / lo);
+  useEffect(() => {
+    const c = ref.current; if (!c) return;
+    const dpr = window.devicePixelRatio || 1; const w = c.width = Math.max(1, Math.round(c.clientWidth * dpr)); const h = c.height = Math.round(110 * dpr);
+    const g = c.getContext('2d'); if (!g) return; g.clearRect(0, 0, w, h);
+    if (band.on) { const half = 1 / (2 * band.q); g.fillStyle = 'rgba(127, 209, 200, 0.16)'; const a = fx(band.hz * 2 ** -half) * w, b = fx(band.hz * 2 ** half) * w; g.fillRect(a, 0, Math.max(2, b - a), h); }
+    g.fillStyle = 'rgba(241, 239, 231, 0.28)';
+    for (const f of harmonicsHz) g.fillRect(fx(f) * w - dpr / 2, 0, dpr, h);
+    const top = Math.max(...spec.db), floor = top - 60;
+    g.strokeStyle = 'rgba(212, 175, 55, 0.95)'; g.lineWidth = 1.5 * dpr; g.beginPath();
+    spec.hz.forEach((f, i) => { const x = fx(f) * w, y = h - Math.max(0, (spec.db[i] - floor) / 60) * (h - 4); if (i) g.lineTo(x, y); else g.moveTo(x, y); });
+    g.stroke();
+  }, [spec, harmonicsHz, band.on, band.hz, band.q]);
+  return <canvas ref={ref} className={styles.transformWave} data-drone-spectrum="true" role="img" aria-label="Spectrum of the drone; click to place the resonance band" style={{ height: 110, cursor: 'crosshair' }}
+    onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); const t = (e.clientX - r.left) / r.width; onPick(Math.round(lo * Math.pow(hi / lo, Math.min(1, Math.max(0, t))))); }} />;
 }
 
 export default function DroneDesk() {
@@ -96,7 +129,11 @@ export default function DroneDesk() {
   const [progress, setProgress] = useState<string>('');
   const [status, setStatus] = useState('');
   const [made, setMade] = useState<{ r: RenderResult; key: string } | null>(null);
-  const [handed, setHanded] = useState<{ which: 'original' | 'drone'; title: string } | null>(null);
+  const [handed, setHanded] = useState<{ which: 'original' | 'drone' | 'detail'; title: string } | null>(null);
+  const [noteHz, setNoteHz] = useState<number | null>(null);
+  const [zoom, setZoom] = useState(false);
+  const [kept, setKept] = useState<Record<string, true>>({});
+  const [baseline, setBaseline] = useState<{ key: string; r: RenderResult } | null>(null);
   const [pos, setPos] = useState<{ seconds: number; playing: boolean } | null>(null);
   const [saved, setSaved] = useState<{ wav: string; json: string; original: string } | null>(null);
   const [pitchRead, setPitchRead] = useState<string | null>(null);
@@ -115,6 +152,8 @@ export default function DroneDesk() {
 
   const key = JSON.stringify([s, source?.info.sha256, amb?.loaded.info.sha256]);
   const current = made && made.key === key ? made.r : null;
+  /** The last drone made stays on screen while settings move, marked out of date until it is made again. */
+  const shown = made?.r ?? null, stale = !!made && made.key !== key;
   const len = source ? frameCount(source.audio) / source.audio.sampleRate : 0;
   const problem = source ? settingsProblem(s, len) : null;
   const needsAmb = !!s.field?.[3]?.enabled && !amb;
@@ -234,12 +273,67 @@ export default function DroneDesk() {
     const src = droneSource(source.audio, source.file.name);
     const r = s.region; const a = r ? Math.round(Math.min(r.startSeconds, r.endSeconds) * src.rate) : 0, b = r ? Math.round(Math.max(r.startSeconds, r.endSeconds) * src.rate) : src.data.length;
     const p = engine.detectPitch(src.data.subarray(a, b), src.rate);
-    if (!p.hz || p.confidence < 0.5) { setPitchRead('No steady note found in this passage.'); return; }
+    if (!p.hz || p.confidence < 0.5) { setPitchRead('No steady note found in this passage.'); setNoteHz(null); return; }
+    setNoteHz(p.hz);
     const ni = engine.noteInfo(p.hz * 2 ** (s.pitch / 12), tune.aRef);
     setPitchRead(`${p.hz.toFixed(1)} Hz in the passage → ${ni.name} ${ni.cents >= 0 ? '+' : '−'}${Math.abs(ni.cents)} ¢ after pitch, at A=${tune.aRef}`);
     return p.hz;
   };
   const snap = () => { const hz = readPitch(); if (hz) set({ tune: { ...tune, cents: engine.snapCents(hz, s.pitch, tune.aRef) } }); };
+
+  // ---------- Step B: Resonance & Detail ----------
+  const dv = completeDetail(s.detail);
+  const setDetail = (patch: Partial<Detail>) => set({ detail: { ...dv, ...patch } });
+  const setBand = (patch: Partial<Detail['band']>) => setDetail({ band: { ...dv.band, ...patch } });
+  const neutral = isNeutralDetail(s.detail);
+  const report = useMemo(() => (shown ? analyseDetail(shown.left, shown.right, shown.rate, s.loop) : null), [shown, s.loop]);
+  const spec = useMemo(() => (shown ? spectrum(shown.left, shown.right, shown.rate) : null), [shown]);
+  const harmHz = useMemo(() => (noteHz ? harmonics(noteHz * 2 ** ((s.pitch + tune.cents / 100) / 12)) : []), [noteHz, s.pitch, tune.cents]);
+
+  /** Any listening buffer goes to the ONE player as a WAV, like every preview. */
+  const playBuffer = async (L: Float32Array, R: Float32Array, sr: number, label: string, says: string) => {
+    if (!player) return;
+    const file = new File([toWavBlob(L, R, sr)], `${base} (${label}).wav`, { type: 'audio/wav' });
+    const picked = player.selectLocalFile(file);
+    if (!picked.accepted) { setStatus(picked.message); return; }
+    setHanded({ which: 'detail', title: titleOf(file) });
+    await player.playLocalFile(); setStatus(says);
+  };
+  const listenAt = async (at: number) => {
+    if (!shown) return;
+    const ex = excerptLoop(shown.left, shown.right, shown.rate, at);
+    await playBuffer(ex.left, ex.right, shown.rate, `drone at ${clock(at)}`, `Playing two seconds around ${clock(at)}, three times. Listen, then choose.`);
+  };
+  const hearBand = async () => {
+    if (!shown) return;
+    const b = bandOnly(shown.left, shown.right, shown.rate, dv.band.hz, dv.band.q);
+    await playBuffer(b.left, b.right, shown.rate, `band ${dv.band.hz} Hz`, `Playing only the band around ${dv.band.hz} Hz, so you can hear what it carries. This is never saved.`);
+  };
+  const compare = async (which: 'original' | 'accepted' | 'yours') => {
+    if (!source) return;
+    setBusy(true);
+    try {
+      const r = await make(); const target = r.loudnessLufs ?? -14;
+      if (which === 'yours') { const m = matchLoudness(r.left, r.right, r.rate, target); await playBuffer(m.left, m.right, r.rate, 'compare · your settings', `Your settings, at ${target.toFixed(1)} LUFS.`); return; }
+      if (which === 'accepted') {
+        const k = JSON.stringify([{ ...s, detail: null }, source.info.sha256, amb?.loaded.info.sha256]);
+        let b = baseline && baseline.key === k ? baseline.r : null;
+        if (!b) { setStatus('Making the v0.3.4 version for comparison…'); b = neutral ? r : await renderDrone(droneSource(source.audio, source.file.name), { ...s, detail: null }, amb?.ambience ?? null); setBaseline({ key: k, r: b }); }
+        const m = matchLoudness(b.left, b.right, b.rate, target);
+        await playBuffer(m.left, m.right, b.rate, 'compare · v0.3.4', `The accepted v0.3.4 sound with your other settings, matched to ${target.toFixed(1)} LUFS.`); return;
+      }
+      const src = droneSource(source.audio, source.file.name), sr = src.rate, n = src.data.length;
+      const take = s.region ? [Math.round(Math.min(s.region.startSeconds, s.region.endSeconds) * sr), Math.round(Math.max(s.region.startSeconds, s.region.endSeconds) * sr)]
+        : (() => { const t = Math.min(n, Math.floor(sr * 9)), a = Math.floor((n - t) * (s.anchor / 100)); return [a, a + t]; })();
+      const seg = src.data.slice(take[0], take[1]); const m = matchLoudness(seg, seg, sr, target);
+      await playBuffer(m.left, m.right, sr, 'compare · original passage', `Your original passage, matched to ${target.toFixed(1)} LUFS.`);
+    } catch (e) { setStatus(e instanceof Error ? e.message : 'The comparison could not be made.'); } finally { setBusy(false); }
+  };
+  const answer = (kind: 'click' | 'flutter' | 'beat', id: string, a: Answer) => {
+    if (a === 'keep') { setKept((k) => ({ ...k, [id]: true })); setStatus('Kept as it is. Nothing changed.'); return; }
+    set(answerReading(kind, a, { stillness: s.stillness, movement: s.movement, clean }) as Partial<DroneSettings>);
+    setStatus(`${ANSWER_SAYS[kind][a]}. Make the drone again to hear it.`);
+  };
 
   return <section className={styles.panel} aria-labelledby="drone-title" data-drone-desk="true">
     <span className={styles.smallcaps}>LAB · DRONE · YOUR OWN RECORDINGS · ON THIS DEVICE</span>
@@ -261,7 +355,9 @@ export default function DroneDesk() {
         <p className={styles.muted}>{clock(len)} · {source.info.sampleRate / 1000} kHz · {source.info.channels === 2 ? 'stereo, folded to one voice for the drone' : 'mono'}</p>
         <Wave audio={source.audio} region={s.region ? [s.region.startSeconds, s.region.endSeconds] : null}
           playhead={handed?.which === 'original' && pos ? pos.seconds : undefined}
+          view={zoom && s.region ? [Math.min(s.region.startSeconds, s.region.endSeconds) - 0.5, Math.max(s.region.startSeconds, s.region.endSeconds) + 0.5] : null}
           onRegion={(a, b) => set({ region: { startSeconds: a, endSeconds: b } })} />
+        {s.region && <button type="button" className={styles.ghost} aria-pressed={zoom} data-drone-zoom="true" onClick={() => setZoom((z) => !z)}>{zoom ? 'Show the whole recording' : 'Zoom into the passage'}</button>}
         <div className={styles.transformFields}>
           {s.region ? <>
             <Slider label="Passage starts" value={s.region.startSeconds} min={0} max={len} step={0.01} show={clock} onChange={(v) => set({ region: { startSeconds: v, endSeconds: Math.max(v, s.region!.endSeconds) } })} />
@@ -355,13 +451,75 @@ export default function DroneDesk() {
       </div>
       {pitchRead && <p className={styles.muted} data-drone-pitch="true">{pitchRead}</p>}
 
+      <h3 className={styles.toneHeading} id="drone-detail-title">Resonance &amp; Detail</h3>
+      <div data-drone-detail="true" aria-labelledby="drone-detail-title">
+        <p className={styles.muted}>Dial into the drone&apos;s space and its notes. Every control starts where v0.3.4 has it; while they all stay there, the drone is exactly the sound you accepted. {neutral ? <strong data-drone-neutral="true">Now: the accepted v0.3.4 sound.</strong> : <strong data-drone-neutral="false">Now: your Resonance &amp; Detail.</strong>}</p>
+        <div className={styles.transformFields}>
+          <Slider label="Decay" value={dv.decay} min={0} max={0.8} step={0.01} show={(v) => (v === 0.48 ? '0.48 (v0.3.4)' : v.toFixed(2))} onChange={(v) => setDetail({ decay: v })} hint="How long the space keeps ringing." />
+          <Slider label="Size" value={dv.size} min={0.5} max={2.5} step={0.05} show={(v) => `×${v.toFixed(2)}`} onChange={(v) => setDetail({ size: v })} hint="How large the space feels." />
+          <Slider label="Wet" value={dv.wet} min={0} max={3} step={0.05} show={(v) => `×${v.toFixed(2)}`} onChange={(v) => setDetail({ wet: v })} hint="How much of the space you hear." />
+          <Slider label="Dry" value={dv.dry} min={0} max={1.5} step={0.05} show={(v) => `×${v.toFixed(2)}`} onChange={(v) => setDetail({ dry: v })} hint="How much of the direct sound." />
+          <Slider label="Tone" value={dv.toneHz ?? P.cutoff} min={800} max={14000} step={50} show={(v) => (dv.toneHz === null ? `${v} Hz (preset)` : `${v} Hz`)} onChange={(v) => setDetail({ toneHz: v })} hint="The drone's brightness." />
+        </div>
+        <div className={styles.localAudioCard} data-drone-band="true">
+          <div className={styles.transformStepHead}><strong>Resonance band</strong>
+            <label><input type="checkbox" checked={dv.band.on} onChange={(e) => setBand({ on: e.currentTarget.checked })} /> On</label></div>
+          <p className={styles.muted}>Lift or lower one region — a note, a harmonic, a vowel&apos;s colour. Place it on the spectrum below after you make the drone.</p>
+          {dv.band.on && <div className={styles.transformFields}>
+            <Slider label="Centre" value={dv.band.hz} min={40} max={12000} step={1} show={(v) => `${v} Hz`} onChange={(v) => setBand({ hz: v })} />
+            <Slider label="Width" value={dv.band.q} min={0.3} max={12} step={0.1} show={(v) => `Q ${v.toFixed(1)}`} onChange={(v) => setBand({ q: v })} hint="Higher is narrower." />
+            <Slider label="Lift" value={dv.band.db} min={-18} max={18} step={0.5} show={(v) => `${v > 0 ? '+' : ''}${v} dB`} onChange={(v) => setBand({ db: v })} />
+          </div>}
+        </div>
+        <div className={styles.transformActions}>
+          <button type="button" className={styles.ghost} disabled={neutral} onClick={() => set({ detail: NEUTRAL_DETAIL })} data-drone-reset-detail="true">Back to the v0.3.4 sound</button>
+        </div>
+      </div>
+
       {problem && <p className={styles.focusStatus} role="alert">{problem}</p>}
       {needsAmb && <p className={styles.focusStatus} role="alert">The ambience element is on: choose an ambience recording, or turn it off.</p>}
-      {current && <div className={styles.localAudioCard} data-drone-result="true">
+      {shown && <div className={styles.localAudioCard} data-drone-result="true">
         <strong>The drone · what the player plays</strong>
-        <p className={styles.muted}>{clock(current.frames / current.rate)} · peak {(20 * Math.log10(current.peak)).toFixed(1)} dBFS{current.loudnessLufs != null ? ` · ${current.loudnessLufs.toFixed(1)} LUFS` : ''}{s.loop ? ' · loops seamlessly' : ''}</p>
-        <Wave audio={{ sampleRate: current.rate, channels: [current.left as Float32Array<ArrayBuffer>, current.right as Float32Array<ArrayBuffer>] }} region={null}
-          playhead={handed?.which === 'drone' && pos ? pos.seconds : undefined} />
+        {stale && <p className={styles.focusStatus} data-drone-stale="true">Settings changed since this drone was made. Make the drone again to hear them; the meter and spectrum below describe this one.</p>}
+        <p className={styles.muted}>{clock(shown.frames / shown.rate)} · peak {(20 * Math.log10(shown.peak)).toFixed(1)} dBFS{shown.loudnessLufs != null ? ` · ${shown.loudnessLufs.toFixed(1)} LUFS` : ''}{s.loop ? ' · loops seamlessly' : ''}</p>
+        <Wave audio={{ sampleRate: shown.rate, channels: [shown.left as Float32Array<ArrayBuffer>, shown.right as Float32Array<ArrayBuffer>] }} region={null}
+          playhead={handed?.which === 'drone' && pos ? pos.seconds : undefined}
+          marks={report ? [...report.clicks, ...report.flutter].filter((r) => !kept[`${r.kind}@${r.at.toFixed(2)}`]) : []} />
+
+        {spec && <div data-drone-spectrum-card="true">
+          <p className={styles.muted}>Spectrum{noteHz ? ' · lines mark the harmonics of the note you read' : ' · press “Read the note” to mark its harmonics'}. Click to place the resonance band there.</p>
+          <Spectrum spec={spec} harmonicsHz={harmHz} band={dv.band} onPick={(hz) => setBand({ on: true, hz })} />
+          <div className={styles.transformActions}>
+            <button type="button" className={styles.ghost} disabled={busy || !player || !dv.band.on} onClick={() => void hearBand()} data-drone-hear-band="true">Hear only the band · {dv.band.hz} Hz</button>
+          </div>
+        </div>}
+
+        {report && <div data-drone-meter="true">
+          <strong>Detail</strong>
+          <p className={styles.muted}>What the meter finds is not a defect by default. Listen, then reduce it, keep it, or bring it forward.</p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0', display: 'grid', gap: 6 }}>
+            <li data-drone-reading="ripple">Level movement (flutter): <strong style={{ display: "inline" }}>{report.ripplePct}%</strong></li>
+            {report.seam && <li data-drone-reading="seam">Loop seam: <strong style={{ display: "inline" }}>{report.seam.smooth ? 'smooth' : 'a step you may hear'}</strong></li>}
+            {report.beat ? <li data-drone-reading="beat">Beating: <strong style={{ display: "inline" }}>{report.beat.hz} Hz</strong>, {report.beat.depthPct}% deep
+              {!kept.beat && <span> · {(['reduce', 'keep', 'emphasise'] as Answer[]).map((a) => <button key={a} type="button" className={styles.ghost} title={a === 'keep' ? 'Change nothing' : ANSWER_SAYS.beat[a]} onClick={() => answer('beat', 'beat', a)}>{a === 'emphasise' ? 'Bring forward' : a === 'reduce' ? 'Reduce' : 'Keep'}</button>)}</span>}</li>
+              : <li data-drone-reading="beat">Beating: <strong style={{ display: "inline" }}>none found</strong></li>}
+            {[...report.clicks, ...report.flutter].sort((a, b) => a.at - b.at).map((r) => { const id = `${r.kind}@${r.at.toFixed(2)}`; return <li key={id} data-drone-reading={r.kind} data-at={r.at.toFixed(2)}>
+              {r.kind === 'click' ? 'Click' : 'Flutter'} at <strong style={{ display: "inline" }}>{clock(r.at)}</strong>{kept[id] ? ' · kept' : ''}
+              {' · '}<button type="button" className={styles.ghost} disabled={busy || !player} onClick={() => void listenAt(r.at)}>Listen</button>
+              {!kept[id] && (['reduce', 'keep', 'emphasise'] as Answer[]).map((a) => <button key={a} type="button" className={styles.ghost} title={a === 'keep' ? 'Change nothing' : ANSWER_SAYS[r.kind][a]} onClick={() => answer(r.kind, id, a)}>{a === 'emphasise' ? 'Bring forward' : a === 'reduce' ? 'Reduce' : 'Keep'}</button>)}
+            </li>; })}
+            {report.clicks.length + report.flutter.length === 0 && <li data-drone-reading="none">No clicks or flutter moments stand out.</li>}
+          </ul>
+        </div>}
+
+        <div data-drone-compare="true">
+          <strong style={{ display: "inline" }}>Compare</strong> <span className={styles.muted}>· each matched to the same loudness</span>
+          <div className={styles.transformActions}>
+            <button type="button" className={styles.ghost} disabled={busy || !player} onClick={() => void compare('original')}>Original passage</button>
+            <button type="button" className={styles.ghost} disabled={busy || !player} onClick={() => void compare('accepted')}>v0.3.4 sound</button>
+            <button type="button" className={styles.ghost} disabled={busy || !player} onClick={() => void compare('yours')}>Your settings</button>
+          </div>
+        </div>
       </div>}
       <div className={styles.transformActions}>
         <button type="button" className={styles.play} onClick={() => void preview()} disabled={busy || !!problem || needsAmb || !player}>Make the drone and play it</button>

@@ -129,7 +129,7 @@ const check = (name, pass, detail) => { results.push({ name, pass: !!pass }); co
       check(`${name}: the drone goes to the ONE player as a WAV`, sel.type === 'audio/wav' && sel.name === 'My voice (drone preview).wav', sel);
       check(`${name}: Chrome's drone is bit-identical to the same render under Node`, sel.sha === nodeSha, [sel.sha, nodeSha]);
       await p.waitForSelector('[data-drone-result]');
-      const res = await p.locator('[data-drone-result] p').textContent();
+      const res = await p.locator('[data-drone-result] p').first().textContent();
       check(`${name}: the result states length, peak and loudness`, /0:30\.00 · peak -?\d+\.\d dBFS · -\d+\.\d LUFS · loops seamlessly/.test(res || ''), res);
 
       if (name === 'desktop') await p.screenshot({ path: path.join(shots, 'sound-studio-drone-desktop.png'), fullPage: true });
@@ -164,6 +164,62 @@ const check = (name, pass, detail) => { results.push({ name, pass: !!pass }); co
         const loaded = await p.locator('[data-drone-desk] [role="status"]').textContent();
         check(`${name}: the recipe loads back (Deep Earth again)`, /Recipe loaded: Deep Earth/.test(loaded || '') && (await p.getByRole('button', { name: 'Deep Earth' }).getAttribute('aria-pressed')) === 'true', loaded);
       }
+      // ---- Step B: Resonance & Detail ----
+      const lastSel = async (n) => { await p.waitForFunction((k) => window.__played > k && window.__selected.at(-1)?.sha, n, { timeout: 60000 }); return p.evaluate(() => window.__selected.at(-1)); };
+      check(`${name}: B · the desk says it is the accepted v0.3.4 sound while nothing moved`, (await p.locator('[data-drone-neutral="true"]').count()) === 1);
+      let played = await p.evaluate(() => window.__played);
+      await p.getByRole('button', { name: 'Make the drone and play it' }).click();
+      const again = await lastSel(played);
+      check(`${name}: B · with neutral detail the drone is still bit-identical to the accepted engine`, again.sha === nodeSha, again.sha);
+      await p.waitForSelector('[data-drone-meter]');
+      check(`${name}: B · the Detail meter reports flutter, seam and beating`, /\d+(\.\d)?%/.test(await p.locator('[data-drone-reading="ripple"]').textContent() || '') && (await p.locator('[data-drone-reading="seam"]').count()) === 1 && (await p.locator('[data-drone-reading="beat"]').count()) === 1);
+      await p.getByRole('button', { name: 'Read the note' }).click();
+      const spec = p.locator('[data-drone-spectrum]'); const box = await spec.boundingBox();
+      await spec.click({ position: { x: box.width * 0.55, y: box.height / 2 } });
+      check(`${name}: B · clicking the spectrum places the resonance band (at 0 dB it is still the v0.3.4 sound)`, (await p.locator('[data-drone-band] input[type="checkbox"]').isChecked()) && /\d+ Hz/.test(await p.locator('[data-drone-control="Centre"]').textContent() || '') && (await p.locator('[data-drone-neutral="true"]').count()) === 1);
+      played = await p.evaluate(() => window.__played);
+      await p.locator('[data-drone-hear-band]').click();
+      const band = await lastSel(played);
+      check(`${name}: B · Hear only the band goes to the ONE player`, /^My voice \(band \d+ Hz\)\.wav$/.test(band.name), band.name);
+      await p.locator('[data-drone-control="Lift"] input').fill('9');
+      await p.locator('[data-drone-control="Decay"] input').fill('0.7');
+      check(`${name}: B · a lifted band and a moved Decay leave the v0.3.4 sound, and the last drone is marked out of date`, (await p.locator('[data-drone-neutral="false"]').count()) === 1 && (await p.locator('[data-drone-stale]').count()) === 1);
+      played = await p.evaluate(() => window.__played);
+      await p.getByRole('button', { name: 'Make the drone and play it' }).click();
+      const moved = await lastSel(played);
+      check(`${name}: B · moved Decay and a lifted band change the drone`, moved.sha !== nodeSha);
+      for (const [label, want] of [['Original passage', 'compare · original passage'], ['v0.3.4 sound', 'compare · v0.3.4'], ['Your settings', 'compare · your settings']]) {
+        played = await p.evaluate(() => window.__played);
+        await p.locator('[data-drone-compare]').getByRole('button', { name: label }).click();
+        const c = await lastSel(played);
+        check(`${name}: B · Compare "${label}" plays in the ONE player, loudness-matched`, c.name === `My voice (${want}).wav`, c.name);
+      }
+      const reading = p.locator('[data-drone-reading="click"], [data-drone-reading="flutter"]').first();
+      if (await reading.count()) {
+        played = await p.evaluate(() => window.__played);
+        await reading.getByRole('button', { name: 'Listen' }).click();
+        const ex = await lastSel(played);
+        check(`${name}: B · Listen on a reading plays an excerpt around it`, /^My voice \(drone at \d+:\d+\.\d+\)\.wav$/.test(ex.name), ex.name);
+        await reading.getByRole('button', { name: 'Keep' }).click();
+        check(`${name}: B · Keep changes nothing and marks it kept`, /Nothing changed/.test(await p.locator('[data-drone-desk] [role="status"]').textContent() || ''));
+      }
+      const bDownloads = []; p.on('download', (d) => bDownloads.push(d));
+      await p.getByRole('button', { name: 'Save as new' }).click();
+      await p.waitForFunction(() => /Saved/.test(document.querySelector('[data-drone-saved]')?.textContent || ''), null, { timeout: 30000 });
+      await p.waitForTimeout(500);
+      const bw = bDownloads.find((d) => d.suggestedFilename() === 'My voice (drone).wav');
+      const brec = bw && JSON.parse(riffChunk(fs.readFileSync(await bw.path()), 'slpv').toString('utf8').replace(/\0+$/, ''));
+      check(`${name}: B · the saved file records the detail and the derived engine`, brec && brec.recipe.processing.detail.decay === 0.7 && brec.recipe.processing.detail.band.db === 9 && /engine3/.test(brec.engine.resonanceAndDetail || ''), brec && brec.recipe.processing.detail);
+      await p.locator('[data-drone-reset-detail]').click();
+      played = await p.evaluate(() => window.__played);
+      await p.getByRole('button', { name: 'Make the drone and play it' }).click();
+      const back = await lastSel(played);
+      check(`${name}: B · "Back to the v0.3.4 sound" returns the bit-identical accepted drone`, back.sha === nodeSha && (await p.locator('[data-drone-neutral="true"]').count()) === 1, back.sha);
+      await p.locator('[data-drone-zoom]').click();
+      check(`${name}: B · Zoom into the passage is a pressed toggle`, (await p.locator('[data-drone-zoom]').getAttribute('aria-pressed')) === 'true');
+      if (name === 'desktop') await p.screenshot({ path: path.join(shots, 'sound-studio-drone-detail-desktop.png'), fullPage: true });
+      else await p.screenshot({ path: path.join(shots, 'sound-studio-drone-detail-mobile.png'), fullPage: true });
+
       const overflow = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       check(`${name}: no horizontal overflow`, overflow <= 0, overflow);
       check(`${name}: no page errors`, errors.length === 0, errors);

@@ -4,6 +4,7 @@ human_activity: turning a short steady passage of their own recording — a voic
 surfaces:
   - app/listen/DroneDesk.tsx
   - lib/listening/drone/drone.ts
+  - lib/listening/drone/detail.ts
 principles:
   - FOUNDER RULING 2026-11-17 (#1979 comment 6963607549) — the member's OWN audio may be processed and saved on their device as new derived takes with provenance; catalogue and Soullab works stay un-transformable until an independent rights authority exists
   - TRANSFORM T2 R2 APPROVAL 2026-11-21 ("Approve T2 R2") — the founder-accepted Voice to Drone Lab v0.3.4 engine (revision 2), copied verbatim; every new control in a later step defaults to the accepted sound; step A (this desk, existing controls only) before step B (Resonance & Detail)
@@ -18,8 +19,10 @@ shared_with_house: the deep contained field, editorial serif headings, restraine
 distinct_to_room: an instrument rather than a workbench — a passage marked on the member's own waveform becomes one held sound; character presets, three named voices with interval, entry and bloom, a headphone field, and a save that always makes something new and proves the original untouched
 screenshot_desktop:
   - docs/design/contracts/screenshots/sound-studio-drone-desktop.png
+  - docs/design/contracts/screenshots/sound-studio-drone-detail-desktop.png
 screenshot_mobile:
   - docs/design/contracts/screenshots/sound-studio-drone-mobile.png
+  - docs/design/contracts/screenshots/sound-studio-drone-detail-mobile.png
 experience_verification: >
   2026-11-21 isolated fixture witness (tests/listening/drone_t2_browser_witness.cjs), 42/42: the real DroneDesk
   compiled with its real stylesheet, the persistent player replaced by a recording shim, walked in local Chrome at
@@ -32,6 +35,15 @@ experience_verification: >
   bit-identically (tests/listening/drone_t2_parity.test.mjs). This is a fixture witness, not an authenticated walk
   of /listen, not Safari, not a physical headphone test; the founder's walk with their own recording is the
   step A acceptance and is not claimed here.
+  Step B (Resonance & Detail, founder "Yes, start step B", 2026-11-21), same witness, now 72/72: with nothing moved the
+  desk says it is the accepted v0.3.4 sound and renders bit-identically; the Detail meter reports flutter, seam and
+  beating, with Listen (an excerpt in the one player), Reduce, Keep (changes nothing) and Bring forward; Read the note
+  marks harmonics on the spectrum and a click places the resonance band (at 0 dB still the v0.3.4 sound); Hear only the
+  band, and Compare original passage / v0.3.4 sound / your settings, each loudness-matched, all go to the one player; a
+  lifted band and moved Decay change the drone and mark the last one out of date; the saved WAV records the detail and
+  the derived engine; "Back to the v0.3.4 sound" returns the bit-identical accepted drone. engine3 (derived from the
+  accepted engine by six counted patches) renders the 8 founder-accepted drones bit-identically
+  (tests/listening/drone_t2b_detail.test.mjs). The founder's listening walk of step B is not claimed here.
 ---
 
 # Sound Studio / Lab / Drone — Experience Contract
@@ -49,6 +61,16 @@ engine whose sound the founder accepted. It is an instrument: the member shapes,
 - Saving always makes a new file. Its recipe and provenance travel inside the WAV and beside it. The original is
   re-read after saving and the desk says whether it is unchanged.
 - A saved recipe brings the same drone back.
+
+## Resonance & Detail (step B)
+
+- Every new control (Decay, Size, Wet, Dry, Tone, the resonance band) starts where v0.3.4 has it. While they all
+  stay there, the desk says so and the accepted engine renders, unchanged. "Back to the v0.3.4 sound" is always one press.
+- The Detail meter only reports. Nothing it finds changes unless the member chooses Reduce or Bring forward; Keep
+  changes nothing. An anomaly is not a defect by default.
+- Every listening aid (an excerpt, the band alone, the three-way compare) is a preview through the one player and is
+  never saved.
+- Harmonic emphasis is done with the resonance band placed on a marked harmonic, not by a separate per-voice engine.
 
 ## What the desk never does
 

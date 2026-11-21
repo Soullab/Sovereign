@@ -14,6 +14,8 @@ export type DroneSettings = {
   preset: PresetId; duration: number; stillness: number; grainMs: number; pitch: number; movement: number; space: number;
   anchor: number; loop: boolean; layerMix: LayerMix[]; soloLayer: number | null; region: Region | null;
   field: FieldElement[] | null; clean: Clean | null; level: Level | null; tune: Tune | null; engineRevision?: 1 | 2;
+  /** Step B (Resonance & Detail). Read only by engine3.js; absent or neutral means the accepted v0.3.4 render. */
+  detail?: { toneHz?: number | null; size?: number; decay?: number; wet?: number; dry?: number; band?: { on?: boolean; hz?: number; q?: number; db?: number } } | null;
 };
 export type DroneSource = { data: Float32Array; rate: number; name: string; synthetic: boolean };
 export type Ambience = { data: Float32Array; rate: number; name: string; seconds: number };
