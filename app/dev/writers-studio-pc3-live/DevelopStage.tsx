@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from 'react';
 import { excerptOf, markTerm } from '@/lib/writersStudio/recurringThreads';
 import { setWorkKindClient } from '@/lib/writersStudio/workKindClient';
 import { setWorkFormClient } from '@/lib/writersStudio/workFormClient';
+import { pathsForForm } from '@/lib/writersStudio/studioPaths';
 import { FORM_CHOICES, FORM_MAX_CHARS, FORM_OWN_WORD_LABEL, FORM_QUESTION, capitalise, formToSave, type FormChoice } from '@/lib/writersStudio/formVocabulary';
 import type { WorkKind } from '@/lib/writersStudio/workKindShared';
 import { useStudioVocabulary } from '@/lib/writersStudio/StudioVocabularyContext';
@@ -605,7 +606,7 @@ function KindControl(props: { workId: string; kind: WorkKind | null | undefined;
 
 /** What the Work is becoming, changeable any time (founder 2026-11-20). The writer's own word, saved as `living_works.form`; the
  *  Studio's words and what MAIA is told follow it. ⛔ Never inferred: only the writer's click or their own typed word saves a form. */
-export function FormControl(props: { workId: string; form: string | null; onSaved: () => void }) {
+export function FormControl(props: { workId: string; form: string | null; onSaved: () => void; onStartPath?: (pathId: string) => void }) {
   const [open, setOpen] = useState(false);
   const [ownOpen, setOwnOpen] = useState(false);
   const [own, setOwn] = useState('');
@@ -653,6 +654,14 @@ export function FormControl(props: { workId: string; form: string | null; onSave
         </>
       )}
       {failed ? <span role="status">That could not be saved just now. Nothing changed.</span> : null}
+      {/* Offered when relevant (founder 2026-11-21): a guided path that fits this form. A path always begins a NEW Work; this
+          one is never converted or changed. */}
+      {props.onStartPath && current && !open ? pathsForForm(current).map((path) => (
+        <span key={path.id} data-path-offer={path.id} style={{ width: '100%', opacity: .85 }}>
+          {path.offer} It begins a new Work; this one stays as it is.{' '}
+          <button type="button" style={btn} onClick={() => props.onStartPath?.(path.id)}>{path.startLabel}</button>
+        </span>
+      )) : null}
     </div>
   );
 }
@@ -664,13 +673,15 @@ export function DevelopHoldings(props: {
   kind: WorkKind | null | undefined; onKind: (k: WorkKind | null) => void;
   /** The Work's form and what to do once a new one is saved; absent for a Studio program, whose own words outrank a form. */
   form?: string | null; onFormSaved?: () => void;
+  /** Open a guided path's own door (a new Work). Absent: no path is offered here. */
+  onStartPath?: (pathId: string) => void;
 }) {
   const v = useStudioVocabulary();
   return (
     <div data-develop-holdings="true" style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 2px', fontSize: 13 }}>
       <div data-develop-place="kind">
         <div style={{ fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', opacity: .7, marginBottom: 6 }}>{v.railHeading}</div>
-        {props.onFormSaved ? <FormControl workId={props.workId} form={props.form ?? null} onSaved={props.onFormSaved} /> : null}
+        {props.onFormSaved ? <FormControl workId={props.workId} form={props.form ?? null} onSaved={props.onFormSaved} onStartPath={props.onStartPath} /> : null}
         <KindControl workId={props.workId} kind={props.kind} onKind={props.onKind} />
       </div>
       <div data-develop-place="reading">

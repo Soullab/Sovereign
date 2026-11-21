@@ -1740,6 +1740,7 @@ export default function P4R1DevelopController() {
       onAddToWork={(id) => void addToWork(id)}
       onMakeWork={(title) => void makeWork(title)}
       onWorkFormSaved={() => void reloadWorks()}
+      onStartPath={(id) => router.push(`${pathname}?mode=home&path=${encodeURIComponent(id)}`)}
       workTitle={workTitle}
       appearance={appearance}
       field={field}

@@ -26,7 +26,7 @@ import {
   type HeardAnswer,
   type HoldChoice,
 } from '@/lib/writersStudio/inspirationOpening';
-import { builtStages, type StudioPath } from '@/lib/writersStudio/studioPaths';
+import { builtStages, pathsForForm, type StudioPath } from '@/lib/writersStudio/studioPaths';
 import { FORM_CHOICES, FORM_MAX_CHARS, FORM_OWN_WORD_LABEL, FORM_QUESTION, formToSave, formVocabulary, type FormChoice } from '@/lib/writersStudio/formVocabulary';
 // Styles: inspiration-opening.css, imported by the Studio pages beside the other Studio stylesheets.
 
@@ -63,6 +63,9 @@ export default function StudioInspirationOpening(props: {
    */
   studioPath?: StudioPath | null;
   onPathBegin?: (choice: { title: string; revisionsPausedConfirmed: boolean; purpose: string | null }) => void;
+  /** Offered when relevant (founder 2026-11-21): a guided path that fits the form the writer chose. Taking it opens that
+   *  path's own door from its start (its age check and first questions); nothing here is carried into it. */
+  onChoosePath?: (pathId: string) => void;
 }) {
   const carry = props.variant === 'carry';
   const studioPath = carry ? null : props.studioPath ?? null;
@@ -389,6 +392,12 @@ export default function StudioInspirationOpening(props: {
             value={formOwn} onChange={(e) => setFormOwn(e.target.value)} placeholder="A letter, a liturgy, a blog series…" />
         ) : null}
         <p className="wsio-note">You can skip this, or change it any time.</p>
+        {props.onChoosePath ? pathsForForm(chosenForm).map((path) => (
+          <p key={path.id} className="wsio-note" data-path-offer={path.id}>
+            {path.offer}{' '}
+            <button type="button" className="wsio-link" disabled={props.busy} onClick={() => props.onChoosePath?.(path.id)}>{path.startLabel}</button>
+          </p>
+        )) : null}
         <p className="wsio-maia wsio-small">{C.beginQuestion}</p>
         <div className="wsio-choices">
           <button type="button" className="wsio-choice" disabled={props.busy} onClick={() => begin('write')}>

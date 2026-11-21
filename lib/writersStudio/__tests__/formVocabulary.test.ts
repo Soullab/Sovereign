@@ -231,3 +231,49 @@ describe('Develop’s older fixed wording is said in the Work’s words', () => 
     expect(view).not.toMatch(/[^=]\{starter\.(label|detail)\}/); // key={starter.label} is a React key, not wording
   });
 });
+
+describe('guided paths are offered when relevant, never chosen for the writer (founder 2026-11-21)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { pathsForForm, STUDIO_PATHS } = require('../studioPaths') as typeof import('../studioPaths');
+  test('a path offers itself only for the forms it names', () => {
+    expect(pathsForForm('essay').map((p) => p.id)).toEqual(['college-essay']);
+    expect(pathsForForm('a college essay').map((p) => p.id)).toEqual(['college-essay']);
+    for (const form of [null, '', 'poem', 'book', 'song', 'Letter']) expect(pathsForForm(form)).toEqual([]);
+    for (const p of STUDIO_PATHS) { expect(p.forms.length).toBeGreaterThan(0); expect(p.offer.trim()).not.toBe(''); }
+  });
+
+  let host: HTMLDivElement; let root: Root;
+  beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
+  afterEach(() => { act(() => root.unmount()); host.remove(); });
+  const render = (form: string | null, onStartPath?: jest.Mock) =>
+    act(() => root.render(React.createElement(FormControl, { workId: 'w1', form, onSaved: jest.fn(), onStartPath })));
+
+  test('in Develop, an essay is offered the college essay path; taking it is the writer’s click alone', () => {
+    const onStartPath = jest.fn();
+    render('essay', onStartPath);
+    expect(host.textContent).toMatch(/Writing a college application essay\? There’s a guided path for that\. It begins a new Work; this one stays as it is\./);
+    expect(onStartPath).not.toHaveBeenCalled();
+    act(() => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Start a college essay')!.click());
+    expect(onStartPath).toHaveBeenCalledWith('college-essay');
+  });
+
+  test('no offer for a form no path fits, for a Work with no form, or where no path may be started', () => {
+    render('poem', jest.fn());
+    expect(host.querySelector('[data-path-offer]')).toBeNull();
+    render(null, jest.fn());
+    expect(host.querySelector('[data-path-offer]')).toBeNull();
+    render('essay');
+    expect(host.querySelector('[data-path-offer]')).toBeNull();
+  });
+
+  test('the opening offers it after the writer’s own form choice, and opens the path’s door from its start', () => {
+    const opening = read('app/dev/writers-studio-pc3-live/StudioInspirationOpening.tsx');
+    expect(opening).toMatch(/props\.onChoosePath \? pathsForForm\(chosenForm\)\.map/);
+    const home = read('app/dev/writers-studio-pc3-live/P4R1HomeView.tsx');
+    expect(home).toMatch(/onChoosePath=\{props\.onStartPath\}/);
+    // Remounted on a path change, so the path's age check and first questions run before anything else.
+    expect(home).toMatch(/key=\{props\.studioPath\?\.id \?\? 'open'\}/);
+    const view = read('app/dev/writers-studio-pc3-live/P4R1DevelopView.tsx');
+    expect(view).toMatch(/onStartPath=\{props\.work\.studioPath \? undefined : props\.onStartPath\}/);
+  });
+});

@@ -844,6 +844,7 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
         threshold
         work={
           <StudioInspirationOpening
+            key={props.studioPath?.id ?? 'open'}
             busy={props.busy}
             error={props.error}
             onBegin={(destination, purpose, form) => {
@@ -855,6 +856,7 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
             onHavePages={props.onImport}
             studioPath={props.studioPath ?? null}
             onPathBegin={props.onPathBegin}
+            onChoosePath={props.onStartPath}
           />
         }
       />

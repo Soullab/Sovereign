@@ -52,6 +52,8 @@ export interface StudioStage {
   tools?: readonly ('keep' | 'mirror')[];
 }
 
+import { formVocabulary, type FormChoice } from './formVocabulary';
+
 export interface StudioPath {
   /** Exact id used in `?path=`. Lowercase, hyphenated. */
   id: string;
@@ -59,6 +61,11 @@ export interface StudioPath {
   name: string;
   /** The program's own offer on Studio Home, for a member who already has Works (e.g. "Start a college essay"). */
   startLabel: string;
+  /** Offered when relevant (founder 2026-11-21): the forms this path fits. When a writer says their Work is one of these
+   *  ("What is it becoming?"), the path is offered as a clear, optional choice. ⛔ Never chosen for them. */
+  forms: readonly FormChoice[];
+  /** The one line that offers it ("Writing a college application essay? There’s a guided path for that."). */
+  offer: string;
   /**
    * Founder ruling 2026-11-16 (#1900): a program that students may use. Before MAIA speaks at its door, the member says
    * they are 18+, or 13–17 with adult supervision; under-13 is turned away. Enforced server-side at the door and at Begin.
@@ -108,6 +115,8 @@ export const STUDIO_PATHS: readonly StudioPath[] = [
     id: 'college-essay',
     name: 'College essay',
     startLabel: 'Start a college essay',
+    forms: ['essay'],
+    offer: 'Writing a college application essay? There’s a guided path for that.',
     requiresAgeAttestation: true,
     arena: 'For the personal essay you’ll send with your college applications: written in your own voice, from your own life.',
     // The College Essay coaching arc, from the program's own curriculum (offline Studio v2.1, weeks 1–6), brought into the Studio
@@ -290,4 +299,13 @@ export function unheadedPlaceName(
 ): string {
   if (!copy) return `Section ${position + 1}`;
   return total === 1 ? copy.onlyPlace : `${copy.part} ${position + 1}`;
+}
+
+/**
+ * The guided paths that fit what the writer said their Work is becoming, in registry order. A new path offers itself wherever
+ * it fits by naming its forms; nothing else changes. Empty when the form is unknown or nothing fits.
+ */
+export function pathsForForm(form: string | null | undefined): StudioPath[] {
+  const kind = formVocabulary(form).kind;
+  return STUDIO_PATHS.filter((p) => (p.forms as readonly string[]).includes(kind));
 }
