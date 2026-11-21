@@ -57,6 +57,7 @@ import { askMaia, withoutCarriedReadings, type StandingRead } from '@/lib/manusc
 import { loadActiveGrant, loadSectionSizes, loadSuppliedSections, loadEarlierDigests, loadEarlierLocusDigests } from '@/lib/disclosure/workReadScopeRead';
 import { chaptersInPlay, loadCarriedReadings, type CarryScope } from '@/lib/manuscript/ask/carriedReadings';
 import { selectSections, movedSince, digestOf, MAX_READ_SECTIONS } from '@/lib/manuscript/ask/workReadScope';
+import { writerSectionLabel } from '@/lib/manuscript/ask/writerSectionLabel';
 import { decisionContextForWork, dismissedObservationKeys } from '@/lib/writersStudio/decisionRecord';
 import { livingWorkKind } from '@/lib/writersStudio/workKind';
 import { ANONYMISE_OFFER_INSTRUCTION, anonymiseOfferAlreadyMade } from '@/lib/writersStudio/practiceOffers';
@@ -843,8 +844,13 @@ async function workTurn(input: {
   });
 
   const thread = await loadThread(liveThreadId, memberId);
-  /* ⭐ L8 · what she actually read stays visible: ids + headings only, never text. */
-  const read = supplied.map((x) => ({ sectionId: x.id, label: x.label }));
+  /* ⭐ L8 · what she actually read stays visible: ids + headings only, never text.
+     WS-F2: named for the WRITER as the manuscript list names it (an unheaded section is "Section N", never "an untitled section").
+     The model's own labels above are untouched. */
+  const read = supplied.map((x) => ({
+    sectionId: x.id,
+    label: writerSectionLabel(built.facts.sections.find((s) => s.id === x.id)) ?? x.label,
+  }));
   return NextResponse.json({ threadId: liveThreadId, thread, staleness, read, ...(carryScope === 'whole_book' ? { carryScope } : {}) });
 }
 
