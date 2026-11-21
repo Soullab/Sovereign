@@ -547,7 +547,7 @@ export default function P4R1HomeController() {
       pendingMode={pendingMode}
       onMode={onMode}
       onChooseManuscript={onChooseManuscript}
-      onBegin={(title) => void onBegin(title)}
+      onBegin={(title, form) => void onBegin(title, null, form ?? null)}
       onOpen={open}
       onMakeWork={(manuscriptId, title) => void onMakeWork(manuscriptId, title)}
       onAddToWork={(manuscriptId, workId) => void onAddToWork(manuscriptId, workId)}
@@ -578,7 +578,7 @@ export default function P4R1HomeController() {
         router.replace(pathname + (next.toString() ? '?' + next.toString() : ''));
       }}
       // Q3: the one-line spark on a later new Work is kept only in a readable Ordinary session, never in Sanctuary.
-      onBeginWithSpark={(title, spark) => void onBegin(title, ordinaryNow() ? spark : null)}
+      onBeginWithSpark={(title, spark, form) => void onBegin(title, ordinaryNow() ? spark : null, form ?? null)}
       onSources={() => router.push('/writers-studio/sources')}
     />
   );

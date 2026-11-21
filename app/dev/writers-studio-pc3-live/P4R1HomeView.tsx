@@ -27,6 +27,7 @@ import { DeletionNotice, DeletionSharedMaterial, DeletionUnconfirmed, deleteConf
 import P4R1ProducePanel from './P4R1ProducePanel';
 import type { Appearance } from '@/app/writers-studio/full-redesign/types';
 import StudioInspirationOpening from './StudioInspirationOpening';
+import FormQuestion from './FormQuestion';
 import { STUDIO_PATHS, currentStage, studioPathById, type StudioPath } from '@/lib/writersStudio/studioPaths';
 import { INSPIRATION_COPY, LOOK_AROUND_COPY, MAX_SPARK_CHARS, returnGreeting, writtenFact } from '@/lib/writersStudio/inspirationOpening';
 
@@ -363,7 +364,8 @@ export interface P4R1HomeViewProps {
   } | null;
   onMode: (mode: 'home' | 'write' | 'develop' | 'review' | 'publish' | 'listen') => void;
   onChooseManuscript: (mode: 'write' | 'develop' | 'review' | 'publish' | 'listen', manuscriptId: string) => void;
-  onBegin: (title: string) => void;
+  /** `form`: what the writer said the new Work is becoming ("What is it becoming?"), or null. */
+  onBegin: (title: string, form?: string | null) => void;
   onOpen: (manuscriptId: string, sectionId?: string) => void;
   onMakeWork: (manuscriptId: string, title: string | null) => void;
   onAddToWork: (manuscriptId: string, workId: string) => void;
@@ -389,7 +391,7 @@ export interface P4R1HomeViewProps {
   /** The member set the program door aside ("Look around first"): back to Home, the door closed. */
   onLeavePath?: () => void;
   /** Q3: later new Works carry one optional line, "What's calling this one?". */
-  onBeginWithSpark?: (title: string, spark: string) => void;
+  onBeginWithSpark?: (title: string, spark: string, form?: string | null) => void;
   onImport: () => void;
   onSources: () => void;
 }
@@ -402,9 +404,13 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
   // The Spark door is set aside by "I don't know yet" with nothing held: Home's ordinary threshold for this visit only.
   const [doorSetAside, setDoorSetAside] = useState(false);
   const [sparkLine, setSparkLine] = useState('');
+  // "What is it becoming?" for a Work begun here (founder 2026-11-21): the writer's own choice, or null.
+  const [newForm, setNewForm] = useState<string | null>(null);
+  // Cancel closes the question with its chips cleared, so a closed form never carries a choice the writer can no longer see.
+  useEffect(() => { if (!beginning) setNewForm(null); }, [beginning]);
   const beginNewWork = () => {
-    if (sparkLine.trim() && props.onBeginWithSpark) props.onBeginWithSpark(title, sparkLine);
-    else props.onBegin(title);
+    if (sparkLine.trim() && props.onBeginWithSpark) props.onBeginWithSpark(title, sparkLine, newForm);
+    else props.onBegin(title, newForm);
   };
   // Only one deletion question is ever open: a confirmation the author has lost track of has stopped confirming anything.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
@@ -510,6 +516,7 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
               </div>
             </>
           ) : null}
+          <FormQuestion onChange={setNewForm} onChoosePath={props.onStartPath} />
           <label htmlFor="p4r1-work-title">Give the new Work a name, or leave it blank for now.</label>
           <div>
             <input id="p4r1-work-title" autoFocus={!props.onBeginWithSpark} value={title} onChange={(e) => setTitle(e.target.value)}
@@ -629,11 +636,12 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
               </div>
             ) : (
               <div className="p4r1-home-begin-form">
+                <FormQuestion onChange={setNewForm} onChoosePath={props.onStartPath} />
                 <label htmlFor="p4r1-work-title">Give it a name, or leave it blank for now.</label>
                 <div>
                   <input id="p4r1-work-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !props.busy) props.onBegin(title); if (e.key === 'Escape') setBeginning(false); }} />
-                  <button type="button" className="fr-home-primary" disabled={props.busy} onClick={() => props.onBegin(title)}>
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !props.busy) props.onBegin(title, newForm); if (e.key === 'Escape') setBeginning(false); }} />
+                  <button type="button" className="fr-home-primary" disabled={props.busy} onClick={() => props.onBegin(title, newForm)}>
                     {props.busy ? 'Beginning…' : 'Start writing'}
                   </button>
                   <button type="button" className="fr-home-quiet" onClick={() => setBeginning(false)}>Cancel</button>

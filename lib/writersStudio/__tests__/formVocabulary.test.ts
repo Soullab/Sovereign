@@ -277,3 +277,51 @@ describe('guided paths are offered when relevant, never chosen for the writer (f
     expect(view).toMatch(/onStartPath=\{props\.work\.studioPath \? undefined : props\.onStartPath\}/);
   });
 });
+
+describe('a Work begun from Home is asked what it is becoming too (founder 2026-11-21)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const FormQuestion = require('@/app/dev/writers-studio-pc3-live/FormQuestion').default;
+  let host: HTMLDivElement; let root: Root;
+  beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
+  afterEach(() => { act(() => root.unmount()); host.remove(); });
+  const button = (label: string) => [...host.querySelectorAll('button')].find((b) => b.textContent === label)!;
+
+  test('only the writer’s click or own word sets it; clicking again takes it back', () => {
+    const onChange = jest.fn();
+    act(() => root.render(React.createElement(FormQuestion, { onChange })));
+    expect(host.textContent).toMatch(/What is it becoming\? Optional\. You can change it any time\./);
+    expect(onChange).not.toHaveBeenCalled();
+    act(() => button('Poem').click());
+    expect(onChange).toHaveBeenLastCalledWith('poem');
+    act(() => button('Poem').click());
+    expect(onChange).toHaveBeenLastCalledWith(null);
+    act(() => button('Something else, in my own word').click());
+    const input = host.querySelector('input')!;
+    act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'liturgy'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+    expect(onChange).toHaveBeenLastCalledWith('liturgy');
+  });
+
+  test('an essay is offered the college essay path; nothing is offered without a way to start one', () => {
+    const onChoosePath = jest.fn();
+    act(() => root.render(React.createElement(FormQuestion, { onChange: jest.fn(), onChoosePath })));
+    expect(host.querySelector('[data-path-offer]')).toBeNull();
+    act(() => button('Essay').click());
+    expect(host.querySelector('[data-path-offer="college-essay"]')).not.toBeNull();
+    expect(onChoosePath).not.toHaveBeenCalled();
+    act(() => button('Start a college essay').click());
+    expect(onChoosePath).toHaveBeenCalledWith('college-essay');
+    act(() => root.render(React.createElement(FormQuestion, { onChange: jest.fn() })));
+    expect(host.querySelector('[data-path-offer]')).toBeNull();
+  });
+
+  test('both Home forms ask it and pass the choice to the new Work; Cancel clears it', () => {
+    const home = read('app/dev/writers-studio-pc3-live/P4R1HomeView.tsx');
+    expect(home.match(/<FormQuestion onChange=\{setNewForm\} onChoosePath=\{props\.onStartPath\} \/>/g)?.length).toBe(2);
+    expect(home).toMatch(/props\.onBeginWithSpark\(title, sparkLine, newForm\)/);
+    expect(home.match(/props\.onBegin\(title, newForm\)/g)?.length).toBe(3);
+    expect(home).toMatch(/useEffect\(\(\) => \{ if \(!beginning\) setNewForm\(null\); \}, \[beginning\]\);/);
+    const controller = read('app/dev/writers-studio-pc3-live/P4R1HomeController.tsx');
+    expect(controller).toMatch(/onBegin=\{\(title, form\) => void onBegin\(title, null, form \?\? null\)\}/);
+    expect(controller).toMatch(/onBeginWithSpark=\{\(title, spark, form\) => void onBegin\(title, ordinaryNow\(\) \? spark : null, form \?\? null\)\}/);
+  });
+});
