@@ -86,19 +86,36 @@ in Soullab is §7.1. Erasing them is a separate, plainly worded choice, never a 
 An append-only event log, following the pattern already used for `writers_studio_beta_grant_events` and
 `studio_holding_events`:
 
-`soullab_connection_events (id, member_id, kind, studio, created_at, actor_member_id)`, with `kind` ∈
+`soullab_connection_events (id, member_id, kind, studio, living_work_id, created_at, actor_member_id)`, with
+`kind` ∈
 - `connected`: the ritual was completed on crossing;
 - `disconnected`: the member stepped back;
-- `studio_share_granted` / `studio_share_revoked`: MAIA in Soullab may / may not read this member's Studio
-  writing. This is **off by default** and offered only after connection, never inside the ritual.
+- `studio_share_granted` / `studio_share_revoked`: MAIA in Soullab may / may not read **one named Work**
+  (`living_work_id`, required and never null for these kinds). This is **off by default** and offered only after
+  connection, never inside the ritual.
+- `memory_reactivated`: after reconnecting, the member chose to let MAIA use their dormant Soullab memory again
+  (§7.1).
+
+⛔ **A share is for one Work, never for all of them.** Sharing one manuscript must never authorize reading any
+other. There is no member-wide share and no "all my writing" option. This follows the Studio's existing
+**per-Work reading permission**: inside Writer's Studio, MAIA reads a Work's chapters only after the writer grants
+the standing reading permission for that Work; it is revocable, receipted, and suspended in Sanctuary
+(`WS-DEVELOP-G6_READING_CONTINUITY_CENSUS_2026-11-09.md`). The bridge is a separate layer on top of that grant:
+- **source-specific:** names one Work;
+- **purpose-specific:** "MAIA may draw on this Work in Soullab conversations", stated in those words;
+- **conjunctive:** valid only while both the Studio's reading permission for that Work and this bridge grant
+  stand. Revoking either one ends it.
+
+Stepping back from Soullab does not touch Studio-side reading permissions. They belong to the Studio.
 
 The current state is the latest event of each pair. There are no mutable flags, and the history is auditable.
 
-⛔ **Reconnection never revives an old share.** A Studio-writing share is valid only if it was granted **after the
-member's latest `connected` event**. So every new connection starts with the share off, even when an earlier
-`studio_share_granted` survives in the history and was never revoked. The reader enforces this rule ("granted
-after the latest connect, and not revoked since"), not the writer's tidiness, and a test must prove that a
-pre-disconnect grant is ignored after reconnecting.
+⛔ **Reconnection never revives an old permission.** A Work share, or the use of dormant memory, is valid only if it
+was granted **after the member's latest `connected` event**. So every new connection starts with every share off
+and memory dormant, even when an earlier grant survives in the history and was never revoked. The reader enforces
+this rule ("granted after the latest connect, and not revoked since"), not the writer's tidiness. Tests must prove
+that a pre-disconnect Work share and pre-disconnect memory use are both ignored after reconnecting, and that a
+share for Work A never reads Work B.
 
 **Why not reuse `members.onboarded`:** a doorway account is already `onboarded = true`. Its meaning is the Studio
 sign-up, and the middleware depends on it so that a studio member is never pushed into `/onboarding`. Changing
@@ -122,11 +139,17 @@ its meaning would break the Studio door. Connection is a separate fact and gets 
 
 ## 7. Open questions (recorded, not decided)
 
-1. **Memory on stepping back — the default needs a founder ruling.** *Recommended (external review,
-   2026-11-21):* memories formed with consent are **kept dormant and inaccessible** (nothing reads them while
-   disconnected; they return only if the member reconnects), **unless the member explicitly asks for erasure**.
-   Erasure is its own understandable choice, carried out under Soullab's backup and anti-resurrection
-   requirements, so that an erased memory cannot come back from a backup. Not yet ruled.
+1. **Memory on stepping back — the default needs a founder ruling.** *Recommended (external review, second pass,
+   2026-11-21):* **retain dormant, never erase automatically, never reactivate silently.**
+   - **Step back:** Soullab memory becomes inaccessible to MAIA (no retrieval, no new memory). The Studio is
+     unchanged.
+   - **Reconnect:** preserved memory stays dormant. The member may choose to let MAIA use it again, by explicit
+     consent (`memory_reactivated`). Reconnecting alone never does it.
+   - **Erase:** a separate, member-controlled action, with verified deletion under the strict-deletion authority
+     (#1791 WS-BACKUP-ERASURE-01) and the deletion-safe backup work (#1793 WS-BACKUP-ERASURE-02).
+   - **Restore:** no historical backup may revive erased information or a withdrawn permission.
+   Not yet ruled. ⚠️ #1793 is itself design-only and open, so "erase" can be offered only to the extent that
+   deletion is actually witnessed. The UI must not promise more than the backups can honour.
 2. **Second sign-in vs. handoff.** v1 asks the member to sign in again at soullab.life. A one-time cross-host
    handoff token is smoother but is Class A (identity/auth) and stays held until separately authorized.
 3. **`CLAUDE.md` onboarding text.** It describes retired routes. Amending it is a separate act (R1 §2.4 left the
@@ -162,7 +185,21 @@ consent architecture. Folded in above:
   model;
 - the recommended memory default is recorded as a recommendation awaiting the founder's ruling (§7.1).
 
-Not changed by the review: updating `CLAUDE.md` after the live walk remains a separate act (§7.3). A
-discrepancy to reconcile: the review cites the Writer's Studio owner record as reporting production at
-`b8f5177f7`, but production was observed in-session on 2026-11-21 running `21a628987`
-(`docker exec maia-sovereign printenv GIT_COMMIT`). The owner record may lag the runtime.
+Not changed by the review: updating `CLAUDE.md` after the live walk remains a separate act (§7.3).
+
+## 10. Revision — 2026-11-21, external review, second pass
+
+The founder shared a second pass of the same review. Folded in:
+- **Shares are per Work** (§4): source-specific and purpose-specific, and valid only while the Studio's own reading
+  permission for that Work also stands. The first draft's member-wide share would have let one shared manuscript
+  open all of them; that is corrected.
+- **Reconnecting never reactivates memory use** (§4, §7.1): dormant memory needs its own explicit consent after
+  reconnecting.
+- **The memory recommendation is now retain dormant, never erase automatically, never reactivate silently**
+  (§7.1). It is still awaiting the founder's ruling.
+
+**Production identity, reconciled.** A fresh read-only readback on 2026-11-21 shows the running `maia-sovereign`
+container reporting `GIT_COMMIT=21a628987`, matching the `maia-sovereign:current` image
+(`GIT_COMMIT=21a628987`), with the container created at `2026-11-21T19:08:57Z`. The Writer's Studio owner record
+(#1800) citing `b8f5177f7` predates that deploy; it is stale, not contradictory. Any deploy of #2371 should bind
+to a fresh readback at that time, not to this one.
