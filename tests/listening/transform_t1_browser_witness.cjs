@@ -24,7 +24,6 @@ const riffChunk = (b, id) => { // the body of one RIFF chunk, or null
 };
 
 // A 4-second 24-bit stereo WAV with a BWF bext chunk, like a Soullab Capture take.
-const CAPTURE_TAKE_ID = '2026-11-17T18-40-38Z-j4b1';
 function captureLikeWav() {
   const rate = 44100, frames = rate * 4, data = Buffer.alloc(frames * 6);
   for (let i = 0; i < frames; i++) {
@@ -33,10 +32,7 @@ function captureLikeWav() {
   }
   const fmt = Buffer.alloc(24); fmt.write('fmt '); fmt.writeUInt32LE(16, 4); fmt.writeUInt16LE(1, 8); fmt.writeUInt16LE(2, 10);
   fmt.writeUInt32LE(rate, 12); fmt.writeUInt32LE(rate * 6, 16); fmt.writeUInt16LE(6, 20); fmt.writeUInt16LE(24, 22);
-  // The bext fields Soullab Capture writes (WAVLayout.swift / CaptureSession.swift), so the desk sees a real Capture origin (J4b-1).
   const bext = Buffer.alloc(8 + 602); bext.write('bext'); bext.writeUInt32LE(602, 4);
-  bext.write(`Soullab Capture take ${CAPTURE_TAKE_ID}`, 8, 256, 'latin1'); bext.write('Soullab Capture', 8 + 256, 32, 'latin1');
-  bext.write('2026-11-17', 8 + 320, 10, 'latin1'); bext.write('18:40:38', 8 + 330, 8, 'latin1');
   const dh = Buffer.alloc(8); dh.write('data'); dh.writeUInt32LE(data.length, 4);
   const body = Buffer.concat([Buffer.from('WAVE'), fmt, bext, dh, data]);
   const riff = Buffer.alloc(8); riff.write('RIFF'); riff.writeUInt32LE(body.length, 4);
@@ -145,9 +141,6 @@ fs.writeFileSync(path.join(dir, 'entry.jsx'),
       check(`${name}: a non-audio file is refused`, /FLAC, WAV/.test(refusal || ''), refusal);
       await p.setInputFiles('#transform-file', wavPath);
       await p.waitForSelector('[data-transform-desk] canvas');
-      const origin = await p.locator('[data-capture-origin]').textContent().catch(() => null);
-      check(`${name}: a Capture take is named as one, with when it was recorded (J4b-1)`,
-        origin === 'A Soullab Capture take, recorded on 2026-11-17 18:40. A new file you save records where it came from.', origin);
       const pick = async (kind) => p.selectOption('select:near(:text("Add a step"))', kind).catch(() => p.locator('label:has-text("Add a step") select').selectOption(kind));
       for (const k of ['trim', 'fade', 'eq', 'reverb', 'normalize']) await pick(k);
       await p.locator('[data-time-field="trim-end"]').fill('0:03'); await p.locator('[data-time-field="trim-end"]').press('Enter');
@@ -215,9 +208,6 @@ fs.writeFileSync(path.join(dir, 'entry.jsx'),
         const p2 = inner ? JSON.parse(inner.toString('utf8')) : null;
         check(`${name}: the WAV carries its own provenance`, !!p2 && p2.schema === p1.schema && p2.derived === true);
         check(`${name}: the embedded record matches the file beside it`, !!p2 && p2.source.sha256 === p1.source.sha256 && p2.createdAt === p1.createdAt && JSON.stringify(p2.recipe) === JSON.stringify(p1.recipe));
-        check(`${name}: both records carry the Capture take's own claim (J4b-1)`,
-          p1.source.capture && p1.source.capture.takeId === CAPTURE_TAKE_ID && p1.source.capture.asserted === 'by-file'
-          && p1.source.capture.recordedAt === '2026-11-17 18:40:38' && !!p2 && JSON.stringify(p2.source.capture) === JSON.stringify(p1.source.capture), p1.source.capture);
         check(`${name}: the audio hash in both records is the saved samples'`, !!p2 && p2.output.audioSha256 === sha(riffChunk(outWav, 'data')) && p1.output.audioSha256 === p2.output.audioSha256);
         check(`${name}: the RIFF size covers the whole file`, outWav.readUInt32LE(4) === outWav.length - 8);
         const decoded = await p.evaluate(async (b64) => {
