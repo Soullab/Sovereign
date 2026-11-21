@@ -83,6 +83,42 @@ describe('What do I do next?', () => {
     for (const s of SCREENS) expect(text(s)).not.toMatch(/I(’ve| have) (read|sent|saved)|I’ll start/);
   });
 
+  /* Guided beta session 2026-11-19 (F2): after "Show MAIA this page" finished, she still told the writer to press it. */
+  describe('a first page MAIA has read in this visit', () => {
+    const FIRST = { firstPage: true, isBook: false, proseSwitchShown: false } as const;
+
+    test('read as it is now: she does not send the writer to "Show MAIA this page" again', () => {
+      const t = text({ ...FIRST, pageRead: 'current' });
+      expect(t).not.toContain('Show MAIA this page');
+      expect(t).not.toContain('When you’d like me to read it');
+      expect(t).toContain('“Talk about the whole Work”');
+    });
+
+    test('changed since: she says so, and only then offers to read it again', () => {
+      const t = text({ ...FIRST, pageRead: 'changed' });
+      expect(t).toContain('changed since I read it with you');
+      expect(t).toContain('“Show MAIA this page”');
+      expect(t).toContain('I won’t read it until you do.');
+    });
+
+    test('not read in this visit (null or absent): the original first-page answer, unchanged', () => {
+      expect(text({ ...FIRST, pageRead: null })).toBe(text({ ...FIRST }));
+      expect(text({ ...FIRST })).toContain('You have a first page.');
+    });
+
+    test('every control named in these answers is text the live Studio shows', () => {
+      for (const pageRead of ['current', 'changed'] as const) {
+        const labels = [...text({ ...FIRST, pageRead }).matchAll(/“([^”]+)”/g)].map((m) => m[1]);
+        expect(labels.length).toBeGreaterThan(0);
+        for (const label of labels) expect(LIVE_UI).toContain(label);
+      }
+    });
+
+    test('the Write column passes the visit’s reading to the helper', () => {
+      expect(read(VIEW)).toMatch(/pageRead: sessionRead,/);
+    });
+  });
+
   test('the module cannot send, store or read the manuscript', () => {
     const src = read('lib/writersStudio/whatNext.ts');
     expect(src).not.toMatch(/^import /m);

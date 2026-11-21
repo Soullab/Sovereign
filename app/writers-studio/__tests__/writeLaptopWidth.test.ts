@@ -51,23 +51,14 @@ describe('Write at laptop widths (721–1023px): MAIA has a column of her own, a
     expect(template.split(/\s+(?![^(]*\))/).length).toBe(2);
   });
 
-  it('⭐ MUST FAIL IF, with the conversation open in the centre, the guide column still squeezes it (the stage is the whole width)', () => {
-    const sel = ".fr-shell[data-mode='write']:has([data-write-centre-conversation='true'])";
-    const room = lastRule(blocks, `${sel} .fr-room`) ?? '';
-    expect(room).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\);/);
-    expect(lastRule(blocks, `${sel} .fr-maia`) ?? '').toMatch(/display:\s*none/);
-    expect(lastRule(blocks, `${sel} .fr-manuscript`) ?? '').toMatch(/display:\s*none/);
-    expect(col(lastRule(blocks, `${sel} .fr-work`))).toBe('1');
+  /* B0 (founder ruling 2026-11-19) supersedes the 2026-11-12 "stage": the conversation lives in MAIA's column, so no rule may hide the
+     page or MAIA's column because a conversation is open. */
+  it('⭐ MUST FAIL IF any rule hides the page, the rail or MAIA\'s column because a conversation is open', () => {
+    expect(css).not.toMatch(/:has\(\[data-write-(centre-conversation|conversation-beside)=['"]true['"]\]\)[^{]*\.fr-(work|maia)[^{]*\{[^}]*display:\s*none/);
+    expect(css).not.toContain('data-write-centre-conversation');
   });
 
   it('the laptop composition does not reach the phone: those rules sit in a block that starts at 721px', () => {
-    const src = css.slice(css.indexOf("@media (min-width: 721px) and (max-width: 1023px)"));
     expect(css).toContain('@media (min-width: 721px) and (max-width: 1023px)');
-    expect(src).toContain(":has([data-write-centre-conversation='true'])");
-  });
-
-  it('the centre conversation still carries the marker these rules depend on', () => {
-    const view = fs.readFileSync(path.join(process.cwd(), 'app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx'), 'utf8');
-    expect(view).toMatch(/data-write-centre-conversation="true"/);
   });
 });

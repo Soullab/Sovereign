@@ -214,7 +214,8 @@ describe('scope is the writer\'s, and it is recorded (route + client source)', (
   it('WB7 the scope is recorded on the answer\'s provenance (in that row) and returned to the client', () => {
     /* Inside the answerProvenance object of MAIA's saved turn — not merely somewhere in the file (the response JSON also names it). */
     const start = ROUTE.indexOf('answerProvenance: {');
-    const end = ROUTE.indexOf('const thread = await loadThread(liveThreadId, memberId);', start);
+    // Package C: the work-turn response now projects receipts (withReceipts) around the same loadThread call.
+    const end = ROUTE.indexOf('const thread = await withReceipts(await loadThread(liveThreadId, memberId), manuscriptId, memberId);', start);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const prov = ROUTE.slice(start, end);

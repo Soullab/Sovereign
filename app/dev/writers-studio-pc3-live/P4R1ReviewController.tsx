@@ -641,9 +641,11 @@ type ReadyReview = {
                    reads any section. */
                 <div className="p4r1-review-reread-boundary" role="status" data-review-no-chapter>
                   <p>
-                    Review rereads one chapter at a time, and this Work has no confirmed chapters yet,
-                    so there is no chapter here for MAIA to reread. You can ask her to read any part
-                    of it in Develop.
+                    {/* Live walk WS-LIVE-WALK-01 W10: "no confirmed chapters" read as false to a writer looking at their
+                        "Section 1". Same fact, the writer's words; nothing about what MAIA reads changes. */}
+                    Review is for looking again at a chapter after you have revised it. Your writing is not
+                    divided into chapters yet, so there is nothing here for MAIA to look at again. If you would
+                    like her to read what you have written, Develop is the place.
                   </p>
                   <button type="button" onClick={() => goMode('develop')}>Read it in Develop</button>
                 </div>

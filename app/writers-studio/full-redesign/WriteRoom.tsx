@@ -97,8 +97,20 @@ export type WriteRoomLivePorts = {
   onReadback?: (readback: WriteRoomReadback) => void;
   onPrevious?: () => void;
   onNext?: () => void;
+  /**
+   * Whether there is a section to move to. `false` = there is none, and the button says so instead of doing nothing
+   * (guided beta session 2026-11-19, F3: on a one-section Work "Next" silently did nothing). Absent = unknown, unchanged behaviour.
+   */
+  hasPrevious?: boolean;
+  hasNext?: boolean;
   onOpenChapter?: (chapterId: string) => void;
 };
+
+/** Said when a move has nowhere to go. No control is named: the writer only needs to know why nothing moved. */
+export const WRITE_MOVE_EDGE_COPY = {
+  previous: 'This is the first section of your Work.',
+  next: 'This is the last section of your Work.',
+} as const;
 
 export type WriteRoomProps = {
   fixture: WriteRoomData;
@@ -108,6 +120,11 @@ export type WriteRoomProps = {
   onCanvasChange: (canvas: boolean) => void;
   onAct?: (act: string) => void;
   live?: WriteRoomLivePorts;
+  /**
+   * The writer's own line from "What's calling this one?" (living_works.purpose), shown above their page (live walk
+   * WS-LIVE-WALK-01 W11: the idea was kept but appeared nowhere inside the Work). Display only; never sent or edited here.
+   */
+  spark?: string | null;
 };
 
 /** A saved selection, as live DOM positions inside the editor. */
@@ -118,11 +135,14 @@ function countWords(text: string): number {
   return t ? t.split(/\s+/).length : 0;
 }
 
-export function WriteRoom({ fixture, copy, canvas, onCanvasChange, onAct, live }: WriteRoomProps) {
+export function WriteRoom({ fixture, copy, canvas, onCanvasChange, onAct, live, spark }: WriteRoomProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const held = useRef<Held | null>(null);
   const liveRef = useRef<WriteRoomLivePorts | undefined>(live);
   liveRef.current = live;
+  const [moveEdge, setMoveEdge] = useState<'previous' | 'next' | null>(null);
+  /* The edge note describes the section it was said on; a different section must not inherit it. */
+  useEffect(() => { setMoveEdge(null); }, [fixture.currentChapterId]);
   const [localSaveState, setLocalSaveState] = useState<string>(fixture.saveState);
   const [words, setWords] = useState<number>(() => countWords(live?.canonicalBody ?? fixture.paragraphs.join(' ')));
   const saveState = live?.saveState ?? localSaveState;
@@ -248,6 +268,12 @@ export function WriteRoom({ fixture, copy, canvas, onCanvasChange, onAct, live }
 
       <div className="fr-write-scroll">
         <div className="fr-write-page">
+          {spark?.trim() ? (
+            <p className="fr-write-spark" data-write-spark="true"
+              style={{ margin: '0 0 6px', fontStyle: 'italic', opacity: 0.72, fontSize: '0.95em' }}>
+              What’s calling this one: “{spark.trim()}”
+            </p>
+          ) : null}
           <h1 className="fr-write-title">{fixture.title}</h1>
           {fixture.activeStatus === 'conflict' ? (
             <p className="fr-write-ch-title" data-conflict-marker-section role="note">
@@ -278,8 +304,13 @@ export function WriteRoom({ fixture, copy, canvas, onCanvasChange, onAct, live }
             <button
               type="button"
               data-move="previous"
+              aria-disabled={live?.hasPrevious === false ? true : undefined}
               onMouseDown={keepFocus}
-              onClick={() => liveRef.current?.onPrevious ? liveRef.current.onPrevious() : onAct?.(`${copy.previous} section`)}
+              onClick={() => {
+                if (liveRef.current?.hasPrevious === false) { setMoveEdge('previous'); return; }
+                setMoveEdge(null);
+                if (liveRef.current?.onPrevious) liveRef.current.onPrevious(); else onAct?.(`${copy.previous} section`);
+              }}
             >
               <Arrow dir="left" />
               {copy.previous}
@@ -288,14 +319,23 @@ export function WriteRoom({ fixture, copy, canvas, onCanvasChange, onAct, live }
             <button
               type="button"
               data-move="next"
+              aria-disabled={live?.hasNext === false ? true : undefined}
               onMouseDown={keepFocus}
-              onClick={() => liveRef.current?.onNext ? liveRef.current.onNext() : onAct?.(`${copy.next} section`)}
+              onClick={() => {
+                if (liveRef.current?.hasNext === false) { setMoveEdge('next'); return; }
+                setMoveEdge(null);
+                if (liveRef.current?.onNext) liveRef.current.onNext(); else onAct?.(`${copy.next} section`);
+              }}
             >
               {copy.next}
               <Arrow dir="right" />
             </button>
           </nav>
         )}
+        {/* Always mounted so screen readers announce the change; empty until a move has nowhere to go. */}
+        <span className="fr-write-move-note" role="status" data-move-edge={moveEdge ?? undefined}>
+          {moveEdge ? WRITE_MOVE_EDGE_COPY[moveEdge] : ''}
+        </span>
       </div>
     </div>
   );

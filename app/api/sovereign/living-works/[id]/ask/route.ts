@@ -8,6 +8,7 @@
  * ⛔ Declared Source/Idea bodies do not cross here merely because they belong
  * to the Work. This ordinary conversation receives Work declarations + C14.
  */
+import { withoutProvenance } from '@/lib/disclosure/readingReceiptProjection';
 import { isPostureDeclaration, resolveStudioPosture, type KeepWitness } from '@/lib/sanctuary/studioPosture';
 import { NextRequest, NextResponse } from 'next/server';
 import { ageGateForWork, ageGateRefusal } from '@/lib/studios/workAgeGate';
@@ -52,7 +53,8 @@ export async function GET(
     if (!thread || thread.livingWorkId !== workId) {
       return NextResponse.json({ refusal: 'not_found' }, { status: 404 });
     }
-    return NextResponse.json({ thread });
+    /* Package C (R20 decision 3): raw answer provenance never goes to the browser. */
+    return NextResponse.json({ thread: thread && withoutProvenance(thread) });
   }
 
   return NextResponse.json({
@@ -187,7 +189,7 @@ async function postHandler(
     // Answered in the moment, kept nowhere. An earlier ordinary thread (if continuing) is returned unchanged.
     return NextResponse.json({
       threadId: existing?.id ?? null,
-      thread: existing ? await loadLivingWorkThread(existing.id, memberId) : null,
+      thread: existing ? (await loadLivingWorkThread(existing.id, memberId).then((t) => t && withoutProvenance(t))) : null,
       sanctuary: { notKept: true, question, answer: outcome.answer },
       staleness,
     });
@@ -202,7 +204,8 @@ async function postHandler(
     answerProvenance: outcome.provenance,
   });
 
-  const thread = await loadLivingWorkThread(liveThreadId, memberId);
+  const loaded = await loadLivingWorkThread(liveThreadId, memberId);
+  const thread = loaded && withoutProvenance(loaded);
   if (!thread) {
     return NextResponse.json(
       { threadId: liveThreadId, refusal: 'answer_not_recorded', staleness },

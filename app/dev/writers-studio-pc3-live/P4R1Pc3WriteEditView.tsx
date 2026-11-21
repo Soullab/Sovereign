@@ -40,6 +40,8 @@ const WRITE_RELATIONAL_GEOMETRY = {
 };
 import { projectPc3LiveWrite } from '@/app/writers-studio/full-redesign/liveWriteAdapter';
 import WorkConversation from '@/app/writers-studio/canvas/WorkConversation';
+import { threadsOn, threadsOnLivingWorkAsk } from '@/lib/writersStudio/askClient';
+import { priorConversationLabel, priorConversationOffer, type PriorConversationOffer } from '@/lib/writersStudio/priorConversation';
 import { WholeManuscriptSurface, type WholeManuscriptSurfaceHandle } from '@/app/writers-studio/canvas/WholeManuscriptSurface';
 import { requestConversationDeparture } from '@/lib/writersStudio/conversationDeparture';
 import RevisionDesk, { type CarryChooserPresentation, type MemberRevisionDraft } from '@/app/writers-studio/insight/RevisionDesk';
@@ -360,6 +362,26 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
   const [craftDiscardOffer, setCraftDiscardOffer] = useState<string | null>(null);
   const [railSelectionId, setRailSelectionId] = useState<string | null>(null);
   const [whatNextOpen, setWhatNextOpen] = useState(false);
+  /* Relationship visibility (live walk WS-LIVE-WALK-01 W5): a returning writer is told a conversation exists, in MAIA's column,
+     instead of being greeted as on day one. Discovery only READS which threads exist (the same GET WorkConversation makes); it opens,
+     adopts and sends nothing. An unavailable answer offers nothing, never "no conversations". Re-read when a conversation closes. */
+  const [priorConversation, setPriorConversation] = useState<PriorConversationOffer>({ kind: 'none' });
+  /* Conversation space contract: the letter is on demand while a conversation is open; closing the conversation resets it. */
+  const [letterShownWhileTalking, setLetterShownWhileTalking] = useState(false);
+  useEffect(() => { if (!workConversationOpen) setLetterShownWhileTalking(false); }, [workConversationOpen]);
+  const priorWorkId = props.work?.id ?? null;
+  const priorManuscriptId = props.context.manuscriptId ?? null;
+  useEffect(() => {
+    if (!priorWorkId || workConversationOpen) return;
+    let cancelled = false;
+    void (async () => {
+      const discovery = priorManuscriptId
+        ? await threadsOn(priorManuscriptId, { on: 'work' })
+        : await threadsOnLivingWorkAsk(priorWorkId);
+      if (!cancelled) setPriorConversation(priorConversationOffer(discovery));
+    })();
+    return () => { cancelled = true; };
+  }, [priorWorkId, priorManuscriptId, workConversationOpen]);
   const [proseView, setProseView] = useState(() => !props.held && !props.carriedInsight);
   const wholeEditRef = useRef<WholeManuscriptSurfaceHandle | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -723,6 +745,12 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
     if (workConversationOpen && starter !== workConversationStarter && !requestConversationDeparture()) return;
     setWorkConversationStarter(starter);
     setWorkConversationOpen(true);
+    /* B0: the conversation lives in MAIA's column, which Full Canvas folds to zero width, so opening it leaves Full Canvas
+       (the page stays where it is). On a phone the column follows the page, so bring the conversation into view. */
+    setCanvas(false);
+    if (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 720px)').matches) {
+      window.setTimeout(() => document.querySelector('[data-write-conversation-beside="true"]')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 80);
+    }
   };
 
   const blankArrivalVisible = Boolean(
@@ -1123,8 +1151,12 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
     </section>
   ) : null;
 
+  /* B0 (founder ruling 2026-11-19, live walk WS-LIVE-WALK-01): "The manuscript remains primary. MAIA accompanies the writing.
+     Conversation must not replace the page." The conversation lives in MAIA's own column, beside the page, at every width.
+     It must not carry `p4r1-context-card`: that class is a fixed floating card (position: fixed; right: 18px), which is what
+     painted the conversation over MAIA's column while the centre stood empty from 2026-11-12 on. */
   const workConversation = props.work && workConversationOpen ? (
-    <div className="p4r1-context-card p4r1-work-conversation" data-p4r1-work-conversation>
+    <div className="p4r1-work-conversation" data-p4r1-work-conversation data-write-conversation-beside="true">
       <WorkConversation
         key={`${props.work.id}:${workConversationStarter}`}
         work={props.work}
@@ -1141,19 +1173,6 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
     </div>
   ) : null;
 
-  /* The conversation about the Work, in the centre (founder direction 2026-11-12). The manuscript is one click away. */
-  const workCentre = workConversation ? (
-    <div className="p4r1-work-conversation-centre" data-write-centre-conversation="true" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '18px 24px', height: '100%', overflow: 'auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <span className="p4r1-eyebrow">Talking with MAIA · {props.work?.title || 'this Work'}</span>
-        <button type="button" data-write-centre-back="true" onClick={() => { if (!requestConversationDeparture()) return; setWorkConversationOpen(false); setWorkConversationStarter(''); }}
-          style={{ font: 'inherit', fontSize: 12, cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid color-mix(in srgb, currentColor 22%, transparent)', borderRadius: 999, padding: '3px 11px' }}>
-          Back to the page
-        </button>
-      </div>
-      {workConversation}
-    </div>
-  ) : null;
 
   const craftRevision = props.writing.currentRevisionId();
   const craftSection = props.held
@@ -1406,8 +1425,10 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       sections: props.context.sections.length,
       bodies: props.context.sections.map((section) => props.writing.bodyOf(section.draftSectionId)),
     }),
-    talkWholeLabel: workStudioCopy ? workStudioCopy.whole : 'Talk about the whole Work',
+    /* The label exactly as the door renders it (priorConversationLabel: it changes when a conversation already exists). */
+    talkWholeLabel: priorConversationLabel(priorConversation, workStudioCopy ? workStudioCopy.whole : 'Talk about the whole Work').label,
     units: writeWords.units,
+    pageRead: sessionRead,
   });
   const writeMaia = props.work ? (
     <div className="fr-maia-inner p4r1-write-maia">
@@ -1454,7 +1475,16 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
           sections: props.context.sections.length,
           bodies: props.context.sections.map((section) => props.writing.bodyOf(section.draftSectionId)),
         }) ? (
-          <div data-write-letter="true" style={{ marginBottom: 12 }}>
+          <div data-write-letter="true" data-letter-yields={workConversationOpen && !letterShownWhileTalking ? 'true' : 'false'} style={{ marginBottom: 12 }}>
+            {/* Conversation space contract (founder direction 2026-11-19): while a conversation is open the letter yields to it and
+                is one line away, on demand. It stays mounted (nothing it holds is lost) and returns in full when the conversation
+                closes. */}
+            {workConversationOpen ? (
+              <button type="button" className="p4r1-talk" data-write-letter-toggle="true" aria-expanded={letterShownWhileTalking}
+                onClick={() => setLetterShownWhileTalking((v) => !v)} style={{ fontSize: 12, padding: '2px 10px', marginBottom: 6 }}>
+                {letterShownWhileTalking ? 'Hide MAIA’s letter' : 'MAIA’s letter'}
+              </button>
+            ) : null}
             <EditorialLetterPanel
               revisionsPaused={workRevisionsPaused}
               manuscriptId={props.context.manuscriptId}
@@ -1469,10 +1499,10 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
             />
           </div>
         ) : null}
-        {/* Founder direction 2026-11-12: the conversation is the creative process, so it happens in the centre (workCentre below).
-            This column stays the guide and dashboard: what she has read, the letter and its places, decisions, relationship. */}
+        {/* B0 (founder ruling 2026-11-19) supersedes the 2026-11-12 "conversation in the centre": the page stays in the centre and
+            the conversation happens here, in MAIA's column, beside the writing. Focus widens this column; the page stays usable. */}
         {workConversationOpen ? (
-          <p className="fr-say" data-write-conversation-in-centre="true" style={{ fontSize: 12, opacity: .8 }}>We’re talking in the middle of the page.</p>
+          workConversation
         ) : railSelectionId && railSection ? (
           <div className="p4r1-locus-support" data-write-locus-support={railSection.draftSectionId}>
             <span className="p4r1-eyebrow">You selected</span>
@@ -1484,11 +1514,10 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
               <button
                 type="button"
                 className="p4r1-talk"
-                onClick={() => openWorkConversation([
-                  `I selected “${railLabel}” and want to work with this place directly.`,
-                  'Start with what is happening here and ask me one useful question about what I want from it.',
-                  'Do not rewrite anything unless I ask.',
-                ].join('\n\n'))}
+                /* WS-STEP4 B (founder decision B, 2026-11-20): the door opens the conversation EMPTY. The chapter travels as
+                   context (the "You selected" panel and the conversation's sectionId); no app-written words are placed in the
+                   writer's composer, where they could be sent under her name (Benchmark 01, S4/S6). */
+                onClick={() => openWorkConversation('')}
               >
                 Talk about this place
               </button>
@@ -1525,9 +1554,17 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
             </div>
             {/* Named for what it opens (the conversation about the whole Work), so it is never confused with the passage door's
                 "Talk with MAIA" now that this column is always beside the manuscript. */}
-            <button type="button" className="p4r1-talk" data-write-talk-book="true" onClick={() => openWorkConversation('')}>
-              {workStudioCopy ? workStudioCopy.whole : 'Talk about the whole Work'}
-            </button>
+            {(() => {
+              const door = priorConversationLabel(priorConversation, workStudioCopy ? workStudioCopy.whole : 'Talk about the whole Work');
+              return (
+                <>
+                  {door.note ? <p className="fr-say" data-write-prior-conversation={priorConversation.kind} style={{ margin: '0 0 6px' }}>{door.note}</p> : null}
+                  <button type="button" className="p4r1-talk" data-write-talk-book="true" onClick={() => openWorkConversation('')}>
+                    {door.label}
+                  </button>
+                </>
+              );
+            })()}
           </>
         )}
         {/* "What do I do next?" (persona walk 2026-11-19): MAIA's answer from what is on screen, at full size. It reads no
@@ -1579,6 +1616,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
     <WriteRoom
       fixture={projection.data}
       copy={{ ...WRITE_COPY, editorLabel: projection.data.title }}
+      spark={props.work?.purpose ?? null}
       canvas={canvas}
       onCanvasChange={setCanvas}
       live={{
@@ -1588,6 +1626,8 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
         onReadback: onWriteReadback,
         onPrevious: () => go(projection.previousId),
         onNext: () => go(projection.nextId),
+        hasPrevious: Boolean(projection.previousId),
+        hasNext: Boolean(projection.nextId),
         onOpenChapter: go,
       }}
     />
@@ -2026,7 +2066,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
               The Work changed. The previous Craft session is closed; unsent wording was not restored.
               Select a passage in your current authorized Work to begin again.
             </div>
-          ) : craftVisible ? craftWork : workCentre ?? workSurface}
+          ) : craftVisible ? craftWork : workSurface}
           maia={craftScopeChanged ? undefined : craftVisible ? craftMaia : writeMaia}
         />
 

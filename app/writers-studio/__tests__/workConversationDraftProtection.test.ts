@@ -39,10 +39,13 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); jest.restoreAllMocks(); });
-async function mount(initialDraft = '', manuscriptId: string | null = 'fictional-manuscript') {
+/* WS-STEP4 B: the composer always opens empty and a Studio starter is only a suggestion. `mount(draft)` therefore models the
+   WRITER having typed `draft` (her own words in the box), which is what these draft-protection cases are about. */
+async function mount(writerDraft = '', manuscriptId: string | null = 'fictional-manuscript') {
   await act(async () => { root.render(React.createElement(WorkConversation, {
-    work, manuscriptId, sectionId: 'section-a', initialDraft, onClose: mockClose,
+    work, manuscriptId, sectionId: 'section-a', onClose: mockClose,
   })); });
+  if (writerDraft) await type(writerDraft);
 }
 const input = () => host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message MAIA"]')!;
 const button = (label: string) => Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
@@ -110,13 +113,44 @@ it('protects Studio departures and reload while text is unsent, and removes the 
   expect(requestConversationDeparture()).toBe(true); expect(confirm).not.toHaveBeenCalled();
   expect(window.dispatchEvent(new Event('beforeunload', { cancelable: true }))).toBe(true);
 });
-it('a starter the Studio placed in the box never blocks leaving; once the writer changes it, it is theirs', async () => {
+it('a Studio starter is offered OUTSIDE the box: it never blocks leaving, and enters the box only by "Use this" (WS-STEP4 B)', async () => {
   // Production 2026-11-05: "Talk with MAIA first" filled the box, then every other button asked to discard it.
-  await mount('I’m in “Finding Our Place”.');
+  // Benchmark 01 (2026-11-20): typed text merged into a pre-filled starter and was sent under the writer's name.
+  await act(async () => { root.render(React.createElement(WorkConversation, {
+    work, manuscriptId: 'fictional-manuscript', sectionId: 'section-a', initialDraft: 'I’m in “Finding Our Place”.', onClose: mockClose,
+  })); });
+  expect(input().value).toBe('');
+  expect(host.querySelector('[data-composer-starter]')?.textContent).toContain('I’m in “Finding Our Place”.');
   const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
   expect(requestConversationDeparture()).toBe(true); expect(confirm).not.toHaveBeenCalled();
-  await type('I’m in “Finding Our Place”. And I want to cut it.');
+  await click('Use this');
+  expect(input().value).toBe('I’m in “Finding Our Place”.');
+  expect(host.querySelector('[data-composer-starter]')).toBeNull();
+  // Chosen and in the box, it is now hers.
   expect(requestConversationDeparture()).toBe(false); expect(confirm).toHaveBeenCalled();
+});
+it('typing never merges with a suggestion, and "Use this" never appends to the writer\'s words (WS-STEP4 B8)', async () => {
+  await act(async () => { root.render(React.createElement(WorkConversation, {
+    work, manuscriptId: 'fictional-manuscript', sectionId: 'section-a', initialDraft: 'Studio suggestion', onClose: mockClose,
+  })); });
+  await type('My own exact question');
+  expect(input().value).toBe('My own exact question');
+  const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+  await click('Use this');
+  expect(confirm).toHaveBeenCalled();
+  expect(input().value).toBe('My own exact question');
+  mockAsk.mockResolvedValue({ ok: false, refusal: 'unreachable' });
+  await click('Send');
+  expect(mockAsk).toHaveBeenCalledWith(expect.objectContaining({ question: 'My own exact question' }));
+});
+it('"Not now" dismisses a suggestion without touching the box', async () => {
+  await act(async () => { root.render(React.createElement(WorkConversation, {
+    work, manuscriptId: 'fictional-manuscript', sectionId: 'section-a', initialDraft: 'Studio suggestion', onClose: mockClose,
+  })); });
+  await type('Mine');
+  await click('Not now');
+  expect(host.querySelector('[data-composer-starter]')).toBeNull();
+  expect(input().value).toBe('Mine');
 });
 it('cancels Open in MAIA when the author keeps the unsent draft', async () => {
   await mount(); await type('Keep this question here'); jest.spyOn(window, 'confirm').mockReturnValue(false);
@@ -133,7 +167,9 @@ it('retains the exact draft after a transport refusal instead of clearing it bef
     anchor: { on: 'work' }, sectionId: 'section-a', sanctuary: 'no_live_settings',
     // G-3 (WS-CRAFT-CONVENTIONS-01): the writer's working style travels with every question (no saved style ⇒ the default).
     responseStyle: 'guided' });
-  expect(input().value).toBe(draft); expect(host.textContent).toContain('That didn’t reach her');
+  // WS-F1: no thread to ask, so it is not known whether it arrived; the page must not claim it did not.
+  expect(input().value).toBe(draft); expect(host.textContent).toContain('it isn’t known whether that reached her');
+  expect(host.textContent).not.toContain('That didn’t reach her');
 });
 it('retains the draft if the server records a thread but cannot produce an answer', async () => {
   mockAsk.mockResolvedValue({ ok: false, refusal: 'unreachable', threadId: 'thread-a' });
@@ -182,9 +218,11 @@ it('does not carry a draft or late response into a different Work', async () => 
     manuscriptId: 'other-fictional-manuscript', sectionId: 'other-section',
     initialDraft: 'Question for the other Work', onClose: mockClose,
   })));
-  expect(input().value).toBe('Question for the other Work');
+  // WS-STEP4 B: the other Work's starter is a suggestion; the first Work's draft is not carried into the box.
+  expect(input().value).toBe('');
+  expect(host.querySelector('[data-composer-starter]')?.textContent).toContain('Question for the other Work');
   await act(async () => resolve(response));
-  expect(input().value).toBe('Question for the other Work');
+  expect(input().value).toBe('');
   expect(host.querySelector('[data-turn="0"]')).toBeNull();
 });
 
@@ -227,7 +265,7 @@ it('retains text on a thrown transport error and allows an explicitly chosen ret
   await mount('My exact retry text');
   await click('Send');
   expect(input().value).toBe('My exact retry text');
-  expect(host.textContent).toContain('That didn’t reach her');
+  expect(host.textContent).toContain('it isn’t known whether that reached her');
   expect(mockAsk).toHaveBeenCalledTimes(1);
   await click('Send');
   expect(mockAsk).toHaveBeenCalledTimes(2);
@@ -268,4 +306,100 @@ it('quiet (Develop stage): secondary controls sit behind one More; all of them a
   expect(host.querySelector('[data-keeps-toggle]')).not.toBeNull();
   expect(host.querySelector('[data-open-in-maia]')).not.toBeNull();
   expect(host.querySelector('[data-close-conversation]')).not.toBeNull();
+});
+
+/* WS-F1 (live walk 2026-11-21, production 2fa63e846): the connection dropped AFTER the question reached the server. The page said
+   "That didn't reach her" while MAIA had answered; the answer appeared only after a reload. A dropped connection is checked, not assumed. */
+describe('WS-F1 · a dropped connection on a resumed conversation', () => {
+  const kept = { id: 'thread-a', anchor: { on: 'work' }, openedAt: '2026-11-09T10:00:00Z', turns: [
+    { index: 0, speaker: 'author', body: 'Earlier question', staleness: 'current' },
+    { index: 1, speaker: 'maia', body: 'Earlier answer', staleness: 'current' },
+  ] };
+  beforeEach(() => {
+    mockThreads.mockResolvedValue({ kind: 'threads', threads: [{ id: 'thread-a', anchor: { on: 'work' }, openedAt: '2026-11-09T10:00:00Z', turnCount: 2 }] });
+    mockLoadThread.mockResolvedValue(kept);
+  });
+  it('⭐ MUST FAIL IF the page says it did not reach her when the server kept it: her answer is shown and the box clears', async () => {
+    await mount('Across the whole book?');
+    mockAsk.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    mockLoadThread.mockResolvedValueOnce({ ...kept, turns: [...kept.turns,
+      { index: 2, speaker: 'author', body: 'Across the whole book?', staleness: 'current' },
+      { index: 3, speaker: 'maia', body: 'Her answer to the whole-book question', staleness: 'current' }] });
+    await click('Send');
+    expect(host.textContent).not.toContain('didn’t reach her');
+    expect(host.querySelector('[role="alert"][data-maia-refusal]')).toBeNull();
+    expect(host.textContent).toContain('Her answer to the whole-book question');
+    expect(host.querySelector('[data-maia-delivery-note]')?.textContent).toContain('did reach her');
+    expect(input().value).toBe('');
+    expect(mockAsk).toHaveBeenCalledTimes(1);                      // never resent by itself
+  });
+  it('⭐ MUST FAIL IF a held question (kept, never answered) is shown as answered: it says so, shows it kept, and keeps the words', async () => {
+    await mount('Across the whole book?');
+    mockAsk.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    mockLoadThread.mockResolvedValueOnce({ ...kept, turns: [...kept.turns,
+      { index: 2, speaker: 'author', body: 'Across the whole book?', staleness: 'current' }] });
+    await click('Send');
+    const alert = host.querySelector('[role="alert"][data-maia-refusal]')!;
+    expect(alert.textContent).toContain('Your question is saved, but MAIA’s answer isn’t available yet');
+    expect(alert.textContent).not.toMatch(/send it again/i);       // the first request may still be running: never invite a resend
+    expect(host.querySelector('[data-maia-delivery-note]')).toBeNull();
+    expect(host.querySelector('[data-turn="2"]')?.textContent).toContain('Across the whole book?');
+    expect(input().value).toBe('Across the whole book?');          // unchanged, so a resend reuses the held turn
+    expect(mockAsk).toHaveBeenCalledTimes(1);
+  });
+  it('⭐ MUST FAIL IF one re-read showing nothing new is reported as "didn\u2019t reach her" (it may still be on its way)', async () => {
+    await mount('Across the whole book?');
+    mockAsk.mockResolvedValueOnce({ ok: false, refusal: 'unreachable' });
+    await click('Send');
+    const alert = host.querySelector('[role="alert"][data-maia-refusal]')!;
+    expect(alert.textContent).toContain('it isn’t known whether that reached her');
+    expect(alert.textContent).not.toContain('didn’t reach her');
+    expect(input().value).toBe('Across the whole book?');
+  });
+  /* Intake item 3 (live walk): after the drop, pressing Send looked like a no-op in data-send-mode=resume. This pins what the client does. */
+  it('Send after a drop on a resumed conversation is not stuck: an explicit press asks again, once, and each attempt is visible', async () => {
+    await mount('Across the whole book?');
+    expect(host.querySelector('[data-send-mode]')?.getAttribute('data-send-mode')).toBe('resume');
+    mockAsk.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    mockLoadThread.mockRejectedValue(new TypeError('Failed to fetch'));
+    await click('Send');
+    expect(mockAsk).toHaveBeenCalledTimes(1);
+    await click('Send');                                            // the writer's explicit second press
+    expect(mockAsk).toHaveBeenCalledTimes(2);                       // it was sent again — the guard was released
+    expect(mockAsk.mock.calls[1][0]).toMatchObject({ threadId: 'thread-a', question: 'Across the whole book?' });
+    expect(input().value).toBe('Across the whole book?');
+  });
+  it('when the server cannot be asked either, it says it is not known, keeps the words, and never claims either way', async () => {
+    await mount('Across the whole book?');
+    mockAsk.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    mockLoadThread.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await click('Send');
+    const alert = host.querySelector('[role="alert"][data-maia-refusal]')!;
+    expect(alert.textContent).toContain('it isn’t known whether that reached her');
+    expect(alert.textContent).not.toContain('didn’t reach her');
+    expect(host.querySelector('[data-maia-delivery-note]')).toBeNull();
+    expect(input().value).toBe('Across the whole book?');
+    expect(mockAsk).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* Package C (R20 decision 1): what MAIA read is shown under EVERY answer and survives reopening; it comes from the server's receipt. */
+describe('Package C · reading receipts on a reopened conversation', () => {
+  const recorded = (supplied: string[]) => ({ evidence: 'recorded', reading: supplied.length ? 'some_supplied' : 'none_supplied', current: null,
+    supplied: supplied.map((name) => ({ name, textChangedSince: false })), notSupplied: [] });
+  it('⭐ MUST FAIL IF a reopened conversation loses the per-answer reading lines (Benchmark 01 finding)', async () => {
+    mockThreads.mockResolvedValue({ kind: 'threads', threads: [{ id: 'thread-a', anchor: { on: 'work' }, openedAt: '2026-11-09T10:00:00Z', turnCount: 4 }] });
+    mockLoadThread.mockResolvedValue({ id: 'thread-a', anchor: { on: 'work' }, openedAt: '2026-11-09T10:00:00Z', turns: [
+      { index: 0, speaker: 'author', body: 'First', staleness: 'current' },
+      { index: 1, speaker: 'maia', body: 'Answer one', staleness: 'current', receipt: recorded(['The Harbour', 'Salt']) },
+      { index: 2, speaker: 'author', body: 'Second', staleness: 'current' },
+      { index: 3, speaker: 'maia', body: 'Answer two', staleness: 'current', receipt: { evidence: 'not_recorded', reading: 'unknown', current: null, supplied: [], notSupplied: 'not_recorded' } },
+    ] });
+    await mount();
+    const lines = Array.from(host.querySelectorAll('[data-answer-receipt]')).map((e) => e.textContent);
+    expect(lines).toEqual([
+      'For this answer MAIA read your saved sections: The Harbour, Salt.',
+      'What MAIA read for this answer was not recorded.',            // an older answer: never shown as "none"
+    ]);
+  });
 });

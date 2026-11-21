@@ -24,6 +24,7 @@ const UI_FILES = [
   'lib/writersStudio/presentationRequests.ts',
   'lib/writersStudio/workingStyle.ts',
   'lib/writersStudio/betaFeedback.ts',
+  'lib/writersStudio/priorConversation.ts',
 ];
 
 function uiSource(): string {
