@@ -22,6 +22,8 @@ export type SoundscapeHandle = {
   update(next: SoundscapeSpec): boolean;
   /** Schedule events (clicks, plucks) between two context times. Live use calls this on a timer. */
   scheduleTicks(from: number, to: number): void;
+  /** The member's Overtones setting, as a bus gain (overtoneSetting.ts); 0 silences them. No effect on Tone Lab. */
+  setOvertoneBusGain(gain: number): void;
   dispose(): void;
 };
 
@@ -35,7 +37,7 @@ const PLUCK_RATIOS = [1, 1.125, 1.5, 1.6667, 2, 1.5, 1.125, 1];
 // Focus soundscapes only: a Tone Lab sound stays a pure tone.
 export const SOUNDSCAPE_OVERTONE_PARTIALS = [2, 3, 4] as const;
 export const SOUNDSCAPE_OVERTONE_SOFT_HZ = 900; // on the default choices; each choice sets its own (spec.overtoneSoftHz)
-export const SOUNDSCAPE_OVERTONE_BUS_GAIN = 3.0; // 50% of the Shelf's 6.0
+export const SOUNDSCAPE_OVERTONE_BUS_GAIN = 3.0; // 50% of the Shelf's 6.0: the default; the member's Overtones setting sets it
 const SOUNDSCAPE_OVERTONE_HIGHEST_HZ = 4000;
 const overtoneGain = (n: number, hz: number) => (hz > SOUNDSCAPE_OVERTONE_HIGHEST_HZ ? 0 : 1 / (n * n));
 
@@ -53,6 +55,7 @@ function noiseBuffer(context: BaseAudioContext, seconds = 2): AudioBuffer {
 
 export function buildSoundscape(
   context: BaseAudioContext, destination: AudioNode, initial: SoundscapeSpec, level: number, loadRecorded?: RecordedLoader,
+  overtoneBusGain: number = SOUNDSCAPE_OVERTONE_BUS_GAIN,
 ): SoundscapeHandle {
   let spec = initial;
   const t0 = context.currentTime;
@@ -105,13 +108,14 @@ export function buildSoundscape(
   const overtoneOscillators: OscillatorNode[] = [];
   const overtoneVoices: { follower: GainNode; partials: { osc: OscillatorNode; gain: GainNode; n: number }[] }[] = [];
   let overtoneSoft: BiquadFilterNode | null = null;
+  let overtoneBus: GainNode | null = null;
   if (!spec.tone) {
     const soft = context.createBiquadFilter(); overtoneSoft = soft;
     soft.type = 'lowpass'; soft.frequency.value = spec.overtoneSoftHz ?? SOUNDSCAPE_OVERTONE_SOFT_HZ; soft.Q.value = 0.5;
     const swell = context.createGain(); swell.gain.value = 1;
     movementDepth.connect(swell.gain); // the same slow pulse as the voices
-    const overtoneBus = context.createGain(); overtoneBus.gain.value = SOUNDSCAPE_OVERTONE_BUS_GAIN;
-    soft.connect(swell); swell.connect(overtoneBus); overtoneBus.connect(master);
+    const otBus = context.createGain(); overtoneBus = otBus; otBus.gain.value = Math.max(0, overtoneBusGain);
+    soft.connect(swell); swell.connect(otBus); otBus.connect(master);
     spec.voices.forEach(voice => {
       const follower = context.createGain(); follower.gain.value = voice.gain; follower.connect(soft);
       const partials = SOUNDSCAPE_OVERTONE_PARTIALS.map(n => {
@@ -301,6 +305,9 @@ export function buildSoundscape(
       return true;
     },
     scheduleTicks,
+    setOvertoneBusGain(gain) {
+      if (overtoneBus) overtoneBus.gain.setTargetAtTime(Math.max(0, gain), context.currentTime, 0.06);
+    },
     dispose() {
       disposed = true;
       if (timer !== null) clearInterval(timer);

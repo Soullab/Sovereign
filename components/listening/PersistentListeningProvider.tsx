@@ -13,6 +13,10 @@ import { TONE_FADE_OUT_SEC, toneEffectiveLevel } from '@/lib/listening/toneLab';
 import {
   DEFAULT_LISTENING_LEVEL, generatedGainForLevel, readStoredListeningLevel, writeStoredListeningLevel,
 } from '@/lib/listening/listeningLevel';
+import {
+  DEFAULT_OVERTONE_SETTING, overtoneBusGain, readStoredOvertoneSetting, writeStoredOvertoneSetting,
+  type OvertoneSetting,
+} from '@/lib/listening/overtoneSetting';
 import type { SoundscapeHandle } from '@/lib/listening/soundscapeEngine';
 import type { FocusSoundId } from '@/lib/listening/focusSoundChoices';
 import {
@@ -108,13 +112,16 @@ type Sketch = {
   out?: GainNode;
   stream?: MediaStreamAudioDestinationNode;
   /** The synthetic sketch's soft overtones (founder ruling 2026-11-19, #1979): one follower per voice, a soft filter. */
-  overtones?: { voices: GainNode[]; soft: BiquadFilterNode; oscillators: OscillatorNode[] };
+  overtones?: { voices: GainNode[]; soft: BiquadFilterNode; oscillators: OscillatorNode[]; bus: GainNode };
 };
 
 export type ListeningTransport = {
   snapshot: ListeningSnapshot;
   volume: number;
   setVolume: (volume: number, transient?: boolean) => void;
+  /** The member's Overtones setting (on or off, and an Amount), for every generated sound that has them. */
+  overtones: OvertoneSetting;
+  setOvertones: (setting: OvertoneSetting) => void;
   looping: boolean;
   loopAvailable: boolean;
   setLooping: (enabled: boolean) => void;
@@ -280,14 +287,15 @@ function applyReceptiveShape(sketch: Sketch, shape: ReceptiveControls) {
  * so they fuse into the same tone instead of adding notes. They pass a soft low-pass and the ONE master, so
  * the member's Level governs them, and they follow their note's dial and the swell. The level ceiling
  * (GENERATED_OUTPUT_SCALE) is unchanged. Measured at Level 45%: content above ~300 Hz rises from below −69 LUFS
- * to about −58…−52 LUFS; the whole sound rises about 6–8 dB. */
+ * to about −58…−52 LUFS; the whole sound rises about 6–8 dB.
+ * Since 2026-11-21 the member's Overtones setting sets the bus (founder: "too obvious, even with it on low level");
+ * the 2026-11-19 "100%" is Amount 100% there (bus gain 6.0), and the default is now 50%. */
 const OVERTONE_PARTIALS = [2, 3, 4, 5, 6, 7, 8];
-const OVERTONE_BUS_GAIN = 6.0; // "Amount 100%" in the listening test
 const OVERTONE_HIGHEST_HZ = 4000;
 function newSketchOvertones(
-  context: AudioContext, master: GainNode, frequencies: number[], notes: OscillatorNode[],
+  context: AudioContext, master: GainNode, frequencies: number[], notes: OscillatorNode[], busGain: number,
 ): NonNullable<Sketch['overtones']> {
-  const bus = context.createGain(); bus.gain.value = OVERTONE_BUS_GAIN;
+  const bus = context.createGain(); bus.gain.value = Math.max(0, busGain);
   const soft = context.createBiquadFilter(); soft.type = 'lowpass'; soft.frequency.value = 2400; soft.Q.value = 0.5;
   soft.connect(bus); bus.connect(master);
   const oscillators: OscillatorNode[] = [];
@@ -303,12 +311,12 @@ function newSketchOvertones(
     }
     return follower;
   });
-  return { voices, soft, oscillators };
+  return { voices, soft, oscillators, bus };
 }
 
 function newSketch(
   mood: ListeningMood, frequencies: number[], level: number,
-  shape: ReceptiveControls,
+  shape: ReceptiveControls, overtoneGain: number,
 ): Sketch {
   const AudioCtor: typeof AudioContext =
     window.AudioContext ||
@@ -351,7 +359,7 @@ function newSketch(
   movement.connect(movementDepth);
   movementDepth.connect(voices[0].gain); // modulation, NOT extra direct audio output
   movement.start();
-  const overtones=newSketchOvertones(context,master,frequencies,oscillators);
+  const overtones=newSketchOvertones(context,master,frequencies,oscillators,overtoneGain);
   movementDepth.connect(overtones.voices[0].gain); // the lowest note's overtones swell with it
   const sketch:Sketch={context,oscillators,master,voices,filter,movement,movementDepth,mood,frequencies,overtones,out,stream};
   applyReceptiveShape(sketch,shape);
@@ -400,7 +408,7 @@ function loadRecordedLoop(context: BaseAudioContext, id: string): Promise<AudioB
   return pending;
 }
 
-function newSoundscapeSketch(spec: SoundscapeSpec, level: number): Sketch {
+function newSoundscapeSketch(spec: SoundscapeSpec, level: number, overtoneGain: number): Sketch {
   const AudioCtor: typeof AudioContext =
     window.AudioContext ||
     (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!;
@@ -409,7 +417,7 @@ function newSoundscapeSketch(spec: SoundscapeSpec, level: number): Sketch {
   const out = context.createGain();
   out.connect(context.destination);
   const stream = typeof context.createMediaStreamDestination === 'function' ? context.createMediaStreamDestination() : undefined;
-  const handle = buildSoundscape(context, out, spec, level, id => loadRecordedLoop(context, id));
+  const handle = buildSoundscape(context, out, spec, level, id => loadRecordedLoop(context, id), overtoneGain);
   return {
     context, oscillators: handle.oscillators, master: handle.master, voices: handle.voices, filter: handle.filter,
     movement: handle.movement, movementDepth: handle.movementDepth, mood: 'focus', frequencies: [spec.root], soundscape: handle,
@@ -498,6 +506,8 @@ export function PersistentListeningProvider({
   const reviewContinuationCycles = useRef(0);
   const segmentTransitioning = useRef(false);
   const volumeRef = useRef(DEFAULT_LISTENING_LEVEL);
+  const [overtones, saveOvertones] = useState<OvertoneSetting>({ ...DEFAULT_OVERTONE_SETTING });
+  const overtonesRef = useRef<OvertoneSetting>({ ...DEFAULT_OVERTONE_SETTING });
   const epoch = useRef(0);
   // Stable within this one member-bound provider instance, never serialized or shared.
   const listeningInstance = useRef<object>({}).current;
@@ -862,6 +872,28 @@ export function PersistentListeningProvider({
     try { if (media.current && !probingVolume.current) media.current.volume = stored / 100; } catch { /* fixed by the platform */ }
   }, []);
 
+  // The member's Overtones setting: moves the overtone bus of the sound now playing, and is remembered on this device.
+  const setOvertones = useCallback((setting: OvertoneSetting) => {
+    const next: OvertoneSetting = {
+      on: Boolean(setting.on),
+      amount: Number.isFinite(setting.amount) ? Math.max(0, Math.min(100, Math.round(setting.amount))) : overtonesRef.current.amount,
+    };
+    overtonesRef.current = next;
+    saveOvertones(next);
+    const active = sketch.current;
+    if (active?.soundscape) active.soundscape.setOvertoneBusGain(overtoneBusGain(next));
+    else if (active?.overtones) active.overtones.bus.gain.setTargetAtTime(overtoneBusGain(next), active.context.currentTime, 0.06);
+    try { writeStoredOvertoneSetting(window.localStorage, next); } catch { /* storage unavailable */ }
+  }, []);
+
+  // The remembered Overtones setting on this device, read once after mount. Reading it never starts sound.
+  useEffect(() => {
+    let stored = { ...DEFAULT_OVERTONE_SETTING };
+    try { stored = readStoredOvertoneSetting(window.localStorage); } catch { /* storage unavailable */ }
+    overtonesRef.current = stored;
+    saveOvertones(stored);
+  }, []);
+
   const setLooping = useCallback((enabled: boolean) => {
     const permitted = kind.current === 'local-file' ||
       (kind.current === 'review-media' && reviewManifest.current?.permissions.looping === true &&
@@ -944,13 +976,13 @@ export function PersistentListeningProvider({
     if (soundscape) {
       if (!(active?.soundscape && active.soundscape.update(soundscape))) {
         if (active) endSketch(active);
-        active = newSoundscapeSketch(soundscape, volumeRef.current / 100);
+        active = newSoundscapeSketch(soundscape, volumeRef.current / 100, overtoneBusGain(overtonesRef.current));
         sketch.current = active;
       }
     } else if (!active || active.soundscape || active.mood !== mood ||
       JSON.stringify(active.frequencies) !== JSON.stringify(frequencies)) {
       if (active) endSketch(active);
-      active = newSketch(mood, frequencies, volumeRef.current / 100,shapeRef.current);
+      active = newSketch(mood, frequencies, volumeRef.current / 100,shapeRef.current, overtoneBusGain(overtonesRef.current));
       sketch.current = active;
     } else {
       applyReceptiveShape(active,shapeRef.current);
@@ -1443,7 +1475,7 @@ export function PersistentListeningProvider({
   }, [liveSoundscapeKey]);
 
   const transport: ListeningTransport = {
-    snapshot, volume, setVolume, looping, loopAvailable, setLooping, shape, setShape,
+    snapshot, volume, setVolume, overtones, setOvertones, looping, loopAvailable, setLooping, shape, setShape,
     fields, keepField, dropField, replaceFields,
     playSketch, playExperienceMedia, selectLocalFile, playLocalFile, localFilePosition, generatedOutput,
     pause, stopMusic: stopAll, listeningInstance, removeLocalFile,

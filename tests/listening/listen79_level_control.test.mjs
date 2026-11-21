@@ -89,7 +89,7 @@ test('every source · setVolume reaches the generated master gain and the one me
 test('every source · each start path begins at the member\'s level, not a default', () => {
   // Focus presets (Deep focus, Creative flow) and the Focus Field / "Your soundscape" generated sounds.
   assert.match(provider, /newSketch\(mood, frequencies, volumeRef\.current \/ 100/);
-  assert.match(provider, /newSoundscapeSketch\(soundscape, volumeRef\.current \/ 100\)/);
+  assert.match(provider, /newSoundscapeSketch\(soundscape, volumeRef\.current \/ 100[,)]/); // then the Overtones amount
   assert.match(provider, /function newSketch[\s\S]*?master\.gain\.exponentialRampToValueAtTime\(\s*generatedGainForLevel\(level \* 100\)/); // the one owner of the ceiling
   // Recorded works (Open Ground, Night Ground editions, Music Only) — also reached by the Open Ground focus preset.
   assert.match(fnBody(provider, 'playExperienceMedia'), /audio\.volume = volumeRef\.current \/ 100;\s*await audio\.play\(\)/);

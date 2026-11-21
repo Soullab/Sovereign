@@ -244,6 +244,9 @@
 .focusSoundLevel{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;max-width:520px;font-size:13px;color:#d8cdb8}
 .focusSoundLevel input{width:100%;accent-color:#d4af37;min-height:32px}
 .focusSoundLevel output{font-variant-numeric:tabular-nums;color:#b9c3c4;min-width:3.5ch;text-align:right}
+.focusOvertoneToggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+.focusOvertoneToggle input{accent-color:#d4af37;width:16px;height:16px;min-height:0}
+.focusSoundLevel input[type=range]:disabled{opacity:.4}
 
 /* In the running session the save row spans the whole card, not the clock's column. */
 .focusDesignDuring{grid-column:1/-1;max-width:720px;width:100%}

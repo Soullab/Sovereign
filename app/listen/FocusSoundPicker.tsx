@@ -16,7 +16,9 @@ export default function FocusSoundPicker() {
   // As the player bar decides it: a generated sound's level is always Soullab's to set; recorded media on a
   // phone follows the device's own volume buttons.
   const levelAdjustable = !!transport && (transport.volumeAdjustable || transport.snapshot.kind === 'sketch');
-  const sessionLive = transport?.focusSession?.status === 'running' || transport?.focusSession?.status === 'paused';
+  // The generated choices that carry overtones (Open Ground is a recording; Tone Lab never has them).
+  const hasOvertones = soundId === 'soundscape' || soundId === 'deep-focus' || soundId === 'creative-flow';
+  const sessionLive =transport?.focusSession?.status === 'running' || transport?.focusSession?.status === 'paused';
 
   const play = async () => {
     if (!transport || soundId === 'none') return;
@@ -58,6 +60,21 @@ export default function FocusSoundPicker() {
       ) : (
         <p className={styles.focusExplanation} data-focus-sound-level="device">Level: use this device’s volume buttons.</p>
       ))}
+      {hasOvertones && transport && (
+        // The member's Overtones setting (founder, 2026-11-21, #1979): on or off, and how much. Changes the sound now.
+        <div className={styles.focusSoundLevel} data-focus-overtones={transport.overtones.on ? 'on' : 'off'}>
+          <label className={styles.focusOvertoneToggle}>
+            <input type="checkbox" checked={transport.overtones.on} data-focus-overtones-toggle="true"
+              onChange={event => transport.setOvertones({ ...transport.overtones, on: event.target.checked })} />
+            <span>Overtones</span>
+          </label>
+          <input aria-label="Overtone amount" type="range" min="0" max="100" step="1" data-focus-overtones-amount="true"
+            value={transport.overtones.amount} disabled={!transport.overtones.on}
+            aria-valuetext={transport.overtones.on ? `${transport.overtones.amount}%` : 'Off'}
+            onChange={event => transport.setOvertones({ on: true, amount: Number(event.target.value) })} />
+          <output>{transport.overtones.on ? `${transport.overtones.amount}%` : 'Off'}</output>
+        </div>
+      )}
       {message && <p className={styles.focusStatus} role="status" aria-live="polite">{message}</p>}
     </section>
   );
