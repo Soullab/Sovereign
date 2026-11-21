@@ -90,7 +90,7 @@ export function writeWav24(a: Audio): ArrayBuffer {
 /** The RIFF chunk that carries a saved file's provenance, as UTF-8 JSON. Players skip chunks they do not know. */
 export const PROVENANCE_CHUNK = 'slpv';
 
-function findChunk(bytes: ArrayBuffer, wanted: string): { offset: number; size: number } | null {
+export function findChunk(bytes: ArrayBuffer, wanted: string): { offset: number; size: number } | null {
   const v = new DataView(bytes);
   for (let p = 12; p + 8 <= bytes.byteLength;) {
     const id = String.fromCharCode(v.getUint8(p), v.getUint8(p + 1), v.getUint8(p + 2), v.getUint8(p + 3));

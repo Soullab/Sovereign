@@ -15,6 +15,7 @@ import { readWav, wavAudioBytes, withProvenance, writeWav24 } from '@/lib/listen
 import { renderRecipe } from '@/lib/listening/transform/render';
 import { validateLocalAudio } from '@/lib/listening/localAudio';
 import { acceptMemberFile, buildProvenance, sha256Hex, type SideInfo } from '@/lib/listening/transform/provenance';
+import { describeCaptureOrigin, readCaptureOrigin, type CaptureOrigin } from '@/lib/listening/transform/captureTake';
 import { MAX_TRANSFORM_SECONDS, recipeProblem, type TransformStep } from '@/lib/listening/transform/recipe';
 import { SPACES } from '@/lib/listening/transform/impulses';
 import styles from './listen.module.css';
@@ -48,8 +49,11 @@ async function load(file: File): Promise<Loaded> {
   const sha = await sha256Hex(bytes);
   let audio: Audio;
   let decodedBy: SideInfo['decodedBy'] = 'soullab-wav';
+  let capture: CaptureOrigin | null = null;
   if (/\.wav$/i.test(file.name)) {
+    // A Capture take is read at its own rate (44.1 or 48 kHz, whatever the Mac's output was) and never resampled.
     audio = readWav(bytes);
+    capture = readCaptureOrigin(bytes);
   } else {
     // Other formats: the browser decodes (at 48 kHz); the provenance says so.
     decodedBy = 'browser';
@@ -58,7 +62,7 @@ async function load(file: File): Promise<Loaded> {
     if (decoded.duration > MAX_TRANSFORM_SECONDS) throw new Error('This recording is longer than 20 minutes.');
     audio = { sampleRate: decoded.sampleRate, channels: Array.from({ length: Math.min(2, decoded.numberOfChannels) }, (_, i) => decoded.getChannelData(i).slice()) };
   }
-  return { file, audio, info: { name: file.name, sha256: sha, sampleRate: audio.sampleRate, frames: frameCount(audio), channels: audio.channels.length, decodedBy } };
+  return { file, audio, info: { name: file.name, sha256: sha, sampleRate: audio.sampleRate, frames: frameCount(audio), channels: audio.channels.length, decodedBy, ...(capture ? { capture } : {}) } };
 }
 
 /** m:ss.cc — a time on the recording, never a bare number of seconds. */
@@ -367,6 +371,7 @@ export default function TransformDesk() {
       <div className={styles.localAudioCard}>
         <strong>{source.file.name}</strong>
         <p className={styles.muted}>{clock(len)} · {source.info.sampleRate / 1000} kHz · {source.info.channels === 2 ? 'stereo' : 'mono'} · up to 20 minutes</p>
+        {source.info.capture && <p className={styles.muted} data-capture-origin>{describeCaptureOrigin(source.info.capture)} A new file you save records where it came from.</p>}
         <Waveform audio={source.audio} keep={marked.keep} marks={marked.marks} fade={marked.fade} label="original"
           playhead={hereAt ?? undefined}
           onMove={(key, t) => { if (selected !== null) setMark(selected, key, t); }} />

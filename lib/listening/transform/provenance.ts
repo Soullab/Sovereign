@@ -10,6 +10,7 @@
  */
 import { validateLocalAudio } from '../localAudio';
 import { TRANSFORM_VERSION, type TransformStep } from './recipe';
+import type { CaptureOrigin } from './captureTake';
 
 export type MemberFile = File & { readonly __memberChosen: true };
 
@@ -34,7 +35,11 @@ export async function sha256Hex(bytes: BufferSource): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export type SideInfo = { name: string; sha256: string; sampleRate: number; frames: number; channels: number; decodedBy: 'soullab-wav' | 'browser' };
+export type SideInfo = {
+  name: string; sha256: string; sampleRate: number; frames: number; channels: number; decodedBy: 'soullab-wav' | 'browser';
+  /** Present when the file is a Soullab Capture take (J4b-1): the take's own claim, carried into the derived take. */
+  capture?: CaptureOrigin;
+};
 
 export function buildProvenance(p: {
   source: SideInfo; second?: SideInfo; steps: readonly TransformStep[];
