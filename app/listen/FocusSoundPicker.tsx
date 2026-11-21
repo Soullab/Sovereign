@@ -3,6 +3,10 @@
 import { useState } from 'react';
 import { usePersistentListening } from '@/components/listening/PersistentListeningProvider';
 import { FOCUS_SOUND_OPTIONS, focusSoundLabel } from '@/lib/listening/focusSoundChoices';
+import {
+  DRIVING_NOTE, HEADPHONES_NOTE, NO_CLAIM_NOTE, PULSE_MAX_HZ, PULSE_MIN_HZ, PULSE_MODES, TONE_MAX_HZ, TONE_MIN_HZ,
+} from '@/lib/listening/toneLab';
+import { TONE_LAYER_PICKS, toneLayerLabel, type ToneLayerSetting } from '@/lib/listening/toneLayerSetting';
 import styles from './listen.module.css';
 
 // Sound for a Focus session. Deliberately OUTSIDE FocusFieldDesk: the Focus session itself has no media
@@ -118,6 +122,62 @@ export default function FocusSoundPicker() {
           <p className={styles.focusExplanation} data-focus-weave-line="true">{weaveLine(transport.weaveMoments)}</p>
           <p className={styles.focusExplanation} data-focus-recorded-layers="true">{recordedLayersLine(transport.recordedLayers)}</p>
         </>
+      )}
+      {soundId === 'soundscape' && transport && (
+        // N2 (#1979): the member's tone and pulse inside the soundscape. Labels say what the sound IS, never what it
+        // does (founder ruling 2026-11-21). Never louder than Tone Lab itself allows.
+        <div className={styles.focusToneLayer} data-focus-tone-layer={transport.toneLayer.on ? 'on' : 'off'}>
+          <label className={styles.focusOvertoneToggle}>
+            <input type="checkbox" checked={transport.toneLayer.on} data-focus-tone-toggle="true"
+              onChange={event => transport.setToneLayer({ ...transport.toneLayer, on: event.target.checked })} />
+            <span>Tone</span>
+          </label>
+          <div className={styles.focusInlineChoices} role="group" aria-label="Tone quick picks">
+            {TONE_LAYER_PICKS.map(pick => (
+              <button key={pick.id} type="button" className={styles.focusChoice} data-tone-pick={pick.id}
+                onClick={() => transport.setToneLayer({ ...transport.toneLayer, ...pick.set, on: true })}>{pick.label}</button>
+            ))}
+          </div>
+          {transport.toneLayer.on && (
+            <>
+              <label className={styles.focusSoundLevel}>
+                <span>Frequency</span>
+                <input aria-label="Tone frequency" type="range" min={TONE_MIN_HZ} max={TONE_MAX_HZ} step="1"
+                  value={transport.toneLayer.hz} aria-valuetext={`${transport.toneLayer.hz} Hz`}
+                  onChange={event => transport.setToneLayer({ ...transport.toneLayer, hz: Number(event.target.value) })} />
+                <output>{transport.toneLayer.hz} Hz</output>
+              </label>
+              <label className={styles.focusSoundLevel}>
+                <span>Pulse</span>
+                <select aria-label="Pulse" value={transport.toneLayer.pulseMode} data-tone-pulse-mode="true"
+                  onChange={event => transport.setToneLayer({ ...transport.toneLayer, pulseMode: event.target.value as ToneLayerSetting['pulseMode'] })}>
+                  {PULSE_MODES.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
+                </select>
+                <output />
+              </label>
+              {transport.toneLayer.pulseMode !== 'none' && (
+                <label className={styles.focusSoundLevel}>
+                  <span>Pulse rate</span>
+                  <input aria-label="Pulse rate" type="range" min={PULSE_MIN_HZ} max={PULSE_MAX_HZ} step="0.5"
+                    value={transport.toneLayer.pulseHz} aria-valuetext={`${transport.toneLayer.pulseHz} Hz`}
+                    onChange={event => transport.setToneLayer({ ...transport.toneLayer, pulseHz: Number(event.target.value) })} />
+                  <output>{transport.toneLayer.pulseHz} Hz</output>
+                </label>
+              )}
+              <label className={styles.focusSoundLevel}>
+                <span>Tone amount</span>
+                <input aria-label="Tone amount" type="range" min="0" max="100" step="1" value={transport.toneLayer.amount}
+                  aria-valuetext={`${transport.toneLayer.amount}%`}
+                  onChange={event => transport.setToneLayer({ ...transport.toneLayer, amount: Number(event.target.value) })} />
+                <output>{transport.toneLayer.amount}%</output>
+              </label>
+              <p className={styles.focusExplanation} data-tone-layer-label="true">{toneLayerLabel(transport.toneLayer)}</p>
+              {transport.toneLayer.pulseMode === 'binaural' && <p className={styles.focusExplanation} data-tone-note="headphones">{HEADPHONES_NOTE}</p>}
+              <p className={styles.focusExplanation} data-tone-note="claim">{NO_CLAIM_NOTE}</p>
+              <p className={styles.focusExplanation} data-tone-note="driving">{DRIVING_NOTE}</p>
+            </>
+          )}
+        </div>
       )}
       {message && <p className={styles.focusStatus} role="status" aria-live="polite">{message}</p>}
     </section>

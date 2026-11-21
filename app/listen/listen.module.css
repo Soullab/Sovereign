@@ -255,3 +255,5 @@
 @keyframes sectionAttention{0%{box-shadow:0 0 0 0 rgba(212,175,55,0)}25%{box-shadow:0 0 0 3px rgba(212,175,55,.75),0 0 28px rgba(212,175,55,.35)}100%{box-shadow:0 0 0 0 rgba(212,175,55,0)}}
 .focusSound[data-attention="true"],.focusField[data-attention="true"]{animation:sectionAttention 1.8s ease-out}
 @media(prefers-reduced-motion:reduce){.focusSound[data-attention="true"],.focusField[data-attention="true"]{animation:none;outline:2px solid rgba(212,175,55,.8);outline-offset:3px}}
+.focusToneLayer{display:grid;gap:10px;margin-top:6px;padding-top:10px;border-top:1px solid rgba(216,205,184,.15)}
+.focusSoundLevel select{background:transparent;color:#f1efe7;border:1px solid rgba(216,205,184,.35);border-radius:8px;padding:6px 8px;font:inherit;min-height:32px}

@@ -30,6 +30,8 @@ export const NATURE_WEAVE_MOMENTS: readonly WeaveMomentId[] = ['weave-thrush', '
 export type SoundscapeSpec = {
   world: FocusMusicalWorld;
   recorded: RecordedMix | null;
+  /** The member's tone and pulse inside this soundscape (N2): its own capped layer, never Tone Lab's whole-sound rules. */
+  toneLayer?: { hz: number; pulseMode: 'none' | 'binaural' | 'monaural' | 'isochronic'; pulseHz: number } | null;
   /** Short real recordings woven in now and then, at the edge of hearing. Absent where a world has none. */
   weave?: readonly WeaveMomentId[] | null;
   root: number;

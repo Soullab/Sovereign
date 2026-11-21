@@ -21,6 +21,10 @@ import {
   DEFAULT_NATURE_RECORDING_AMOUNT, natureRecordingGain, readStoredNatureRecordingAmount, writeStoredNatureRecordingAmount,
   DEFAULT_WEAVE_AMOUNT, readStoredWeaveAmount, weaveGain, writeStoredWeaveAmount,
 } from '@/lib/listening/natureRecordingSetting';
+import {
+  DEFAULT_TONE_LAYER, keepDesignTones, readDesignTones, readStoredToneLayer, toneLayerAmountGain, toneLayerLabel, toneLayerSpec,
+  withDesignTone, writeDesignTones, writeStoredToneLayer, type DesignTones, type ToneLayerSetting,
+} from '@/lib/listening/toneLayerSetting';
 import type { RecordedLayerState, SoundscapeHandle } from '@/lib/listening/soundscapeEngine';
 import type { FocusSoundId } from '@/lib/listening/focusSoundChoices';
 import {
@@ -136,6 +140,9 @@ export type ListeningTransport = {
   setWeave: (amount: number) => void;
   /** The weave moments of the sound now built that are real recordings (empty until they load, or if none exist). */
   weaveMoments: string[];
+  /** The member's tone layer inside Your soundscape (N2): a tone and optional pulse, never louder than Tone Lab. */
+  toneLayer: ToneLayerSetting;
+  setToneLayer: (setting: ToneLayerSetting) => void;
   looping: boolean;
   loopAvailable: boolean;
   setLooping: (enabled: boolean) => void;
@@ -422,7 +429,7 @@ function loadRecordedLoop(context: BaseAudioContext, id: string): Promise<AudioB
   return pending;
 }
 
-function newSoundscapeSketch(spec: SoundscapeSpec, level: number, overtoneGain: number, recordedGain: number, weaveBusGain: number): Sketch {
+function newSoundscapeSketch(spec: SoundscapeSpec, level: number, overtoneGain: number, recordedGain: number, weaveBusGain: number, toneLayerGain: number): Sketch {
   const AudioCtor: typeof AudioContext =
     window.AudioContext ||
     (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!;
@@ -431,7 +438,7 @@ function newSoundscapeSketch(spec: SoundscapeSpec, level: number, overtoneGain: 
   const out = context.createGain();
   out.connect(context.destination);
   const stream = typeof context.createMediaStreamDestination === 'function' ? context.createMediaStreamDestination() : undefined;
-  const handle = buildSoundscape(context, out, spec, level, id => loadRecordedLoop(context, id), overtoneGain, recordedGain, weaveBusGain);
+  const handle = buildSoundscape(context, out, spec, level, id => loadRecordedLoop(context, id), overtoneGain, recordedGain, weaveBusGain, toneLayerGain);
   return {
     context, oscillators: handle.oscillators, master: handle.master, voices: handle.voices, filter: handle.filter,
     movement: handle.movement, movementDepth: handle.movementDepth, mood: 'focus', frequencies: [spec.root], soundscape: handle,
@@ -466,23 +473,44 @@ export function PersistentListeningProvider({
     try { storage = window.localStorage; } catch { /* storage unavailable */ }
     writeDesignSounds(storage, next);
   };
+  // A design's tone layer sits beside it too (N2-c), on this device only.
+  const [designTones, setDesignTones] = useState<DesignTones>(() => Object.freeze({}));
+  useEffect(() => {
+    try { setDesignTones(readDesignTones(window.localStorage)); } catch { /* storage unavailable: this visit only */ }
+  }, []);
+  const keepDesignToneList = (next: DesignTones) => {
+    setDesignTones(next);
+    let storage: Storage | null = null;
+    try { storage = window.localStorage; } catch { /* storage unavailable */ }
+    writeDesignTones(storage, next);
+  };
   const rememberDesignSound = (designId: string): boolean => {
-    try { keepDesignSoundList(withDesignSound(designSounds, designId, focusSoundChoice)); return true; }
-    catch { return false; }
+    try {
+      keepDesignSoundList(withDesignSound(designSounds, designId, focusSoundChoice));
+      keepDesignToneList(withDesignTone(designTones, designId, toneLayerRef.current));
+      return true;
+    } catch { return false; }
   };
   // Selects the saved choice in the picker. Never plays: Play stays a separate member action.
   const recallDesignSound = (designId: string): FocusSoundId | null => {
     const saved = designSounds[designId];
     if (!saved) return null;
     setFocusSoundChoice(saved);
+    const tone = designTones[designId];
+    if (tone) setToneLayer(tone); // selects the design's tone layer; never starts sound
     return saved;
   };
   const keepDesignSoundsFor = (designIds: readonly string[]) => {
     const next = keepDesignSounds(designSounds, designIds);
     if (Object.keys(next).length !== Object.keys(designSounds).length) keepDesignSoundList(next);
+    const tones = keepDesignTones(designTones, designIds);
+    if (Object.keys(tones).length !== Object.keys(designTones).length) keepDesignToneList(tones);
   };
-  const designSoundLabel = (designId: string): string | null =>
-    designSounds[designId] ? focusSoundLabel(designSounds[designId]) : null;
+  const designSoundLabel = (designId: string): string | null => {
+    if (!designSounds[designId]) return null;
+    const tone = designTones[designId];
+    return tone?.on ? `${focusSoundLabel(designSounds[designId])} · ${toneLayerLabel(tone)}` : focusSoundLabel(designSounds[designId]);
+  };
   const [focusDraft, setFocusDraft] = useState<SoundscapeInput | null>(null);
   // iOS ignores a page's HTMLMediaElement.volume: an assignment reads back for an instant, then the
   // platform value returns to 1 (measured on device). Detect it after a beat, not in the same tick,
@@ -524,6 +552,8 @@ export function PersistentListeningProvider({
   const overtonesRef = useRef<OvertoneSetting>({ ...DEFAULT_OVERTONE_SETTING });
   const [natureRecordings, saveNatureRecordings] = useState(DEFAULT_NATURE_RECORDING_AMOUNT);
   const natureRecordingsRef = useRef(DEFAULT_NATURE_RECORDING_AMOUNT);
+  const [toneLayer, saveToneLayer] = useState<ToneLayerSetting>({ ...DEFAULT_TONE_LAYER });
+  const toneLayerRef = useRef<ToneLayerSetting>({ ...DEFAULT_TONE_LAYER });
   const [weave, saveWeave] = useState(DEFAULT_WEAVE_AMOUNT);
   const [weaveMoments, saveWeaveMoments] = useState<string[]>([]);
   const weaveRef = useRef(DEFAULT_WEAVE_AMOUNT);
@@ -876,6 +906,7 @@ export function PersistentListeningProvider({
           ? generatedGainForLevel(toneEffectiveLevel(next), { tone: true }) // Tone Lab: its cap, at its original scale
           : generatedGainForLevel(next),
         context.currentTime, 0.06);
+      sketch.current.soundscape?.setLevel(next / 100); // keeps a tone layer within Tone Lab's cap at every Level
     }
     if (media.current && !probingVolume.current) media.current.volume = next / 100; // the probe applies it when it ends
     if (!transient) {
@@ -920,6 +951,26 @@ export function PersistentListeningProvider({
     try { stored = readStoredNatureRecordingAmount(window.localStorage); } catch { /* storage unavailable */ }
     natureRecordingsRef.current = stored;
     saveNatureRecordings(stored);
+  }, []);
+
+  // The member's tone layer: retunes or swaps the layer of the soundscape now playing; remembered on this device.
+  const setToneLayer = useCallback((setting: ToneLayerSetting) => {
+    const next = { ...toneLayerRef.current, ...setting };
+    toneLayerRef.current = next;
+    saveToneLayer(next);
+    const handle = sketch.current?.soundscape;
+    if (handle && !handle.spec.tone) {
+      handle.setToneLayerAmount(toneLayerAmountGain(next));
+      handle.update({ ...handle.spec, toneLayer: toneLayerSpec(next) });
+    }
+    try { writeStoredToneLayer(window.localStorage, next); } catch { /* storage unavailable */ }
+  }, []);
+
+  useEffect(() => {
+    let stored = { ...DEFAULT_TONE_LAYER };
+    try { stored = readStoredToneLayer(window.localStorage); } catch { /* storage unavailable */ }
+    toneLayerRef.current = stored;
+    saveToneLayer(stored);
   }, []);
 
   // The member's Weave amount: moves the weave bus of the sound now playing; remembered on this device.
@@ -976,8 +1027,11 @@ export function PersistentListeningProvider({
 
   const playSketch = useCallback(async (
     mood: ListeningMood, frequencies: number[], requestedExperience?: SoundExperiencePlayback,
-    soundscape?: SoundscapeSpec,
+    requestedSoundscape?: SoundscapeSpec,
   ): Promise<boolean> => {
+    // The member's tone layer rides inside Your soundscape (never a Tone Lab sound, which is already a tone).
+    const soundscape = requestedSoundscape && !requestedSoundscape.tone
+      ? { ...requestedSoundscape, toneLayer: toneLayerSpec(toneLayerRef.current) } : requestedSoundscape;
     // Refuse BEFORE allocating or resuming a sound context.
     if (refuseDuringMaiaSpeech()) return false;
     if (!Array.isArray(frequencies) || frequencies.length !== 3 ||
@@ -1029,7 +1083,7 @@ export function PersistentListeningProvider({
       if (!(active?.soundscape && active.soundscape.update(soundscape))) {
         if (active) endSketch(active);
         active = newSoundscapeSketch(soundscape, volumeRef.current / 100, overtoneBusGain(overtonesRef.current),
-          natureRecordingGain(natureRecordingsRef.current), weaveGain(weaveRef.current));
+          natureRecordingGain(natureRecordingsRef.current), weaveGain(weaveRef.current), toneLayerAmountGain(toneLayerRef.current));
         sketch.current = active;
         saveRecordedLayers(active.soundscape?.recordedLayers() ?? {}); saveWeaveMoments([]);
         const handle = active.soundscape;
@@ -1532,7 +1586,7 @@ export function PersistentListeningProvider({
   }, [liveSoundscapeKey]);
 
   const transport: ListeningTransport = {
-    snapshot, volume, setVolume, overtones, setOvertones, natureRecordings, setNatureRecordings, recordedLayers, weave, setWeave, weaveMoments, looping, loopAvailable, setLooping, shape, setShape,
+    snapshot, volume, setVolume, overtones, setOvertones, natureRecordings, setNatureRecordings, recordedLayers, weave, setWeave, weaveMoments, toneLayer, setToneLayer, looping, loopAvailable, setLooping, shape, setShape,
     fields, keepField, dropField, replaceFields,
     playSketch, playExperienceMedia, selectLocalFile, playLocalFile, localFilePosition, generatedOutput,
     pause, stopMusic: stopAll, listeningInstance, removeLocalFile,

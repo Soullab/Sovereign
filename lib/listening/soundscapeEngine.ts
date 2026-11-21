@@ -3,7 +3,8 @@
 // and offline (for measurement). Nothing starts a context; the caller does, after the member's own Play.
 import { soundscapeNeedsRebuild } from './focusSoundscape';
 import { GENERATED_OUTPUT_SCALE, ORIGINAL_OUTPUT_SCALE, TONE_OUTPUT_SCALE } from './listeningLevel';
-import { TONE_VOICE_GAIN, toneEffectiveLevel } from './toneLab';
+import { TONE_FADE_IN_SEC, TONE_FADE_OUT_SEC, TONE_VOICE_GAIN, toneEffectiveLevel } from './toneLab';
+import type { ToneSpec } from './toneLab';
 import type { RecordedLayerId, SoundscapeSpec, TickSpec, WeaveMomentId } from './focusSoundscape';
 
 /** Loads one recorded loop. Returns null when it is unavailable; the soundscape then plays without it. */
@@ -26,6 +27,12 @@ export type SoundscapeHandle = {
   setOvertoneBusGain(gain: number): void;
   /** The member's Nature recordings amount (0–1) for every recorded layer; 0 is synthesis alone. */
   setRecordedAmount(amount: number): void;
+  /** The member's tone-layer amount (0–1); 1 is as loud as Tone Lab itself at the same Level, never louder. */
+  setToneLayerAmount(amount: number): void;
+  /** Tell the engine the member's Level (0–1) so the tone layer keeps to Tone Lab's cap. */
+  setLevel(level: number): void;
+  /** The tone layer's current bus gain (0 when there is none), for tests and the picker. */
+  toneLayerGain(): number;
   /** The member's Weave amount (0–1): how present the woven moments are; 0 weaves nothing. */
   setWeaveAmount(amount: number): void;
   /** Which weave moments are real recordings this sound can draw on. */
@@ -100,7 +107,7 @@ function noiseBuffer(context: BaseAudioContext, seconds = 2): AudioBuffer {
 
 export function buildSoundscape(
   context: BaseAudioContext, destination: AudioNode, initial: SoundscapeSpec, level: number, loadRecorded?: RecordedLoader,
-  overtoneBusGain: number = SOUNDSCAPE_OVERTONE_BUS_GAIN, recordedAmount = 1, weaveAmount = 0.5,
+  overtoneBusGain: number = SOUNDSCAPE_OVERTONE_BUS_GAIN, recordedAmount = 1, weaveAmount = 0.5, toneLayerAmount = 0.5,
 ): SoundscapeHandle {
   let spec = initial;
   const t0 = context.currentTime;
@@ -203,13 +210,10 @@ export function buildSoundscape(
 
   // Tone Lab: one pure tone, with an optional slow pulse. Sound only: nothing here can flicker anything on screen.
   // It joins the master directly (not the soft lowpass), so the pitch the member chose is the pitch they hear.
-  type ToneGraph = { base: OscillatorNode; second: OscillatorNode | null; lfo: OscillatorNode | null };
-  let toneGraph: ToneGraph | null = null;
-  if (spec.tone) {
-    const { hz, pulseMode, pulseHz } = spec.tone;
-    const toneBus = context.createGain();
-    toneBus.gain.value = TONE_VOICE_GAIN;
-    toneBus.connect(master);
+  // ONE builder serves both Tone Lab (spec.tone) and a soundscape's tone layer (spec.toneLayer): no second engine.
+  type ToneGraph = { base: OscillatorNode; second: OscillatorNode | null; lfo: OscillatorNode | null; mode: ToneSpec['pulseMode'] };
+  const buildToneGraph = (into: AudioNode, tone: ToneSpec, at: number): ToneGraph => {
+    const { hz, pulseMode, pulseHz } = tone;
     const sine = (freq: number) => { const o = context.createOscillator(); o.type = 'sine'; o.frequency.value = freq; return o; };
     const base = sine(hz);
     let second: OscillatorNode | null = null;
@@ -218,26 +222,68 @@ export function buildSoundscape(
       second = sine(hz + pulseHz);
       const left = context.createStereoPanner(); left.pan.value = -1;
       const right = context.createStereoPanner(); right.pan.value = 1;
-      base.connect(left); left.connect(toneBus);
-      second.connect(right); right.connect(toneBus);
+      base.connect(left); left.connect(into);
+      second.connect(right); right.connect(into);
     } else if (pulseMode === 'binaural' || pulseMode === 'monaural') {
       second = sine(hz + pulseHz);
       const a = context.createGain(); a.gain.value = 0.5;
       const b = context.createGain(); b.gain.value = 0.5;
-      base.connect(a); a.connect(toneBus); second.connect(b); b.connect(toneBus);
+      base.connect(a); a.connect(into); second.connect(b); b.connect(into);
     } else if (pulseMode === 'isochronic') {
       // A smooth swell between silence and full, never an on/off edge.
       const swell = context.createGain(); swell.gain.value = 0.5;
       lfo = sine(Math.max(0.0001, pulseHz));
       const depth = context.createGain(); depth.gain.value = 0.5;
       lfo.connect(depth); depth.connect(swell.gain);
-      base.connect(swell); swell.connect(toneBus);
+      base.connect(swell); swell.connect(into);
     } else {
-      base.connect(toneBus);
+      base.connect(into);
     }
-    for (const node of [base, second, lfo]) if (node) { node.start(t0); extras.push(node); }
-    toneGraph = { base, second, lfo };
+    for (const node of [base, second, lfo]) if (node) { node.start(at); extras.push(node); }
+    return { base, second, lfo, mode: pulseMode };
+  };
+  const retuneToneGraph = (graph: ToneGraph, tone: ToneSpec) => {
+    gently(graph.base.frequency, tone.hz);
+    if (graph.second) gently(graph.second.frequency, tone.hz + tone.pulseHz);
+    if (graph.lfo) gently(graph.lfo.frequency, Math.max(0.0001, tone.pulseHz));
+  };
+  let toneGraph: ToneGraph | null = null;
+  if (spec.tone) {
+    const toneBus = context.createGain();
+    toneBus.gain.value = TONE_VOICE_GAIN;
+    toneBus.connect(master);
+    toneGraph = buildToneGraph(toneBus, spec.tone, t0);
   }
+
+  // A soundscape's TONE LAYER (N2, #1979; founder 2026-11-21: "Yes, build N2"). The member's tone and pulse sit
+  // inside the soundscape on their own bus, while the soundscape keeps its own rules (overtones, Level scale). The
+  // layer can never be louder than Tone Lab itself allows: its bus is scaled so that, at any Level, the tone reaches
+  // the speaker at most as Tone Lab would at that Level (capped at TONE_LEVEL_CAP on the original scale).
+  // toneLab.ts stays the one owner of that cap. No overtones are ever added to the tone.
+  let currentLevel = level;
+  let layerAmount = Math.max(0, Math.min(1, toneLayerAmount));
+  let layer: { bus: GainNode; graph: ToneGraph } | null = null;
+  const layerGain = () => {
+    const L = Math.max(0, Math.min(1, currentLevel)) * 100;
+    if (L <= 0) return 0;
+    return layerAmount * TONE_VOICE_GAIN * (toneEffectiveLevel(L) / L) * (TONE_OUTPUT_SCALE / SCALE);
+  };
+  const retireLayer = (old: { bus: GainNode; graph: ToneGraph }) => {
+    const now = context.currentTime;
+    old.bus.gain.cancelScheduledValues(now); old.bus.gain.setTargetAtTime(0, now, TONE_FADE_OUT_SEC / 3);
+    for (const node of [old.graph.base, old.graph.second, old.graph.lfo]) if (node) { try { node.stop(now + TONE_FADE_OUT_SEC * 2); } catch { /* stopped */ } }
+  };
+  const applyToneLayer = (next: ToneSpec | null | undefined) => {
+    if (spec.tone) return; // a Tone Lab sound is already a tone; it never carries a second one
+    if (!next) { if (layer) { retireLayer(layer); layer = null; } return; }
+    if (layer && layer.graph.mode === next.pulseMode) { retuneToneGraph(layer.graph, next); return; }
+    if (layer) retireLayer(layer);
+    const bus = context.createGain(); const now = context.currentTime;
+    bus.gain.setValueAtTime(0.0001, now); bus.gain.exponentialRampToValueAtTime(Math.max(0.0001, layerGain()), now + TONE_FADE_IN_SEC);
+    bus.connect(master);
+    layer = { bus, graph: buildToneGraph(bus, next, now) };
+  };
+  applyToneLayer(spec.toneLayer);
 
   // Recorded nature layers: looped real recordings that follow the spec's mix. Everything goes through the master,
   // so the member's volume and the fade-in apply to them exactly as to the synthesized sound.
@@ -425,11 +471,8 @@ export function buildSoundscape(
         gently(noiseGain.gain, next.noise.gain); gently(noiseBand.frequency, next.noise.bandHz);
         gently(noiseBand.Q, next.noise.q); gently(sweepDepth.gain, next.noise.bandHz * 0.4);
       }
-      if (next.tone && toneGraph) {
-        gently(toneGraph.base.frequency, next.tone.hz);
-        if (toneGraph.second) gently(toneGraph.second.frequency, next.tone.hz + next.tone.pulseHz);
-        if (toneGraph.lfo) gently(toneGraph.lfo.frequency, Math.max(0.0001, next.tone.pulseHz));
-      }
+      if (next.tone && toneGraph) retuneToneGraph(toneGraph, next.tone);
+      applyToneLayer(next.toneLayer);
       applyRecorded(next.recorded);
       emitRecorded();
       return true;
@@ -442,6 +485,15 @@ export function buildSoundscape(
       recordingsBus.gain.setTargetAtTime(Math.max(0, amount), context.currentTime, 0.12);
     },
     recordedLayers() { return currentRecorded(); },
+    setToneLayerAmount(amount) {
+      layerAmount = Math.max(0, Math.min(1, amount));
+      if (layer) { layer.bus.gain.cancelScheduledValues(context.currentTime); layer.bus.gain.setTargetAtTime(layerGain(), context.currentTime, 0.12); }
+    },
+    setLevel(value) {
+      currentLevel = value;
+      if (layer) { layer.bus.gain.cancelScheduledValues(context.currentTime); layer.bus.gain.setTargetAtTime(layerGain(), context.currentTime, 0.06); }
+    },
+    toneLayerGain() { return layer ? layerGain() : 0; },
     setWeaveAmount(amount) { weaveBus.gain.setTargetAtTime(Math.max(0, amount), context.currentTime, 0.12); },
     weaveMoments() { return [...weaveBuffers.keys()]; },
     onRecordedLayers(listener) {
