@@ -388,3 +388,17 @@ describe('walk 2026-11-21: the last book and section words around a poem', () =>
     expect(`${CARRY_COPY.invite} ${CARRY_COPY.held}`).not.toMatch(BOOKISH);
   });
 });
+
+describe('bring-your-pages speaks neutrally: the writer has not yet said what it is', () => {
+  test('a member’s import page says “your writing” and “part”, never manuscript, section, chapter or book', () => {
+    const src = read('app/dev/writers-studio-pc3-live/P4R1ImportManuscript.tsx');
+    expect(src).toMatch(/Bring your writing/);
+    expect(src).toMatch(/proposed part\{/);
+    expect(src).toMatch(/placeholder="Untitled part"/);
+    // Every string a member sees on this page, minus the dedicated local-review window's own lines.
+    const shown = [...src.matchAll(/(?:>([^<>{}]+)<)|(?:'([^'\n]{12,})')|(?:"([^"\n]{12,})")|(?:`([^`\n]{12,})`)/g)]
+      .map((m) => m[1] ?? m[2] ?? m[3] ?? m[4] ?? '')
+      .filter((t) => /[a-z] [a-z]/i.test(t) && !/temporary|local|review window|\/api\//i.test(t));
+    for (const t of shown) expect(t).not.toMatch(/\bmanuscripts?\b|\bsections?\b|\bchapters?\b|\bbook\b/i);
+  });
+});

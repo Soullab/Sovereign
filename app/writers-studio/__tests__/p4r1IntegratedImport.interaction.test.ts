@@ -133,9 +133,9 @@ test('local review carries EPUB through source preview, author structure confirm
     title: 'The Paper Lantern',
     text: '# Chapter One\n\nThe lantern crossed the fictional river.',
   });
-  expect(container.textContent).toContain('1 proposed section');
+  expect(container.textContent).toContain('1 proposed part');
   expect(container.textContent).toContain('No cut is accepted without your final gesture.');
-  const heading = container.querySelector('input[aria-label="Section 1 heading"]') as HTMLInputElement;
+  const heading = container.querySelector('input[aria-label="Part 1 heading"]') as HTMLInputElement;
   await act(async () => {
     const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
     setValue?.call(heading, 'Still Water');

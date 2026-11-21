@@ -295,10 +295,10 @@ export default function P4R1ImportManuscript({
             if (code === 'source_original_unavailable') uploadAttemptRef.current = null;
             setPhase('source');
           }
-          throw new Error(errorFrom(body, 'The manuscript could not be opened.'));
+          throw new Error(errorFrom(body, 'Your writing could not be opened.'));
         }
         id = typeof body?.id === 'string' ? body.id : null;
-        if (!id) throw new Error('The manuscript opened without an identity. Nothing further was changed.');
+        if (!id) throw new Error('Your writing opened without an identity. Nothing further was changed.');
         // A confirmed save may outlive the router transition. Remember its
         // identity before opening it, so retrying navigation cannot import twice.
         savedManuscriptIdRef.current = id;
@@ -314,7 +314,7 @@ export default function P4R1ImportManuscript({
           sections,
         });
         if (!held) {
-          throw new Error('The temporary local manuscript could not be held for the next room. Nothing was persisted.');
+          throw new Error('The temporary writing could not be held for the next room. Nothing was persisted.');
         }
       }
       // The Work is saved and its words are safe, but if the original could not be stored with it the member must hear
@@ -337,7 +337,7 @@ export default function P4R1ImportManuscript({
           : 'Your writing was saved, but it could not be opened. Choose Open saved writing to try again. This will not create another copy.');
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The manuscript could not be opened.');
+      setError(cause instanceof Error ? cause.message : 'Your writing could not be opened.');
     } finally {
       saveInFlightRef.current = false;
       setBusy(null);
@@ -398,14 +398,14 @@ export default function P4R1ImportManuscript({
       <header className="p4r1-import-head">
         <button type="button" className="p4r1-import-back" onClick={onCancel}>← Home</button>
         <div>
-          <p className="p4r1-eyebrow">Bring a manuscript</p>
+          <p className="p4r1-eyebrow">Bring your writing</p>
           <h1>Your words first. Structure stays yours.</h1>
           <p>
             {localReview
-              ? 'Bring a PDF, EPUB, Word document, Markdown or plain-text manuscript. You will see the extracted words and confirm every proposed section before anything becomes a manuscript.'
+              ? 'Bring a PDF, EPUB, Word document, Markdown or plain-text file. You will see the extracted words and confirm every proposed part before anything is opened.'
               : sourceIntakeReleased
-                ? 'Bring a PDF, EPUB, Word document, Markdown or plain-text manuscript. Your original is encrypted before durable storage, and you confirm every proposed section before it becomes a manuscript.'
-                : 'Paste writing you already have and confirm every proposed section before anything becomes a manuscript. Original-file import remains held on this Writer image.'}
+                ? 'Bring a PDF, EPUB, Word document, Markdown or plain-text file. Your original is encrypted before durable storage, and you confirm every proposed part before anything is saved.'
+                : 'Paste writing you already have and confirm every proposed part before anything is saved. Original-file import remains held on this Writer image.'}
           </p>
         </div>
         {localReview ? <span className="p4r1-import-local">Local review · not retained</span> : null}
@@ -443,7 +443,7 @@ export default function P4R1ImportManuscript({
                 />
                 <span className="p4r1-import-glyph" aria-hidden="true">⇧</span>
                 <div>
-                  <b>{busy === 'reading' ? 'Reading the manuscript…' : 'Choose a manuscript or drop it here'}</b>
+                  <b>{busy === 'reading' ? 'Reading your file…' : 'Choose a file or drop it here'}</b>
                   <span>PDF · EPUB · DOCX · TXT · Markdown · up to 25 MB</span>
                 </div>
                 <button type="button" disabled={busy !== null} onClick={() => inputRef.current?.click()}>
@@ -487,7 +487,7 @@ export default function P4R1ImportManuscript({
           )}
 
           <label className="p4r1-import-field">
-            <span>Manuscript title</span>
+            <span>Title</span>
             <input value={title} onChange={(event) => setTitle(event.currentTarget.value)}
               placeholder="Title of the Work" maxLength={localReview ? undefined : 300} />
           </label>
@@ -496,7 +496,7 @@ export default function P4R1ImportManuscript({
             <textarea value={text} onChange={(event) => {
               setText(event.currentTarget.value);
               if (!filename) setSourceArrivalId(null);
-            }} rows={13} placeholder="Paste your manuscript here…" />
+            }} rows={13} placeholder="Paste your writing here…" />
             <small>{textStats.characters.toLocaleString()} characters · {textStats.words.toLocaleString()} words</small>
           </label>
 
@@ -512,9 +512,9 @@ export default function P4R1ImportManuscript({
           ) : null}
           {postureAskFor ? (
             <div className="p4r1-import-notices" role="group" aria-label="How should this session be held?" data-import-posture-ask>
-              <p>Before I take in “{postureAskFor.name}”: should this session be ordinary, so your manuscript is kept, or Sanctuary, so nothing is kept?</p>
+              <p>Before I take in “{postureAskFor.name}”: should this session be ordinary, so your writing is kept, or Sanctuary, so nothing is kept?</p>
               <p>
-                <button type="button" className="p4r1-import-primary" onClick={() => choosePosture(false)}>Ordinary — keep my manuscript</button>{' '}
+                <button type="button" className="p4r1-import-primary" onClick={() => choosePosture(false)}>Ordinary — keep my writing</button>{' '}
                 <button type="button" className="p4r1-import-back" onClick={() => choosePosture(true)}>Sanctuary — keep nothing</button>
               </p>
             </div>
@@ -524,7 +524,7 @@ export default function P4R1ImportManuscript({
           <footer className="p4r1-import-actions">
             <p>
               {localReview
-                ? 'This review session keeps the file and extracted manuscript in memory only. Closing the dedicated window clears it.'
+                ? 'This review session keeps the file and its extracted words in memory only. Closing the dedicated window clears it.'
                 : sourceIntakeReleased
                   ? 'The original is encrypted before durable storage and remains separate from the editable Working Draft. Nothing is interpreted or rewritten by MAIA during import.'
                   : 'Paste import creates an editable Working Draft only. Original-file custody remains held on this Writer image.'}
@@ -540,7 +540,7 @@ export default function P4R1ImportManuscript({
           <div className="p4r1-import-structure-head">
             <div>
               <p className="p4r1-eyebrow">Author confirmation</p>
-              <h2>{sections.length} proposed section{sections.length === 1 ? '' : 's'}</h2>
+              <h2>{sections.length} proposed part{sections.length === 1 ? '' : 's'}</h2>
               <p>Edit a heading, merge a false boundary, or cut where a heading was missed. No cut is accepted without your final gesture.</p>
             </div>
             <button type="button" disabled={busy !== null || savedManuscriptId !== null}
@@ -554,10 +554,10 @@ export default function P4R1ImportManuscript({
                   <span className="p4r1-import-section-number">{index + 1}</span>
                   {section.headingDepth ? <span className="p4r1-import-depth">H{section.headingDepth}</span> : null}
                   <input
-                    aria-label={`Section ${index + 1} heading`}
+                    aria-label={`Part ${index + 1} heading`}
                     disabled={busy !== null || savedManuscriptId !== null}
                     value={section.heading ?? ''}
-                    placeholder="Untitled section"
+                    placeholder="Untitled part"
                     onChange={(event) => {
                       const nextHeading = event.currentTarget.value;
                       setSections((current) => current.map((item, itemIndex) =>
@@ -577,7 +577,7 @@ export default function P4R1ImportManuscript({
                 <p className="p4r1-import-excerpt">{section.body.slice(0, 230)}{section.body.length > 230 ? '…' : ''}</p>
                 {splitOpen === index ? (
                   <div className="p4r1-import-cut-list">
-                    <p>Choose the authored line that should become the next section heading.</p>
+                    <p>Choose your line that should begin the next part, as its heading.</p>
                     {section.body.split('\n').map((line, lineIndex, lines) => {
                       const label = line.trim();
                       if (!label) return null;
@@ -605,12 +605,12 @@ export default function P4R1ImportManuscript({
                   ? 'Your temporary writing is ready. Open it in Write to continue.'
                   : 'Your writing and its Work were saved. Open this saved writing in Write to continue editing.'
                 : localReview
-                ? 'Open in Write creates a temporary fictional manuscript for this dedicated review window.'
-                : `This creates a new Work named “${title.trim()}” and saves the sections you confirm. We keep your original separately as Source, and we will tell you if we cannot. Nothing is read or rewritten by MAIA during import.`}
+                ? 'Open in Write creates temporary writing for this dedicated review window.'
+                : `This creates a new Work named “${title.trim()}” and saves the parts you confirm. We keep your original separately as Source, and we will tell you if we cannot. Nothing is read or rewritten by MAIA during import.`}
             </p>
             <button type="button" className="p4r1-import-primary" disabled={busy !== null || !sections.length}
               onClick={() => void save()}>
-              {busy === 'saving' ? 'Opening manuscript…' : savedManuscriptId
+              {busy === 'saving' ? 'Opening your writing…' : savedManuscriptId
                 ? localReview ? 'Open temporary writing' : 'Open saved writing'
                 : localReview ? 'Confirm and open in Write' : 'Create Work and open in Write'}
             </button>
