@@ -13,7 +13,11 @@ import {
   FORM_CHOICES, formStudioCopy, formToSave, formVocabulary, readingFrame,
 } from '../formVocabulary';
 import { StudioVocabularyProvider } from '../StudioVocabularyContext';
-import { DevelopStage, DevelopHoldings } from '@/app/dev/writers-studio-pc3-live/DevelopStage';
+import { DevelopStage, DevelopHoldings, FormControl } from '@/app/dev/writers-studio-pc3-live/DevelopStage';
+import { apiFetch } from '@/lib/http/apiBase';
+
+jest.mock('@/lib/http/apiBase', () => ({ apiFetch: jest.fn() }));
+const fetchMock = apiFetch as unknown as jest.Mock;
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 const ROOT = path.resolve(__dirname, '../../..');
@@ -119,5 +123,55 @@ describe('Develop speaks in the Work’s words', () => {
     const text = stage(null);
     expect(text).not.toMatch(/\bchapters?\b/i);
     expect(text).toMatch(/Your piece/);
+  });
+});
+
+describe('the writer can change what the Work is becoming, later', () => {
+  let host: HTMLDivElement; let root: Root;
+  beforeEach(() => { fetchMock.mockReset(); host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
+  afterEach(() => { act(() => root.unmount()); host.remove(); });
+  const button = (label: string) => [...host.querySelectorAll('button')].find((b) => b.textContent === label)!;
+  const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+  test('a Work with no form is asked, and the writer’s click saves exactly their choice', async () => {
+    fetchMock.mockResolvedValue({ ok: true });
+    const onSaved = jest.fn();
+    act(() => root.render(React.createElement(FormControl, { workId: 'w1', form: null, onSaved })));
+    expect(host.textContent).toMatch(/What is it becoming\?/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    act(() => button('Poem').click());
+    await flush();
+    expect(fetchMock).toHaveBeenCalledWith('/api/sovereign/living-works/w1', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ form: 'poem' }) }));
+    expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+
+  test('a named form shows with Change, and can be cleared back to neutral', async () => {
+    fetchMock.mockResolvedValue({ ok: true });
+    const onSaved = jest.fn();
+    act(() => root.render(React.createElement(FormControl, { workId: 'w1', form: 'essay', onSaved })));
+    expect(host.textContent).toMatch(/^Essay/);
+    act(() => button('Change').click());
+    act(() => button('Leave it unnamed').click());
+    await flush();
+    expect(fetchMock).toHaveBeenCalledWith('/api/sovereign/living-works/w1', expect.objectContaining({ body: JSON.stringify({ form: null }) }));
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  test('when saving fails, the writer is told and nothing is treated as changed', async () => {
+    fetchMock.mockResolvedValue({ ok: false });
+    const onSaved = jest.fn();
+    act(() => root.render(React.createElement(FormControl, { workId: 'w1', form: null, onSaved })));
+    act(() => button('Song').click());
+    await flush();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(host.textContent).toMatch(/could not be saved just now\. Nothing changed\./);
+  });
+
+  test('a Studio program’s Work offers no form control: the program’s own words outrank it', () => {
+    act(() => root.render(React.createElement(DevelopHoldings, { manuscriptId: 'm', workId: 'w', kind: null, onKind: jest.fn() } as any)));
+    expect(host.querySelector('[data-develop-form]')).toBeNull();
+    const view = read('app/dev/writers-studio-pc3-live/P4R1DevelopView.tsx');
+    expect(view).toMatch(/onFormSaved=\{props\.work\.studioPath \? undefined : props\.onWorkFormSaved\}/);
+    expect(read('app/dev/writers-studio-pc3-live/P4R1DevelopController.tsx')).toMatch(/onWorkFormSaved=\{\(\) => void reloadWorks\(\)\}/);
   });
 });

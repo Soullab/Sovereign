@@ -21,6 +21,8 @@ import SettledDecisions from '@/app/writers-studio/canvas/SettledDecisions';
 import { useEffect, useRef, useState } from 'react';
 import { excerptOf, markTerm } from '@/lib/writersStudio/recurringThreads';
 import { setWorkKindClient } from '@/lib/writersStudio/workKindClient';
+import { setWorkFormClient } from '@/lib/writersStudio/workFormClient';
+import { FORM_CHOICES, FORM_MAX_CHARS, FORM_OWN_WORD_LABEL, FORM_QUESTION, capitalise, formToSave, type FormChoice } from '@/lib/writersStudio/formVocabulary';
 import type { WorkKind } from '@/lib/writersStudio/workKindShared';
 import { useStudioVocabulary } from '@/lib/writersStudio/StudioVocabularyContext';
 import type { StoredPlan, StepEvent } from '@/lib/writersStudio/developmentPlanStore';
@@ -601,17 +603,74 @@ function KindControl(props: { workId: string; kind: WorkKind | null | undefined;
   );
 }
 
+/** What the Work is becoming, changeable any time (founder 2026-11-20). The writer's own word, saved as `living_works.form`; the
+ *  Studio's words and what MAIA is told follow it. ⛔ Never inferred: only the writer's click or their own typed word saves a form. */
+export function FormControl(props: { workId: string; form: string | null; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const [own, setOwn] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const save = async (form: string | null) => {
+    setBusy(true); setFailed(false);
+    const ok = await setWorkFormClient(props.workId, form);
+    setBusy(false);
+    if (!ok) { setFailed(true); return; }
+    setOpen(false); setOwnOpen(false); setOwn('');
+    props.onSaved();
+  };
+  const btn = { background: 'transparent', border: '1px solid currentColor', borderRadius: 6, padding: '2px 8px', font: 'inherit', cursor: 'pointer', opacity: busy ? 0.5 : 1 } as const;
+  const current = props.form?.trim() ? props.form.trim() : null;
+  return (
+    <div data-develop-form="true" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 10 }}>
+      {current && !open ? (
+        <>
+          <span>{capitalise(current)}</span>
+          <button type="button" disabled={busy} style={btn} onClick={() => setOpen(true)}>Change</button>
+        </>
+      ) : (
+        <>
+          <span style={{ width: '100%', opacity: .8 }}>{FORM_QUESTION} MAIA will talk about it that way.</span>
+          {FORM_CHOICES.map((f) => (
+            <button key={f.id} type="button" disabled={busy} style={btn} aria-pressed={current === f.id}
+              onClick={() => void save(formToSave(f.id as FormChoice, ''))}>{f.label}</button>
+          ))}
+          {ownOpen ? (
+            <form style={{ display: 'flex', gap: 6, width: '100%' }} onSubmit={(e) => { e.preventDefault(); const w = formToSave(null, own); if (w) void save(w); }}>
+              <input aria-label={FORM_OWN_WORD_LABEL} value={own} maxLength={FORM_MAX_CHARS} onChange={(e) => setOwn(e.target.value)} autoFocus
+                style={{ flex: 1, font: 'inherit', padding: '2px 6px' }} />
+              <button type="submit" disabled={busy || !own.trim()} style={btn}>Save</button>
+            </form>
+          ) : (
+            <button type="button" disabled={busy} style={btn} onClick={() => setOwnOpen(true)}>{FORM_OWN_WORD_LABEL}</button>
+          )}
+          {current ? (
+            <>
+              <button type="button" disabled={busy} style={btn} onClick={() => void save(null)}>Leave it unnamed</button>
+              <button type="button" disabled={busy} style={btn} onClick={() => { setOpen(false); setOwnOpen(false); }}>Keep {capitalise(current)}</button>
+            </>
+          ) : null}
+        </>
+      )}
+      {failed ? <span role="status">That could not be saved just now. Nothing changed.</span> : null}
+    </div>
+  );
+}
+
 /** Behind the stage's one quiet "More" control: the book's kind, what MAIA may read, and what the writer has settled. (What she read for her
  *  last answer is NOT here: it stays visible beside the conversation, in `DevelopCompanion`.) */
 export function DevelopHoldings(props: {
   manuscriptId: string; workId: string;
   kind: WorkKind | null | undefined; onKind: (k: WorkKind | null) => void;
+  /** The Work's form and what to do once a new one is saved; absent for a Studio program, whose own words outrank a form. */
+  form?: string | null; onFormSaved?: () => void;
 }) {
   const v = useStudioVocabulary();
   return (
     <div data-develop-holdings="true" style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 2px', fontSize: 13 }}>
       <div data-develop-place="kind">
         <div style={{ fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', opacity: .7, marginBottom: 6 }}>{v.railHeading}</div>
+        {props.onFormSaved ? <FormControl workId={props.workId} form={props.form ?? null} onSaved={props.onFormSaved} /> : null}
         <KindControl workId={props.workId} kind={props.kind} onKind={props.onKind} />
       </div>
       <div data-develop-place="reading">

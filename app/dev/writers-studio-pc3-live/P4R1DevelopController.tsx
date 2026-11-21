@@ -1739,6 +1739,7 @@ export default function P4R1DevelopController() {
       declareError={declareError}
       onAddToWork={(id) => void addToWork(id)}
       onMakeWork={(title) => void makeWork(title)}
+      onWorkFormSaved={() => void reloadWorks()}
       workTitle={workTitle}
       appearance={appearance}
       field={field}

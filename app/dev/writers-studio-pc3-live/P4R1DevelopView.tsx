@@ -189,6 +189,8 @@ export interface P4R1DevelopViewProps {
   declareError: string | null;
   onAddToWork: (workId: string) => void;
   onMakeWork: (title: string) => void;
+  /** After the writer changes what the Work is becoming: re-read the Work so the Studio's words follow. */
+  onWorkFormSaved?: () => void;
   workTitle: string;
   appearance: Appearance;
   field: DevelopField;
@@ -3469,7 +3471,8 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
       onOpenEditorialPass={() => { setLeftStage(true); revealStudioPlace('editorial-pass'); }}
       reading={stageReading}
       onReadChapter={props.chapterNeedsCheckpoint ? props.onCheckpointAndReadChapter : props.onReadChapter}
-      holdings={<DevelopHoldings manuscriptId={props.manuscriptId} workId={props.work.id} kind={workKind} onKind={setWorkKind} />}
+      holdings={<DevelopHoldings manuscriptId={props.manuscriptId} workId={props.work.id} kind={workKind} onKind={setWorkKind}
+        form={props.work.form ?? null} onFormSaved={props.work.studioPath ? undefined : props.onWorkFormSaved} />}
     />
   ) : null;
   /* ONE SURFACE (relational architecture step 3; founder P0 direction 2026-11-11: "a lens page that removes the manuscript does not
