@@ -41,7 +41,7 @@ createRoot(document.getElementById('app')).render(
   const natureDir = path.join(repo, 'public/media/dev-private/nature');
   const server = http.createServer((req, res) => {
     // N1 founder listening (#1979): in --serve mode only, the git-ignored private nature loops, WAV only, on 127.0.0.1.
-    const nature = /^\/media\/dev-private\/nature\/([a-z]+)\.wav$/.exec(req.url.split('?')[0]);
+    const nature = /^\/media\/dev-private\/nature\/([a-z]+(?:-[a-z]+)?)\.wav$/.exec(req.url.split('?')[0]);
     if (serveAt && nature) {
       const w = path.join(natureDir, `${nature[1]}.wav`);
       if (!fs.existsSync(w)) { res.writeHead(404); return res.end(); }

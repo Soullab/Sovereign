@@ -23,9 +23,15 @@ export type TickSpec = { kind: 'click' | 'pluck' | 'soft'; bpm: number; gain: nu
 // gain is above zero and its file can be loaded, so a missing recording leaves the synthesized sound alone.
 export type RecordedLayerId = 'night' | 'forest' | 'wind' | 'waves' | 'rain' | 'birds' | 'trees';
 export type RecordedMix = Partial<Record<RecordedLayerId, number>>;
+export type WeaveMomentId = 'weave-thrush' | 'weave-gull' | 'weave-chorus';
+/** Weave moments (founder, 2026-11-21, #1979 R5.7 Living Weave: sounds that are "just audible enough to be heard but
+ * fade in and out like a dreamscape", in "connected but surprising timing"). Nature first; voices only once cleared. */
+export const NATURE_WEAVE_MOMENTS: readonly WeaveMomentId[] = ['weave-thrush', 'weave-gull', 'weave-chorus'];
 export type SoundscapeSpec = {
   world: FocusMusicalWorld;
   recorded: RecordedMix | null;
+  /** Short real recordings woven in now and then, at the edge of hearing. Absent where a world has none. */
+  weave?: readonly WeaveMomentId[] | null;
   root: number;
   voices: VoiceSpec[];
   lowpassHz: number;
@@ -131,6 +137,7 @@ export function focusSoundscapeSpec(input: SoundscapeInput): SoundscapeSpec {
   return {
     world: input.world,
     recorded: input.world === 'nature' ? natureMix(input, verbal) : null,
+    weave: input.world === 'nature' ? NATURE_WEAVE_MOMENTS : null,
     root: palette.root,
     voices: [...palette.voices.slice(0, need.voices), ...(need.extra ? [need.extra] : []), v(6, 'sine', round(stim.shimmer * NEED_SHIMMER[input.need], 4), 0, 0)].map(voice => ({ ...voice })),
     lowpassHz: round(clamp(palette.lowpass * need.lp * stim.lp * taskLp, 300, 5000), 1),

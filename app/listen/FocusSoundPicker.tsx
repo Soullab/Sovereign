@@ -21,6 +21,15 @@ function recordedLayersLine(layers: Partial<Record<string, 'loading' | 'recorded
   return `${parts.join(' · ')}.`;
 }
 
+const WEAVE_NAMES: Record<string, string> = { 'weave-thrush': 'a thrush', 'weave-gull': 'a gull on the shore', 'weave-chorus': 'a dawn chorus' };
+// Names only the woven moments that are really there.
+function weaveLine(moments: readonly string[]): string {
+  const names = moments.map(id => WEAVE_NAMES[id] ?? id);
+  if (names.length === 0) return 'Weave: no recorded moments are available yet, so nothing is woven in.';
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`;
+  return `Now and then ${list} drifts in at the edge of hearing (real recordings), and away again.`;
+}
+
 export default function FocusSoundPicker() {
   const transport = usePersistentListening();
   const [message, setMessage] = useState('');
@@ -99,6 +108,14 @@ export default function FocusSoundPicker() {
               onChange={event => transport.setNatureRecordings(Number(event.target.value))} />
             <output>{transport.natureRecordings === 0 ? 'Off' : `${transport.natureRecordings}%`}</output>
           </label>
+          <label className={styles.focusSoundLevel} data-focus-weave="true">
+            <span>Weave</span>
+            <input aria-label="Weave amount" type="range" min="0" max="100" step="1" value={transport.weave}
+              aria-valuetext={transport.weave === 0 ? 'Off' : `${transport.weave}%`}
+              onChange={event => transport.setWeave(Number(event.target.value))} />
+            <output>{transport.weave === 0 ? 'Off' : `${transport.weave}%`}</output>
+          </label>
+          <p className={styles.focusExplanation} data-focus-weave-line="true">{weaveLine(transport.weaveMoments)}</p>
           <p className={styles.focusExplanation} data-focus-recorded-layers="true">{recordedLayersLine(transport.recordedLayers)}</p>
         </>
       )}

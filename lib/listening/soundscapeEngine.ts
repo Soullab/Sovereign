@@ -4,10 +4,10 @@
 import { soundscapeNeedsRebuild } from './focusSoundscape';
 import { GENERATED_OUTPUT_SCALE, ORIGINAL_OUTPUT_SCALE, TONE_OUTPUT_SCALE } from './listeningLevel';
 import { TONE_VOICE_GAIN, toneEffectiveLevel } from './toneLab';
-import type { RecordedLayerId, SoundscapeSpec, TickSpec } from './focusSoundscape';
+import type { RecordedLayerId, SoundscapeSpec, TickSpec, WeaveMomentId } from './focusSoundscape';
 
 /** Loads one recorded loop. Returns null when it is unavailable; the soundscape then plays without it. */
-export type RecordedLoader = (id: RecordedLayerId) => Promise<AudioBuffer | null>;
+export type RecordedLoader = (id: RecordedLayerId | WeaveMomentId) => Promise<AudioBuffer | null>;
 
 export type SoundscapeHandle = {
   context: BaseAudioContext;
@@ -26,6 +26,10 @@ export type SoundscapeHandle = {
   setOvertoneBusGain(gain: number): void;
   /** The member's Nature recordings amount (0–1) for every recorded layer; 0 is synthesis alone. */
   setRecordedAmount(amount: number): void;
+  /** The member's Weave amount (0–1): how present the woven moments are; 0 weaves nothing. */
+  setWeaveAmount(amount: number): void;
+  /** Which weave moments are real recordings this sound can draw on. */
+  weaveMoments(): WeaveMomentId[];
   /** Which recorded layers this sound asked for, and whether each is a real recording, loading or missing. */
   recordedLayers(): Partial<Record<RecordedLayerId, RecordedLayerState>>;
   onRecordedLayers(listener: (state: Partial<Record<RecordedLayerId, RecordedLayerState>>) => void): () => void;
@@ -34,34 +38,39 @@ export type SoundscapeHandle = {
 
 export type RecordedLayerState = 'loading' | 'recorded' | 'missing';
 
-/** Crossfade length for a recorded loop's seam, in seconds (at most a third of the clip). */
-export const RECORDED_LOOP_CROSSFADE_SEC = 1.0;
+/** Longest crossfade between two recorded segments, in seconds (a sixth of a short clip at most). */
+export const RECORDED_SEGMENT_FADE_MAX_SEC = 3;
+const PHI = 0.6180339887498949;
+const frac = (x: number) => x - Math.floor(x);
 
-/** One channel made loopable: the last `fade` samples are faded (equal power) into the first, and the result is `fade`
- * samples shorter. Its last sample runs straight on into its first, so the loop has no seam to click on. */
-export function seamlessLoopChannel(data: Float32Array, fade: number): Float32Array {
-  const n = data.length;
-  const f = Math.min(Math.floor(fade), Math.floor(n / 3));
-  if (f < 2) return data.slice();
-  const out = new Float32Array(n - f);
-  for (let i = 0; i < f; i++) {
-    const x = (i / f) * (Math.PI / 2);
-    out[i] = data[i] * Math.sin(x) + data[n - f + i] * Math.cos(x);
-  }
-  out.set(data.subarray(f, n - f), f);
-  return out;
+/** The k-th segment a recorded layer plays (founder, 2026-11-21: the gull in a short loop was "a bit too regular which
+ * makes it sound more like a loop"; then "more immersive and longer flows"). Instead of one loop repeating on a fixed
+ * cycle, a layer plays overlapping segments from changing points of the recording, of changing lengths (40–85% of
+ * it), each crossfaded (equal power) into the next. The sequence is a golden-ratio walk: irregular, never random, so
+ * the same choices always give the same sound. */
+export function recordedSegment(k: number, lengthSec: number): { offset: number; duration: number; fade: number } {
+  const fade = Math.min(RECORDED_SEGMENT_FADE_MAX_SEC, lengthSec / 6);
+  const duration = Math.min(lengthSec, Math.max(2 * fade + 0.5, lengthSec * (0.4 + 0.45 * frac((k + 1) * PHI * PHI))));
+  const offset = frac((k + 1) * PHI) * Math.max(0, lengthSec - duration);
+  return { offset, duration, fade };
 }
 
-export function seamlessLoopBuffer(context: BaseAudioContext, buffer: AudioBuffer): AudioBuffer {
-  const fade = Math.round(RECORDED_LOOP_CROSSFADE_SEC * buffer.sampleRate);
-  const first = seamlessLoopChannel(buffer.getChannelData(0), fade);
-  if (first.length === buffer.length) return buffer;
-  const out = context.createBuffer(buffer.numberOfChannels, first.length, buffer.sampleRate);
-  for (let c = 0; c < buffer.numberOfChannels; c++) {
-    out.getChannelData(c).set(c === 0 ? first : seamlessLoopChannel(buffer.getChannelData(c), fade));
-  }
-  return out;
+/** The k-th woven moment (see SoundscapeSpec.weave). Gaps of 20–60 s follow a golden-ratio walk, so the timing feels
+ * related but the ear cannot settle on a pattern, and it never locks to the music's pulse. The same choices always
+ * give the same weave. Fades take 35% of the moment each way; it plays slightly slowed (0.88–1.0) and placed at a
+ * changing point in the stereo field, sent mostly into a soft distance, like something half-remembered. */
+export const WEAVE_FIRST_SEC = 24;
+export const WEAVE_PEAK = 0.3; // at Weave 100%: about 10 dB under a recorded layer at its usual mix (0.4–0.8); 50% is the default
+export function weaveMoment(k: number, count: number, previous = -1): { gapSec: number; index: number; rate: number; pan: number } {
+  const gapSec = k === 0 ? WEAVE_FIRST_SEC : 20 + 40 * frac((k + 1) * PHI * PHI);
+  let index = Math.floor(frac((k + 1) * PHI * 3) * count);
+  if (count > 1 && index === previous) index = (index + 1) % count; // never the same moment twice running
+  return { gapSec, index, rate: 0.88 + 0.12 * frac((k + 1) * PHI * 5), pan: -0.6 + 1.2 * frac((k + 1) * PHI * 7) };
 }
+
+const CURVE_POINTS = 64;
+const FADE_IN_CURVE = Float32Array.from({ length: CURVE_POINTS }, (_, i) => Math.sin((i / (CURVE_POINTS - 1)) * Math.PI / 2));
+const FADE_OUT_CURVE = Float32Array.from({ length: CURVE_POINTS }, (_, i) => Math.cos((i / (CURVE_POINTS - 1)) * Math.PI / 2));
 
 const SCALE = GENERATED_OUTPUT_SCALE; // same output scale as the original studies; the member's volume multiplies it
 const PLUCK_RATIOS = [1, 1.125, 1.5, 1.6667, 2, 1.5, 1.125, 1];
@@ -91,7 +100,7 @@ function noiseBuffer(context: BaseAudioContext, seconds = 2): AudioBuffer {
 
 export function buildSoundscape(
   context: BaseAudioContext, destination: AudioNode, initial: SoundscapeSpec, level: number, loadRecorded?: RecordedLoader,
-  overtoneBusGain: number = SOUNDSCAPE_OVERTONE_BUS_GAIN, recordedAmount = 1,
+  overtoneBusGain: number = SOUNDSCAPE_OVERTONE_BUS_GAIN, recordedAmount = 1, weaveAmount = 0.5,
 ): SoundscapeHandle {
   let spec = initial;
   const t0 = context.currentTime;
@@ -232,7 +241,11 @@ export function buildSoundscape(
 
   // Recorded nature layers: looped real recordings that follow the spec's mix. Everything goes through the master,
   // so the member's volume and the fade-in apply to them exactly as to the synthesized sound.
-  const layers = new Map<string, { gain: GainNode; source: AudioBufferSourceNode | null; loading: boolean }>();
+  const layers = new Map<string, { gain: GainNode; source: boolean; loading: boolean; player?: (to: number) => void }>();
+  const playing = new Set<AudioBufferSourceNode>();
+  // How far ahead recorded segments are scheduled: a few seconds live (the timer tops it up), two minutes offline.
+  const isOffline = typeof OfflineAudioContext !== 'undefined' && context instanceof OfflineAudioContext;
+  const recordedHorizon = isOffline ? 120 : 8;
   // The member's "Nature recordings" amount (N1, #1979): one bus for every recorded layer, so 0 is synthesis alone.
   const recordingsBus = context.createGain(); recordingsBus.gain.value = Math.max(0, recordedAmount); recordingsBus.connect(master);
   const recordedState: Partial<Record<RecordedLayerId, RecordedLayerState>> = {};
@@ -254,7 +267,7 @@ export function buildSoundscape(
     for (const id of Object.keys(wanted) as RecordedLayerId[]) {
       if (!layers.has(id)) {
         const gain = context.createGain(); gain.gain.value = 0; gain.connect(recordingsBus);
-        layers.set(id, { gain, source: null, loading: false });
+        layers.set(id, { gain, source: false, loading: false });
       }
     }
     layers.forEach((layer, id) => {
@@ -267,17 +280,75 @@ export function buildSoundscape(
         void loadRecorded(id as RecordedLayerId).then(buffer => {
           if (disposed) return;
           if (!buffer) { setRecordedState(id as RecordedLayerId, 'missing'); return; }
-          const source = context.createBufferSource();
-          // Short field clips would click or audibly restart at the seam: loop a crossfaded copy instead.
-          source.buffer = seamlessLoopBuffer(context, buffer); source.loop = true;
-          source.connect(layer.gain); source.start(context.currentTime);
-          layer.source = source; extras.push(source);
+          // Overlapping, changing segments instead of one fixed loop (see recordedSegment).
+          let k = 0; let next = context.currentTime;
+          const player = (to: number) => {
+            while (next < to) {
+              const seg = recordedSegment(k++, buffer.duration);
+              const source = context.createBufferSource(); source.buffer = buffer;
+              const envelope = context.createGain();
+              envelope.gain.setValueCurveAtTime(FADE_IN_CURVE, next, seg.fade);
+              envelope.gain.setValueCurveAtTime(FADE_OUT_CURVE, next + seg.duration - seg.fade, seg.fade);
+              source.connect(envelope); envelope.connect(layer.gain);
+              source.start(next, seg.offset, seg.duration);
+              playing.add(source);
+              source.onended = () => { playing.delete(source); try { source.disconnect(); envelope.disconnect(); } catch { /* gone */ } };
+              next += seg.duration - seg.fade;
+            }
+          };
+          layer.player = player;
+          player(context.currentTime + recordedHorizon);
+          layer.source = true;
           setRecordedState(id as RecordedLayerId, 'recorded');
         }).catch(() => { if (!disposed) setRecordedState(id as RecordedLayerId, 'missing'); }); // the rest plays unchanged
       }
     });
   };
   applyRecorded(spec.recorded);
+
+  // Weave moments: a sparse layer at the edge of hearing (see weaveMoment). Its own bus, so the member's Weave amount
+  // sets how present it is; it still ends in the one master, so the Level governs it.
+  const weaveBus = context.createGain(); weaveBus.gain.value = Math.max(0, weaveAmount); weaveBus.connect(master);
+  const weaveBuffers = new Map<WeaveMomentId, AudioBuffer>();
+  let weavePlayer: ((to: number) => void) | null = null;
+  if (loadRecorded && spec.weave && spec.weave.length > 0) {
+    // A soft, generated distance: decaying deterministic noise as a 3.5 s impulse response.
+    const distance = typeof context.createConvolver === 'function' ? context.createConvolver() : null;
+    if (distance) {
+      const len = Math.floor(context.sampleRate * 3.5); const ir = context.createBuffer(2, len, context.sampleRate);
+      for (let c = 0; c < 2; c++) {
+        const d = ir.getChannelData(c); let seed = 0x2545f491 + c;
+        for (let i = 0; i < len; i++) { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; d[i] = (((seed >>> 0) / 0xffffffff) * 2 - 1) * Math.exp(-i / (context.sampleRate * 0.9)); }
+      }
+      distance.buffer = ir; distance.connect(weaveBus);
+    }
+    const ids = [...spec.weave];
+    void Promise.all(ids.map(id => loadRecorded(id).then(b => { if (b) weaveBuffers.set(id, b); }).catch(() => undefined))).then(() => {
+      if (disposed) return;
+      emitRecorded(); // listeners learn which weave moments are real recordings
+      if (weaveBuffers.size === 0) return;
+      const present = ids.filter(id => weaveBuffers.has(id));
+      let k = 0; let next = context.currentTime; let previous = -1;
+      weavePlayer = (to: number) => {
+        while (next + weaveMoment(k, present.length, previous).gapSec < to) {
+          const m = weaveMoment(k++, present.length, previous); next += m.gapSec; previous = m.index;
+          const buffer = weaveBuffers.get(present[m.index])!; const length = buffer.duration / m.rate; const fade = length * 0.35;
+          const source = context.createBufferSource(); source.buffer = buffer; source.playbackRate.value = m.rate;
+          const envelope = context.createGain();
+          envelope.gain.setValueCurveAtTime(FADE_IN_CURVE.map(v => v * WEAVE_PEAK / ORIGINAL_OUTPUT_SCALE), next, fade);
+          envelope.gain.setValueCurveAtTime(FADE_OUT_CURVE.map(v => v * WEAVE_PEAK / ORIGINAL_OUTPUT_SCALE), next + length - fade, fade);
+          const place = typeof context.createStereoPanner === 'function' ? context.createStereoPanner() : null;
+          source.connect(envelope);
+          const after: AudioNode = place ? (envelope.connect(place), place.pan.value = m.pan, place) : envelope;
+          const dry = context.createGain(); dry.gain.value = 0.6; after.connect(dry); dry.connect(weaveBus);
+          if (distance) after.connect(distance);
+          source.start(next); playing.add(source);
+          source.onended = () => { playing.delete(source); try { source.disconnect(); envelope.disconnect(); place?.disconnect(); dry.disconnect(); } catch { /* gone */ } };
+        }
+      };
+      weavePlayer(context.currentTime + recordedHorizon);
+    });
+  }
 
   // Events (clicks, plucks, soft blips) are deterministic: a fixed pattern, never random.
   let nextTick = t0 + 1.5;
@@ -317,7 +388,11 @@ export function buildSoundscape(
   };
   let timer: ReturnType<typeof setInterval> | null = null;
   if (typeof OfflineAudioContext === 'undefined' || !(context instanceof OfflineAudioContext)) {
-    timer = setInterval(() => scheduleTicks(context.currentTime, context.currentTime + 1.2), 400);
+    timer = setInterval(() => {
+      scheduleTicks(context.currentTime, context.currentTime + 1.2);
+      layers.forEach(layer => layer.player?.(context.currentTime + recordedHorizon));
+      weavePlayer?.(context.currentTime + recordedHorizon);
+    }, 400);
   }
 
   const gently = (param: AudioParam, value: number) => param.setTargetAtTime(value, context.currentTime, 0.4);
@@ -367,6 +442,8 @@ export function buildSoundscape(
       recordingsBus.gain.setTargetAtTime(Math.max(0, amount), context.currentTime, 0.12);
     },
     recordedLayers() { return currentRecorded(); },
+    setWeaveAmount(amount) { weaveBus.gain.setTargetAtTime(Math.max(0, amount), context.currentTime, 0.12); },
+    weaveMoments() { return [...weaveBuffers.keys()]; },
     onRecordedLayers(listener) {
       recordedListeners.add(listener);
       return () => { recordedListeners.delete(listener); };
@@ -375,7 +452,7 @@ export function buildSoundscape(
       disposed = true;
       recordedListeners.clear();
       if (timer !== null) clearInterval(timer);
-      for (const node of [...oscillators, ...overtoneOscillators, movement, drift, ...extras]) { try { node.stop(); } catch { /* already stopped */ } }
+      for (const node of [...oscillators, ...overtoneOscillators, movement, drift, ...extras, ...playing]) { try { node.stop(); } catch { /* already stopped */ } }
     },
   };
   return handle;
