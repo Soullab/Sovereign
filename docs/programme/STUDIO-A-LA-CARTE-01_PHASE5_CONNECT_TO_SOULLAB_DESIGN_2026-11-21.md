@@ -21,6 +21,20 @@ than as an obstacle.
 
 R4 settles which onboarding a crossing studio member meets. It does not settle the open questions in §7.
 
+## 1b. Ruling recorded here — R5 (founder, 2026-11-21: "Yes, adopt it")
+
+**Memory when a member steps back from Soullab: retain dormant, never erase automatically, never reactivate
+silently.**
+- **Step back:** Soullab memory becomes inaccessible to MAIA (no retrieval, no new memory). The Studio is
+  unchanged.
+- **Reconnect:** preserved memory stays dormant until the member explicitly chooses to let MAIA use it again.
+  Reconnecting alone never does it.
+- **Erase:** a separate, member-controlled action, carried out under the strict-deletion authority (#1791) and
+  offered only to the extent that deletion is actually witnessed (#1793).
+- **Restore:** no historical backup may revive erased information or a withdrawn permission.
+
+R5 settles the memory default (formerly open question §7.1). Like R4, it authorizes no implementation.
+
 ## 2. The three failure modes, and what prevents each
 
 | The member must not feel… | Because… | So the design… |
@@ -139,8 +153,8 @@ its meaning would break the Studio door. Connection is a separate fact and gets 
 
 ## 7. Open questions (recorded, not decided)
 
-1. **Memory on stepping back — the default needs a founder ruling.** *Recommended (external review, second pass,
-   2026-11-21):* **retain dormant, never erase automatically, never reactivate silently.**
+1. **Memory on stepping back — RULED (R5, §1b).** *Proposed by the external review, second pass, and adopted by the
+   founder on 2026-11-21:* **retain dormant, never erase automatically, never reactivate silently.**
    - **Step back:** Soullab memory becomes inaccessible to MAIA (no retrieval, no new memory). The Studio is
      unchanged.
    - **Reconnect:** preserved memory stays dormant. The member may choose to let MAIA use it again, by explicit
@@ -148,7 +162,7 @@ its meaning would break the Studio door. Connection is a separate fact and gets 
    - **Erase:** a separate, member-controlled action, with verified deletion under the strict-deletion authority
      (#1791 WS-BACKUP-ERASURE-01) and the deletion-safe backup work (#1793 WS-BACKUP-ERASURE-02).
    - **Restore:** no historical backup may revive erased information or a withdrawn permission.
-   Not yet ruled. ⚠️ #1793 is itself design-only and open, so "erase" can be offered only to the extent that
+   ⚠️ #1793 is itself design-only and open, so "erase" can be offered only to the extent that
    deletion is actually witnessed. The UI must not promise more than the backups can honour.
 2. **Second sign-in vs. handoff.** v1 asks the member to sign in again at soullab.life. A one-time cross-host
    handoff token is smoother but is Class A (identity/auth) and stays held until separately authorized.
@@ -196,7 +210,7 @@ The founder shared a second pass of the same review. Folded in:
 - **Reconnecting never reactivates memory use** (§4, §7.1): dormant memory needs its own explicit consent after
   reconnecting.
 - **The memory recommendation is now retain dormant, never erase automatically, never reactivate silently**
-  (§7.1). It is still awaiting the founder's ruling.
+  (§7.1). The founder adopted it as **R5** (§1b).
 
 **Production identity, reconciled.** A fresh read-only readback on 2026-11-21 shows the running `maia-sovereign`
 container reporting `GIT_COMMIT=21a628987`, matching the `maia-sovereign:current` image
