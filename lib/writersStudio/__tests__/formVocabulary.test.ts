@@ -100,7 +100,7 @@ describe('Develop speaks in the Work’s words', () => {
     { draftSectionId: 's1', heading: 'First light', body: 'First light\n\nThe gull opens the sky.', position: 0 },
     { draftSectionId: 's2', heading: '', body: 'Salt on the tongue, and the tide.', position: 1 },
   ];
-  const stage = (form: string | null) => {
+  const stage = (form: string | null, kind: string | null = null) => {
     const props = { workTitle: 'Tidewater', sections, currentId: 's1', onSelect: jest.fn(), starters: [], onStarter: jest.fn(), onOpenWrite: jest.fn(),
       reading: { status: 'idle', chapterLabel: 'First light' }, onReadChapter: jest.fn(),
       onMoreWays: jest.fn(), lastRead: null, plan: null, planBusy: false, planNote: null, onMakePlan: jest.fn(), onEditPlan: jest.fn(),
@@ -108,18 +108,31 @@ describe('Develop speaks in the Work’s words', () => {
     act(() => root.render(React.createElement(StudioVocabularyProvider, { value: formVocabulary(form) },
       React.createElement(React.Fragment, null,
         React.createElement(DevelopStage, props as any),
-        React.createElement(DevelopHoldings, { manuscriptId: 'm', workId: 'w', kind: null, onKind: jest.fn() } as any)))));
+        React.createElement(DevelopHoldings, { manuscriptId: 'm', workId: 'w', kind, onKind: jest.fn() } as any)))));
     return host.textContent ?? '';
   };
 
   test('a poem’s Develop stage says nothing about chapters or books', () => {
     const text = stage('poem');
     // “A helper’s book” is the name of a genre the writer may declare (Fiction / Nonfiction / A helper’s book), not the Studio’s word.
-    expect(text.replace('A helper’s book', '')).not.toMatch(BOOKISH);
+    expect(text).not.toMatch(BOOKISH);
     expect(text).toMatch(/Your poem/);
-    expect(text).toMatch(/What kind of poem is this\?/);
     // Walk 2026-11-21: the stage toolbar's read button still said "Read this chapter with MAIA" for a poem.
     expect(text).toMatch(/Read this stanza with MAIA/);
+  });
+
+  test('poems and songs are not asked Fiction / Nonfiction / A helper’s book (founder 2026-11-21: “Hide it for those”)', () => {
+    for (const form of ['poem', 'song', 'collection of poems']) {
+      const text = stage(form);
+      expect(text).not.toMatch(/What kind of/);
+      expect(text).not.toMatch(/Nonfiction|A helper’s book/);
+    }
+    // Other forms, and a Work with no form, are still asked.
+    for (const form of ['essay', 'story', 'play', 'book', null]) expect(stage(form)).toMatch(/What kind of .+ is this\?/);
+    // A kind already saved on a poem stays visible and changeable: nothing that shapes MAIA's questions is hidden.
+    const saved = stage('poem', 'fiction');
+    expect(saved).toMatch(/Fiction/);
+    expect(saved).toMatch(/Change/);
   });
 
   test('an untitled place is named as Write names it, never “Section 2”', () => {

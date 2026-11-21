@@ -572,6 +572,9 @@ export function DevelopCompanion(props: { conversation: ReactNode; lastRead: rea
 
 const KIND_LABEL: Record<WorkKind, string> = { fiction: 'Fiction', nonfiction: 'Nonfiction', practitioner: 'A helper’s book' };
 
+/** Forms whose writer is not asked fiction / nonfiction / a helper's book. */
+export const KIND_NOT_ASKED: ReadonlySet<string> = new Set(['poem', 'collection', 'song']);
+
 /** The writer says what kind of book this is. One quiet line; "Not now" is always there; nothing is guessed from the text. */
 function KindControl(props: { workId: string; kind: WorkKind | null | undefined; onKind: (k: WorkKind | null) => void }) {
   const v = useStudioVocabulary();
@@ -585,6 +588,9 @@ function KindControl(props: { workId: string; kind: WorkKind | null | undefined;
   };
   const btn = { background: 'transparent', border: '1px solid currentColor', borderRadius: 6, padding: '2px 8px', font: 'inherit', cursor: 'pointer', opacity: busy ? 0.5 : 1 } as const;
   if (props.kind === undefined) return <span style={{ opacity: .75 }}>Could not check this just now.</span>;
+  // Founder 2026-11-21 ("Hide it for those"): poems and songs are not asked fiction / nonfiction / a helper's book. A kind already
+  // saved stays visible with Change, so nothing that shapes MAIA's questions is ever hidden from the writer.
+  if (!props.kind && KIND_NOT_ASKED.has(v.kind)) return null;
   return (
     <div data-develop-kind="true" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
       {props.kind ? (
