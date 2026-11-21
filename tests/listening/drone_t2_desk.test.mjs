@@ -41,6 +41,15 @@ test('settings limits: 10–120 s, passage inside the recording and at least the
   assert.ok(drone.DRONE_SECONDS.max <= 20 * 60, 'inside the Transform 20-minute cap');
 });
 
+test('A=432 is the standard tuning reference, and it does not change the sound by itself', async () => {
+  const s = drone.defaultSettings('living');
+  assert.equal(s.tune.aRef, 432); assert.equal(s.tune.cents, 0);
+  const src = drone.droneSource(tone(2, 196), 'mine.wav');
+  const base = { ...s, duration: 10 };
+  const a = await drone.renderDrone(src, base, null), b = await drone.renderDrone(src, { ...base, tune: { cents: 0, aRef: 440 } }, null);
+  assert.equal(sha(await a.blob.arrayBuffer()), sha(await b.blob.arrayBuffer()), 'the reference alone names notes; only fine tune moves pitch');
+});
+
 test('solo is applied exactly as the lab applies it', () => {
   const s = { ...drone.defaultSettings('living'), soloLayer: 1 };
   s.layerMix = s.layerMix.map((m, i) => ({ ...m, enabled: i !== 1 })); // even a disabled layer sounds when soloed, as in the lab

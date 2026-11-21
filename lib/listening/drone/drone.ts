@@ -40,13 +40,21 @@ export function droneAmbience(audio: Audio, name: string): Ambience {
   return { data: s.data, rate: s.rate, name, seconds: s.data.length / s.rate };
 }
 
-/** The lab's opening settings (index.html defaults) for a preset. */
+/**
+ * Soullab's standard tuning reference for the Drone desk (founder, 2026-11-21: "432 should be standard").
+ * The reference only names notes and sets where Snap tunes to; with fine tune at 0 the sound is unchanged.
+ * An aesthetic standard, not a claim about what 432 Hz does to a person. A=440 stays one choice away.
+ */
+export const STANDARD_A_REF = 432 as const;
+
+/** The lab's opening settings (index.html defaults) for a preset, with Soullab's A=432 tuning reference. */
 export function defaultSettings(preset: PresetId = 'living'): DroneSettings {
   const d = engine.presets[preset].defaults;
   return {
     preset, duration: 30, stillness: d.stillness, grainMs: d.grain * 10, pitch: d.pitch, movement: d.movement, space: d.space,
     anchor: 35, loop: true, layerMix: engine.defaultLayerMix(preset), soloLayer: null, region: null,
-    field: engine.defaultField(), clean: engine.completeClean(null), level: engine.completeLevel(null), tune: engine.completeTune(null),
+    field: engine.defaultField(), clean: engine.completeClean(null), level: engine.completeLevel(null),
+    tune: { ...engine.completeTune(null), aRef: STANDARD_A_REF },
   };
 }
 

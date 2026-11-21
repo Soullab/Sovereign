@@ -10,6 +10,7 @@ principles:
   - FOUNDER LISTENING 2026-11-21 — "they are all phenomenal!"; REFINE — "we need to be able to dial into the sound field or note so that the reverb or anomalies can be dialed in" (step B); an anomaly is not a defect by default
   - AUDIO-PLATFORM-01 / SOULLAB-CONTINUITY-01 — the one persistent player, level control and output lock; the drone is rendered silently on the device and handed to that player; no second player
   - MARKETING_CLAIM_DISCIPLINE — the desk describes what it does to the sound, never what the sound will do to a person; nothing here claims an effect of vowels, drones or 432 Hz on mind or body
+  - FOUNDER DIRECTION 2026-11-21 — "432 should be standard": the desk opens at A = 432 Hz (STANDARD_A_REF), an aesthetic tuning standard, never presented as a health or consciousness claim; A = 440 stays one choice away, and the reference alone never changes the sound (only Fine tune and Snap do)
 reference_surfaces:
   - docs/design/contracts/sound-studio-tone-lab.md — the Lab's instrument that claims nothing, beside which this desk sits
   - docs/design/contracts/sound-studio-transform.md — the same member-file rule, waveform, save-as-new and provenance discipline
