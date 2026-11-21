@@ -22,6 +22,7 @@ import {
   threadsOnLivingWorkAsk,
   type AskThreadView,
 } from '@/lib/writersStudio/askClient';
+import { deliveryAfterDrop } from '@/lib/writersStudio/deliveryAfterDrop';
 import {
   resumeDecision, sendMode, threadChoiceLabel,
   type ResumeDecision, type ThreadDiscovery,
@@ -154,10 +155,15 @@ export function answerReadSentence(read: readonly { sectionId: string; label: st
   return `For this answer MAIA read your saved ${names.length === 1 ? 'section' : 'sections'}: ${names.join(', ')}.`;
 }
 
+/* WS-F1: the connection dropped, the server was asked, and the question HAD arrived. Said once, quietly, above her answer. */
+const DELIVERED_AFTER_DROP = 'The connection dropped, but your question did reach her. Her answer is above.';
 /* Review (2026-11-09): a failed Teach me never touched the box, so it must not say the question is still there. */
 const TEACH_NOT_ANSWERED = 'MAIA couldn’t answer the Teach me this time. Nothing you wrote was changed; press it again when you’re ready.';
 const REFUSAL_SAYS: Record<string, string> = {
+  /* WS-F1: said ONLY after the server was re-read and the question is not there (deliveryAfterDrop → not_arrived). */
   unreachable: 'That didn’t reach her. Nothing was lost — try again.',
+  /* WS-F1: the connection dropped and the server could not be asked, so whether it arrived is not known. Never claimed either way. */
+  unconfirmed: 'The connection dropped before her reply came back, so it isn’t known whether that reached her. Your question is still in the box. Reopen this conversation to see whether she answered before you send it again.',
   empty_answer: 'MAIA returned nothing. Try asking again.',
   /* WS-ASK-ANSWER-TRUNCATION: she ran out of room before finishing, so the cut answer was not kept or shown. */
   answer_incomplete: 'MAIA ran out of room before she finished, so that answer wasn’t kept. Nothing you wrote was lost — ask again, or ask about a narrower part of the book.',
@@ -338,6 +344,8 @@ function ScopedWorkConversation({
   const [presentationNotice, setPresentationNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
+  /* WS-F1: set when a dropped connection is checked and the question HAD reached her. */
+  const [deliveryNote, setDeliveryNote] = useState<string | null>(null);
   const [correctingTurn, setCorrectingTurn] = useState<number | null>(null);
   const [correctionKind, setCorrectionKind] = useState<WriterCorrectionKind>('interpretation_rejection');
   const [correctionDraft, setCorrectionDraft] = useState('');
@@ -511,9 +519,31 @@ function ScopedWorkConversation({
 
     const submittedRevision = draftRevisionRef.current;
     const gen = conversationGenRef.current;
+    const turnsBefore = thread?.turns.length ?? 0;
+    const knownThreadId = mode.kind === 'resume' ? mode.threadId : null;
+    /* WS-F1: a dropped connection is ambiguous. Ask the server before saying anything; never claim it did not arrive unless it did not. */
+    const afterDrop = async (serverThreadId?: string) => {
+      if (gen !== conversationGenRef.current) return;   // the conversation on screen is no longer the one this send belonged to
+      // G4 isolation: a refusal that names a conversation adopts it AT ONCE (a not-kept exchange is cleared now, not after a load).
+      if (serverThreadId) void adopt(serverThreadId);
+      const checkGen = conversationGenRef.current;
+      const id = serverThreadId ?? knownThreadId;
+      const t = id ? await (manuscriptId ? loadThread(manuscriptId, id) : loadLivingWorkAskThread(work.id, id)).catch(() => null) : null;
+      if (checkGen !== conversationGenRef.current) return;
+      const delivery = id ? deliveryAfterDrop(id === knownThreadId ? turnsBefore : 0, t, question) : 'unknown';
+      if (delivery === 'arrived' && id && t) {
+        setThreadId(id);
+        setThread(t);
+        if (!teach) setDraft((current) => draftRevisionRef.current === submittedRevision ? '' : current);
+        setDeliveryNote(DELIVERED_AFTER_DROP);
+        return;
+      }
+      setRefusal(teach ? TEACH_NOT_ANSWERED : delivery === 'not_arrived' ? REFUSAL_SAYS.unreachable : REFUSAL_SAYS.unconfirmed);
+    };
     inFlightRef.current = true;
     setReorientationOffered(false);
     setRefusal(null);
+    setDeliveryNote(null);
     setPending(question);
     try {
       const r = manuscriptId
@@ -559,12 +589,14 @@ function ScopedWorkConversation({
         if (onRead && manuscriptId) onRead(r.read ?? []);
         return;
       }
+      // A transport failure (the client's 'unreachable') is ambiguous: checked against the server, never assumed (WS-F1).
+      if (r.refusal === 'unreachable') { await afterDrop(r.threadId); return; }
       // Refusals must retain literal text and any server-returned thread id.
       if (r.threadId) { setThreadId(r.threadId); void adopt(r.threadId); }
       setRefusal(teach ? TEACH_NOT_ANSWERED : REFUSAL_SAYS[r.refusal] ?? REFUSAL_SAYS.not_answered);
     } catch {
-      // A transport error is an ambiguous delivery, never an automatic retry.
-      setRefusal(teach ? TEACH_NOT_ANSWERED : REFUSAL_SAYS.unreachable);
+      // A transport error is an ambiguous delivery, never an automatic retry: checked against the server, never assumed (WS-F1).
+      await afterDrop();
     } finally {
       inFlightRef.current = false;
       setPending(null);
@@ -1018,6 +1050,11 @@ function ScopedWorkConversation({
               border: '1px solid color-mix(in srgb, #c0392b 55%, transparent)', background: 'color-mix(in srgb, #c0392b 10%, transparent)' }}>
             <StudioText role="metadata" as="span">{refusal}</StudioText>
           </div>
+        )}
+        {deliveryNote && !refusal && (
+          <p role="status" data-maia-delivery-note="true" style={{ margin: `${SPACE.snug}px 0` }}>
+            <StudioText role="metadata" as="span">{deliveryNote}</StudioText>
+          </p>
         )}
         <div ref={endRef} />
       </div>
