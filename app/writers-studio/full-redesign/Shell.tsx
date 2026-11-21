@@ -363,6 +363,14 @@ export function Shell(props: ShellProps) {
       <div className={oneRoom ? 'fr-room fr-room-single' : 'fr-room'}>
         {oneRoom || canvas ? null : (
           <aside className="fr-region fr-panel fr-manuscript" data-region="manuscript" aria-label="Manuscript" aria-hidden={!leftVisible}>
+            {/* WS-COLUMNS (founder, 2026-11-21: "They should be expandable/collapsible!"): the column itself carries its control.
+                Same state as Layout's "‹ Manuscript"; nothing new is stored. */}
+            {hasLeft && leftVisible ? (
+              <button type="button" className="fr-collapse fr-collapse-left" data-column-collapse="manuscript"
+                aria-label="Hide manuscript panel" title="Hide the manuscript list" onClick={() => setLeftExpanded(false)}>
+                <span aria-hidden="true">‹</span>
+              </button>
+            ) : null}
             {props.manuscript}
           </aside>
         )}
@@ -371,10 +379,29 @@ export function Shell(props: ShellProps) {
         </main>
         {oneRoom || props.maia === undefined ? null : (
           <aside className="fr-region fr-panel fr-maia" data-region="maia" aria-label="MAIA" aria-hidden={!rightVisible}>
+            {hasRight && rightVisible ? (
+              <button type="button" className="fr-collapse fr-collapse-right" data-column-collapse="maia"
+                aria-label="Hide MAIA panel" title="Hide MAIA's column" onClick={() => setRightExpanded(false)}>
+                <span aria-hidden="true">›</span>
+              </button>
+            ) : null}
             {props.maiaAbove ? <div className="fr-maia-above">{props.maiaAbove}</div> : null}
             {props.maia}
           </aside>
         )}
+        {/* WS-COLUMNS: a hidden column leaves a visible way back at its edge. */}
+        {!oneRoom && !canvas && hasLeft && !leftVisible ? (
+          <button type="button" className="fr-reopen fr-reopen-left" data-column-reopen="manuscript"
+            aria-label="Show manuscript panel" onClick={() => setLeftExpanded(true)}>
+            <span aria-hidden="true">›</span> Manuscript
+          </button>
+        ) : null}
+        {!oneRoom && hasRight && !rightVisible ? (
+          <button type="button" className="fr-reopen fr-reopen-right" data-column-reopen="maia"
+            aria-label="Show MAIA panel" onClick={() => setRightExpanded(true)}>
+            MAIA <span aria-hidden="true">‹</span>
+          </button>
+        ) : null}
         {hasLeft && leftVisible ? (
           <div className="fr-panel-splitter fr-panel-splitter-left" role="separator" tabIndex={0}
             aria-orientation="vertical" aria-label="Resize manuscript panel" aria-valuemin={PANEL_MIN.left}

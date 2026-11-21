@@ -49,7 +49,9 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
 .fr-panel-splitter { position: absolute; top: var(--fr-top); bottom: var(--fr-bottom); width: 14px;
   z-index: 5; cursor: col-resize; touch-action: none; user-select: none; background: transparent; }
 .fr-panel-splitter::after { content: ''; position: absolute; width: 3px; top: 17px; bottom: 17px;
-  left: 5px; border-radius: 4px; background: transparent; transition: background 120ms ease; }
+  left: 5px; border-radius: 4px; transition: background 120ms ease;
+  /* WS-COLUMNS: a faint grip is always visible, so the divider can be found before it is hovered. */
+  background: color-mix(in srgb, var(--fr-title, #c9d3e0) 14%, transparent); }
 .fr-panel-splitter:hover::after, .fr-panel-splitter:focus-visible::after,
 .fr-panel-splitter:active::after { background: var(--fr-action); }
 .fr-panel-splitter-left { left: calc(var(--fr-pad-l) + var(--fr-ms-w) + var(--fr-gap-l) / 2 - 7px); }
@@ -60,6 +62,27 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
 .fr-shell[data-right-open='false'] .fr-work { margin-right: 0; }
 @media (max-width: 1023px) {
   .fr-panel-controls, .fr-panel-splitter { display: none; }
+  /* WS-COLUMNS: below 1024px the manuscript list is a band above the page; hidden, it leaves no empty band. */
+  .fr-shell[data-left-open='false'] .fr-manuscript, .fr-shell[data-right-open='false'] .fr-maia { display: none; }
+}
+/* WS-COLUMNS (founder 2026-11-21): each column carries its own collapse control; a hidden one leaves a way back at its edge.
+   Same state as Layout's "‹ Manuscript" / "MAIA ›". Phones (<=720px) keep their stacked order and Layout's controls. */
+.fr-collapse { width: 24px; height: 24px; display: inline-grid; place-items: center; padding: 0; border-radius: 50%;
+  border: 1px solid var(--fr-line, rgba(255,255,255,.18)); background: var(--fr-surface, #1b2233); color: var(--fr-muted, #a9b4c4);
+  font-size: 15px; line-height: 1; cursor: pointer; z-index: 6; }
+.fr-collapse:hover, .fr-collapse:focus-visible { color: var(--fr-title, #fff); background: var(--fr-action-soft, rgba(130,153,177,.25)); }
+/* The manuscript column is a scrolling flex column: the button pins to its top-right and takes no row of its own. */
+.fr-collapse-left { position: sticky; top: 6px; align-self: flex-end; flex: 0 0 auto; margin: 6px 6px -30px 0; }
+.fr-collapse-right { position: absolute; top: 72px; left: -12px; }
+/* Mid-edge, like a drawer tab: clear of the manuscript band's own control and of the page's top row at every width. */
+.fr-reopen { position: fixed; top: 45vh; z-index: 6; display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px;
+  border: 1px solid var(--fr-line, rgba(255,255,255,.18)); background: var(--fr-surface, #1b2233); color: var(--fr-muted, #a9b4c4);
+  font-size: 12px; cursor: pointer; }
+.fr-reopen:hover, .fr-reopen:focus-visible { color: var(--fr-title, #fff); }
+.fr-reopen-left { left: 0; border-left: 0; border-radius: 0 999px 999px 0; }
+.fr-reopen-right { right: 0; border-right: 0; border-radius: 999px 0 0 999px; }
+@media (max-width: 720px) {
+  .fr-collapse, .fr-reopen { display: none; }
 }
 
 .fr-avatar { margin-left: 50px; width: 32px; height: 32px; border-radius: 50%; background: #8299B1; color: #fff; display: grid; place-items: center;
