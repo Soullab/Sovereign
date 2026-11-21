@@ -16,6 +16,7 @@
 import { declaredSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
 import type { TeachingAnchor } from './teachingTurn';
 import { apiFetch } from '@/lib/http/apiBase';
+import type { ReadingReceipt } from '@/lib/manuscript/ask/readingReceipt';
 import type { AskAnchor } from '@/lib/manuscript/ask/anchor';
 import type { StalenessState } from '@/lib/manuscript/ask/staleness';
 import type { CurrentLocation } from '@/lib/manuscript/development/resolve';
@@ -29,6 +30,8 @@ export interface AskTurnView {
   speaker: 'author' | 'maia';
   body: string;
   staleness: StalenessState;
+  /** Package C: what MAIA read for THIS answer, as the server projected it (no ids, digests, model or hash). MAIA turns only. */
+  receipt?: ReadingReceipt;
 }
 
 export interface AskThreadView {
