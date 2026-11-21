@@ -27,6 +27,17 @@ export type SoundscapeHandle = {
 
 const SCALE = GENERATED_OUTPUT_SCALE; // same output scale as the original studies; the member's volume multiplies it
 const PLUCK_RATIOS = [1, 1.125, 1.5, 1.6667, 2, 1.5, 1.125, 1];
+// Warm overtones (founder listening A/B, #1979, 2026-11-21: "D is really helpful. I like the tone by itself but the
+// warm overtone makes it received better", at the Amount heard, 50%). Each voice carries quiet sine copies at 2×, 3×
+// and 4× its own pitch (1/n², detune-locked), rounded off by a soft 900 Hz low-pass. They add no note and do not
+// change the pitch; they let laptop and phone speakers, which barely play the low notes, carry the sound. They
+// follow each voice's level and the slow pulse, and pass through the one master, so the Level governs them.
+// Focus soundscapes only: a Tone Lab sound stays a pure tone.
+export const SOUNDSCAPE_OVERTONE_PARTIALS = [2, 3, 4] as const;
+export const SOUNDSCAPE_OVERTONE_SOFT_HZ = 900;
+export const SOUNDSCAPE_OVERTONE_BUS_GAIN = 3.0; // 50% of the Shelf's 6.0
+const SOUNDSCAPE_OVERTONE_HIGHEST_HZ = 4000;
+const overtoneGain = (n: number, hz: number) => (hz > SOUNDSCAPE_OVERTONE_HIGHEST_HZ ? 0 : 1 / (n * n));
 
 function noiseBuffer(context: BaseAudioContext, seconds = 2): AudioBuffer {
   const length = Math.floor(context.sampleRate * seconds);
@@ -89,6 +100,29 @@ export function buildSoundscape(
   movementDepth.gain.value = spec.pulseHz > 0 ? spec.pulseDepth : 0;
   movement.connect(movementDepth); movementDepth.connect(pulseGain.gain);
   movement.start(t0);
+
+  // Warm overtones (see SOUNDSCAPE_OVERTONE_PARTIALS). Not for a Tone Lab sound.
+  const overtoneOscillators: OscillatorNode[] = [];
+  const overtoneVoices: { follower: GainNode; partials: { osc: OscillatorNode; gain: GainNode; n: number }[] }[] = [];
+  if (!spec.tone) {
+    const soft = context.createBiquadFilter();
+    soft.type = 'lowpass'; soft.frequency.value = SOUNDSCAPE_OVERTONE_SOFT_HZ; soft.Q.value = 0.5;
+    const swell = context.createGain(); swell.gain.value = 1;
+    movementDepth.connect(swell.gain); // the same slow pulse as the voices
+    const overtoneBus = context.createGain(); overtoneBus.gain.value = SOUNDSCAPE_OVERTONE_BUS_GAIN;
+    soft.connect(swell); swell.connect(overtoneBus); overtoneBus.connect(master);
+    spec.voices.forEach(voice => {
+      const follower = context.createGain(); follower.gain.value = voice.gain; follower.connect(soft);
+      const partials = SOUNDSCAPE_OVERTONE_PARTIALS.map(n => {
+        const hz = spec.root * voice.ratio * n;
+        const osc = context.createOscillator(); osc.type = 'sine'; osc.frequency.value = hz; osc.detune.value = voice.detuneCents;
+        const gain = context.createGain(); gain.gain.value = overtoneGain(n, hz);
+        osc.connect(gain); gain.connect(follower); osc.start(t0); overtoneOscillators.push(osc);
+        return { osc, gain, n };
+      });
+      overtoneVoices.push({ follower, partials });
+    });
+  }
 
   // Drift: a very slow movement of the tone's brightness, so it never sits perfectly still.
   const drift = context.createOscillator();
@@ -239,6 +273,14 @@ export function buildSoundscape(
         if (osc) { gently(osc.frequency, next.root * voice.ratio); gently(osc.detune, voice.detuneCents); }
         if (gain) gently(gain.gain, voice.gain);
         if (pan) gently(pan.pan, voice.pan);
+        const overtones = overtoneVoices[index];
+        if (overtones) {
+          gently(overtones.follower.gain, voice.gain);
+          for (const p of overtones.partials) {
+            const hz = next.root * voice.ratio * p.n;
+            gently(p.osc.frequency, hz); gently(p.osc.detune, voice.detuneCents); gently(p.gain.gain, overtoneGain(p.n, hz));
+          }
+        }
       });
       gently(filter.frequency, next.lowpassHz);
       gently(movement.frequency, Math.max(0.0001, next.pulseHz));
@@ -260,7 +302,7 @@ export function buildSoundscape(
     dispose() {
       disposed = true;
       if (timer !== null) clearInterval(timer);
-      for (const node of [...oscillators, movement, drift, ...extras]) { try { node.stop(); } catch { /* already stopped */ } }
+      for (const node of [...oscillators, ...overtoneOscillators, movement, drift, ...extras]) { try { node.stop(); } catch { /* already stopped */ } }
     },
   };
   return handle;
