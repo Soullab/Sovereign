@@ -10,7 +10,7 @@ import path from 'path';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
-  FORM_CHOICES, formStudioCopy, formToSave, formVocabulary, readingFrame,
+  FORM_CHOICES, formStudioCopy, formToSave, formVocabulary, inFormWords, readingFrame,
 } from '../formVocabulary';
 import { StudioVocabularyProvider } from '../StudioVocabularyContext';
 import { DevelopStage, DevelopHoldings, FormControl } from '@/app/dev/writers-studio-pc3-live/DevelopStage';
@@ -173,5 +173,49 @@ describe('the writer can change what the Work is becoming, later', () => {
     const view = read('app/dev/writers-studio-pc3-live/P4R1DevelopView.tsx');
     expect(view).toMatch(/onFormSaved=\{props\.work\.studioPath \? undefined : props\.onWorkFormSaved\}/);
     expect(read('app/dev/writers-studio-pc3-live/P4R1DevelopController.tsx')).toMatch(/onWorkFormSaved=\{\(\) => void reloadWorks\(\)\}/);
+  });
+});
+
+describe('Develop’s older fixed wording is said in the Work’s words', () => {
+  test('book wording becomes the form’s words, with the right article, and a book is unchanged', () => {
+    const poem = formVocabulary('poem'); const essay = formVocabulary('essay'); const none = formVocabulary(null);
+    expect(inFormWords('Let MAIA read this chapter.', poem)).toBe('Let MAIA read this stanza.');
+    expect(inFormWords('Chapter scorecard', poem)).toBe('Stanza scorecard');
+    expect(inFormWords('How does this chapter fit the book?', essay)).toBe('How does this section fit the essay?');
+    expect(inFormWords('A plan across chapters needs a book', essay)).toBe('A plan across sections needs an essay');
+    expect(inFormWords('Select a chapter or section at left', poem)).toBe('Select a stanza at left');
+    expect(inFormWords('In the book', none)).toBe('In the piece');
+    expect(inFormWords('Read this chapter', formVocabulary('novel'))).toBe('Read this chapter');
+    expect(inFormWords('read-this-chapter', poem)).toBe('read-this-chapter');
+  });
+
+  test('no Studio wording in Develop’s panels says chapter or book except through the Work’s words', () => {
+    let code = read('app/dev/writers-studio-pc3-live/P4R1DevelopView.tsx')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    // Fixed tables whose every rendered use goes through fw(...), asserted below.
+    for (const name of ['FRIENDLY_PHENOMENON', 'INTENT_STARTERS']) {
+      const at = code.indexOf(`const ${name}`);
+      code = code.slice(0, at) + code.slice(code.indexOf(name === 'INTENT_STARTERS' ? '\n];' : '\n};', at) + 3);
+    }
+    // Everything inside fw(...) is already said in the Work's words.
+    let out = ''; for (let i = 0; i < code.length; i++) {
+      if (code.startsWith('fw(', i) && !/[A-Za-z0-9_]/.test(code[i - 1] ?? '')) {
+        let depth = 0; let j = i + 2;
+        for (; j < code.length; j++) { if (code[j] === '(') depth++; else if (code[j] === ')' && --depth === 0) break; }
+        i = j; out += 'fw()'; continue;
+      }
+      out += code[i];
+    }
+    const left: string[] = [];
+    for (const m of out.matchAll(/(['`])((?:(?!\1)[^\\\n]|\\.)*?\b([Cc]hapters?|[Bb]ook)\b(?:(?!\1)[^\\\n]|\\.)*?)\1/g)) left.push(m[2]);
+    for (const m of out.matchAll(/>([^<>{}]*\b([Cc]hapters?|[Bb]ook)\b[^<>{}]*)</g)) left.push(m[1].trim());
+    const notWording = (t: string) => /^[a-z-]+$/.test(t) || t.startsWith('[data-') /* keys, scope kinds, selectors */
+      || t.startsWith('Source leads currently filed') /* MAIA's instructions, framed by readingFrame */
+      || /^Read this \$\{props\.scope\.kind === 'chapter' \? studioWords\.unit/.test(t);
+    expect(left.filter((t) => !notWording(t))).toEqual([]);
+    const view = read('app/dev/writers-studio-pc3-live/P4R1DevelopView.tsx');
+    expect(view).toMatch(/\{fw\(friendly\.title\)\}/);
+    expect(view.match(/\{fw\(starter\.(label|detail)\)\}/g)?.length).toBe(6);
+    expect(view).not.toMatch(/[^=]\{starter\.(label|detail)\}/); // key={starter.label} is a React key, not wording
   });
 });

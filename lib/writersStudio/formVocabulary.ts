@@ -147,3 +147,27 @@ export function readingFrame(v: FormVocabulary): string {
   if (v.kind === 'book') return '';
   return `${v.maiaFrame}\nIn the instructions below, “chapter” means the ${v.unit} of the writer’s ${v.noun} that you read, and “the whole book” or “the book” means ${v.whole}. In everything you write back, say “${v.unit}” and “${v.noun}”, never “chapter” or “book”.\n`;
 }
+
+/**
+ * A Studio sentence written in book words ("this chapter", "the whole book"), said in the Work's own words. For a book it is
+ * returned unchanged. Used for Develop's older fixed wording, so a poem's panels say "stanza" where they said "chapter".
+ * ⛔ Only for the Studio's own copy, never for the writer's text or MAIA's words.
+ */
+export function inFormWords(text: string, v: FormVocabulary): string {
+  if (v.kind === 'book') return text;
+  const an = (w: string) => (/^[aeiou]/i.test(w) ? 'an' : 'a');
+  return text
+    .replace(/\bchapters? or sections?\b/g, v.unit)
+    .replace(/\b([Aa]) (chapter|book)\b/g, (_m, a: string, w: string) => {
+      const to = w === 'book' ? v.noun : v.unit;
+      const art = an(to);
+      return `${a === 'A' ? cap(art) : art} ${to}`;
+    })
+    .replace(/\bthe whole book\b/g, v.whole)
+    .replace(/(?<![-_])\bChapters\b(?![-_])/g, cap(v.units))
+    .replace(/(?<![-_])\bchapters\b(?![-_])/g, v.units)
+    .replace(/(?<![-_])\bChapter\b(?![-_])/g, cap(v.unit))
+    .replace(/(?<![-_])\bchapter\b(?![-_])/g, v.unit)
+    .replace(/(?<![-_])\bBook\b(?![-_])/g, cap(v.noun))
+    .replace(/(?<![-_])\bbook\b(?![-_])/g, v.noun);
+}

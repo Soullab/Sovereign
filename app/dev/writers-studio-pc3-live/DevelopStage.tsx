@@ -811,7 +811,7 @@ export function ChapterReadingPane(props: {
       <header style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto', fontSize: 13 }}>
         <button type="button" data-lens-back="true" onClick={props.onBackToReading}
           style={{ background: 'none', border: 'none', color: 'inherit', textDecoration: 'underline', cursor: 'pointer', font: 'inherit', fontSize: 12 }}>← Back to the reading</button>
-        <span style={{ opacity: .75 }}>Your chapter, beside MAIA’s {props.lensLabel.toLowerCase()} reading</span>
+        <span style={{ opacity: .75 }}>Your {v.unit}, beside MAIA’s {props.lensLabel.toLowerCase()} reading</span>
       </header>
       <article aria-label={`${labelOf(shown[0] ?? props.section)}, as you wrote it`} style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '18px 8px 40px' }}>
         <div style={{ maxWidth: '66ch', margin: '0 auto' }}>

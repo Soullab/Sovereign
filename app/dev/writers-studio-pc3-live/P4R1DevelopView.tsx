@@ -1,6 +1,6 @@
 'use client';
 
-import { useStudioVocabulary } from '@/lib/writersStudio/StudioVocabularyContext';
+import { useFormWords, useStudioVocabulary } from '@/lib/writersStudio/StudioVocabularyContext';
 import SessionPostureChoice from '@/app/writers-studio/canvas/SessionPostureChoice';
 import { keepRefusalCopy } from '@/lib/writersStudio/keepPosture';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -414,6 +414,7 @@ function ChapterShape({ manuscriptId, sections, scope }: {
   sections: readonly RebuildSection[];
   scope: Extract<DevelopScopeChoice, { kind: 'chapter' }>;
 }) {
+  const fw = useFormWords();
   const [recovering, setRecovering] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const from = sections.findIndex((section) => section.draftSectionId === scope.fromSectionId);
@@ -450,7 +451,7 @@ function ChapterShape({ manuscriptId, sections, scope }: {
 
   return (
     <section className="fr-card p4r1-chapter-shape" aria-label="Chapter shape from the manuscript">
-      <span className="p4r1-eyebrow">The chapter as it is</span>
+      <span className="p4r1-eyebrow">{fw('The chapter as it is')}</span>
       <h3>{scope.label}</h3>
       <p>
         {chapterWords.toLocaleString()} words in this chapter span. Writer’s Studio separates structure the
@@ -487,10 +488,9 @@ function ChapterShape({ manuscriptId, sections, scope }: {
 
       {detectedOnly.length > 0 ? (
         <div className="p4r1-structure-recovery" data-structure-recovery>
-          <b>Some of this chapter’s hierarchy was lost in import.</b>
+          <b>{fw('Some of this chapter’s hierarchy was lost in import.')}</b>
           <p>
-            Writer’s Studio can see the headings, but some of their levels were lost in import.
-            MAIA can suggest the chapter’s shape. You can correct it before anything changes.
+            {fw('Writer’s Studio can see the headings, but some of their levels were lost in import. MAIA can suggest the chapter’s shape. You can correct it before anything changes.')}
           </p>
           <button
             type="button"
@@ -508,7 +508,7 @@ function ChapterShape({ manuscriptId, sections, scope }: {
               window.location.assign(result.reviewPath);
             }}
           >
-            {recovering ? 'Reading the manuscript…' : 'Restore chapter structure'}
+            {recovering ? 'Reading the manuscript…' : fw('Restore chapter structure')}
           </button>
           {recoveryError ? <p role="status">{recoveryError}</p> : null}
         </div>
@@ -542,6 +542,7 @@ function ScopeChooser({ scope, sections, sectionScope, chapterScope, onScope }: 
   chapterScope: Extract<DevelopScopeChoice, { kind: 'chapter' }> | null;
   onScope: (scope: DevelopScopeChoice) => void;
 }) {
+  const fw = useFormWords();
   const from = scope.kind === 'range' ? scope.fromIndex : 0;
   const to = scope.kind === 'range' ? scope.toIndex : Math.max(0, sections.length - 1);
   return (
@@ -554,7 +555,7 @@ function ScopeChooser({ scope, sections, sectionScope, chapterScope, onScope }: 
       ) : null}
       {chapterScope ? (
         <button type="button" aria-pressed={scope.kind === 'chapter'} onClick={() => onScope(chapterScope)}>
-          Current chapter
+          {fw('Current chapter')}
         </button>
       ) : null}
       <button type="button" aria-pressed={scope.kind === 'whole'} onClick={() => onScope({ kind: 'whole' })}>Whole Work</button>
@@ -602,6 +603,7 @@ function ReadingField({
   targets: Readonly<Record<string, string>>;
   workTargets: Readonly<Record<string, string>>;
 }) {
+  const fw = useFormWords();
   if (reading.outcome === 'none') {
     return (
       <div className="p4r1-reading-field">
@@ -639,7 +641,7 @@ function ReadingField({
     <div className="p4r1-reading-field">
       <section className="p4r1-discovery" data-develop-observation={observation.key}>
         <div className="p4r1-discovery-top">
-          <span className="p4r1-discovery-kind" data-develop-observation-kind>{friendly.title}</span>
+          <span className="p4r1-discovery-kind" data-develop-observation-kind>{fw(friendly.title)}</span>
           {hasMore ? (
             <span className="p4r1-discovery-count">{selectedIndex + 1} of {observations.length}</span>
           ) : null}
@@ -1215,10 +1217,11 @@ function IntellectualLineagePanel({
   onScan: () => void;
   onInvestigateChapter: (chapterRootId: string) => void;
 }) {
+  const fw = useFormWords();
   const labelBySection = new Map(
     sections.map((section) => [
       section.draftSectionId,
-      section.heading?.trim() || 'Chapter',
+      section.heading?.trim() || fw('Chapter'),
     ] as const),
   );
   const process = lineageProcessForState(manuscriptState);
@@ -1230,7 +1233,7 @@ function IntellectualLineagePanel({
         ? 'Pre-manuscript exploration'
         : 'Research orientation';
   const processSummary = manuscriptState === 'existing-manuscript'
-    ? 'Trace the intellectual field across the whole manuscript, then move into chapters and exact claims only when useful.'
+    ? fw('Trace the intellectual field across the whole manuscript, then move into chapters and exact claims only when useful.')
     : manuscriptState === 'partial-manuscript'
       ? 'Keep what is already written separate from what is planned. Research may support unwritten areas prospectively without becoming manuscript evidence.'
       : manuscriptState === 'pre-manuscript'
@@ -1322,7 +1325,7 @@ function IntellectualLineagePanel({
             {terrain.uncertainty ? <p><b>Uncertainty:</b> {terrain.uncertainty}</p> : null}
             {terrain.chapterSectionIds.length > 0 ? (
               <div className="p4r1-lineage-chapter-choices">
-                <span>Choose a chapter to investigate</span>
+                <span>{fw('Choose a chapter to investigate')}</span>
                 <div>
                   {terrain.chapterSectionIds.map((chapterRootId) => (
                     <button
@@ -1331,7 +1334,7 @@ function IntellectualLineagePanel({
                       disabled={chapterBusy}
                       onClick={() => onInvestigateChapter(chapterRootId)}
                     >
-                      {labelBySection.get(chapterRootId) ?? 'Chapter'}
+                      {labelBySection.get(chapterRootId) ?? fw('Chapter')}
                     </button>
                   ))}
                 </div>
@@ -1369,14 +1372,15 @@ function ChapterLineagePanel({
   onShowCandidate: (chapterRootId: string, candidateId: string, sectionId: string) => void;
   onDiscussCandidate: (candidate: ChapterLineageCandidate) => void;
 }) {
+  const fw = useFormWords();
   if (!scan && !busy && !error) return null;
 
   if (busy && !scan) {
     return (
       <section className="fr-card p4r1-chapter-lineage" data-chapter-lineage>
-        <span className="p4r1-eyebrow">Chapter investigation</span>
-        <h3>Reading this chapter in the context of the whole Work…</h3>
-        <p>MAIA is examining actual chapter prose, bibliography leads, and the larger intellectual field.</p>
+        <span className="p4r1-eyebrow">{fw('Chapter investigation')}</span>
+        <h3>{fw('Reading this chapter in the context of the whole Work…')}</h3>
+        <p>{fw('MAIA is examining actual chapter prose, bibliography leads, and the larger intellectual field.')}</p>
       </section>
     );
   }
@@ -1384,7 +1388,7 @@ function ChapterLineagePanel({
   if (!scan) {
     return (
       <section className="fr-card p4r1-chapter-lineage" data-chapter-lineage>
-        <span className="p4r1-eyebrow">Chapter investigation</span>
+        <span className="p4r1-eyebrow">{fw('Chapter investigation')}</span>
         <p className="p4r1-error">{error}</p>
       </section>
     );
@@ -1407,7 +1411,7 @@ function ChapterLineagePanel({
     <section className="fr-card p4r1-chapter-lineage" data-chapter-lineage>
       <div className="p4r1-chapter-lineage-head">
         <div>
-          <span className="p4r1-eyebrow">Chapter lineage · actual prose</span>
+          <span className="p4r1-eyebrow">{fw('Chapter lineage · actual prose')}</span>
           <h3>{scan.chapterHeading}</h3>
           <p>
             {scan.candidates.length} candidate relationship{scan.candidates.length === 1 ? '' : 's'}
@@ -1647,20 +1651,19 @@ function ChapterReviewPanel({
   onScore: () => void;
   onMinimalPath: () => void;
 }) {
+  const fw = useFormWords();
   if (!map) {
     return (
       <section className="fr-card p4r1-chapter-review" data-chapter-review="empty">
         <span className="p4r1-eyebrow">Start here</span>
-        <h3>Let MAIA read this chapter.</h3>
+        <h3>{fw('Let MAIA read this chapter.')}</h3>
         <p>
-          She’ll tell you what she thinks the chapter is doing, what is already working,
-          and where she would focus next. No jargon. Nothing changes.
+          {fw('She’ll tell you what she thinks the chapter is doing, what is already working, and where she would focus next. No jargon. Nothing changes.')}
         </p>
         {needsCheckpoint ? (
           <div className="p4r1-chapter-read-snapshot">
             <p>
-              This chapter has changed since the last reading snapshot. Save the current draft so
-              MAIA reads exactly what is on the page now. Your words will not change.
+              {fw('This chapter has changed since the last reading snapshot. Save the current draft so MAIA reads exactly what is on the page now. Your words will not change.')}
             </p>
             <button
               type="button"
@@ -1673,7 +1676,7 @@ function ChapterReviewPanel({
           </div>
         ) : (
           <button type="button" className="p4r1-commission" disabled={busy} onClick={onRead}>
-            {busy ? (progress ?? 'MAIA is reading the chapter…') : 'Read this chapter'}
+            {busy ? (progress ?? fw('MAIA is reading the chapter…')) : fw('Read this chapter')}
           </button>
         )}
         {error ? <p className="p4r1-error" role="status">{error}</p> : null}
@@ -1689,7 +1692,7 @@ function ChapterReviewPanel({
 
   return (
     <section className="fr-card p4r1-chapter-review" data-chapter-review="ready">
-      <span className="p4r1-eyebrow">MAIA read the chapter</span>
+      <span className="p4r1-eyebrow">{fw('MAIA read the chapter')}</span>
       {strength ? (
         <div className="p4r1-chapter-review-lead">
           <h3>{strength.label}</h3>
@@ -1700,7 +1703,7 @@ function ChapterReviewPanel({
 
       {grasp ? (
         <div className="p4r1-chapter-review-point">
-          <b>What I think this chapter is doing</b>
+          <b>{fw('What I think this chapter is doing')}</b>
           <p>{grasp.notice}</p>
         </div>
       ) : null}
@@ -1721,10 +1724,10 @@ function ChapterReviewPanel({
 
       <div className="p4r1-chapter-review-actions">
         <button type="button" disabled={bookFitBusy} onClick={onBookFit}>
-          {bookFitBusy ? 'Reading the book around this chapter…' : 'How does this chapter fit the book?'}
+          {fw(bookFitBusy ? 'Reading the book around this chapter…' : 'How does this chapter fit the book?')}
         </button>
         <button type="button" disabled={movementBusy} onClick={onMovement}>
-          {movementBusy ? 'Looking at the chapter’s movement…' : 'Show me the chapter’s movement'}
+          {fw(movementBusy ? 'Looking at the chapter’s movement…' : 'Show me the chapter’s movement')}
         </button>
         <button type="button" disabled={minimalPathBusy} onClick={onMinimalPath}>
           {minimalPathBusy ? 'Finding the highest-leverage changes…' : 'Show me what to strengthen'}
@@ -1742,7 +1745,7 @@ function ChapterReviewPanel({
         )}
         {!scorecard ? (
           <button type="button" disabled={scoreBusy} onClick={onScore}>
-            {scoreBusy ? 'Building scorecard…' : 'Chapter scorecard'}
+            {scoreBusy ? 'Building scorecard…' : fw('Chapter scorecard')}
           </button>
         ) : null}
         {scorecard ? (
@@ -1755,7 +1758,7 @@ function ChapterReviewPanel({
       {bookFitError ? <p className="p4r1-error" role="status">{bookFitError}</p> : null}
       {bookFit ? (
         <section className="p4r1-chapter-expansion" data-chapter-book-fit>
-          <span className="p4r1-eyebrow">In the book</span>
+          <span className="p4r1-eyebrow">{fw('In the book')}</span>
           {bookFit.items.map((item) => (
             <div key={item.id}>
               <b>{item.label}</b>
@@ -1769,7 +1772,7 @@ function ChapterReviewPanel({
       {movementError ? <p className="p4r1-error" role="status">{movementError}</p> : null}
       {movement ? (
         <section className="p4r1-chapter-expansion" data-chapter-movement>
-          <span className="p4r1-eyebrow">Inside the chapter</span>
+          <span className="p4r1-eyebrow">{fw('Inside the chapter')}</span>
           {movement.items.map((item) => (
             <div key={item.id}>
               <b>{item.label}</b>
@@ -1788,8 +1791,8 @@ function ChapterReviewPanel({
         return (
           <div className="p4r1-chapter-scorecard" data-chapter-scorecard>
             <div className="p4r1-chapter-scorecard-head">
-              <b>Chapter scorecard</b>
-              <span>Optional craft guide · not a grade · fixed to this chapter revision</span>
+              <b>{fw('Chapter scorecard')}</b>
+              <span>{fw('Optional craft guide · not a grade · fixed to this chapter revision')}</span>
             </div>
             {scored.map((item) => {
               const score = item.notice.match(/^([1-5]\/5)\b/)?.[1] ?? '—';
@@ -1819,7 +1822,7 @@ function ChapterReviewPanel({
             {previousScorecard ? (
               <section className="p4r1-score-comparison" data-chapter-score-comparison>
                 <div>
-                  <b>Since the previous saved chapter revision</b>
+                  <b>{fw('Since the previous saved chapter revision')}</b>
                   <span>This is a craft comparison, not a grade{previousScoreRevision !== null ? ` · previous revision ${previousScoreRevision}` : ''}.</span>
                 </div>
                 {dimensions.map((dimension) => {
@@ -2098,6 +2101,7 @@ function revealStudioPlace(target: string): () => void {
 export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
   /* The Work's own words (founder rulings 2026-11-20), provided by the Develop controller. */
   const studioWords = useStudioVocabulary();
+  const fw = useFormWords();
   const [whatNextOpen, setWhatNextOpen] = useState(false);
   const livePathname = usePathname() ?? '/dev/writers-studio-p4r1';
   const liveSearchParams = useSearchParams();
@@ -2184,8 +2188,8 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
     setPlanBusy(true); setPlanNote(null);
     const r = await makePlanClient(stageManuscriptId, ask);
     setPlanBusy(false);
-    if (r.ok) { setPlanView(r.view); setLastRead(r.read); if (r.dropped > 0) setPlanNote(`${r.dropped} suggested step${r.dropped === 1 ? ' was' : 's were'} left out because ${r.dropped === 1 ? 'it' : 'they'} did not point at wording actually in your chapter.`); return true; }
-    setPlanNote(keepRefusalCopy(r.refusal) ?? (r.refusal === 'permission_required' ? 'A plan across chapters needs your permission for MAIA to read your saved work. Choose “Let MAIA read my saved work” under More → What MAIA can read, or ask MAIA, then try again.' : r.detail ?? 'MAIA could not make a plan just now. Nothing was changed.'));
+    if (r.ok) { setPlanView(r.view); setLastRead(r.read); if (r.dropped > 0) setPlanNote(fw(`${r.dropped} suggested step${r.dropped === 1 ? ' was' : 's were'} left out because ${r.dropped === 1 ? 'it' : 'they'} did not point at wording actually in your chapter.`)); return true; }
+    setPlanNote(keepRefusalCopy(r.refusal) ?? (r.refusal === 'permission_required' ? fw('A plan across chapters needs your permission for MAIA to read your saved work. Choose “Let MAIA read my saved work” under More → What MAIA can read, or ask MAIA, then try again.') : r.detail ?? 'MAIA could not make a plan just now. Nothing was changed.'));
     return false;
   };
   /* Design 1B amendment 2 · the writer clicked one of MAIA's acting offers in the stage conversation. Only that click lands here. */
@@ -2194,9 +2198,9 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
     if (act.id === 'show') { setStageOpenAt({ place: act.place, n: Date.now() }); return { ok: true, text: 'Opened under More.' }; }
     if (act.id === 'go-chapter') {
       const sec = props.sections.find((x) => x.draftSectionId === act.sectionId);
-      if (!sec) return { ok: false, message: 'That chapter is not in this Work. Nothing was changed.' };
+      if (!sec) return { ok: false, message: fw('That chapter is not in this Work. Nothing was changed.') };
       selectManuscriptLocus(sec.draftSectionId);
-      return { ok: true, text: `You are at ${sec.heading?.trim() || 'that chapter'}.` };
+      return { ok: true, text: `You are at ${sec.heading?.trim() || fw('that chapter')}.` };
     }
     const posture = readCurrentSanctuaryPosture();
     if (!posture.resolved || posture.sanctuary) return { ok: false, message: 'Sanctuary is on, so that is not done here. Nothing was changed.' };
@@ -2205,7 +2209,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
       const r = await setReadScope(stageManuscriptId, { action: 'grant', level: act.level });
       if (r && 'refused' in r) return { ok: false, message: keepRefusalCopy(r.refused) ?? 'That permission could not be given just now. Nothing was changed.' };
       if (!r) return { ok: false, message: 'That permission could not be given just now. Nothing was changed.' };
-      return { ok: true, text: `MAIA may now read your saved ${r.level === 'work' ? 'work' : 'chapter'} while you talk. Ask her again. You can stop it any time under More → What MAIA can read.` };
+      return { ok: true, text: `MAIA may now read your saved ${r.level === 'work' ? 'work' : studioWords.unit} while you talk. Ask her again. You can stop it any time under More → What MAIA can read.` };
     }
     if (act.id === 'make-plan') {
       return (await makePlan(act.ask))
@@ -2224,7 +2228,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
       try { window.dispatchEvent(new Event(PASSAGE_HANDOFF_EVENT)); } catch { /* a fresh mount reads the key */ }
     }
     navigateMode('write');
-    return { ok: true, text: act.words ? 'Opening the passage desk in Write.' : 'Opening the chapter in Write; select the passage you want to work on.' };
+    return { ok: true, text: act.words ? 'Opening the passage desk in Write.' : fw('Opening the chapter in Write; select the passage you want to work on.') };
   };
   const editPlan = async (edits: import('@/lib/writersStudio/developmentPlan').StepEdit[]) => {
     const id = planView?.plan?.id; if (!id) return;
@@ -2240,10 +2244,10 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
   const workOnStep = (stepId: string) => {
     if (!stageManuscriptId) return;
     // Say a known refusal HERE, beside the step, instead of sending the writer somewhere to find nothing. Write re-checks authoritatively.
-    if (planView && !planView.verdict) { setPlanNote(HANDOFF_REFUSAL_COPY.no_verdict.replace(' The chapter is open; select the passage you mean.', '')); return; }
-    if (planView?.staleStepIds.includes(stepId)) { setPlanNote(HANDOFF_REFUSAL_COPY.changed.replace(' The chapter is open; check it, then', ' Check the chapter, then')); return; }
+    if (planView && !planView.verdict) { setPlanNote(fw(HANDOFF_REFUSAL_COPY.no_verdict.replace(' The chapter is open; select the passage you mean.', ''))); return; }
+    if (planView?.staleStepIds.includes(stepId)) { setPlanNote(fw(HANDOFF_REFUSAL_COPY.changed.replace(' The chapter is open; check it, then', ' Check the chapter, then'))); return; }
     if (planView?.decisionsChanged === true) { setPlanNote(HANDOFF_REFUSAL_COPY.decisions_changed); return; }
-    if (planView?.unverifiedStepIds.includes(stepId)) { setPlanNote(HANDOFF_REFUSAL_COPY.unverified.replace(' The chapter is open; check it, then', ' Check the chapter, then')); return; }
+    if (planView?.unverifiedStepIds.includes(stepId)) { setPlanNote(fw(HANDOFF_REFUSAL_COPY.unverified.replace(' The chapter is open; check it, then', ' Check the chapter, then'))); return; }
     setPlanNote(null);
     try { window.sessionStorage.setItem(PLAN_HANDOFF_KEY(stageManuscriptId), stepId); } catch { /* without it Write opens the chapter only */ }
     // ⛔ No status change here: only a hand-off Write actually completes may mark the step 'working'.
@@ -2638,15 +2642,15 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                     type="button"
                     onClick={() => { if (!requestConversationDeparture()) return; setWorkTalking(false); props.onIntent(starter.key, starter.field); }}
                   >
-                    <b>{starter.label}</b>
-                    <span>{starter.detail}</span>
+                    <b>{fw(starter.label)}</b>
+                    <span>{fw(starter.detail)}</span>
                   </button>
                 ) : null;
               })}
             </div>
             {hasExplicitPlace ? (
               <button type="button" className="p4r1-develop-secondary"
-                onClick={() => navigateMode('write')}>Open this chapter in Write</button>
+                onClick={() => navigateMode('write')}>{fw('Open this chapter in Write')}</button>
             ) : null}
             {developView === 'guided' ? (
               <details className="p4r1-develop-guided-additions">
@@ -2657,8 +2661,8 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                     return starter ? (
                       <button key={key} type="button"
                         onClick={() => { if (!requestConversationDeparture()) return; setWorkTalking(false); props.onIntent(starter.key, starter.field); }}>
-                        <b>{starter.label}</b>
-                        <span>{starter.detail}</span>
+                        <b>{fw(starter.label)}</b>
+                        <span>{fw(starter.detail)}</span>
                       </button>
                     ) : null;
                   })}
@@ -2678,12 +2682,11 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
           <div className="p4r1-locus-arrival" data-develop-locus={selectedRailSection.draftSectionId}>
             <section className="fr-card p4r1-locus-primary">
               <span className="p4r1-eyebrow">
-                {props.scope.kind === 'chapter' ? 'Chapter selected' : 'Section selected'}
+                {props.scope.kind === 'chapter' ? fw('Chapter selected') : 'Section selected'}
               </span>
               <h3>{selectedRailLabel}</h3>
               <p>
-                I’m with you here. We can begin by talking about what this chapter or section is trying to become,
-                or you can ask me to look through one particular lens. You do not need to translate your question into editorial language first.
+                {fw('I’m with you here. We can begin by talking about what this chapter or section is trying to become, or you can ask me to look through one particular lens. You do not need to translate your question into editorial language first.')}
               </p>
               <div className="p4r1-locus-actions">
                 <button
@@ -2702,7 +2705,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
               <div className="p4r1-locus-lens-grid">
                 {([
                   ['structure', 'How is this shaped?', 'See how the parts fit, repeat, or may be carrying too much.'],
-                  ['arc', 'Where is this going?', 'Follow the movement of the chapter and what changes as it unfolds.'],
+                  ['arc', 'Where is this going?', fw('Follow the movement of the chapter and what changes as it unfolds.')],
                   ['themes', 'What keeps returning?', 'Notice recurring ideas, images, questions, or gestures.'],
                   ['voice', 'How does it sound?', 'Listen for where the voice holds, shifts, or changes distance.'],
                   ['coherence', 'Does it hold together?', 'Look for places where meaning strengthens, drifts, or contradicts itself.'],
@@ -2781,8 +2784,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
               <span className="p4r1-eyebrow">The Work in process</span>
               <h3>Begin with the whole. Choose how you want to move.</h3>
               <p>
-                MAIA can guide from the broadest meaningful view into chapters, sections,
-                passages, and language. Nothing moves closer until you choose it.
+                {fw('MAIA can guide from the broadest meaningful view into chapters, sections, passages, and language. Nothing moves closer until you choose it.')}
               </p>
             </div>
             <div className="p4r1-developmental-state">
@@ -2949,8 +2951,8 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                     props.onIntent(starter.key, starter.field);
                   }}
                 >
-                  <b>{starter.label}</b>
-                  <span>{starter.detail}</span>
+                  <b>{fw(starter.label)}</b>
+                  <span>{fw(starter.detail)}</span>
                   <em aria-hidden="true">›</em>
                 </button>
               ))}
@@ -3032,7 +3034,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
             <section className="p4r1-intent-bridge">
               <span className="p4r1-eyebrow">You came here asking</span>
               <h3>“{activeIntent.label}”</h3>
-              <p>{activeIntent.reflection}</p>
+              <p>{fw(activeIntent.reflection)}</p>
               <div className="p4r1-intent-maia">
                 <span>MAIA</span>
                 <p>{activeIntent.proposal}</p>
@@ -3085,7 +3087,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
               <span className="p4r1-eyebrow">You’re here</span>
               <h3>{selectedRailLabel}</h3>
               <p>
-                We can stay with this {props.scope.kind === 'chapter' ? 'chapter' : 'section'} as a whole.
+                We can stay with this {props.scope.kind === 'chapter' ? studioWords.unit : 'section'} as a whole.
                 Choosing it did not trigger a new reading. If you want MAIA to read it for {LABEL[activeField].toLowerCase()}, ask directly here.
               </p>
               <div className="p4r1-selected-place-actions">
@@ -3098,7 +3100,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                 >
                   {props.commissioning
                     ? 'MAIA is reading…'
-                    : `Read this ${props.scope.kind === 'chapter' ? 'chapter' : 'section'} for ${LABEL[activeField]}`}
+                    : `Read this ${props.scope.kind === 'chapter' ? studioWords.unit : 'section'} for ${LABEL[activeField]}`}
                 </button>
                 <button type="button" onClick={() => navigateMode('write')}>Open the text</button>
               </div>
@@ -3351,11 +3353,11 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
         ) : railSelectionId && selectedRailSection ? (
           <div className="p4r1-locus-support" data-develop-locus-support={selectedRailSection.draftSectionId}>
             <span className="p4r1-eyebrow">
-              {props.scope.kind === 'chapter' ? 'Chapter selected' : 'Section selected'}
+              {props.scope.kind === 'chapter' ? fw('Chapter selected') : 'Section selected'}
             </span>
             <h3>{selectedRailLabel}</h3>
             <p>
-              I’m with you in this {props.scope.kind === 'chapter' ? 'chapter' : 'section'} now.
+              I’m with you in this {props.scope.kind === 'chapter' ? studioWords.unit : 'section'} now.
               We can talk before analyzing anything, or you can choose the kind of attention you want from me.
             </p>
             <div className="p4r1-locus-actions p4r1-locus-actions--relational">
@@ -3383,7 +3385,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                   ? (railSelectionId && selectedRailSection) || props.scope.kind === 'section' || props.scope.kind === 'chapter'
                     // A place is already chosen; don't ask the writer to choose one.
                     ? `We can stay with ${contextLabel}, or you can tell me what you are trying to understand about the whole Work.`
-                    : 'Select a chapter or section at left and I’ll orient to it immediately, or tell me what you are trying to understand about the whole Work.'
+                    : fw('Select a chapter or section at left and I’ll orient to it immediately, or tell me what you are trying to understand about the whole Work.')
                   : `We can stay with your question about ${LABEL[props.field].toLowerCase()} and use what I have already read before asking for anything new.`}
               </p>
             </div>
@@ -3409,7 +3411,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
   const useStage = process.env.NEXT_PUBLIC_WS_DEVELOP_STAGE === '1' && props.field === 'overview' && !selectedObservation
     && Boolean(props.work) && !props.preparing && !needsWork && props.sections.length > 0 && !leftStage;
   const stageSection = props.sections.find((x) => x.draftSectionId === props.currentSectionId) ?? props.sections[0];
-  const stageLabel = stageSection?.heading?.trim() || 'this chapter';
+  const stageLabel = stageSection?.heading?.trim() || fw('this chapter');
   /* What comes AFTER this chapter (EA walk 2026-11-11: "How does Chapter 4 lead into My Morning Ritual?" named the chapter's own
      sub-section). With a chapter span, the next section after its end; otherwise the next section. */
   const stageNextIndex = props.chapterScope
@@ -3429,7 +3431,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
     status: props.chapterReviewBusy ? 'reading' : props.chapterReview ? 'ready' : (props.chapterReviewError || props.chapterNeedsCheckpoint) ? 'error' : 'idle',
     progress: props.chapterReviewProgress,
     error: props.chapterNeedsCheckpoint
-      ? 'Your latest changes need saving as a checkpoint before MAIA can read this chapter. Choose “Read this chapter with MAIA” to save it and read.'
+      ? fw('Your latest changes need saving as a checkpoint before MAIA can read this chapter. Choose “Read this chapter with MAIA” to save it and read.')
       : props.chapterReviewError,
     chapterLabel: stageChapterLabel,
     chapterWords: stageChapterWords,
