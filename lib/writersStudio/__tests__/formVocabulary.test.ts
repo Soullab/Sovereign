@@ -417,3 +417,13 @@ describe('choosing among a Work’s drafts says “draft”, never “manuscript
     expect(read('lib/writersStudio/studioGuide.ts')).toMatch(/label: 'Choose a draft to continue'/);
   });
 });
+
+describe('MAIA’s letter in Write names places the way Write’s rail does', () => {
+  test('the letter panel is given Write’s own place names, and uses them for an untitled place', () => {
+    const write = read('app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx');
+    const panel = read('app/dev/writers-studio-pc3-live/EditorialLetterPanel.tsx');
+    expect(write).toMatch(/<EditorialLetterPanel[\s\S]{0,200}placeName=\{placeName\}/);
+    expect(write).toMatch(/const placeName = \(position: number\) => unheadedPlaceName\(programCopy, position, editableCount\);/);
+    expect(panel).toMatch(/s\.heading\?\.trim\(\) \|\| \(props\.placeName \? props\.placeName\(s\.position\)/);
+  });
+});

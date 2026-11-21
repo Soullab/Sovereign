@@ -1487,6 +1487,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
             ) : null}
             <EditorialLetterPanel
               revisionsPaused={workRevisionsPaused}
+              placeName={placeName}
               manuscriptId={props.context.manuscriptId}
               sections={props.context.sections}
               draftRevision={props.context.draftRevision ?? null}
