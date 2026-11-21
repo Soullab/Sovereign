@@ -290,7 +290,7 @@ export function DevelopStage(props: {
         {props.reading && props.onReadChapter && (props.reading.status === 'idle' || props.reading.status === 'error') ? (
           <button type="button" data-develop-read-chapter="true" onClick={props.onReadChapter}
             style={{ font: 'inherit', fontSize: 13, cursor: 'pointer', color: 'inherit', background: 'color-mix(in srgb, currentColor 10%, transparent)', border: hair, borderRadius: 999, padding: '4px 14px', whiteSpace: 'nowrap' }}>
-            Read this chapter with MAIA
+            Read this {v.unit} with MAIA
           </button>
         ) : null}
         <button type="button" data-develop-edit-in-write="true" onClick={props.onOpenWrite} style={quiet}>Edit in Write</button>

@@ -102,6 +102,7 @@ describe('Develop speaks in the Work’s words', () => {
   ];
   const stage = (form: string | null) => {
     const props = { workTitle: 'Tidewater', sections, currentId: 's1', onSelect: jest.fn(), starters: [], onStarter: jest.fn(), onOpenWrite: jest.fn(),
+      reading: { status: 'idle', chapterLabel: 'First light' }, onReadChapter: jest.fn(),
       onMoreWays: jest.fn(), lastRead: null, plan: null, planBusy: false, planNote: null, onMakePlan: jest.fn(), onEditPlan: jest.fn(),
       onWorkOnStep: jest.fn(), onAskAbout: jest.fn(), closed: true, view: 'full', onView: jest.fn() };
     act(() => root.render(React.createElement(StudioVocabularyProvider, { value: formVocabulary(form) },
@@ -117,6 +118,8 @@ describe('Develop speaks in the Work’s words', () => {
     expect(text.replace('A helper’s book', '')).not.toMatch(BOOKISH);
     expect(text).toMatch(/Your poem/);
     expect(text).toMatch(/What kind of poem is this\?/);
+    // Walk 2026-11-21: the stage toolbar's read button still said "Read this chapter with MAIA" for a poem.
+    expect(text).toMatch(/Read this stanza with MAIA/);
   });
 
   test('with no form, Develop is neutral', () => {
@@ -187,6 +190,15 @@ describe('Develop’s older fixed wording is said in the Work’s words', () => 
     expect(inFormWords('In the book', none)).toBe('In the piece');
     expect(inFormWords('Read this chapter', formVocabulary('novel'))).toBe('Read this chapter');
     expect(inFormWords('read-this-chapter', poem)).toBe('read-this-chapter');
+  });
+
+  test('the Develop stage’s own wording names no chapter or book; it speaks through the Work’s words', () => {
+    const code = read('app/dev/writers-studio-pc3-live/DevelopStage.tsx').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/^\s*\/\/.*$/gm, '');
+    const left: string[] = [];
+    for (const m of code.matchAll(/(['`])((?:(?!\1)[^\\\n]|\\.)*?\b([Cc]hapters?|[Bb]ook)\b(?![-_])(?:(?!\1)[^\\\n]|\\.)*?)\1/g)) left.push(m[2]);
+    for (const m of code.matchAll(/>([^<>{}]*\b([Cc]hapters?|[Bb]ook)\b[^<>{}]*)</g)) left.push(m[1].trim());
+    // “A helper’s book” is the name of a genre the writer may declare, not the Studio’s word for their Work.
+    expect(left.filter((t) => t !== 'A helper’s book' && !/^[a-z-]+$/.test(t))).toEqual([]);
   });
 
   test('no Studio wording in Develop’s panels says chapter or book except through the Work’s words', () => {
