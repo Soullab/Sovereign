@@ -7,7 +7,7 @@ import { doorwayById, doorwaysEnabled } from '@/lib/studios/doorways';
 import { CLAIM_INVITATION_SQL, GRANT_FROM_INVITATION_SQL, hashInvitationCode, hashInvitedEmail } from '@/lib/studios/doorwayInvitations';
 import { randomBytes } from 'crypto';
 import { applyChange, writeAudit } from '@/lib/admin/memberPermissions';
-import { doorwayReturnPath } from '@/lib/studios/doorwayReturnPath';
+import { doorwayFirstArrivalPath } from '@/lib/studios/doorwayReturnPath';
 
 /**
  * POST /api/doorway/register — a Studio's own front door (STUDIO-A-LA-CARTE-01 Phase 3).
@@ -58,7 +58,8 @@ export async function POST(request: NextRequest) {
     if (!doorway || code.trim().length < 6 || code.length > 64) {
       return NextResponse.json({ error: REFUSED }, { status: 403 });
     }
-    const returnPath = doorwayReturnPath(doorway.id, doorway.studioPath, selectedPath);
+    // First arrival: a new writer with no chosen path lands on the welcome invitation (WS-WELCOME-01).
+    const returnPath = doorwayFirstArrivalPath(doorway.id, doorway.studioPath, selectedPath);
 
     if (!name || name.length < 2 || name.length > 120) {
       return NextResponse.json({ error: 'Please tell us your name.' }, { status: 400 });
