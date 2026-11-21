@@ -167,7 +167,9 @@ it('retains the exact draft after a transport refusal instead of clearing it bef
     anchor: { on: 'work' }, sectionId: 'section-a', sanctuary: 'no_live_settings',
     // G-3 (WS-CRAFT-CONVENTIONS-01): the writer's working style travels with every question (no saved style ⇒ the default).
     responseStyle: 'guided' });
-  expect(input().value).toBe(draft); expect(host.textContent).toContain('That didn’t reach her');
+  // WS-F1: no thread to ask, so it is not known whether it arrived; the page must not claim it did not.
+  expect(input().value).toBe(draft); expect(host.textContent).toContain('it isn’t known whether that reached her');
+  expect(host.textContent).not.toContain('That didn’t reach her');
 });
 it('retains the draft if the server records a thread but cannot produce an answer', async () => {
   mockAsk.mockResolvedValue({ ok: false, refusal: 'unreachable', threadId: 'thread-a' });
@@ -263,7 +265,7 @@ it('retains text on a thrown transport error and allows an explicitly chosen ret
   await mount('My exact retry text');
   await click('Send');
   expect(input().value).toBe('My exact retry text');
-  expect(host.textContent).toContain('That didn’t reach her');
+  expect(host.textContent).toContain('it isn’t known whether that reached her');
   expect(mockAsk).toHaveBeenCalledTimes(1);
   await click('Send');
   expect(mockAsk).toHaveBeenCalledTimes(2);
@@ -304,4 +306,79 @@ it('quiet (Develop stage): secondary controls sit behind one More; all of them a
   expect(host.querySelector('[data-keeps-toggle]')).not.toBeNull();
   expect(host.querySelector('[data-open-in-maia]')).not.toBeNull();
   expect(host.querySelector('[data-close-conversation]')).not.toBeNull();
+});
+
+/* WS-F1 (live walk 2026-11-21, production 2fa63e846): the connection dropped AFTER the question reached the server. The page said
+   "That didn't reach her" while MAIA had answered; the answer appeared only after a reload. A dropped connection is checked, not assumed. */
+describe('WS-F1 · a dropped connection on a resumed conversation', () => {
+  const kept = { id: 'thread-a', anchor: { on: 'work' }, openedAt: '2026-11-09T10:00:00Z', turns: [
+    { index: 0, speaker: 'author', body: 'Earlier question', staleness: 'current' },
+    { index: 1, speaker: 'maia', body: 'Earlier answer', staleness: 'current' },
+  ] };
+  beforeEach(() => {
+    mockThreads.mockResolvedValue({ kind: 'threads', threads: [{ id: 'thread-a', anchor: { on: 'work' }, openedAt: '2026-11-09T10:00:00Z', turnCount: 2 }] });
+    mockLoadThread.mockResolvedValue(kept);
+  });
+  it('⭐ MUST FAIL IF the page says it did not reach her when the server kept it: her answer is shown and the box clears', async () => {
+    await mount('Across the whole book?');
+    mockAsk.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    mockLoadThread.mockResolvedValueOnce({ ...kept, turns: [...kept.turns,
+      { index: 2, speaker: 'author', body: 'Across the whole book?', staleness: 'current' },
+      { index: 3, speaker: 'maia', body: 'Her answer to the whole-book question', staleness: 'current' }] });
+    await click('Send');
+    expect(host.textContent).not.toContain('didn’t reach her');
+    expect(host.querySelector('[role="alert"][data-maia-refusal]')).toBeNull();
+    expect(host.textContent).toContain('Her answer to the whole-book question');
+    expect(host.querySelector('[data-maia-delivery-note]')?.textContent).toContain('did reach her');
+    expect(input().value).toBe('');
+    expect(mockAsk).toHaveBeenCalledTimes(1);                      // never resent by itself
+  });
+  it('⭐ MUST FAIL IF a held question (kept, never answered) is shown as answered: it says so, shows it kept, and keeps the words', async () => {
+    await mount('Across the whole book?');
+    mockAsk.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    mockLoadThread.mockResolvedValueOnce({ ...kept, turns: [...kept.turns,
+      { index: 2, speaker: 'author', body: 'Across the whole book?', staleness: 'current' }] });
+    await click('Send');
+    const alert = host.querySelector('[role="alert"][data-maia-refusal]')!;
+    expect(alert.textContent).toContain('Your question is saved, but MAIA’s answer isn’t available yet');
+    expect(alert.textContent).not.toMatch(/send it again/i);       // the first request may still be running: never invite a resend
+    expect(host.querySelector('[data-maia-delivery-note]')).toBeNull();
+    expect(host.querySelector('[data-turn="2"]')?.textContent).toContain('Across the whole book?');
+    expect(input().value).toBe('Across the whole book?');          // unchanged, so a resend reuses the held turn
+    expect(mockAsk).toHaveBeenCalledTimes(1);
+  });
+  it('⭐ MUST FAIL IF one re-read showing nothing new is reported as "didn\u2019t reach her" (it may still be on its way)', async () => {
+    await mount('Across the whole book?');
+    mockAsk.mockResolvedValueOnce({ ok: false, refusal: 'unreachable' });
+    await click('Send');
+    const alert = host.querySelector('[role="alert"][data-maia-refusal]')!;
+    expect(alert.textContent).toContain('it isn’t known whether that reached her');
+    expect(alert.textContent).not.toContain('didn’t reach her');
+    expect(input().value).toBe('Across the whole book?');
+  });
+  /* Intake item 3 (live walk): after the drop, pressing Send looked like a no-op in data-send-mode=resume. This pins what the client does. */
+  it('Send after a drop on a resumed conversation is not stuck: an explicit press asks again, once, and each attempt is visible', async () => {
+    await mount('Across the whole book?');
+    expect(host.querySelector('[data-send-mode]')?.getAttribute('data-send-mode')).toBe('resume');
+    mockAsk.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    mockLoadThread.mockRejectedValue(new TypeError('Failed to fetch'));
+    await click('Send');
+    expect(mockAsk).toHaveBeenCalledTimes(1);
+    await click('Send');                                            // the writer's explicit second press
+    expect(mockAsk).toHaveBeenCalledTimes(2);                       // it was sent again — the guard was released
+    expect(mockAsk.mock.calls[1][0]).toMatchObject({ threadId: 'thread-a', question: 'Across the whole book?' });
+    expect(input().value).toBe('Across the whole book?');
+  });
+  it('when the server cannot be asked either, it says it is not known, keeps the words, and never claims either way', async () => {
+    await mount('Across the whole book?');
+    mockAsk.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    mockLoadThread.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await click('Send');
+    const alert = host.querySelector('[role="alert"][data-maia-refusal]')!;
+    expect(alert.textContent).toContain('it isn’t known whether that reached her');
+    expect(alert.textContent).not.toContain('didn’t reach her');
+    expect(host.querySelector('[data-maia-delivery-note]')).toBeNull();
+    expect(input().value).toBe('Across the whole book?');
+    expect(mockAsk).toHaveBeenCalledTimes(1);
+  });
 });
