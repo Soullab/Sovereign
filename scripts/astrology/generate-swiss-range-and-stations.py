@@ -7,17 +7,26 @@ needs no ephemeris data files:
     python scripts/astrology/generate-swiss-range-and-stations.py \
       > lib/astrology/__tests__/fixtures/swissRangeAndStations.json
 
+Chiron and Ceres need the Swiss asteroid file seas_18.se1 (from the Swiss
+Ephemeris distribution, github.com/aloistr/swisseph, ephe/); set SE_EPHE_PATH to
+the folder holding it. It is used only here and is not committed.
+
 Writes:
   positions  geocentric apparent longitudes of the ten planets, the mean node
              and mean Lilith (mean lunar apogee) on two days a year every eight
              years, 1900-2100;
+  minorBodies geocentric apparent longitudes of Chiron and Ceres four times a
+             year every four years, 1900-2100 (Swiss data file backend);
   stations   every station of Mercury to Pluto from 2018 to 2027, found where
              Swiss's longitude speed changes sign and refined by bisection.
 These are numerical reference fixtures, not evidence about astrological
 interpretation.
 """
 import json
+import os
 import swisseph as swe
+
+swe.set_ephe_path(os.environ['SE_EPHE_PATH'])
 
 FLAGS = swe.FLG_MOSEPH | swe.FLG_SPEED
 BODIES = {
@@ -36,6 +45,15 @@ for year in range(1900, 2101, 8):
         for name, body in BODIES.items():
             row[name] = round(swe.calc_ut(jd, body, FLAGS)[0][0], 5)
         positions.append(row)
+
+minor_bodies = []
+for year in range(1900, 2101, 4):
+    for month in (1, 4, 7, 10):
+        jd = swe.julday(year, month, 15, 12.0)
+        row = {'utc': '%04d-%02d-15T12:00:00Z' % (year, month)}
+        for name, body in (('chiron', swe.CHIRON), ('ceres', swe.CERES)):
+            row[name] = round(swe.calc_ut(jd, body, swe.FLG_SWIEPH | swe.FLG_SPEED)[0][0], 5)
+        minor_bodies.append(row)
 
 stations = []
 for name in STATION_BODIES:
@@ -58,4 +76,4 @@ for name in STATION_BODIES:
             stations.append({'body': name, 'utcMs': ms, 'turns': 'retrograde' if before > 0 else 'direct'})
         before, jd = now, nxt
 
-print(json.dumps({'generator': 'PySwissEph 2.10.03 FLG_MOSEPH|FLG_SPEED', 'positions': positions, 'stations': stations}, indent=1))
+print(json.dumps({'generator': 'PySwissEph 2.10.03 FLG_MOSEPH|FLG_SPEED', 'positions': positions, 'minorBodies': minor_bodies, 'stations': stations}, indent=1))

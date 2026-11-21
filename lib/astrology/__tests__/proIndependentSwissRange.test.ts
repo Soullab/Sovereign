@@ -47,6 +47,23 @@ describe('Pro engine vs Swiss Ephemeris, 1900-2100', () => {
   }
 });
 
+describe('Chiron and Ceres vs Swiss Ephemeris, 1900-2100', () => {
+  // They come from JPL Horizons positions (proMinorBodyEphemeris.ts). The
+  // single-orbit method before 2026-11-21 was up to 9° (Chiron) and 17°
+  // (Ceres) out against these references.
+  for (const row of reference.minorBodies) {
+    it(`${row.utc}: Chiron and Ceres within ${TOLERANCE}°`, async () => {
+      const chart = await chartAt(row.utc);
+      expect(delta(longitude(chart.chiron), row.chiron)).toBeLessThanOrEqual(TOLERANCE);
+      expect(delta(longitude(chart.ceres), row.ceres)).toBeLessThanOrEqual(TOLERANCE);
+    });
+  }
+
+  it('Ceres is in Cancer on 2026-11-21, not Leo', async () => {
+    expect((await chartAt('2026-11-21T12:00:00Z')).ceres.sign).toBe('Cancer');
+  });
+});
+
 describe('Pro motion labels around Swiss stations, 2018-2026', () => {
   it('has the stations of every planet from Mercury to Pluto', () => {
     expect(new Set(reference.stations.map((s) => s.body)).size).toBe(8);

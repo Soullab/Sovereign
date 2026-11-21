@@ -12,6 +12,7 @@
  */
 
 import { INCLUDE_UNVERIFIED_ASTEROIDS } from './unverifiedBodies';
+import { minorBodyLongitude } from './proMinorBodyEphemeris';
 import * as Astronomy from 'astronomy-engine';
 import { ASPECT_DEFINITIONS } from './proAspectOrbs';
 
@@ -481,15 +482,11 @@ function calculateAscendant(lst: number, lat: number, obliquity: number): number
 // ============================================================================
 // KEPLERIAN PROPAGATION
 //
-// astronomy-engine handles Sun/Moon/planets at JPL-grade accuracy but does
-// not include Chiron or the four main-belt asteroids. We propagate them from
-// J2000.0 osculating orbital elements (source: JPL Small-Body Database) using
-// Keplerian mechanics: solve Kepler's equation iteratively, rotate the orbital
-// plane to ecliptic J2000, subtract Earth's heliocentric position to get the
-// geocentric vector, and take the ecliptic longitude.
-//
-// Accuracy: ~0.5° over ±100 years from J2000 (well within natal-chart needs).
-// Replaces linear mean-motion stubs that drifted 10-30° depending on body.
+// Used only for Pallas, Juno and Vesta, which stay withheld
+// (unverifiedBodies.ts). Chiron and Ceres come from JPL Horizons positions in
+// proMinorBodyEphemeris.ts: this single-orbit method, measured against Swiss
+// Ephemeris, put Chiron up to 9° and Ceres up to 17° out (2026-11-21), so its
+// former "~0.5°" accuracy note was wrong.
 // ============================================================================
 
 interface OrbitalElements {
@@ -502,20 +499,6 @@ interface OrbitalElements {
   n: number;       // mean motion (degrees per day)
 }
 
-// M0 verified by back-propagation from Chiron's well-documented Aries ingress
-// on 2018-04-17 (heliocentric longitude 0° on that date).
-const CHIRON_ELEMENTS: OrbitalElements = {
-  a: 13.7027, e: 0.3791, i: 6.9282,
-  Omega: 209.4138, omega: 339.6391, M0: 31.0,
-  n: 360 / (50.42 * 365.25),
-};
-// M0 derived by back-propagation from Wikipedia 2024-07-21 epoch elements
-// (L=286.60°, ω̃=153.93°, n=0.2143°/day) → L(J2000)=164.60°, M0=10.95°.
-const CERES_ELEMENTS: OrbitalElements = {
-  a: 2.7691, e: 0.0760, i: 10.5934,
-  Omega: 80.3293, omega: 73.5973, M0: 10.95,
-  n: 360 / (4.60 * 365.25),
-};
 // NOTE: Pallas / Juno / Vesta M0 values below are from the previous linear
 // stubs and have NOT been verified against J2000 ephemeris. Positions from
 // these will be approximate (potentially 20-60° off). The Keplerian math
@@ -598,13 +581,6 @@ function keplerianGeocentricLongitude(el: OrbitalElements, date: Date): number {
   return ((lon % 360) + 360) % 360;
 }
 
-/**
- * Chiron position via Keplerian propagation from J2000.0 elements.
- * Replaces the linear mean-motion stub that drifted ~30° over decades.
- */
-function calculateChironApprox(date: Date): number {
-  return keplerianGeocentricLongitude(CHIRON_ELEMENTS, date);
-}
 
 /**
  * Calculate Mean Black Moon Lilith (Mean Lunar Apogee)
@@ -623,12 +599,6 @@ function calculateMeanLilith(date: Date): number {
   return (((perigee + 180) % 360) + 360) % 360;
 }
 
-/**
- * Ceres position via Keplerian propagation. Largest main-belt asteroid.
- */
-function calculateCeresApprox(date: Date): number {
-  return keplerianGeocentricLongitude(CERES_ELEMENTS, date);
-}
 
 /**
  * Pallas position via Keplerian propagation. High-inclination main-belt asteroid.
@@ -945,10 +915,8 @@ export async function calculateBirthChart(birthData: BirthData): Promise<BirthCh
     const southNodeLon = (northNodeLon + 180) % 360;
     planetLongitudes.SouthNode = southNodeLon;
 
-    // Chiron - Approximate calculation
-    // Chiron has a ~51 year orbital period and was discovered at 3° Taurus in 1977
-    // This is a simplified formula - production would use Swiss Ephemeris
-    const chironLon = calculateChironApprox(birthDate);
+    // Chiron from NASA JPL Horizons positions (proMinorBodyEphemeris.ts).
+    const chironLon = await minorBodyLongitude('chiron', birthDate);
     planetLongitudes.Chiron = chironLon;
 
     // Asteroids - Feminine Archetypes
@@ -957,7 +925,7 @@ export async function calculateBirthChart(birthData: BirthData): Promise<BirthCh
     planetLongitudes.Lilith = lilithLon;
 
     // Ceres - Nurturing, Grief, Motherhood
-    const ceresLon = calculateCeresApprox(birthDate);
+    const ceresLon = await minorBodyLongitude('ceres', birthDate);
     planetLongitudes.Ceres = ceresLon;
 
     // Pallas - Wisdom, Strategy, Creative Intelligence
