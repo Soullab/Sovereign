@@ -27,6 +27,16 @@ peak:a.peak,clipped:a.clippedSamples,recorded:a.recordedLayers,renderMsPerSec:ms
 window.__late=async(input,toneLayer,at)=>{const s=window.__settings(input,toneLayer,'headphones');const r=44100;
 const piece=async(origin,len)=>{const ctx=new OfflineAudioContext(2,len*r,r);const h=buildSoundscape(ctx,ctx.destination,s.spec,s.level,undefined,s.overtoneBusGain,s.recordedAmount,s.weaveAmount,s.toneLayerAmount,{origin,horizonSec:len});h.scheduleTicks(0,len);return (await ctx.startRendering()).getChannelData(0)};
 const a=await piece(at-30,30),b=await piece(at-14,14);let sig=0,err=0;for(let t=8*r;t<14*r;t++){const x=a[16*r+t],y=b[t];sig+=x*x;err+=(x-y)**2}return 10*Math.log10(sig/(err||1e-30))};
+window.__sink=async(input,toneLayer)=>{const s=window.__settings(input,toneLayer,'headphones');const chunks=[];
+const viaSink=await renderSoundscapeWav(s,40,{pieceSec:15,sink:{write:async c=>{await new Promise(r=>setTimeout(r,0));chunks.push(new Uint8Array(c.slice(0)))}}});
+const viaBlob=new Uint8Array(await (await renderSoundscapeWav(s,40,{pieceSec:15})).blob.arrayBuffer());
+const joined=new Uint8Array(chunks.reduce((n,c)=>n+c.length,0));let o=0;for(const c of chunks){joined.set(c,o);o+=c.length}
+let same=joined.length===viaBlob.length;for(let i=0;same&&i<joined.length;i++)if(joined[i]!==viaBlob[i])same=false;
+const again=new Uint8Array(await (await renderSoundscapeWav(s,40,{pieceSec:15})).blob.arrayBuffer());let diffSink=0,diffRuns=0,maxS=0;
+const A=new Int16Array(joined.buffer.slice(44)),B=new Int16Array(viaBlob.buffer.slice(44)),C=new Int16Array(again.buffer.slice(44));
+for(let i=0;i<B.length;i++){if(A[i]!==B[i]){diffSink++;maxS=Math.max(maxS,Math.abs(A[i]-B[i]))}if(C[i]!==B[i])diffRuns++}
+let hdr=true;for(let i=0;i<44;i++)if(joined[i]!==viaBlob[i])hdr=false;
+return{same,bytes:joined.length,reported:viaSink.bytes,blobNull:viaSink.blob===null,chunks:chunks.length,diffSink,diffRuns,maxS,hdr}};
 window.__speaker=async(input,seconds)=>{const tl={hz:220,pulseMode:'binaural',pulseHz:10};const h=await pcm((await renderSoundscapeWav(window.__settings(input,tl,'headphones'),seconds)).blob);const s=await pcm((await renderSoundscapeWav(window.__settings(input,tl,'speaker'),seconds)).blob);
 // side signal (L-R) carries the binaural pair's difference; the speaker version has its tone centred
 let sideH=0,sideS=0,midH=0,midS=0;for(let i=0;i<h.length;i+=2){sideH+=((h[i]-h[i+1])/2)**2;sideS+=((s[i]-s[i+1])/2)**2;midH+=((h[i]+h[i+1])/2)**2;midS+=((s[i]+s[i+1])/2)**2}
@@ -61,6 +71,12 @@ const late=await page.evaluate(([d,t])=>Promise.all([window.__late(d,t,600),wind
 check('two hours in, two pieces still agree where they overlap (>= 50 dB, triangle voices and events)',late[1]>=50,`${late[0].toFixed(1)} dB at 10 min, ${late[1].toFixed(1)} dB at 2 h`);
 const lateB=await page.evaluate(([d,t])=>window.__late(d,t,7190),[design,bin]);
 check('two hours in, the binaural design\'s pieces still agree (>= 60 dB)',lateB>=60,`${lateB.toFixed(1)} dB`);
+const sk=await page.evaluate(([d,t])=>window.__sink(d,t),[design,bin]);
+// Chrome's offline render is not bit-exact from run to run: two ordinary renders first differed in 59 samples by
+// 1/32767. So: the same header and length, and no difference beyond that floor.
+check('streamed to a chosen place, the file is the one made here (same header and length; samples within Chrome\'s own 1/32767 run-to-run floor), and nothing is held in memory',
+  sk.hdr&&sk.bytes===7056044&&sk.maxS<=1&&sk.diffSink<=Math.max(200,3*sk.diffRuns)&&sk.blobNull&&sk.reported===sk.bytes,
+  `${sk.bytes} bytes in ${sk.chunks} writes; ${sk.diffSink} samples differ by at most ${sk.maxS} (two ordinary renders: ${sk.diffRuns})`);
 const r3=await page.evaluate(([d])=>window.__speaker(d,40),[design]);
 console.log('speaker · '+JSON.stringify(r3));
 check('the speaker version carries the 10 Hz pulse in what one speaker plays (mid), clearly above a neighbouring rate',r3.pulseS>3*r3.pulseSOff,`10 Hz ${r3.pulseS.toFixed(1)} vs 13 Hz ${r3.pulseSOff.toFixed(1)}`);

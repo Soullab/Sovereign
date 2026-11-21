@@ -96,7 +96,10 @@ export type ExportSettings = {
   spec: SoundscapeSpec; level: number; overtoneBusGain: number; recordedAmount: number; weaveAmount: number; toneLayerAmount: number;
 };
 export type ExportProgress = { done: number; total: number };
-export type ExportResult = { blob: Blob; seconds: number; peak: number; clippedSamples: number; recordedLayers: string[] };
+/** Where the file's bytes go as they are made. A place the member chose (the browser's Save window) streams the
+ * file straight to it, so a 2-hour file is never held in memory. Without a sink the result carries a Blob. */
+export type ExportSink = { write(chunk: ArrayBuffer): Promise<void> };
+export type ExportResult = { blob: Blob | null; bytes: number; seconds: number; peak: number; clippedSamples: number; recordedLayers: string[] };
 
 /**
  * Render `seconds` of the soundscape to a 16-bit stereo WAV, piece by piece (see exportPlan). `loadRecorded` gives a
@@ -104,7 +107,7 @@ export type ExportResult = { blob: Blob; seconds: number; peak: number; clippedS
  */
 export async function renderSoundscapeWav(
   settings: ExportSettings, seconds: number,
-  options: { loadRecorded?: (ctx: BaseAudioContext) => RecordedLoader; onProgress?: (p: ExportProgress) => void; signal?: AbortSignal; pieceSec?: number } = {},
+  options: { loadRecorded?: (ctx: BaseAudioContext) => RecordedLoader; onProgress?: (p: ExportProgress) => void; signal?: AbortSignal; pieceSec?: number; sink?: ExportSink } = {},
 ): Promise<ExportResult> {
   const total = Math.max(1, Math.min(EXPORT_MAX_SEC, Math.round(seconds)));
   const plan = exportPlan(total, options.pieceSec);
@@ -112,13 +115,16 @@ export async function renderSoundscapeWav(
   const frames = total * rate;
   const fadeFrames = Math.min(Math.floor(frames / 4), EXPORT_FILE_FADE_SEC * rate);
   const joinFrames = Math.round(EXPORT_JOIN_SEC * rate);
-  const parts: BlobPart[] = [wavHeader(frames)];
+  const parts: BlobPart[] = [];
+  let bytes = 0;
+  const put = async (chunk: ArrayBuffer) => { bytes += chunk.byteLength; if (options.sink) await options.sink.write(chunk); else parts.push(new Blob([chunk])); };
+  await put(wavHeader(frames));
   const cache = new Map<string, Promise<AudioBuffer | null>>();
   let written = 0; let peak = 0; let clipped = 0;
   let held: [Float32Array, Float32Array] | null = null;
   const recorded = new Set<string>();
   // Fade the file's ends, measure, and convert to 16-bit.
-  const emit = (left: Float32Array, right: Float32Array) => {
+  const emit = async (left: Float32Array, right: Float32Array) => {
     const out = new Int16Array(left.length * 2);
     for (let i = 0; i < left.length; i++) {
       const frame = written + i;
@@ -133,7 +139,7 @@ export async function renderSoundscapeWav(
       }
     }
     written += left.length;
-    parts.push(new Blob([out.buffer]));
+    await put(out.buffer);
   };
   options.onProgress?.({ done: 0, total: plan.length });
   for (let index = 0; index < plan.length; index++) {
@@ -165,12 +171,12 @@ export async function renderSoundscapeWav(
         const w = (i + 0.5) / joinFrames;
         mixL[i] = held[0][i] * (1 - w) + L[i] * w; mixR[i] = held[1][i] * (1 - w) + R[i] * w;
       }
-      emit(mixL, mixR); start = joinFrames;
+      await emit(mixL, mixR); start = joinFrames;
     }
     const end = last ? n : n - joinFrames;
-    emit(L.subarray(start, end), R.subarray(start, end));
+    await emit(L.subarray(start, end), R.subarray(start, end));
     held = last ? null : [L.slice(end, n), R.slice(end, n)];
     options.onProgress?.({ done: index + 1, total: plan.length });
   }
-  return { blob: new Blob(parts, { type: 'audio/wav' }), seconds: total, peak, clippedSamples: clipped, recordedLayers: [...recorded] };
+  return { blob: options.sink ? null : new Blob(parts, { type: 'audio/wav' }), bytes, seconds: total, peak, clippedSamples: clipped, recordedLayers: [...recorded] };
 }
