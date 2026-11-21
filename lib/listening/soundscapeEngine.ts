@@ -24,8 +24,44 @@ export type SoundscapeHandle = {
   scheduleTicks(from: number, to: number): void;
   /** The member's Overtones setting, as a bus gain (overtoneSetting.ts); 0 silences them. No effect on Tone Lab. */
   setOvertoneBusGain(gain: number): void;
+  /** The member's Nature recordings amount (0–1) for every recorded layer; 0 is synthesis alone. */
+  setRecordedAmount(amount: number): void;
+  /** Which recorded layers this sound asked for, and whether each is a real recording, loading or missing. */
+  recordedLayers(): Partial<Record<RecordedLayerId, RecordedLayerState>>;
+  onRecordedLayers(listener: (state: Partial<Record<RecordedLayerId, RecordedLayerState>>) => void): () => void;
   dispose(): void;
 };
+
+export type RecordedLayerState = 'loading' | 'recorded' | 'missing';
+
+/** Crossfade length for a recorded loop's seam, in seconds (at most a third of the clip). */
+export const RECORDED_LOOP_CROSSFADE_SEC = 1.0;
+
+/** One channel made loopable: the last `fade` samples are faded (equal power) into the first, and the result is `fade`
+ * samples shorter. Its last sample runs straight on into its first, so the loop has no seam to click on. */
+export function seamlessLoopChannel(data: Float32Array, fade: number): Float32Array {
+  const n = data.length;
+  const f = Math.min(Math.floor(fade), Math.floor(n / 3));
+  if (f < 2) return data.slice();
+  const out = new Float32Array(n - f);
+  for (let i = 0; i < f; i++) {
+    const x = (i / f) * (Math.PI / 2);
+    out[i] = data[i] * Math.sin(x) + data[n - f + i] * Math.cos(x);
+  }
+  out.set(data.subarray(f, n - f), f);
+  return out;
+}
+
+export function seamlessLoopBuffer(context: BaseAudioContext, buffer: AudioBuffer): AudioBuffer {
+  const fade = Math.round(RECORDED_LOOP_CROSSFADE_SEC * buffer.sampleRate);
+  const first = seamlessLoopChannel(buffer.getChannelData(0), fade);
+  if (first.length === buffer.length) return buffer;
+  const out = context.createBuffer(buffer.numberOfChannels, first.length, buffer.sampleRate);
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    out.getChannelData(c).set(c === 0 ? first : seamlessLoopChannel(buffer.getChannelData(c), fade));
+  }
+  return out;
+}
 
 const SCALE = GENERATED_OUTPUT_SCALE; // same output scale as the original studies; the member's volume multiplies it
 const PLUCK_RATIOS = [1, 1.125, 1.5, 1.6667, 2, 1.5, 1.125, 1];
@@ -55,7 +91,7 @@ function noiseBuffer(context: BaseAudioContext, seconds = 2): AudioBuffer {
 
 export function buildSoundscape(
   context: BaseAudioContext, destination: AudioNode, initial: SoundscapeSpec, level: number, loadRecorded?: RecordedLoader,
-  overtoneBusGain: number = SOUNDSCAPE_OVERTONE_BUS_GAIN,
+  overtoneBusGain: number = SOUNDSCAPE_OVERTONE_BUS_GAIN, recordedAmount = 1,
 ): SoundscapeHandle {
   let spec = initial;
   const t0 = context.currentTime;
@@ -197,13 +233,27 @@ export function buildSoundscape(
   // Recorded nature layers: looped real recordings that follow the spec's mix. Everything goes through the master,
   // so the member's volume and the fade-in apply to them exactly as to the synthesized sound.
   const layers = new Map<string, { gain: GainNode; source: AudioBufferSourceNode | null; loading: boolean }>();
+  // The member's "Nature recordings" amount (N1, #1979): one bus for every recorded layer, so 0 is synthesis alone.
+  const recordingsBus = context.createGain(); recordingsBus.gain.value = Math.max(0, recordedAmount); recordingsBus.connect(master);
+  const recordedState: Partial<Record<RecordedLayerId, RecordedLayerState>> = {};
+  const recordedListeners = new Set<(state: Partial<Record<RecordedLayerId, RecordedLayerState>>) => void>();
+  // Only the layers the CURRENT mix plays: a layer faded out by a live change is no longer reported.
+  const currentRecorded = (): Partial<Record<RecordedLayerId, RecordedLayerState>> => {
+    const now: Partial<Record<RecordedLayerId, RecordedLayerState>> = {};
+    for (const [id, state] of Object.entries(recordedState) as [RecordedLayerId, RecordedLayerState][]) {
+      if (((spec.recorded ?? {})[id] ?? 0) > 0) now[id] = state;
+    }
+    return now;
+  };
+  const emitRecorded = () => { for (const listener of recordedListeners) listener(currentRecorded()); };
+  const setRecordedState = (id: RecordedLayerId, state: RecordedLayerState) => { recordedState[id] = state; emitRecorded(); };
   let disposed = false;
   const applyRecorded = (mix: SoundscapeSpec['recorded']) => {
     if (!loadRecorded) return;
     const wanted = mix ?? {};
     for (const id of Object.keys(wanted) as RecordedLayerId[]) {
       if (!layers.has(id)) {
-        const gain = context.createGain(); gain.gain.value = 0; gain.connect(master);
+        const gain = context.createGain(); gain.gain.value = 0; gain.connect(recordingsBus);
         layers.set(id, { gain, source: null, loading: false });
       }
     }
@@ -213,13 +263,17 @@ export function buildSoundscape(
       layer.gain.gain.setTargetAtTime(target, context.currentTime, 2.5);
       if (target > 0 && !layer.source && !layer.loading) {
         layer.loading = true;
+        setRecordedState(id as RecordedLayerId, 'loading');
         void loadRecorded(id as RecordedLayerId).then(buffer => {
-          if (!buffer || disposed) return;
+          if (disposed) return;
+          if (!buffer) { setRecordedState(id as RecordedLayerId, 'missing'); return; }
           const source = context.createBufferSource();
-          source.buffer = buffer; source.loop = true;
+          // Short field clips would click or audibly restart at the seam: loop a crossfaded copy instead.
+          source.buffer = seamlessLoopBuffer(context, buffer); source.loop = true;
           source.connect(layer.gain); source.start(context.currentTime);
           layer.source = source; extras.push(source);
-        }).catch(() => { /* a missing recording leaves the rest of the sound unchanged */ });
+          setRecordedState(id as RecordedLayerId, 'recorded');
+        }).catch(() => { if (!disposed) setRecordedState(id as RecordedLayerId, 'missing'); }); // the rest plays unchanged
       }
     });
   };
@@ -302,14 +356,24 @@ export function buildSoundscape(
         if (toneGraph.lfo) gently(toneGraph.lfo.frequency, Math.max(0.0001, next.tone.pulseHz));
       }
       applyRecorded(next.recorded);
+      emitRecorded();
       return true;
     },
     scheduleTicks,
     setOvertoneBusGain(gain) {
       if (overtoneBus) overtoneBus.gain.setTargetAtTime(Math.max(0, gain), context.currentTime, 0.06);
     },
+    setRecordedAmount(amount) {
+      recordingsBus.gain.setTargetAtTime(Math.max(0, amount), context.currentTime, 0.12);
+    },
+    recordedLayers() { return currentRecorded(); },
+    onRecordedLayers(listener) {
+      recordedListeners.add(listener);
+      return () => { recordedListeners.delete(listener); };
+    },
     dispose() {
       disposed = true;
+      recordedListeners.clear();
       if (timer !== null) clearInterval(timer);
       for (const node of [...oscillators, ...overtoneOscillators, movement, drift, ...extras]) { try { node.stop(); } catch { /* already stopped */ } }
     },

@@ -74,7 +74,8 @@ test('generated sound · soundscapes start at, and are scaled by, the same outpu
   // Every audible part of a soundscape (tones, noise, recorded nature, ticks) ends in the master the control sets.
   assert.match(engine, /filter\.connect\(master\)/);
   assert.match(engine, /noiseGain\.connect\(master\)/);
-  assert.match(engine, /gain\.connect\(master\)/);
+  assert.match(engine, /gain\.connect\(recordingsBus\)/); // recorded layers → the Nature recordings bus (N1) …
+  assert.match(engine, /recordingsBus\.connect\(master\)/); // … → the master
   assert.match(engine, /out\.connect\(master\)/);
   assert.deepEqual(engine.match(/\w+\.connect\(destination\)/g), ['master.connect(destination)'], 'only the master reaches the destination');
 });

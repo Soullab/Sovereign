@@ -17,7 +17,10 @@ import {
   DEFAULT_OVERTONE_SETTING, overtoneBusGain, readStoredOvertoneSetting, writeStoredOvertoneSetting,
   type OvertoneSetting,
 } from '@/lib/listening/overtoneSetting';
-import type { SoundscapeHandle } from '@/lib/listening/soundscapeEngine';
+import {
+  DEFAULT_NATURE_RECORDING_AMOUNT, natureRecordingGain, readStoredNatureRecordingAmount, writeStoredNatureRecordingAmount,
+} from '@/lib/listening/natureRecordingSetting';
+import type { RecordedLayerState, SoundscapeHandle } from '@/lib/listening/soundscapeEngine';
 import type { FocusSoundId } from '@/lib/listening/focusSoundChoices';
 import {
   keepDesignSounds, readDesignSounds, withDesignSound, writeDesignSounds, type FocusDesignSounds,
@@ -122,6 +125,11 @@ export type ListeningTransport = {
   /** The member's Overtones setting (on or off, and an Amount), for every generated sound that has them. */
   overtones: OvertoneSetting;
   setOvertones: (setting: OvertoneSetting) => void;
+  /** The member's Nature recordings amount (0–100): how loud the real recorded layers are; 0 is synthesis alone. */
+  natureRecordings: number;
+  setNatureRecordings: (amount: number) => void;
+  /** For the soundscape now built: each recorded layer it asked for, and whether it is a real recording or missing. */
+  recordedLayers: Partial<Record<string, RecordedLayerState>>;
   looping: boolean;
   loopAvailable: boolean;
   setLooping: (enabled: boolean) => void;
@@ -408,7 +416,7 @@ function loadRecordedLoop(context: BaseAudioContext, id: string): Promise<AudioB
   return pending;
 }
 
-function newSoundscapeSketch(spec: SoundscapeSpec, level: number, overtoneGain: number): Sketch {
+function newSoundscapeSketch(spec: SoundscapeSpec, level: number, overtoneGain: number, recordedGain: number): Sketch {
   const AudioCtor: typeof AudioContext =
     window.AudioContext ||
     (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!;
@@ -417,7 +425,7 @@ function newSoundscapeSketch(spec: SoundscapeSpec, level: number, overtoneGain: 
   const out = context.createGain();
   out.connect(context.destination);
   const stream = typeof context.createMediaStreamDestination === 'function' ? context.createMediaStreamDestination() : undefined;
-  const handle = buildSoundscape(context, out, spec, level, id => loadRecordedLoop(context, id), overtoneGain);
+  const handle = buildSoundscape(context, out, spec, level, id => loadRecordedLoop(context, id), overtoneGain, recordedGain);
   return {
     context, oscillators: handle.oscillators, master: handle.master, voices: handle.voices, filter: handle.filter,
     movement: handle.movement, movementDepth: handle.movementDepth, mood: 'focus', frequencies: [spec.root], soundscape: handle,
@@ -508,6 +516,9 @@ export function PersistentListeningProvider({
   const volumeRef = useRef(DEFAULT_LISTENING_LEVEL);
   const [overtones, saveOvertones] = useState<OvertoneSetting>({ ...DEFAULT_OVERTONE_SETTING });
   const overtonesRef = useRef<OvertoneSetting>({ ...DEFAULT_OVERTONE_SETTING });
+  const [natureRecordings, saveNatureRecordings] = useState(DEFAULT_NATURE_RECORDING_AMOUNT);
+  const natureRecordingsRef = useRef(DEFAULT_NATURE_RECORDING_AMOUNT);
+  const [recordedLayers, saveRecordedLayers] = useState<Partial<Record<string, RecordedLayerState>>>({});
   const epoch = useRef(0);
   // Stable within this one member-bound provider instance, never serialized or shared.
   const listeningInstance = useRef<object>({}).current;
@@ -886,6 +897,22 @@ export function PersistentListeningProvider({
     try { writeStoredOvertoneSetting(window.localStorage, next); } catch { /* storage unavailable */ }
   }, []);
 
+  // The member's Nature recordings amount: moves the recordings bus of the sound now playing; remembered on this device.
+  const setNatureRecordings = useCallback((amount: number) => {
+    const next = Number.isFinite(amount) ? Math.max(0, Math.min(100, Math.round(amount))) : natureRecordingsRef.current;
+    natureRecordingsRef.current = next;
+    saveNatureRecordings(next);
+    sketch.current?.soundscape?.setRecordedAmount(natureRecordingGain(next));
+    try { writeStoredNatureRecordingAmount(window.localStorage, next); } catch { /* storage unavailable */ }
+  }, []);
+
+  useEffect(() => {
+    let stored = DEFAULT_NATURE_RECORDING_AMOUNT;
+    try { stored = readStoredNatureRecordingAmount(window.localStorage); } catch { /* storage unavailable */ }
+    natureRecordingsRef.current = stored;
+    saveNatureRecordings(stored);
+  }, []);
+
   // The remembered Overtones setting on this device, read once after mount. Reading it never starts sound.
   useEffect(() => {
     let stored = { ...DEFAULT_OVERTONE_SETTING };
@@ -976,14 +1003,18 @@ export function PersistentListeningProvider({
     if (soundscape) {
       if (!(active?.soundscape && active.soundscape.update(soundscape))) {
         if (active) endSketch(active);
-        active = newSoundscapeSketch(soundscape, volumeRef.current / 100, overtoneBusGain(overtonesRef.current));
+        active = newSoundscapeSketch(soundscape, volumeRef.current / 100, overtoneBusGain(overtonesRef.current),
+          natureRecordingGain(natureRecordingsRef.current));
         sketch.current = active;
+        saveRecordedLayers(active.soundscape?.recordedLayers() ?? {});
+        active.soundscape?.onRecordedLayers(state => saveRecordedLayers(state)); // what is really a recording, as it loads
       }
     } else if (!active || active.soundscape || active.mood !== mood ||
       JSON.stringify(active.frequencies) !== JSON.stringify(frequencies)) {
       if (active) endSketch(active);
       active = newSketch(mood, frequencies, volumeRef.current / 100,shapeRef.current, overtoneBusGain(overtonesRef.current));
       sketch.current = active;
+      saveRecordedLayers({});
     } else {
       applyReceptiveShape(active,shapeRef.current);
     }
@@ -1475,7 +1506,7 @@ export function PersistentListeningProvider({
   }, [liveSoundscapeKey]);
 
   const transport: ListeningTransport = {
-    snapshot, volume, setVolume, overtones, setOvertones, looping, loopAvailable, setLooping, shape, setShape,
+    snapshot, volume, setVolume, overtones, setOvertones, natureRecordings, setNatureRecordings, recordedLayers, looping, loopAvailable, setLooping, shape, setShape,
     fields, keepField, dropField, replaceFields,
     playSketch, playExperienceMedia, selectLocalFile, playLocalFile, localFilePosition, generatedOutput,
     pause, stopMusic: stopAll, listeningInstance, removeLocalFile,

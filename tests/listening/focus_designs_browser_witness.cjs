@@ -38,7 +38,16 @@ createRoot(document.getElementById('app')).render(
     `<title>Focus designs · isolated fixture</title><link rel="stylesheet" href="/entry.css?v=${BUILD}">` +
     '<style>body{margin:0;background:#0b1418;color:#f1efe7;font:15px Georgia,serif}button{background:transparent;color:inherit;font:inherit;cursor:pointer}</style>' +
     `</head><body><div id="app"></div><script src="/entry.js?v=${BUILD}"></script></body></html>`);
+  const natureDir = path.join(repo, 'public/media/dev-private/nature');
   const server = http.createServer((req, res) => {
+    // N1 founder listening (#1979): in --serve mode only, the git-ignored private nature loops, WAV only, on 127.0.0.1.
+    const nature = /^\/media\/dev-private\/nature\/([a-z]+)\.wav$/.exec(req.url.split('?')[0]);
+    if (serveAt && nature) {
+      const w = path.join(natureDir, `${nature[1]}.wav`);
+      if (!fs.existsSync(w)) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': 'audio/wav' });
+      return fs.createReadStream(w).pipe(res);
+    }
     const f = path.join(dir, req.url === '/' ? 'index.html' : req.url.split('?')[0].replace(/^\//, ''));
     if (!f.startsWith(dir) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
     res.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': f.endsWith('.js') ? 'text/javascript' : f.endsWith('.css') ? 'text/css' : 'text/html' });

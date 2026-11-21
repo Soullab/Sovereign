@@ -8,6 +8,19 @@ import styles from './listen.module.css';
 // Sound for a Focus session. Deliberately OUTSIDE FocusFieldDesk: the Focus session itself has no media
 // authority (LISTEN-48/49). Choosing here starts nothing; Play is a separate member action (here, or in the
 // player bar while a session runs) and goes through the one persistent player like every other sound.
+// Says plainly which layers are real recordings and which have none (and so are synthesized sound only).
+function recordedLayersLine(layers: Partial<Record<string, 'loading' | 'recorded' | 'missing'>>): string {
+  const ids = Object.keys(layers);
+  if (ids.length === 0) return 'Press Play to hear which nature layers are real recordings.';
+  const of = (state: string) => ids.filter(id => layers[id] === state);
+  const parts = [
+    of('recorded').length ? `Real recordings: ${of('recorded').join(', ')}` : '',
+    of('missing').length ? `No recording yet (synthesized only): ${of('missing').join(', ')}` : '',
+    of('loading').length ? `Loading: ${of('loading').join(', ')}` : '',
+  ].filter(Boolean);
+  return `${parts.join(' · ')}.`;
+}
+
 export default function FocusSoundPicker() {
   const transport = usePersistentListening();
   const [message, setMessage] = useState('');
@@ -74,6 +87,20 @@ export default function FocusSoundPicker() {
             onChange={event => transport.setOvertones({ on: true, amount: Number(event.target.value) })} />
           <output>{transport.overtones.on ? `${transport.overtones.amount}%` : 'Off'}</output>
         </div>
+      )}
+      {soundId === 'soundscape' && transport?.focusDraft?.world === 'nature' && (
+        // N1 (#1979): how loud the REAL recordings are against the synthesized sound; 0% is synthesis alone.
+        <>
+          <label className={styles.focusSoundLevel} data-focus-nature-recordings="true">
+            <span>Nature recordings</span>
+            <input aria-label="Nature recordings amount" type="range" min="0" max="100" step="1"
+              value={transport.natureRecordings}
+              aria-valuetext={transport.natureRecordings === 0 ? 'Off: synthesis only' : `${transport.natureRecordings}%`}
+              onChange={event => transport.setNatureRecordings(Number(event.target.value))} />
+            <output>{transport.natureRecordings === 0 ? 'Off' : `${transport.natureRecordings}%`}</output>
+          </label>
+          <p className={styles.focusExplanation} data-focus-recorded-layers="true">{recordedLayersLine(transport.recordedLayers)}</p>
+        </>
       )}
       {message && <p className={styles.focusStatus} role="status" aria-live="polite">{message}</p>}
     </section>
