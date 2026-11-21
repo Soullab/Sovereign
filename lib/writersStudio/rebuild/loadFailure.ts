@@ -16,12 +16,18 @@
  * an operator log, which is the same discipline `vaultErasureErrnoR105` holds
  * for source-custody deletion (`lib/manuscript/source/vaultErasureSafeLogR105`).
  *
- * ⛔ What may be recorded: the stage, and an HTTP status. Both are facts about
- *    the request, not about the Work.
- * ⛔ What may NEVER be recorded: the response body, the caught error or its
- *    message, the manuscript or member identity, a section id, a heading, or
- *    any authored character. A status discriminates 404 from 500; it carries no
- *    word the writer typed.
+ * ⛔ What this module may put on the record: the stage, and an HTTP status.
+ *    Both are facts about the request, not about the Work.
+ * ⛔ What it may NEVER put there: the response body, the caught error or its
+ *    message, the manuscript or section identity, a heading, or any authored
+ *    character. A status discriminates 404 from 500; it carries no word the
+ *    writer typed.
+ * ⚠️ What the RECEIVER adds, and this module does not control: the client
+ *    telemetry route attaches `member_id` from the session cookie to every
+ *    event it logs, as it does for voice and onboarding. So the server record
+ *    says WHOSE load failed — which is what makes a report correlatable — and
+ *    the claim here is the narrower, true one: nothing the member WROTE is on
+ *    it. ⛔ Do not read this module's law as a promise about the receiver.
  */
 
 /** The stages of `load()` that can fail. A closed vocabulary — adding a throw
@@ -92,4 +98,51 @@ function safeRebuildLoadStatus(status: unknown): number {
   return typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599
     ? status
     : 0;
+}
+
+/**
+ * Record a load failure where an operator can actually read it.
+ *
+ * A `console.error` in a `'use client'` component reaches the MEMBER's devtools
+ * and nothing else: in production no operator can see it, and asking the member
+ * to open devtools and read it back is the repro burden the voice-diagnostic
+ * surface was built to end. So this mirrors `lib/voice/voiceDiagnostics.ts` —
+ * browser console for whoever is holding it (a local preview is the case that
+ * started this), AND a fire-and-forget POST to `/api/telemetry/client`, which
+ * logs server-side and is therefore visible in `docker logs maia-sovereign`.
+ *
+ * The route holds a STRICT event allowlist, so `ws_rebuild_load_failed` is
+ * admitted there by name; an unlisted event is dropped rather than logged.
+ *
+ * ⛔ Never throws and never awaits: a diagnostic that can fail the thing it is
+ *    diagnosing is worse than no diagnostic. `path` is the PATHNAME only —
+ *    the rebuild address carries the manuscript and section ids in its QUERY
+ *    string, and the query must not travel.
+ */
+export function reportRebuildLoadFailure(failure: unknown): void {
+  const stage = rebuildLoadStage(failure);
+  const status = rebuildLoadStatus(failure);
+
+  try {
+    // eslint-disable-next-line no-console
+    console.error('[MAIA/writers-studio] rebuild load failed', { stage, status });
+  } catch {
+    // a console that throws is not a reason to lose the server record
+  }
+
+  try {
+    if (typeof fetch !== 'function') return;
+    void fetch('/api/telemetry/client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'ws_rebuild_load_failed',
+        path: typeof window !== 'undefined' ? window.location.pathname : null,
+        metadata: { stage, status },
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // never block the room's refusal on telemetry
+  }
 }

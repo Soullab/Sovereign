@@ -34,7 +34,7 @@ import { useEditingLatitude } from '../insight/EditingLatitude';
 import { INSIGHT_READING, INSIGHT_OBSERVATION, loadCanvasInsight, type CanvasInsight, type InsightPassage } from '@/lib/writersStudio/insightCanvas';
 import type { SectionWriting } from '@/lib/writersStudio/useSectionWriting';
 import { asOutline, chapterSpanFor, isConfirmedChapterRoot, wordCount, type RebuildSection } from '@/lib/writersStudio/rebuild/model';
-import { RebuildLoadFailure, rebuildLoadStage, rebuildLoadStatus } from '@/lib/writersStudio/rebuild/loadFailure';
+import { RebuildLoadFailure, reportRebuildLoadFailure } from '@/lib/writersStudio/rebuild/loadFailure';
 import type { OutlineNode } from '@/lib/writersStudio/focus/outlineTree';
 import { DEVELOPMENTAL_LENSES, type DevelopmentalLens } from '@/lib/manuscript/developmentalReader/contract';
 import { focusOn, focusRequest, composerPrompt } from '@/lib/writersStudio/focus/studioFocus';
@@ -499,11 +499,10 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
       /* The member's sentence does not name the stage, and must not: we do not
          know what they would make of a stage name, and the honest floor is the
          copy below. The SYSTEM records it, classified — stage and status only,
-         never the body, the error or any authored character (loadFailure.ts). */
-      console.error('[MAIA/writers-studio] rebuild load failed', {
-        stage: rebuildLoadStage(error),
-        status: rebuildLoadStatus(error),
-      });
+         never the body, the error or any authored character (loadFailure.ts),
+         and server-side as well as in the console, so an operator can read it
+         without asking the member to open devtools. */
+      reportRebuildLoadFailure(error);
       setPhase('error');
       setMessage('The rebuilt Studio could not read this manuscript just now. Nothing has changed.');
     }

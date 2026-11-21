@@ -7,7 +7,7 @@
  *
  * Dispatch:
  *   redirect_loop_detected  → onboarding_events (via trackOnboarding)
- *   voice_*                 → server console.log only (visible in docker logs)
+ *   voice_* · ws_*          → server console.log only (visible in docker logs)
  *
  * Always returns 204 — telemetry never blocks user flow.
  */
@@ -94,6 +94,13 @@ const ALLOWED_EVENTS = new Set([
   // only 1 behind the guards. Metadata is counts/booleans only.
   'voice_dedup_blocked',
   'voice_transcript_dispatched',
+  // ── Writer's Studio rebuild: why the room could not open ───────────────
+  // app/writers-studio/rebuild/RebuildStudioClient.tsx has five ways to fail
+  // and one sentence for all of them (correctly — see loadFailure.ts). The
+  // member's copy names no stage; this is how an operator learns which of the
+  // five fired, instead of asking the member to open devtools.
+  // Metadata is the stage name and an HTTP status only.
+  'ws_rebuild_load_failed',
 ] as const);
 
 type AllowedEvent = typeof ALLOWED_EVENTS extends Set<infer T> ? T : never;
