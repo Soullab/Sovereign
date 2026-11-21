@@ -25,7 +25,8 @@ import { setWorkFormClient } from '@/lib/writersStudio/workFormClient';
 import { pathsForForm } from '@/lib/writersStudio/studioPaths';
 import { FORM_CHOICES, FORM_MAX_CHARS, FORM_OWN_WORD_LABEL, FORM_QUESTION, capitalise, formToSave, type FormChoice } from '@/lib/writersStudio/formVocabulary';
 import type { WorkKind } from '@/lib/writersStudio/workKindShared';
-import { useStudioVocabulary } from '@/lib/writersStudio/StudioVocabularyContext';
+import { placeLabel, useStudioVocabulary } from '@/lib/writersStudio/StudioVocabularyContext';
+import type { FormVocabulary } from '@/lib/writersStudio/formVocabulary';
 import type { StoredPlan, StepEvent } from '@/lib/writersStudio/developmentPlanStore';
 import { STEP_STATUS, type StepEdit, type StepStatus } from '@/lib/writersStudio/developmentPlan';
 import { STUDIO_DEPTHS, STUDIO_DEPTH_HINT, STUDIO_DEPTH_LABEL, isStudioDepth, type StudioDepth } from '@/lib/writersStudio/presentationRequests';
@@ -105,9 +106,9 @@ export interface StageSection {
 
 /* Founder (2026-11-09): "this dropdown could work if it had proper organization, indentation". Indent by the CONFIRMED level only. */
 const INDENT = '\u00A0\u00A0\u00A0\u00A0';
-export const chapterOptionLabel = (s: StageSection): string => {
+export const chapterOptionLabel = (s: StageSection, v: FormVocabulary, total: number): string => {
   const d = s.headingDepth;
-  const label = s.heading?.trim() || `Section ${s.position + 1}`;
+  const label = placeLabel(v, s, total);
   return typeof d === 'number' && d >= 1 && d <= 3 ? `${INDENT.repeat(d - 1)}${d === 1 ? label.toUpperCase() : label}` : label;
 };
 
@@ -117,7 +118,6 @@ const stripHeading = (s: StageSection): string => {
   if (h && body.trimStart().startsWith(h)) body = body.trimStart().slice(h.length);
   return body.trim();
 };
-const labelOf = (s: StageSection): string => s.heading?.trim() || `Section ${s.position + 1}`;
 
 /** The sections to show for the open chapter: the whole span when a range is given and contains the current section, in book
  *  order; otherwise just the current section. Never guesses a span. */
@@ -201,6 +201,7 @@ export function DevelopStage(props: {
   chapterRange?: { fromSectionId: string; toSectionId: string } | null;
 }) {
   const v = useStudioVocabulary();
+  const labelOf = (x: StageSection): string => placeLabel(v, x, props.sections.length);
   const { sections } = props;
   const allTools = props.view === 'full';
   const [openExcerpt, setOpenExcerpt] = useState<string | null>(null);
@@ -274,7 +275,7 @@ export function DevelopStage(props: {
         {sections.length > 0 ? (
           <select aria-label="Chapter" data-develop-chapter-select="true" value={current?.draftSectionId ?? ''} onChange={(e) => props.onSelect(e.target.value)}
             style={{ font: 'inherit', fontSize: 13, color: 'inherit', background: 'none', border: hair, borderRadius: 6, padding: '3px 6px', maxWidth: '40%' }}>
-            {sections.map((s) => <option key={s.draftSectionId} value={s.draftSectionId} data-depth={s.headingDepth ?? undefined}>{chapterOptionLabel(s)}</option>)}
+            {sections.map((s) => <option key={s.draftSectionId} value={s.draftSectionId} data-depth={s.headingDepth ?? undefined}>{chapterOptionLabel(s, v, sections.length)}</option>)}
           </select>
         ) : null}
         <span style={{ flex: 1 }} />
@@ -814,6 +815,7 @@ export function ChapterReadingPane(props: {
   chapterRange?: { fromSectionId: string; toSectionId: string } | null;
 }) {
   const v = useStudioVocabulary();
+  const labelOf = (x: StageSection): string => placeLabel(v, x, props.sections?.length ?? 1);
   const shown = props.sections ? chapterSections(props.sections, props.section, props.chapterRange ?? null) : [props.section];
   const blocks = shown.map((s) => ({ section: s, paragraphs: stripHeading(s).split(/\n\s*\n+/).map((p) => p.trim()).filter(Boolean) }));
   const serif = "'Iowan Old Style','Charter',Georgia,serif";

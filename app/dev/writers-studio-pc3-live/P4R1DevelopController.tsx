@@ -1,6 +1,6 @@
 'use client';
-import { StudioVocabularyProvider } from '@/lib/writersStudio/StudioVocabularyContext';
-import { formVocabulary, readingFrame } from '@/lib/writersStudio/formVocabulary';
+import { StudioVocabularyProvider, placeLabel } from '@/lib/writersStudio/StudioVocabularyContext';
+import { formVocabulary, readingFrame, type FormVocabulary } from '@/lib/writersStudio/formVocabulary';
 import { studioPathById } from '@/lib/writersStudio/studioPaths';
 
 import { freeWorkLimitFrom, workLimitMessageOr } from '@/lib/writersStudio/workLimitShared';
@@ -102,8 +102,8 @@ function summaryLens(summary: ReadingSummary): DevelopField | null {
     : null;
 }
 
-function sectionLabel(section: RebuildSection | undefined, index = 0): string {
-  return section?.heading?.trim() || `Section ${(section?.position ?? index) + 1}`;
+function sectionLabel(section: RebuildSection | undefined, index: number, v: FormVocabulary, total: number): string {
+  return placeLabel(v, { heading: section?.heading ?? null, position: section?.position ?? index }, total);
 }
 
 export default function P4R1DevelopController() {
@@ -454,7 +454,7 @@ export default function P4R1DevelopController() {
       return {
         kind: 'section',
         sectionId: currentSection.draftSectionId,
-        label: sectionLabel(currentSection),
+        label: sectionLabel(currentSection, 0, developVocabularyRef.current, context?.sections.length ?? 1),
       };
     });
   }, [context?.manuscriptId, currentSectionId]);
@@ -473,7 +473,7 @@ export default function P4R1DevelopController() {
       setScope({
         kind: 'section',
         sectionId: currentSection.draftSectionId,
-        label: sectionLabel(currentSection),
+        label: sectionLabel(currentSection, 0, developVocabularyRef.current, context?.sections.length ?? 1),
       });
     }
   }, [context?.manuscriptId]);
@@ -485,8 +485,11 @@ export default function P4R1DevelopController() {
   const work = currentWork(workContext);
   /* Develop speaks in the words of what this Work is (founder rulings 2026-11-20): a program's own, else the writer's form, else neutral. */
   const developProgram = studioPathById(work?.studioPath ?? null);
-  const developVocabulary = useMemo(() => formVocabulary(developProgram ? developProgram.name : work?.form ?? null),
-    [developProgram, work?.form]);
+  const developVocabulary = useMemo(() => {
+    const v = formVocabulary(developProgram ? developProgram.name : work?.form ?? null);
+    // A program names its untitled places in its own words, as Write does (studioPaths `studioCopy`).
+    return developProgram ? { ...v, place: { onlyPlace: developProgram.studioCopy.onlyPlace, part: developProgram.studioCopy.part } } : v;
+  }, [developProgram, work?.form]);
   /* Develop's reading instructions are written in book words; MAIA is told first what this Work is (founder 2026-11-20). */
   const developVocabularyRef = useRef(developVocabulary);
   developVocabularyRef.current = developVocabulary;
@@ -820,7 +823,7 @@ export default function P4R1DevelopController() {
       setScope({
         kind: 'section',
         sectionId,
-        label: sectionLabel(selected),
+        label: sectionLabel(selected, 0, developVocabularyRef.current, context.sections.length),
       });
     }
 
@@ -1701,9 +1704,9 @@ export default function P4R1DevelopController() {
     return {
       kind: 'section',
       sectionId: currentSection.draftSectionId,
-      label: sectionLabel(currentSection),
+      label: sectionLabel(currentSection, 0, developVocabulary, context?.sections.length ?? 1),
     };
-  }, [currentSection]);
+  }, [currentSection, developVocabulary, context?.sections.length]);
 
   const chapterScope = useMemo<Extract<DevelopScopeChoice, { kind: 'chapter' }> | null>(() => {
     if (!currentChapter?.sections.length) return null;

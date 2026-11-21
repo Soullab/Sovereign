@@ -12,7 +12,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import {
   FORM_CHOICES, formStudioCopy, formToSave, formVocabulary, inFormWords, readingFrame,
 } from '../formVocabulary';
-import { StudioVocabularyProvider } from '../StudioVocabularyContext';
+import { StudioVocabularyProvider, placeLabel } from '../StudioVocabularyContext';
 import { DevelopStage, DevelopHoldings, FormControl } from '@/app/dev/writers-studio-pc3-live/DevelopStage';
 import { apiFetch } from '@/lib/http/apiBase';
 
@@ -120,6 +120,12 @@ describe('Develop speaks in the Work’s words', () => {
     expect(text).toMatch(/What kind of poem is this\?/);
     // Walk 2026-11-21: the stage toolbar's read button still said "Read this chapter with MAIA" for a poem.
     expect(text).toMatch(/Read this stanza with MAIA/);
+  });
+
+  test('an untitled place is named as Write names it, never “Section 2”', () => {
+    const text = stage('poem');
+    expect(text).toMatch(/Stanza 2/);
+    expect(text).not.toMatch(/Section 2/);
   });
 
   test('with no form, Develop is neutral', () => {
@@ -323,5 +329,28 @@ describe('a Work begun from Home is asked what it is becoming too (founder 2026-
     const controller = read('app/dev/writers-studio-pc3-live/P4R1HomeController.tsx');
     expect(controller).toMatch(/onBegin=\{\(title, form\) => void onBegin\(title, null, form \?\? null\)\}/);
     expect(controller).toMatch(/onBeginWithSpark=\{\(title, spark, form\) => void onBegin\(title, ordinaryNow\(\) \? spark : null, form \?\? null\)\}/);
+  });
+});
+
+describe('Develop names an untitled place the way Write does (walk 2026-11-21)', () => {
+  test('its heading first; else “Your draft” when it is the only place; else the form’s part and number', () => {
+    const at = (heading: string | null, position: number) => ({ heading, position });
+    expect(placeLabel(formVocabulary('poem'), at('First light', 0), 3)).toBe('First light');
+    expect(placeLabel(formVocabulary('poem'), at('', 1), 3)).toBe('Stanza 2');
+    expect(placeLabel(formVocabulary('poem'), at(null, 0), 1)).toBe('Your draft');
+    expect(placeLabel(formVocabulary('essay'), at(null, 2), 3)).toBe('Section 3');
+    expect(placeLabel(formVocabulary(null), at(null, 1), 2)).toBe('Part 2');
+    // The same names Write's rail gives (formStudioCopy → unheadedPlaceName), so the two rooms agree.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { unheadedPlaceName } = require('../studioPaths') as typeof import('../studioPaths');
+    for (const form of ['poem', 'essay', 'book', 'song', null, 'Letter']) for (const [pos, total] of [[0, 1], [1, 3]] as const) {
+      expect(placeLabel(formVocabulary(form), at(null, pos), total)).toBe(unheadedPlaceName(formStudioCopy(form), pos, total));
+    }
+  });
+
+  test('no Develop file falls back to “Section n” on its own', () => {
+    for (const f of ['DevelopStage.tsx', 'P4R1DevelopView.tsx', 'P4R1DevelopController.tsx']) {
+      expect(read(`app/dev/writers-studio-pc3-live/${f}`)).not.toMatch(/`Section \$\{/);
+    }
   });
 });

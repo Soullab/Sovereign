@@ -1,6 +1,6 @@
 'use client';
 
-import { useFormWords, useStudioVocabulary } from '@/lib/writersStudio/StudioVocabularyContext';
+import { placeLabel, useFormWords, useStudioVocabulary } from '@/lib/writersStudio/StudioVocabularyContext';
 import SessionPostureChoice from '@/app/writers-studio/canvas/SessionPostureChoice';
 import { keepRefusalCopy } from '@/lib/writersStudio/keepPosture';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -313,6 +313,7 @@ function ManuscriptRail({ sections, currentSectionId, onSection }: {
   currentSectionId: string | null;
   onSection: (id: string) => void;
 }) {
+  const studioWords = useStudioVocabulary();
   const current = sections.find((section) => section.draftSectionId === currentSectionId) ?? null;
   /* EA walk 2026-11-11: a headed section with NO confirmed level (e.g. "My Morning Ritual" inside Chapter 4) vanished from this rail
      while Write's rail listed it and the chapter span included it. It is listed now, under the chapter it falls in, marked
@@ -360,7 +361,7 @@ function ManuscriptRail({ sections, currentSectionId, onSection }: {
               onClick={() => onSection(section.draftSectionId)}
               aria-current={section.draftSectionId === activeRailId ? 'true' : undefined}
             >
-              <b>{section.heading?.trim() || `Section ${section.position + 1}`}</b>
+              <b>{placeLabel(studioWords, section, sections.length)}</b>
             </button>
           </li>
         ))}
@@ -544,6 +545,7 @@ function ScopeChooser({ scope, sections, sectionScope, chapterScope, onScope }: 
   chapterScope: Extract<DevelopScopeChoice, { kind: 'chapter' }> | null;
   onScope: (scope: DevelopScopeChoice) => void;
 }) {
+  const studioWords = useStudioVocabulary();
   const fw = useFormWords();
   const from = scope.kind === 'range' ? scope.fromIndex : 0;
   const to = scope.kind === 'range' ? scope.toIndex : Math.max(0, sections.length - 1);
@@ -568,11 +570,11 @@ function ScopeChooser({ scope, sections, sectionScope, chapterScope, onScope }: 
             const n = Number(e.target.value);
             onScope({ kind: 'range', fromIndex: n, toIndex: Math.max(n, to) });
           }}>
-            {sections.map((s, i) => <option key={s.draftSectionId} value={i}>{s.heading?.trim() || `Section ${s.position + 1}`}</option>)}
+            {sections.map((s, i) => <option key={s.draftSectionId} value={i}>{placeLabel(studioWords, s, sections.length)}</option>)}
           </select>
           <span>to</span>
           <select value={to} onChange={(e) => onScope({ kind: 'range', fromIndex: from, toIndex: Number(e.target.value) })}>
-            {sections.map((s, i) => <option key={s.draftSectionId} value={i} disabled={i < from}>{s.heading?.trim() || `Section ${s.position + 1}`}</option>)}
+            {sections.map((s, i) => <option key={s.draftSectionId} value={i} disabled={i < from}>{placeLabel(studioWords, s, sections.length)}</option>)}
           </select>
         </div>
       ) : null}
@@ -2339,7 +2341,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
     (section) => section.draftSectionId === railSelectionId,
   ) ?? null;
   const selectedRailLabel = selectedRailSection
-    ? selectedRailSection.heading?.trim() || `Section ${selectedRailSection.position + 1}`
+    ? placeLabel(studioWords, selectedRailSection, props.sections.length)
     : 'Selected place';
 
   const selectManuscriptLocus = (sectionId: string) => {
@@ -3546,7 +3548,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
           lastRead={lastRead}
           coverage={<CoverageLine manuscriptId={props.manuscriptId}
             refreshKey={`${props.chapterReview?.commissionedAt ?? ''}:${props.attentionMap?.commissionedAt ?? ''}`}
-            labelOf={(id) => { const sec = props.sections.find((x) => x.draftSectionId === id); return sec ? (sec.heading?.trim() || `Section ${sec.position + 1}`) : 'a section'; }} />}
+            labelOf={(id) => { const sec = props.sections.find((x) => x.draftSectionId === id); return sec ? placeLabel(studioWords, sec, props.sections.length) : `a ${studioWords.unit}`; }} />}
           reading={stageReading.status === 'ready' ? (
             <StageReadingCard key={stageReading.chapterLabel} reading={stageReading}
               onWorkTowardRevision={() => makePlan(`Help me work toward a revision of ${stageChapterLabel}, starting from what you noticed when you read it.`)} />
@@ -3569,7 +3571,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
               onRead={setLastRead}
               onReadChapter={props.onCommissionChapterReading}
               onStudioAct={studioAct}
-              chapterLabel={(id) => { const sec = props.sections.find((x) => x.draftSectionId === id); return sec ? (sec.heading?.trim() || `Section ${sec.position + 1}`) : null; }}
+              chapterLabel={(id) => { const sec = props.sections.find((x) => x.draftSectionId === id); return sec ? placeLabel(studioWords, sec, props.sections.length) : null; }}
               onClose={() => setAttentionConversationDraft('')}
             />
           )}

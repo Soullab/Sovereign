@@ -45,6 +45,8 @@ export interface FormVocabulary {
   bringHint: string;
   /** What MAIA is told about the form in every Work conversation (ordinary Works only; a program's own posture outranks it). */
   maiaFrame: string;
+  /** How an untitled place is named, the same as Write's rail: the only place ("Your draft"), or "Stanza 2" / "Part 2". */
+  place: { onlyPlace: string; part: string };
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -52,6 +54,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 function set(kind: FormVocabulary['kind'], noun: string, unit: string, units: string, bringHint: string, craft: string): FormVocabulary {
   return {
     kind, noun, whole: `the whole ${noun}`, unit, units, railHeading: `Your ${noun}`, bringHint,
+    place: { onlyPlace: 'Your draft', part: cap(unit) },
     maiaFrame: `FORM: The writer has said this Work is ${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}. Speak about it as ${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}: its parts are ${units}. ${craft} Never call it a book or its parts chapters unless the writer does. Studio buttons that the guide names with “chapter” or “book” appear to this writer with “${unit}” and “${noun}” instead (“Read this ${unit} with MAIA”, “Whole ${noun} · editorial pass”): name them that way.`,
   };
 }
@@ -75,6 +78,7 @@ const SETS: Record<FormVocabulary['kind'], FormVocabulary> = {
     'Attend to what a screenplay is made of: scenes and sluglines, what the camera can see, action written in the present, dialogue, and visual storytelling.'),
   neutral: {
     kind: 'neutral', noun: 'piece', whole: 'the whole piece', unit: 'part', units: 'parts', railHeading: 'Your piece',
+    place: { onlyPlace: 'Your draft', part: 'Part' },
     bringHint: 'A page, a draft, the whole piece',
     maiaFrame: 'FORM: The writer has not said what kind of writing this is. Do not assume it is a book or speak of chapters; say “your piece” and “this part”, follow the words the writer uses for their own work, and if the kind of writing matters to your answer, ask them. Studio buttons that the guide names with “chapter” or “book” appear to this writer as “Read this part with MAIA” and “Whole piece · editorial pass”: name them that way.',
   },
