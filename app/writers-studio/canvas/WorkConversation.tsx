@@ -722,7 +722,7 @@ function ScopedWorkConversation({
           <StudioText role="metadata" style={{ opacity: 0.7, maxWidth: '34ch' }} data-discovery="fresh">
             {/* L8 — the same facts the prompt gives her (askReader workSays). */}
             {sectionId
-              ? 'She can read the section you are in, and only that one. She sees the other sections by heading.'
+              ? `She can read the ${vocab.unit} you are in, and only that one. She sees the other ${vocab.units} by heading.`
               : 'She has your Work in view by its headings. She has not been given its text —'}
             {sectionId ? null : keeps.length > 0
               ? ' bring a Keep if you want her to read a passage.'

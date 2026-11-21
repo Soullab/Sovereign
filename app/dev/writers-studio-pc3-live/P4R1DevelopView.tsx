@@ -347,7 +347,7 @@ function ManuscriptRail({ sections, currentSectionId, onSection }: {
 
   return (
     <div className="fr-ms">
-      <div className="fr-ms-head"><h2>Manuscript <ChevronDown /></h2></div>
+      <div className="fr-ms-head"><h2>{studioWords.railHeading} <ChevronDown /></h2></div>
       <ol className="fr-chapters p4r1-structural-rail">
         {railSections.map((section) => (
           <li

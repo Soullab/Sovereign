@@ -367,3 +367,24 @@ describe('Develop names an untitled place the way Write does (walk 2026-11-21)',
     }
   });
 });
+
+describe('walk 2026-11-21: the last book and section words around a poem', () => {
+  test('Develop’s list is headed with the Work’s words, not “Manuscript”', () => {
+    const view = read('app/dev/writers-studio-pc3-live/P4R1DevelopView.tsx');
+    expect(view).toMatch(/<h2>\{studioWords\.railHeading\} <ChevronDown \/><\/h2>/);
+    expect(view).not.toMatch(/<h2>Manuscript /);
+  });
+
+  test('MAIA’s column says what she can read in the Work’s words', () => {
+    const conv = read('app/writers-studio/canvas/WorkConversation.tsx');
+    expect(conv).toMatch(/She can read the \$\{vocab\.unit\} you are in, and only that one\. She sees the other \$\{vocab\.units\} by heading\./);
+    expect(conv).not.toMatch(/She sees the other sections by heading/);
+  });
+
+  test('the bring-your-pages invitation does not assume a book before the writer has said what it is', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { CARRY_COPY } = require('../inspirationOpening');
+    expect(CARRY_COPY.invite).toBe('Before anyone reads a word, would you tell MAIA what this writing means to you?');
+    expect(`${CARRY_COPY.invite} ${CARRY_COPY.held}`).not.toMatch(BOOKISH);
+  });
+});

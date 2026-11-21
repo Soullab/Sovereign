@@ -134,11 +134,11 @@ export function quotesVerified(reply: string, page: string): boolean {
 /* ── C · Bring What You Carry (S4) ───────────────────────────────────────────────────────────────────────────── */
 
 export const CARRY_COPY = {
-  invite: 'Before anyone reads a word, would you tell MAIA what this book means to you?',
+  invite: 'Before anyone reads a word, would you tell MAIA what this writing means to you?',
   inviteHint: 'Optional. You can bring the file first, or skip this entirely.',
   question: 'Not the table of contents or the shelf it belongs on. What made you need to write it?',
   invitation: 'In your own words. It doesn’t need to be polished.',
-  held: 'Your spark will be kept with this book’s Work when it comes in.',
+  held: 'Your spark will be kept with this Work when it comes in.',
   notHeld: 'Nothing from this was kept.',
 } as const;
 
