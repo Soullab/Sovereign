@@ -62,12 +62,12 @@ function workFacts(work: LivingWork, manuscripts: readonly CurrentManuscript[]):
   const choices = manuscriptsForWork(work, manuscripts);
   if (choices.length > 1) {
     return {
-      extent: `${choices.length} manuscripts`,
-      written: 'Choose a manuscript to continue',
+      extent: `${choices.length} drafts`,
+      written: 'Choose a draft to continue',
     };
   }
   const manuscript = choices[0] ?? null;
-  if (!manuscript) return { extent: 'No manuscript yet', written: 'not yet written here' };
+  if (!manuscript) return { extent: 'No writing yet', written: 'not yet written here' };
   const extent = homeWritingExtent(manuscript);
   const words = wordsFromChars(extent);
   return {
@@ -183,7 +183,7 @@ function WorkAnchor({ work, allWorks, manuscripts, activity, onOpen, onStartWrit
           ) : choices.length > 1 ? (
             <ManuscriptChooser
               manuscripts={choices}
-              heading="Choose a manuscript to continue"
+              heading="Choose a draft to continue"
               onChoose={(id) => onOpen(id, sectionId)}
             />
           ) : !hasManuscriptExpression ? (
@@ -265,7 +265,7 @@ function WorkShelfCard({ work, allWorks, manuscripts, onOpen, onStartWriting, bu
         ) : choices.length > 1 ? (
           <ManuscriptChooser
             manuscripts={choices}
-            heading="Choose a manuscript"
+            heading="Choose a draft"
             onChoose={onOpen}
           />
         ) : !hasManuscriptExpression ? (
@@ -534,14 +534,14 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
           manuscripts={pendingManuscripts}
           heading={
             props.pendingMode.mode === 'write'
-              ? 'Choose a manuscript to write'
+              ? 'Choose a draft to write'
               : props.pendingMode.mode === 'develop'
-                ? 'Choose a manuscript to develop'
+                ? 'Choose a draft to develop'
                 : props.pendingMode.mode === 'review'
-                  ? 'Choose a manuscript to review'
+                  ? 'Choose a draft to review'
                   : props.pendingMode.mode === 'publish'
-                    ? 'Choose a manuscript to publish'
-                    : 'Choose a manuscript to listen to'
+                    ? 'Choose a draft to publish'
+                    : 'Choose a draft to listen to'
           }
           onChoose={(id) => props.onChooseManuscript(props.pendingMode!.mode, id)}
         />
@@ -907,7 +907,7 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
 
 function ManuscriptChooser({
   manuscripts,
-  heading = 'Choose a manuscript',
+  heading = 'Choose a draft',
   onChoose,
 }: {
   manuscripts: readonly CurrentManuscript[];
@@ -927,7 +927,7 @@ function ManuscriptChooser({
               onClick={() => onChoose(manuscript.id)}
               className="block w-full text-left px-4 py-3 border border-current rounded-[2px] opacity-75 hover:opacity-100 transition-opacity"
             >
-              {manuscript.title?.trim() || 'Untitled manuscript'}
+              {manuscript.title?.trim() || 'Untitled draft'}
             </button>
           </li>
         ))}

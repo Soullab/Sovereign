@@ -402,3 +402,18 @@ describe('bring-your-pages speaks neutrally: the writer has not yet said what it
     for (const t of shown) expect(t).not.toMatch(/\bmanuscripts?\b|\bsections?\b|\bchapters?\b|\bbook\b/i);
   });
 });
+
+describe('choosing among a Work’s drafts says “draft”, never “manuscript”', () => {
+  test('Home’s chooser, the Work arrival screen and the guide entry speak of drafts', () => {
+    const home = read('app/dev/writers-studio-pc3-live/P4R1HomeView.tsx');
+    const arrival = read('app/dev/writers-studio-pc3-live/ExplicitWorkArrival.tsx');
+    expect(home).toMatch(/'Choose a draft to continue'/);
+    expect(home).toMatch(/'Choose a draft to develop'/);
+    expect(arrival).toMatch(/Choose this draft →/);
+    for (const src of [home, arrival]) {
+      expect(src).not.toMatch(/Choose (a|this) manuscript|Untitled manuscript|Open manuscript|several manuscripts|declared manuscript for/);
+    }
+    expect(home).not.toMatch(/`\$\{choices\.length\} manuscripts`/);
+    expect(read('lib/writersStudio/studioGuide.ts')).toMatch(/label: 'Choose a draft to continue'/);
+  });
+});
