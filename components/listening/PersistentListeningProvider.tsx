@@ -289,7 +289,7 @@ function applyReceptiveShape(sketch: Sketch, shape: ReceptiveControls) {
  * (GENERATED_OUTPUT_SCALE) is unchanged. Measured at Level 45%: content above ~300 Hz rises from below −69 LUFS
  * to about −58…−52 LUFS; the whole sound rises about 6–8 dB.
  * Since 2026-11-21 the member's Overtones setting sets the bus (founder: "too obvious, even with it on low level");
- * the 2026-11-19 "100%" is Amount 100% there (bus gain 6.0), and the default is now 50%. */
+ * the 2026-11-19 "100%" is Amount 100% there (bus gain 6.0), and the default is now 20% (founder ruling 2026-11-21). */
 const OVERTONE_PARTIALS = [2, 3, 4, 5, 6, 7, 8];
 const OVERTONE_HIGHEST_HZ = 4000;
 function newSketchOvertones(

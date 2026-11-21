@@ -34,9 +34,10 @@ test.after(() => { for (const h of built) h.dispose(); });
 const busOf = (ctx, handle) => ctx.nodes.find((n) => n.kind === 'gain' && n.out.includes(handle.master) &&
   ctx.nodes.some((s) => s.kind === 'gain' && s.out.includes(n) && handle.movementDepth.out.includes(s.gain)));
 
-test('default is on at 50%, which is option D: the bus the founder chose (3.0, half of 6.0)', () => {
-  assert.deepEqual({ ...M.DEFAULT_OVERTONE_SETTING }, { on: true, amount: 50 });
-  assert.equal(M.overtoneBusGain(M.DEFAULT_OVERTONE_SETTING), M.SOUNDSCAPE_OVERTONE_BUS_GAIN);
+test('default is on at 20% (founder ruling: "Yes, make it 20%"); 50% is still option D, bus 3.0', () => {
+  assert.deepEqual({ ...M.DEFAULT_OVERTONE_SETTING }, { on: true, amount: 20 });
+  assert.equal(M.overtoneBusGain(M.DEFAULT_OVERTONE_SETTING), 1.2);
+  assert.equal(M.overtoneBusGain({ on: true, amount: 50 }), M.SOUNDSCAPE_OVERTONE_BUS_GAIN);
   assert.equal(M.overtoneBusGain({ on: true, amount: 100 }), 6.0);
 });
 
@@ -51,15 +52,15 @@ test('off silences the overtones whatever the amount; the amount scales linearly
 test('it is remembered on this device, and a bad or missing value falls back to the default', () => {
   const store = new Map();
   const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
-  assert.deepEqual(M.readStoredOvertoneSetting(storage), { on: true, amount: 50 });
+  assert.deepEqual(M.readStoredOvertoneSetting(storage), { on: true, amount: 20 });
   M.writeStoredOvertoneSetting(storage, { on: false, amount: 20 });
   assert.deepEqual(M.readStoredOvertoneSetting(storage), { on: false, amount: 20 });
   store.set(M.OVERTONE_SETTING_STORAGE_KEY, '{not json');
-  assert.deepEqual(M.readStoredOvertoneSetting(storage), { on: true, amount: 50 });
+  assert.deepEqual(M.readStoredOvertoneSetting(storage), { on: true, amount: 20 });
   store.set(M.OVERTONE_SETTING_STORAGE_KEY, JSON.stringify({ on: 'yes', amount: 20 }));
-  assert.deepEqual(M.readStoredOvertoneSetting(storage), { on: true, amount: 50 });
+  assert.deepEqual(M.readStoredOvertoneSetting(storage), { on: true, amount: 20 });
   const throwing = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
-  assert.deepEqual(M.readStoredOvertoneSetting(throwing), { on: true, amount: 50 });
+  assert.deepEqual(M.readStoredOvertoneSetting(throwing), { on: true, amount: 20 });
   assert.doesNotThrow(() => M.writeStoredOvertoneSetting(throwing, { on: true, amount: 5 }));
 });
 

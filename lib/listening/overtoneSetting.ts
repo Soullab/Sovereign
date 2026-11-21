@@ -5,15 +5,16 @@
  * Tone Lab never has them. Remembered on this device only, like Level.
  *
  * The Amount scales the overtone bus linearly. 100% is the "Amount 100%" of both listening tests (bus gain 6.0);
- * 50% is option D, the amount the founder chose for Your soundscape on 2026-11-21 (bus gain 3.0).
+ * 50% is option D, the amount the founder chose for Your soundscape on 2026-11-21 (bus gain 3.0). The default is 20%.
  */
 export const OVERTONE_SETTING_STORAGE_KEY = 'soullab.listen.overtones.v1';
 export const OVERTONE_FULL_BUS_GAIN = 6.0;
 
 export type OvertoneSetting = { on: boolean; amount: number };
 
-/** 50% (option D) for every sound. Before this setting, Deep focus and Creative flow played at 100%. */
-export const DEFAULT_OVERTONE_SETTING: OvertoneSetting = Object.freeze({ on: true, amount: 50 });
+/** 20% for every sound (founder ruling 2026-11-21, #1979: "Yes, make it 20%", after hearing Deep focus at 20%: "This is
+ * a great fix"). Before this setting, Deep focus and Creative flow played at 100% and Your soundscape at 50% (option D). */
+export const DEFAULT_OVERTONE_SETTING: OvertoneSetting = Object.freeze({ on: true, amount: 20 });
 
 export function normalizeOvertoneSetting(value: unknown): OvertoneSetting | null {
   if (!value || typeof value !== 'object') return null;
