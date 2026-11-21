@@ -6,9 +6,13 @@ const thread = (turns: AskThreadView['turns']) => ({ id: 't', anchor: { on: 'wor
 const before = [turn(0, 'author', 'Earlier question'), turn(1, 'maia', 'Earlier answer')];
 
 describe('WS-F1 · what a dropped connection may say', () => {
-  it('arrived: the server kept a new writer turn with exactly this question (and her answer)', () => {
+  it('answered: the server kept a new writer turn with exactly this question, and her answer follows it', () => {
     const after = thread([...before, turn(2, 'author', 'Across the whole book?'), turn(3, 'maia', 'An answer')]);
-    expect(deliveryAfterDrop(2, after, '  Across the whole book?  ')).toBe('arrived');
+    expect(deliveryAfterDrop(2, after, '  Across the whole book?  ')).toBe('answered');
+  });
+  it('⭐ MUST FAIL IF a held, unanswered question is reported as answered (the server keeps the question before the model runs)', () => {
+    const after = thread([...before, turn(2, 'author', 'Across the whole book?')]);
+    expect(deliveryAfterDrop(2, after, 'Across the whole book?')).toBe('held');
   });
   it('not_arrived: only when the server was re-read and nothing was added', () => {
     expect(deliveryAfterDrop(2, thread(before), 'Across the whole book?')).toBe('not_arrived');

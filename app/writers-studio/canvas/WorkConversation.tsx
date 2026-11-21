@@ -164,6 +164,8 @@ const REFUSAL_SAYS: Record<string, string> = {
   unreachable: 'That didn’t reach her. Nothing was lost — try again.',
   /* WS-F1: the connection dropped and the server could not be asked, so whether it arrived is not known. Never claimed either way. */
   unconfirmed: 'The connection dropped before her reply came back, so it isn’t known whether that reached her. Your question is still in the box. Reopen this conversation to see whether she answered before you send it again.',
+  /* WS-F1: the question is on the thread (kept before the model runs) and no answer exists. An unchanged resend reuses it (retry.ts). */
+  held: 'The connection dropped. Your question reached her, but her answer didn’t come back. It’s kept in the conversation above; send it again unchanged and she’ll answer it there.',
   empty_answer: 'MAIA returned nothing. Try asking again.',
   /* WS-ASK-ANSWER-TRUNCATION: she ran out of room before finishing, so the cut answer was not kept or shown. */
   answer_incomplete: 'MAIA ran out of room before she finished, so that answer wasn’t kept. Nothing you wrote was lost — ask again, or ask about a narrower part of the book.',
@@ -531,14 +533,20 @@ function ScopedWorkConversation({
       const t = id ? await (manuscriptId ? loadThread(manuscriptId, id) : loadLivingWorkAskThread(work.id, id)).catch(() => null) : null;
       if (checkGen !== conversationGenRef.current) return;
       const delivery = id ? deliveryAfterDrop(id === knownThreadId ? turnsBefore : 0, t, question) : 'unknown';
-      if (delivery === 'arrived' && id && t) {
+      if ((delivery === 'answered' || delivery === 'held') && id && t) {
         setThreadId(id);
-        setThread(t);
+        setThread(t);   // her question (and, if it exists, her answer) is shown as the server holds it
+      }
+      if (delivery === 'answered') {
         if (!teach) setDraft((current) => draftRevisionRef.current === submittedRevision ? '' : current);
         setDeliveryNote(DELIVERED_AFTER_DROP);
         return;
       }
-      setRefusal(teach ? TEACH_NOT_ANSWERED : delivery === 'not_arrived' ? REFUSAL_SAYS.unreachable : REFUSAL_SAYS.unconfirmed);
+      // 'held' keeps the words in the box: an unchanged resend reuses the held turn rather than adding a second one.
+      setRefusal(teach ? TEACH_NOT_ANSWERED
+        : delivery === 'held' ? REFUSAL_SAYS.held
+        : delivery === 'not_arrived' ? REFUSAL_SAYS.unreachable
+        : REFUSAL_SAYS.unconfirmed);
     };
     inFlightRef.current = true;
     setReorientationOffered(false);

@@ -333,6 +333,19 @@ describe('WS-F1 · a dropped connection on a resumed conversation', () => {
     expect(input().value).toBe('');
     expect(mockAsk).toHaveBeenCalledTimes(1);                      // never resent by itself
   });
+  it('⭐ MUST FAIL IF a held question (kept, never answered) is shown as answered: it says so, shows it kept, and keeps the words', async () => {
+    await mount('Across the whole book?');
+    mockAsk.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    mockLoadThread.mockResolvedValueOnce({ ...kept, turns: [...kept.turns,
+      { index: 2, speaker: 'author', body: 'Across the whole book?', staleness: 'current' }] });
+    await click('Send');
+    const alert = host.querySelector('[role="alert"][data-maia-refusal]')!;
+    expect(alert.textContent).toContain('reached her, but her answer didn’t come back');
+    expect(host.querySelector('[data-maia-delivery-note]')).toBeNull();
+    expect(host.querySelector('[data-turn="2"]')?.textContent).toContain('Across the whole book?');
+    expect(input().value).toBe('Across the whole book?');          // unchanged, so a resend reuses the held turn
+    expect(mockAsk).toHaveBeenCalledTimes(1);
+  });
   it('says it did not reach her only after the server was asked and nothing was added', async () => {
     await mount('Across the whole book?');
     mockAsk.mockResolvedValueOnce({ ok: false, refusal: 'unreachable' });
