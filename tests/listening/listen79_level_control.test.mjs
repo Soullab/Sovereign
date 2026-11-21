@@ -69,7 +69,9 @@ test('generated sound · soundscapes start at, and are scaled by, the same outpu
   assert.match(engine, /import \{ GENERATED_OUTPUT_SCALE, ORIGINAL_OUTPUT_SCALE, TONE_OUTPUT_SCALE \} from '\.\/listeningLevel'/);
   assert.match(engine, /const SCALE = GENERATED_OUTPUT_SCALE;/);
   // playLevel is the identity except for a Tone Lab sound, which is capped; Tone Lab also keeps its original scale.
-  assert.match(engine, /master\.gain\.exponentialRampToValueAtTime\(Math\.max\(0\.0001, playLevel\(level\) \* \(spec\.tone \? TONE_OUTPUT_SCALE : SCALE\)\)/);
+  // (2026-11-21, audio-file export: the target is named once; live play ramps to it, a settled export piece starts at it.)
+  assert.match(engine, /const masterTarget = Math\.max\(0\.0001, playLevel\(level\) \* \(spec\.tone \? TONE_OUTPUT_SCALE : SCALE\)\);/);
+  assert.match(engine, /master\.gain\.exponentialRampToValueAtTime\(masterTarget, t0 \+ Math\.max\(1, spec\.fadeInSec\)\)/);
   assert.match(engine, /\?\? 0\) \/ ORIGINAL_OUTPUT_SCALE;/); // recorded layers keep their balance with the raised master
   // Every audible part of a soundscape (tones, noise, recorded nature, ticks) ends in the master the control sets.
   assert.match(engine, /filter\.connect\(master\)/);

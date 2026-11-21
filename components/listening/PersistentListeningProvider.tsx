@@ -25,7 +25,8 @@ import {
   DEFAULT_TONE_LAYER, keepDesignTones, readDesignTones, readStoredToneLayer, toneLayerAmountGain, toneLayerLabel, toneLayerSpec,
   withDesignTone, writeDesignTones, writeStoredToneLayer, type DesignTones, type ToneLayerSetting,
 } from '@/lib/listening/toneLayerSetting';
-import type { RecordedLayerState, SoundscapeHandle } from '@/lib/listening/soundscapeEngine';
+import type { RecordedLayerState, RecordedLoader, SoundscapeHandle } from '@/lib/listening/soundscapeEngine';
+import type { ExportSettings } from '@/lib/listening/soundscapeExport';
 import type { FocusSoundId } from '@/lib/listening/focusSoundChoices';
 import {
   keepDesignSounds, readDesignSounds, withDesignSound, writeDesignSounds, type FocusDesignSounds,
@@ -195,6 +196,11 @@ export type ListeningTransport = {
   designSoundLabel: (designId: string) => string | null;
   /** Member-initiated: plays the chosen Focus sound through the one persistent player. */
   playFocusSound: () => Promise<boolean>;
+  /** What "Save as an audio file" renders (#1979): Your soundscape exactly as the member hears it now (choices, Level,
+   * Overtones, Nature recordings, Weave, Tone). null for any other choice. Reading it starts nothing. */
+  focusSoundExport: () => ExportSettings | null;
+  /** The player's own recording loader, for an export's offline contexts. */
+  exportRecordingLoader: (context: BaseAudioContext) => RecordedLoader;
   /** false where the platform fixes the media level (iOS): volume, presets and fade cannot work. */
   volumeAdjustable: boolean;
   setFocusTimeDisplay: (mode: FocusTimeDisplay) => void;
@@ -1573,6 +1579,19 @@ export function PersistentListeningProvider({
     return playSketch(sketchChoice.mood, [...sketchChoice.frequencies]);
   }, [focusSoundChoice, liveSoundscapeInput, playExperienceMedia, playSketch]);
 
+  const focusSoundExport = useCallback((): ExportSettings | null => {
+    if (focusSoundChoice !== 'soundscape') return null;
+    return {
+      spec: { ...focusSoundscapeSpec(liveSoundscapeInput), toneLayer: toneLayerSpec(toneLayerRef.current) },
+      level: volumeRef.current / 100,
+      overtoneBusGain: overtoneBusGain(overtonesRef.current),
+      recordedAmount: natureRecordingGain(natureRecordingsRef.current),
+      weaveAmount: weaveGain(weaveRef.current),
+      toneLayerAmount: toneLayerAmountGain(toneLayerRef.current),
+    };
+  }, [focusSoundChoice, liveSoundscapeInput]);
+  const exportRecordingLoader = useCallback((context: BaseAudioContext): RecordedLoader => id => loadRecordedLoop(context, id), []);
+
   // A running soundscape follows the member's choices live: smoothly within a palette, a new fade-in across palettes.
   useEffect(() => {
     const active = sketch.current;
@@ -1592,7 +1611,7 @@ export function PersistentListeningProvider({
     pause, stopMusic: stopAll, listeningInstance, removeLocalFile,
     focusSession, focusClockMs,
     focusTimeDisplay, setFocusTimeDisplay,
-    focusSoundChoice, setFocusSoundChoice, playFocusSound, focusDraft, setFocusDraft,
+    focusSoundChoice, setFocusSoundChoice, playFocusSound, focusSoundExport, exportRecordingLoader, focusDraft, setFocusDraft,
     rememberDesignSound, recallDesignSound, keepDesignSoundsFor, designSoundLabel,
     volumeAdjustable,
     startFocusSession: beginFocusSession,

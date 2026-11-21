@@ -93,6 +93,37 @@ export const SOUNDSCAPE_OVERTONE_BUS_GAIN = 3.0; // 50% of the Shelf's 6.0: the 
 const SOUNDSCAPE_OVERTONE_HIGHEST_HZ = 4000;
 const overtoneGain = (n: number, hz: number) => (hz > SOUNDSCAPE_OVERTONE_HIGHEST_HZ ? 0 : 1 / (n * n));
 
+/**
+ * A piece of ONE long timeline (the audio-file export, #1979; founder 2026-11-21: "Yes, options 1+2"). A long file is
+ * rendered in pieces; each piece is built as if the sound had been playing since global time 0 and this context's
+ * time 0 is global time `origin`. Every oscillator starts at the phase it would have there, the noise and every
+ * recorded segment and weave moment are where the one continuous walk puts them, and a later piece starts already
+ * settled (no fade-in). So two pieces that overlap produce the same sound, and the joins cannot be heard.
+ * `horizonSec`: how far ahead to schedule recorded segments and weave moments (the whole piece). Live play never
+ * passes a timeline and is unchanged.
+ */
+export type SoundscapeTimeline = { origin: number; horizonSec: number };
+
+/** Phase, in cycles (0–1), that a wave of `hz` started at global 0 has reached at global time `origin`. */
+export function phaseAt(hz: number, origin: number): number {
+  return hz > 0 && origin > 0 ? frac(hz * origin) : 0;
+}
+
+/** Envelope for one recorded segment or weave moment that started at context time `at`, which may be before `from`
+ * (a piece of the timeline that begins mid-segment): fade in, hold, fade out (equal power), each scaled by `peak`. */
+function scheduleEnvelope(param: AudioParam, at: number, from: number, duration: number, fade: number, peak: number): void {
+  const e = Math.max(0, from - at);
+  const curve = (shape: (x: number) => number, x0: number) =>
+    Float32Array.from({ length: CURVE_POINTS }, (_, i) => peak * shape(x0 + (1 - x0) * (i / (CURVE_POINTS - 1))));
+  const rise = (x: number) => Math.sin(x * Math.PI / 2);
+  const fall = (x: number) => Math.cos(x * Math.PI / 2);
+  const outStart = duration - fade;
+  if (e < fade - 1e-4) param.setValueCurveAtTime(curve(rise, e / fade), at + e, fade - e);
+  else if (e < outStart) param.setValueAtTime(peak, at + e);
+  if (e <= outStart) param.setValueCurveAtTime(curve(fall, 0), at + outStart, fade);
+  else if (duration - e > 1e-4) param.setValueCurveAtTime(curve(fall, (e - outStart) / fade), at + e, duration - e);
+}
+
 function noiseBuffer(context: BaseAudioContext, seconds = 2): AudioBuffer {
   const length = Math.floor(context.sampleRate * seconds);
   const buffer = context.createBuffer(1, length, context.sampleRate);
@@ -108,15 +139,45 @@ function noiseBuffer(context: BaseAudioContext, seconds = 2): AudioBuffer {
 export function buildSoundscape(
   context: BaseAudioContext, destination: AudioNode, initial: SoundscapeSpec, level: number, loadRecorded?: RecordedLoader,
   overtoneBusGain: number = SOUNDSCAPE_OVERTONE_BUS_GAIN, recordedAmount = 1, weaveAmount = 0.5, toneLayerAmount = 0.5,
+  timeline?: SoundscapeTimeline,
 ): SoundscapeHandle {
   let spec = initial;
   const t0 = context.currentTime;
+  // A later piece of an exported timeline starts settled and in phase (see SoundscapeTimeline). Live: origin 0.
+  const origin = timeline ? Math.max(0, timeline.origin) : 0;
+  const settled = origin > 0;
+  // Start an oscillator at the phase the one continuous timeline gives it. On a timeline every wave is built from the
+  // Web Audio standard's own series for its type, shifted to that phase (sin(n(ωt + φ)) per partial), so a piece's
+  // sound is the continuous sound sample for sample. Live play keeps the built-in waves, started at t0.
+  const startInPhase = (osc: OscillatorNode, hz: number) => {
+    if (!timeline || typeof context.createPeriodicWave !== 'function' || osc.type === 'custom') { osc.start(t0); return; }
+    // The frequency the oscillator really runs at is the 32-bit value its parameter holds: carry the detune in it and
+    // take the phase from that exact value, so the phase stays right hours into the timeline.
+    if (hz > 0) { osc.frequency.value = hz; osc.detune.value = 0; }
+    const p = 2 * Math.PI * phaseAt(Math.fround(hz), origin);
+    const type = osc.type;
+    const count = type === 'sine' ? 2 : 2048;
+    const real = new Float32Array(count); const imag = new Float32Array(count);
+    for (let n = 1; n < count; n++) {
+      const b = type === 'sine' ? (n === 1 ? 1 : 0)
+        : type === 'square' ? (2 / (n * Math.PI)) * (1 - (-1) ** n)
+        : type === 'sawtooth' ? ((-1) ** (n + 1)) * 2 / (n * Math.PI)
+        : 8 * Math.sin(n * Math.PI / 2) / (Math.PI * n) ** 2; // triangle
+      real[n] = b * Math.sin(n * p); imag[n] = b * Math.cos(n * p);
+    }
+    osc.setPeriodicWave(context.createPeriodicWave(real, imag, { disableNormalization: type === 'sine' }));
+    osc.start(t0);
+  };
   const master = context.createGain();
-  master.gain.setValueAtTime(0.0001, t0);
   // Tone Lab plays at the shared level but never above its cap, so a turned-up level cannot make a pure tone loud.
   const playLevel = (value: number) => (spec.tone ? toneEffectiveLevel(value * 100) / 100 : value);
   // Tone Lab keeps its original absolute scale (founder ruling 2026-11-19): only non-tone sound was raised.
-  master.gain.exponentialRampToValueAtTime(Math.max(0.0001, playLevel(level) * (spec.tone ? TONE_OUTPUT_SCALE : SCALE)), t0 + Math.max(1, spec.fadeInSec));
+  const masterTarget = Math.max(0.0001, playLevel(level) * (spec.tone ? TONE_OUTPUT_SCALE : SCALE));
+  if (settled) master.gain.setValueAtTime(masterTarget, t0);
+  else {
+    master.gain.setValueAtTime(0.0001, t0);
+    master.gain.exponentialRampToValueAtTime(masterTarget, t0 + Math.max(1, spec.fadeInSec));
+  }
   master.connect(destination);
 
   const filter = context.createBiquadFilter();
@@ -143,7 +204,7 @@ export function buildSoundscape(
       pan.pan.value = voice.pan;
       gain.connect(pan); pan.connect(bus); panners.push(pan);
     } else gain.connect(bus);
-    osc.start(t0);
+    startInPhase(osc, spec.root * voice.ratio * 2 ** (voice.detuneCents / 1200));
     oscillators.push(osc); voices.push(gain);
   });
 
@@ -154,7 +215,7 @@ export function buildSoundscape(
   const movementDepth = context.createGain();
   movementDepth.gain.value = spec.pulseHz > 0 ? spec.pulseDepth : 0;
   movement.connect(movementDepth); movementDepth.connect(pulseGain.gain);
-  movement.start(t0);
+  startInPhase(movement, spec.pulseHz > 0 ? spec.pulseHz : 0);
 
   // Warm overtones (see SOUNDSCAPE_OVERTONE_PARTIALS). Not for a Tone Lab sound.
   const overtoneOscillators: OscillatorNode[] = [];
@@ -174,7 +235,7 @@ export function buildSoundscape(
         const hz = spec.root * voice.ratio * n;
         const osc = context.createOscillator(); osc.type = 'sine'; osc.frequency.value = hz; osc.detune.value = voice.detuneCents;
         const gain = context.createGain(); gain.gain.value = overtoneGain(n, hz);
-        osc.connect(gain); gain.connect(follower); osc.start(t0); overtoneOscillators.push(osc);
+        osc.connect(gain); gain.connect(follower); startInPhase(osc, hz * 2 ** (voice.detuneCents / 1200)); overtoneOscillators.push(osc);
         return { osc, gain, n };
       });
       overtoneVoices.push({ follower, partials });
@@ -187,7 +248,7 @@ export function buildSoundscape(
   const driftGain = context.createGain();
   driftGain.gain.value = spec.lowpassHz * 0.22 * spec.driftDepth;
   drift.connect(driftGain); driftGain.connect(filter.frequency);
-  drift.start(t0);
+  startInPhase(drift, 0.043);
 
   const extras: AudioScheduledSourceNode[] = [];
   let noiseGain: GainNode | null = null;
@@ -204,7 +265,7 @@ export function buildSoundscape(
     sweepDepth = context.createGain(); sweepDepth.gain.value = spec.noise.bandHz * 0.4;
     sweep.connect(sweepDepth); sweepDepth.connect(noiseBand.frequency);
     source.connect(noiseBand); noiseBand.connect(noiseGain); noiseGain.connect(master);
-    source.start(t0); sweep.start(t0);
+    source.start(t0, origin % (source.buffer?.duration || 2)); startInPhase(sweep, spec.noise.sweepHz > 0 ? spec.noise.sweepHz : 0);
     extras.push(source, sweep);
   }
 
@@ -239,7 +300,7 @@ export function buildSoundscape(
     } else {
       base.connect(into);
     }
-    for (const node of [base, second, lfo]) if (node) { node.start(at); extras.push(node); }
+    for (const node of [base, second, lfo]) if (node) { if (at === t0) startInPhase(node, node.frequency.value); else node.start(at); extras.push(node); }
     return { base, second, lfo, mode: pulseMode };
   };
   const retuneToneGraph = (graph: ToneGraph, tone: ToneSpec) => {
@@ -279,7 +340,8 @@ export function buildSoundscape(
     if (layer && layer.graph.mode === next.pulseMode) { retuneToneGraph(layer.graph, next); return; }
     if (layer) retireLayer(layer);
     const bus = context.createGain(); const now = context.currentTime;
-    bus.gain.setValueAtTime(0.0001, now); bus.gain.exponentialRampToValueAtTime(Math.max(0.0001, layerGain()), now + TONE_FADE_IN_SEC);
+    if (settled && now === t0) bus.gain.setValueAtTime(layerGain(), now);
+    else { bus.gain.setValueAtTime(0.0001, now); bus.gain.exponentialRampToValueAtTime(Math.max(0.0001, layerGain()), now + TONE_FADE_IN_SEC); }
     bus.connect(master);
     layer = { bus, graph: buildToneGraph(bus, next, now) };
   };
@@ -291,7 +353,7 @@ export function buildSoundscape(
   const playing = new Set<AudioBufferSourceNode>();
   // How far ahead recorded segments are scheduled: a few seconds live (the timer tops it up), two minutes offline.
   const isOffline = typeof OfflineAudioContext !== 'undefined' && context instanceof OfflineAudioContext;
-  const recordedHorizon = isOffline ? 120 : 8;
+  const recordedHorizon = timeline ? Math.max(0, timeline.horizonSec) : isOffline ? 120 : 8;
   // The member's "Nature recordings" amount (N1, #1979): one bus for every recorded layer, so 0 is synthesis alone.
   const recordingsBus = context.createGain(); recordingsBus.gain.value = Math.max(0, recordedAmount); recordingsBus.connect(master);
   const recordedState: Partial<Record<RecordedLayerId, RecordedLayerState>> = {};
@@ -319,13 +381,36 @@ export function buildSoundscape(
     layers.forEach((layer, id) => {
       // Mixed against the original scale, so recorded layers rise with the 2026-11-19 raise and keep their balance.
       const target = ((wanted as Record<string, number | undefined>)[id] ?? 0) / ORIGINAL_OUTPUT_SCALE;
-      layer.gain.gain.setTargetAtTime(target, context.currentTime, 2.5);
+      if (settled && context.currentTime === t0) layer.gain.gain.setValueAtTime(target, t0);
+      else layer.gain.gain.setTargetAtTime(target, context.currentTime, 2.5);
       if (target > 0 && !layer.source && !layer.loading) {
         layer.loading = true;
         setRecordedState(id as RecordedLayerId, 'loading');
         void loadRecorded(id as RecordedLayerId).then(buffer => {
           if (disposed) return;
           if (!buffer) { setRecordedState(id as RecordedLayerId, 'missing'); return; }
+          if (timeline) {
+            // A piece of one long timeline: the same walk from global 0, scheduled where it falls in this piece,
+            // including a segment already under way at the piece's start.
+            let k = 0; let g = 0;
+            const end = origin + recordedHorizon;
+            while (g < end) {
+              const seg = recordedSegment(k++, buffer.duration);
+              if (g + seg.duration > origin) {
+                const at = t0 + (g - origin); const e = Math.max(0, -(g - origin));
+                const source = context.createBufferSource(); source.buffer = buffer;
+                const envelope = context.createGain();
+                scheduleEnvelope(envelope.gain, at, t0, seg.duration, seg.fade, 1);
+                source.connect(envelope); envelope.connect(layer.gain);
+                source.start(at + e, seg.offset + e, seg.duration - e);
+                playing.add(source);
+              }
+              g += seg.duration - seg.fade;
+            }
+            layer.source = true;
+            setRecordedState(id as RecordedLayerId, 'recorded');
+            return;
+          }
           // Overlapping, changing segments instead of one fixed loop (see recordedSegment).
           let k = 0; let next = context.currentTime;
           const player = (to: number) => {
@@ -374,6 +459,28 @@ export function buildSoundscape(
       emitRecorded(); // listeners learn which weave moments are real recordings
       if (weaveBuffers.size === 0) return;
       const present = ids.filter(id => weaveBuffers.has(id));
+      if (timeline) {
+        // A piece of one long timeline: the same weave from global 0, including a moment already under way.
+        let k = 0; let g = 0; let previous = -1;
+        const end = origin + recordedHorizon;
+        for (;;) {
+          const m = weaveMoment(k++, present.length, previous); g += m.gapSec; previous = m.index;
+          if (g >= end) break;
+          const buffer = weaveBuffers.get(present[m.index])!; const length = buffer.duration / m.rate;
+          if (g + length <= origin) continue;
+          const at = t0 + (g - origin); const e = Math.max(0, origin - g);
+          const source = context.createBufferSource(); source.buffer = buffer; source.playbackRate.value = m.rate;
+          const envelope = context.createGain();
+          scheduleEnvelope(envelope.gain, at, t0, length, length * 0.35, WEAVE_PEAK / ORIGINAL_OUTPUT_SCALE);
+          const place = typeof context.createStereoPanner === 'function' ? context.createStereoPanner() : null;
+          source.connect(envelope);
+          const after: AudioNode = place ? (envelope.connect(place), place.pan.value = m.pan, place) : envelope;
+          const dry = context.createGain(); dry.gain.value = 0.6; after.connect(dry); dry.connect(weaveBus);
+          if (distance) after.connect(distance);
+          source.start(at + e, e * m.rate); playing.add(source);
+        }
+        return;
+      }
       let k = 0; let next = context.currentTime; let previous = -1;
       weavePlayer = (to: number) => {
         while (next + weaveMoment(k, present.length, previous).gapSec < to) {
@@ -399,6 +506,12 @@ export function buildSoundscape(
   // Events (clicks, plucks, soft blips) are deterministic: a fixed pattern, never random.
   let nextTick = t0 + 1.5;
   let tickIndex = 0;
+  if (settled && spec.tick) {
+    // A piece of one long timeline: the events stay on the one grid that began at global 1.5 s.
+    const period = 60 / spec.tick.bpm;
+    tickIndex = Math.max(0, Math.ceil((origin - 1.5) / period));
+    nextTick = t0 + 1.5 + tickIndex * period - origin;
+  }
   const burst = noiseBuffer(context, 0.05);
   const playTick = (at: number, tick: TickSpec) => {
     const out = context.createGain();

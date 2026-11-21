@@ -7,6 +7,7 @@ import {
   DRIVING_NOTE, HEADPHONES_NOTE, NO_CLAIM_NOTE, PULSE_MAX_HZ, PULSE_MIN_HZ, PULSE_MODES, TONE_MAX_HZ, TONE_MIN_HZ,
 } from '@/lib/listening/toneLab';
 import { TONE_LAYER_PICKS, toneLayerLabel, type ToneLayerSetting } from '@/lib/listening/toneLayerSetting';
+import FocusSoundExport from './FocusSoundExport';
 import styles from './listen.module.css';
 
 // Sound for a Focus session. Deliberately OUTSIDE FocusFieldDesk: the Focus session itself has no media
@@ -180,6 +181,7 @@ export default function FocusSoundPicker() {
         </div>
       )}
       {message && <p className={styles.focusStatus} role="status" aria-live="polite">{message}</p>}
+      {soundId === 'soundscape' && <FocusSoundExport />}
     </section>
   );
 }
