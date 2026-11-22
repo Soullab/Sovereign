@@ -13,6 +13,7 @@ import { usePersistentListening } from '@/components/listening/PersistentListeni
 import { frameCount, peak, type Audio } from '@/lib/listening/transform/audio';
 import { readWav, wavAudioBytes, withProvenance, writeWav24 } from '@/lib/listening/transform/wav';
 import { renderRecipe } from '@/lib/listening/transform/render';
+import { measureVoiceLevels, VOICE_PROFILES } from '@/lib/listening/transform/mastering';
 import { validateLocalAudio } from '@/lib/listening/localAudio';
 import { acceptMemberFile, buildProvenance, sha256Hex, type SideInfo } from '@/lib/listening/transform/provenance';
 import { describeCaptureOrigin, readCaptureOrigin, type CaptureOrigin } from '@/lib/listening/transform/captureTake';
@@ -23,7 +24,7 @@ import styles from './listen.module.css';
 type Loaded = { file: File; audio: Audio; info: SideInfo };
 
 const LABELS: Record<TransformStep['kind'], string> = {
-  trim: 'Trim', fade: 'Fade in / out', normalize: 'Normalize', reverse: 'Reverse', loop: 'Loop',
+  trim: 'Trim', fade: 'Fade in / out', normalize: 'Normalize', reverse: 'Reverse', loop: 'Loop', voiceMaster: 'Voice Mastering',
   join: 'Join another recording', gain: 'Gain', eq: 'EQ', filter: 'High / low-pass', reverb: 'Reverb',
 };
 
@@ -32,6 +33,7 @@ function defaults(kind: TransformStep['kind'], len: number): TransformStep {
     case 'trim': return { kind, startSec: 0, endSec: Math.round(len * 100) / 100 };
     case 'fade': return { kind, inSec: 1, outSec: 2 };
     case 'normalize': return { kind, peakDbfs: -1 };
+    case 'voiceMaster': return { kind, profile: 'natural', intensity: 0.7, outputTrimDb: 0 };
     case 'reverse': return { kind };
     case 'loop': return { kind, times: 2, crossfadeMs: 50 };
     case 'join': return { kind, crossfadeMs: 500 };
@@ -242,6 +244,9 @@ export default function TransformDesk() {
   const len = source ? frameCount(source.audio) / source.audio.sampleRate : 0;
   const problem = useMemo(() => (source ? recipeProblem(steps, source.audio.sampleRate / 2) : null), [steps, source]);
   const needsSecond = steps.some((s) => s.kind === 'join');
+  const hasMastering = steps.some((s) => s.kind === 'voiceMaster');
+  const sourceVoiceLevels = useMemo(() => source && hasMastering ? measureVoiceLevels(source.audio) : null, [source, hasMastering]);
+  const resultVoiceLevels = useMemo(() => result && hasMastering ? measureVoiceLevels(result) : null, [result, hasMastering]);
 
   const choose = async (input: File | null | undefined, which: 'source' | 'second') => {
     if (!input) return;
@@ -385,6 +390,7 @@ export default function TransformDesk() {
       </div>
 
       <h3 className={styles.toneHeading}>Steps, in order</h3>
+      <p className={styles.muted}>Choose Voice Mastering below for narration, teaching, chant or gentle preparation. Processing is local and saved as a new file. The original stays untouched.</p>
       {steps.length === 0 && <p className={styles.muted}>Add a step below. Steps run top to bottom.</p>}
       <ol className={styles.transformSteps}>
         {steps.map((s, i) => { const v = s.kind === 'trim' || s.kind === 'fade' ? stepView(steps, i, len) : null; return <li key={i} data-transform-step={s.kind}
@@ -424,6 +430,17 @@ export default function TransformDesk() {
                 <input id="transform-second" type="file" accept=".wav,.flac,.mp3,.m4a,.aac,.ogg,.opus,audio/*" disabled={busy}
                   onChange={(e) => { void choose(e.currentTarget.files?.[0], 'second'); e.currentTarget.value = ''; }} /></label></>}
             {s.kind === 'gain' && <Num label="Gain (dB)" value={s.db} min={-40} max={24} step={0.5} onChange={(v) => update(i, { db: v })} />}
+            {s.kind === 'voiceMaster' && <>
+              <label className={styles.transformField}>Voice profile
+                <select value={s.profile} onChange={(e) => update(i, { profile: e.currentTarget.value as typeof s.profile })}>
+                  {Object.entries(VOICE_PROFILES).map(([id, profile]) => <option key={id} value={id}>{profile.label}</option>)}
+                </select>
+              </label>
+              <p className={styles.muted}>{VOICE_PROFILES[s.profile].explanation}</p>
+              <Num label="Amount (0 = exact bypass; 1 = full effect)" value={s.intensity} min={0} max={1} step={0.05} onChange={(v) => update(i, { intensity: v })} />
+              <Num label="Output trim (dB)" value={s.outputTrimDb} min={-12} max={12} step={0.5} onChange={(v) => update(i, { outputTrimDb: v })} />
+              <p className={styles.muted}>Sample-peak ceiling only. No loudness normalization, broadband noise repair, audiobook certification or true-peak guarantee.</p>
+            </>}
             {s.kind === 'eq' && <><Num label="Low (dB)" value={s.lowDb} min={-18} max={18} step={0.5} onChange={(v) => update(i, { lowDb: v })} />
               <Num label="Middle (dB)" value={s.midDb} min={-18} max={18} step={0.5} onChange={(v) => update(i, { midDb: v })} />
               <Num label="Middle at (Hz)" value={s.midHz} min={100} max={10000} step={10} onChange={(v) => update(i, { midHz: v })} />
@@ -451,6 +468,11 @@ export default function TransformDesk() {
       {result && <div className={styles.localAudioCard} data-transform-result="true">
         <strong>Result · what the preview plays</strong>
         <p className={styles.muted}>{formatTime(frameCount(result) / result.sampleRate)} · its own timeline, after every step</p>
+        {sourceVoiceLevels && resultVoiceLevels && <p className={styles.muted} data-voice-mastering-meter="sample-rms">
+          Original: {sourceVoiceLevels.samplePeakDbfs.toFixed(1)} dBFS sample peak, {sourceVoiceLevels.rmsDbfs.toFixed(1)} dBFS RMS.
+          Result: {resultVoiceLevels.samplePeakDbfs.toFixed(1)} dBFS sample peak, {resultVoiceLevels.rmsDbfs.toFixed(1)} dBFS RMS.
+          This is not LUFS or true peak. Use Play the original for A/B comparison; loudness is not matched automatically.
+        </p>}
         <Waveform audio={result} keep={[0, frameCount(result) / result.sampleRate]} marks={[]} fade={null} label="result"
           playhead={handed?.which === 'preview' && pos ? pos.seconds : undefined} onMove={() => undefined} />
       </div>}

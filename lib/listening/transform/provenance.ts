@@ -11,6 +11,7 @@
 import { validateLocalAudio } from '../localAudio';
 import { TRANSFORM_VERSION, type TransformStep } from './recipe';
 import type { CaptureOrigin } from './captureTake';
+import { MASTERING_VERSION } from './mastering';
 
 export type MemberFile = File & { readonly __memberChosen: true };
 
@@ -51,6 +52,7 @@ export function buildProvenance(p: {
   output: { name: string; audioSha256: string; sha256?: string; sampleRate: number; frames: number; channels: number };
   createdAt: string;
 }) {
+  const masteringStages = p.steps.filter((s): s is Extract<TransformStep, { kind: 'voiceMaster' }> => s.kind === 'voiceMaster');
   return {
     schema: 'soullab.transform.provenance.v1',
     derived: true,
@@ -60,6 +62,7 @@ export function buildProvenance(p: {
     source: p.source,
     ...(p.second ? { joined: p.second } : {}),
     recipe: p.steps,
+    ...(masteringStages.length ? { voiceMastering: { version: MASTERING_VERSION, stages: masteringStages.map((s) => ({ profile: s.profile, intensity: s.intensity, outputTrimDb: s.outputTrimDb })) } } : {}),
     output: { ...p.output, format: { container: 'wav', encoding: 'pcm_s24le', bitsPerSample: 24 } },
     note: 'Made on the member\'s device from their own recording. The original file was not modified.',
   };

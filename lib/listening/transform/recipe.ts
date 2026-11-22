@@ -8,6 +8,8 @@
  * transformed take always says exactly what was done to it.
  */
 
+import { VOICE_PROFILES, type VoiceProfile } from './mastering';
+
 export const TRANSFORM_VERSION = 'soullab-transform-t1/1';
 /** T1 decision 2: at most 20 minutes in or out of a transform. */
 export const MAX_TRANSFORM_SECONDS = 20 * 60;
@@ -24,6 +26,7 @@ export type TransformStep =
   | { kind: 'loop'; times: number; crossfadeMs: number }
   | { kind: 'join'; crossfadeMs: number }
   | { kind: 'gain'; db: number }
+  | { kind: 'voiceMaster'; profile: VoiceProfile; intensity: number; outputTrimDb: number }
   | { kind: 'eq'; lowDb: number; midDb: number; midHz: number; highDb: number }
   | { kind: 'filter'; highpassHz: number | null; lowpassHz: number | null }
   | { kind: 'reverb'; space: ReverbSpace; mix: number };
@@ -53,6 +56,9 @@ export function stepProblem(step: TransformStep, nyquist = 22_050): string | nul
       return within(step.crossfadeMs, 0, 5000) ? null : 'A join crossfade is up to 5 seconds.';
     case 'gain':
       return within(step.db, -40, 24) ? null : 'Gain is −40 to +24 dB.';
+    case 'voiceMaster':
+      return Object.hasOwn(VOICE_PROFILES, step.profile) && within(step.intensity, 0, 1) && within(step.outputTrimDb, -12, 12)
+        ? null : 'Choose a voice profile, intensity from 0 to 1, and output trim within ±12 dB.';
     case 'eq':
       return within(step.lowDb, -18, 18) && within(step.midDb, -18, 18) && within(step.highDb, -18, 18)
         && within(step.midHz, 100, Math.min(10_000, nyquist - 1)) ? null : 'EQ bands are ±18 dB; the middle band sits between 100 Hz and 10 kHz.';

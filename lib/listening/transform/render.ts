@@ -8,6 +8,7 @@
  */
 import { fade, gain, join, loop, normalize, reverse, seconds, trim, type Audio } from './audio';
 import { renderNodeSteps } from './nodes';
+import { masterVoice } from './mastering';
 import { MAX_TRANSFORM_SECONDS, NODE_STEPS, recipeProblem, type TransformStep } from './recipe';
 
 type OfflineCtor = new (channels: number, length: number, sampleRate: number) => OfflineAudioContext;
@@ -41,6 +42,7 @@ export async function renderRecipe(source: Audio, steps: readonly TransformStep[
       case 'reverse': a = reverse(a); break;
       case 'loop': a = loop(a, step.times, step.crossfadeMs); break;
       case 'gain': a = gain(a, step.db); break;
+      case 'voiceMaster': a = masterVoice(a, { profile: step.profile, intensity: step.intensity, outputTrimDb: step.outputTrimDb }).audio; break;
       case 'join':
         if (!opts.second) throw new Error('Choose the recording to join.');
         a = join(a, opts.second, step.crossfadeMs);
