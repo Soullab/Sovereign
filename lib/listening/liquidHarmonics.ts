@@ -7,10 +7,11 @@
 // is what plays here. No state, effect or health outcome is claimed, and no AI composes anything: a journey is a
 // score the listener writes, and every score is checked here, whoever wrote it.
 
+import { createNatureVoiceLayer } from './natureVoiceLayer';
 import type { ProceduralStudy, ProceduralStudyAPI, ProceduralStudyHandle } from './proceduralStudy';
 
 // ── Controls ──────────────────────────────────────────────────────────────────────────────────────────
-export type Group = 'Voice' | 'Oscillation' | 'Frequency shifts' | 'Rise' | 'Pressure' | 'Space' | 'Atmosphere' | 'Music' | 'Touch' | 'Loudness';
+export type Group = 'Voice' | 'Oscillation' | 'Frequency shifts' | 'Rise' | 'Pressure' | 'Space' | 'Atmosphere' | 'Nature & voices' | 'Music' | 'Touch' | 'Loudness';
 export type Control = {
   g: Group; k: string; label: string; v: number | string;
   min?: number; max?: number; step?: number; log?: boolean; unit?: string; hint?: string;
@@ -58,6 +59,12 @@ export const CONTROLS: readonly Control[] = Object.freeze([
   { g: 'Space', k: 'verb', label: 'Space', min: 0, max: 1.3, v: 0.94 },
   { g: 'Space', k: 'center', label: 'Periphery → centre', min: 0, max: 1, v: 0.34, hint: '0: all around you. 1: gathered to one point. Or use Gather / Release.' },
   { g: 'Loudness', k: 'boost', label: 'Extra loudness', min: 0, max: 9, v: 0, step: 0.5, unit: 'dB', hint: 'Raises the whole study above the player’s Level, for when the top of the Level is not loud enough. A ceiling keeps it from distorting. Raise it slowly; journeys never change it.' },
+  { g: 'Nature & voices', k: 'rain', label: 'Rain', min: 0, max: 1, v: 0, hint: 'Synthesized: a soft hiss and scattered droplets. No recording.' },
+  { g: 'Nature & voices', k: 'stream', label: 'Stream', min: 0, max: 1, v: 0, hint: 'Synthesized babbling water. No recording.' },
+  { g: 'Nature & voices', k: 'wind', label: 'Wind', min: 0, max: 1, v: 0, hint: 'Synthesized gusting wind with a slow sweep.' },
+  { g: 'Nature & voices', k: 'fire', label: 'Fire', min: 0, max: 1, v: 0, hint: 'Synthesized low roar and crackle.' },
+  { g: 'Nature & voices', k: 'birds', label: 'Distant calls', min: 0, max: 1, v: 0, hint: 'Invented bird-like calls far away. Not any particular species; no recording.' },
+  { g: 'Nature & voices', k: 'choir', label: 'Wordless choir', min: 0, max: 1, v: 0, hint: 'Five synthesized voices singing the field’s vowel, in its key. No recorded or AI voice.' },
   { g: 'Atmosphere', k: 'air', label: 'Air and distance', min: 0, max: 1, v: 0, hint: 'A soft, slowly moving wash of air far around you, like wind or distant surf.' },
   { g: 'Atmosphere', k: 'swell', label: 'Cinematic swell', min: 0, max: 1, v: 0, hint: 'A warm low chord on the field’s own tone that slowly opens and breathes.' },
   { g: 'Atmosphere', k: 'breath', label: 'Breathing of the atmosphere', min: 0.02, max: 0.3, v: 0.06, log: true, unit: 'Hz', hint: 'How slowly the air and the swell rise and fall (0.06 Hz is about one swell every 17 seconds).' },
@@ -405,6 +412,10 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
   const mDl = keep(ctx.createDelay(1)); mDl.delayTime.value = 0.37; const mFb = gain(0.32), mLp = biquad('lowpass', 2600), mEcho = gain(0.35);
   musicIn.connect(mDl); mDl.connect(mLp); mLp.connect(mFb); mFb.connect(mDl); mLp.connect(mEcho); mEcho.connect(musicDuck);
   const mCv = keep(ctx.createConvolver()); mCv.buffer = ir; const mVerb = gain(0.45); musicIn.connect(mVerb); mVerb.connect(mCv); mCv.connect(musicDuck);
+  // ── Nature & voices: the shared layer (lib/listening/natureVoiceLayer.ts), hosted here as part of the field. It goes
+  // through the field bus and presence (silence, fades, end) and the hall; it has no path to touch.
+  const natureBus = gain(1); natureBus.connect(fieldBus);
+  const nature = createNatureVoiceLayer(ctx, natureBus, cv);
   // ── Atmosphere: part of the field (journeys can shape it), never part of touch. It sits outside the throb, so it
   // stays still and wide while the voice pulses; most of it goes to the hall for distance.
   const nb = ctx.createBuffer(2, Math.floor(sr * 8), sr); nb.copyToChannel(pinkNoise(nb.length, 7), 0); nb.copyToChannel(pinkNoise(nb.length, 11), 1);
@@ -441,6 +452,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
     set(drive.gain, 1 + num('body') * 5); set(driveOut.gain, 1 / (1 + num('body') * 1.6));
     set(binL.frequency, F * 2); set(binR.frequency, F * 2 + Math.min(45, rate)); set(binG.gain, num('binaural') * 0.12 * (0.6 + 0.4 * center));
     set(spG.gain, num('spiral'));
+    nature.set({ rain: num('rain'), stream: num('stream'), wind: num('wind'), fire: num('fire'), birds: num('birds'), choir: num('choir'), f0: F, formants: vowelAt(num('vowel')) }, now ? 0.01 : 0.4);
     const air = num('air'), sw = num('swell'), br = num('breath');
     set(airG.gain, air * 0.55); set(airVerb.gain, air * 0.9); set(breath.frequency, br);
     airBands.forEach((b, ch) => set(b.sweep.frequency, br * (ch ? 0.83 : 1.21)));
@@ -562,6 +574,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
     }
     stepTween(t);
     musicTick(t);
+    if (!silenced) nature.tick(t);
     if (J && !J.held && J.waitUntil !== null && t >= J.waitUntil) {
       J.waitUntil = null;
       if (J.next === 'stop') { J = null; phase = 'free'; note = 'Journey complete.'; api.ended('Liquid Harmonics: journey complete.'); return; }
@@ -666,6 +679,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
       disposed = true; clearInterval(interval); J = null; tween = null;
       for (const o of [...srcs, airSrc]) { try { o.stop(); } catch { /* already stopped */ } }
       try { airSrc.disconnect(); } catch { /* gone */ }
+      nature.dispose();
       for (const n of nodes) { try { n.disconnect(); } catch { /* gone */ } }
     },
   };
