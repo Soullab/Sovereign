@@ -10,14 +10,15 @@ import { pathToFileURL } from 'node:url';
 register('./ts_resolution_loader.mjs', import.meta.url);
 const root = path.join(import.meta.dirname, '../..');
 const L = await import(pathToFileURL(path.join(root, 'lib/listening/liquidHarmonics.ts')).href);
-const { touchCarrier, touchRate, touchCurve, TOUCH_LIMITS, musicRoot, musicKeyName, musicNote, nextDegree, musicDensity, PENTATONIC, MUSIC_DEGREES, CONTROLS, DEFAULT_PARAMS, cleanScore, cleanParams, starterScore, riseTargets, lerpKey, accel, stepSeconds, scoreSeconds, SCORE_LIMITS, LIQUID_NOTES, toSlider, fromSlider, vowelAt } = L;
+const { pinkNoise, swellChord, touchCarrier, touchRate, touchCurve, TOUCH_LIMITS, musicRoot, musicKeyName, musicNote, nextDegree, musicDensity, PENTATONIC, MUSIC_DEGREES, CONTROLS, DEFAULT_PARAMS, cleanScore, cleanParams, starterScore, riseTargets, lerpKey, accel, stepSeconds, scoreSeconds, SCORE_LIMITS, LIQUID_NOTES, toSlider, fromSlider, vowelAt } = L;
 
 const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
 const code = rel => strip(fs.readFileSync(path.join(root, rel), 'utf8'));
 
-test('39 controls (36 field + 2 listener music + 1 listener touch); defaults are the founder settings of 21 Nov (sawtooth throb, 209 Hz, 6 voices)', () => {
-  assert.equal(CONTROLS.length, 39);
-  assert.equal(CONTROLS.filter(c => c.g !== 'Music' && c.g !== 'Touch').length, 36, 'the field itself still has 36');
+test('42 controls (39 field incl. 3 atmosphere + 2 listener music + 1 listener touch); defaults are the founder settings of 21 Nov (sawtooth throb, 209 Hz, 6 voices)', () => {
+  assert.equal(CONTROLS.length, 42);
+  assert.equal(CONTROLS.filter(c => c.g !== 'Music' && c.g !== 'Touch').length, 39, 'the field: 36 + 3 atmosphere');
+  assert.equal(DEFAULT_PARAMS.air, 0); assert.equal(DEFAULT_PARAMS.swell, 0);
   assert.equal(DEFAULT_PARAMS.touch, 0, 'touch starts at zero');
   assert.equal(DEFAULT_PARAMS.music, 0, 'the music layer is off until the listener raises it');
   assert.equal(DEFAULT_PARAMS.shape, 'sawtooth'); assert.equal(DEFAULT_PARAMS.f0, 209); assert.equal(DEFAULT_PARAMS.voices, 6);
@@ -140,4 +141,16 @@ test('touch (Phase 1): felt band, rate cap, hard ceiling, listener-owned, and no
   for (const m of src.matchAll(/\b(musicIn|musicDuck|musicBus|mDl|mLp|mFb|mEcho|mCv|mVerb)\.connect\(([^)]*)\)/g))
     assert.ok(!/^t[A-Z]|tMerge|tLevel|tPresence/.test(m[2].trim()), `music node ${m[1]} must not feed touch (${m[2]})`);
   assert.doesNotMatch(src, /destination[^;\n]*t(Merge|Level|Presence|Split)|t(Merge|Level|Presence|Split)\.connect\(destination/, 'Phase 1: touch is not routed to the output');
+});
+
+test('atmosphere: bounded deterministic air, a chord on the field’s own tone, journey-shaped, never in touch', () => {
+  const a = pinkNoise(48000, 7), b = pinkNoise(48000, 7);
+  assert.deepEqual(a, b, 'deterministic'); assert.ok(a.every(x => x >= -1 && x <= 1), 'bounded');
+  const rms = Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length); assert.ok(rms > 0.05 && rms < 0.6, `usable level (${rms})`);
+  assert.deepEqual(swellChord(98), [49, 73.5, 98, 147]);
+  const s = cleanScore({ steps: [{ type: 'morph', params: { air: 0.7, swell: 2, breath: 9 }, seconds: 10, hold: 0 }] });
+  assert.deepEqual(s.steps[0].params, { air: 0.7, swell: 1, breath: 0.3 }, 'journeys may shape the atmosphere, within range');
+  const src = code('lib/listening/liquidHarmonics.ts');
+  for (const m of src.matchAll(/\b(air\w*|swell\w*)\.connect\(([^,)]*)/g))
+    assert.ok(!/^t[A-Z]|tMerge|tLevel|tPresence/.test(m[2].trim()), `atmosphere node ${m[1]} must not feed touch`);
 });

@@ -54,6 +54,13 @@ experience_verification: >
   - Unit tests 9/9: carrier 40–120 Hz; rate cap 20/s; the curve never exceeds the 0.5 ceiling; no music node
     connects to touch; touch is not routed to any output.
   - Preview only. No device, transducer or body.
+  2026-11-22 atmosphere (founder: "Lets build a bit more into it. not too much, atmospheric, and transportive"):
+  - Witness 13/13: the air and swell controls act on the running engine; with both at 0.8 the silence breakthrough
+    still measures energy 0.
+  - Unit tests 10/10: the noise is bounded and deterministic; the swell chord is on the field's own fundamental;
+    journeys may shape the atmosphere within range; no atmosphere node feeds touch.
+  - Level under the Spiral's Arrival settings: −19.3 dB RMS without atmosphere; −17.6 with air 0.8; −16.4 with
+    swell 0.8. These are 5-second windows of a slowly breathing layer, so they are approximate. Felt effect not witnessed.
 ---
 
 # Sound Studio / Liquid Harmonics — Experience Contract
@@ -84,6 +91,21 @@ A timeline sits under Begin and Play. It has one band per step, each as wide as 
 - Hold, Extend and Next change how long a step actually takes, and the band stretches or shrinks to match.
 
 The band itself is not a control. Right under it are the four journey controls: Play journey, Hold here, Extend +30 s and Next step. They are the same controls as at the foot of the Journey panel, so a journey can be followed and steered without scrolling. While a journey plays, both Play buttons read "Journey playing" and are visibly greyed; during a rise, Hold, Extend and Next are greyed in both places. The playhead's motion respects reduced-motion settings.
+
+## Atmosphere
+
+Two quiet, cinematic layers sit inside the field, outside the throb, so they stay wide and still while the voice pulses:
+- **Air and distance:** a soft wash of pink noise in two independently sweeping bands, like wind or far surf, sent mostly to the hall.
+- **Cinematic swell:** a warm low chord on the field's own tone (an octave below, a fourth below, the root, a fifth above) whose filter slowly opens and closes.
+
+**Breathing** sets how slowly both rise and fall; the default is about one swell every 17 seconds.
+
+Because the atmosphere is part of the field:
+- journeys can shape it, within its ranges;
+- the field ↔ music balance and the presence apply to it, so it falls silent with a silence breakthrough;
+- it never reaches touch.
+
+It is inspired by long-form atmospheric listening, but borrows no recordings, scripts, level names or methods from any existing program, and makes no claim.
 
 ## Music layer
 

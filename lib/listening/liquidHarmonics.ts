@@ -10,7 +10,7 @@
 import type { ProceduralStudy, ProceduralStudyAPI, ProceduralStudyHandle } from './proceduralStudy';
 
 // ── Controls ──────────────────────────────────────────────────────────────────────────────────────────
-export type Group = 'Voice' | 'Oscillation' | 'Frequency shifts' | 'Rise' | 'Pressure' | 'Space' | 'Music' | 'Touch';
+export type Group = 'Voice' | 'Oscillation' | 'Frequency shifts' | 'Rise' | 'Pressure' | 'Space' | 'Atmosphere' | 'Music' | 'Touch';
 export type Control = {
   g: Group; k: string; label: string; v: number | string;
   min?: number; max?: number; step?: number; log?: boolean; unit?: string; hint?: string;
@@ -57,6 +57,9 @@ export const CONTROLS: readonly Control[] = Object.freeze([
   { g: 'Space', k: 'rotate', label: 'Rotation around you', min: 0, max: 1.5, v: 0.26, unit: 'Hz' },
   { g: 'Space', k: 'verb', label: 'Space', min: 0, max: 1.3, v: 0.94 },
   { g: 'Space', k: 'center', label: 'Periphery → centre', min: 0, max: 1, v: 0.34, hint: '0: all around you. 1: gathered to one point. Or use Gather / Release.' },
+  { g: 'Atmosphere', k: 'air', label: 'Air and distance', min: 0, max: 1, v: 0, hint: 'A soft, slowly moving wash of air far around you, like wind or distant surf.' },
+  { g: 'Atmosphere', k: 'swell', label: 'Cinematic swell', min: 0, max: 1, v: 0, hint: 'A warm low chord on the field’s own tone that slowly opens and breathes.' },
+  { g: 'Atmosphere', k: 'breath', label: 'Breathing of the atmosphere', min: 0.02, max: 0.3, v: 0.06, log: true, unit: 'Hz', hint: 'How slowly the air and the swell rise and fall (0.06 Hz is about one swell every 17 seconds).' },
   { g: 'Music', k: 'music', label: 'Field ↔ music', min: 0, max: 1, v: 0, hint: '0: the field alone. 0.5: both in full. 1: the music alone. The music stays in the key of the field and follows the journey; this balance is yours and journeys never change it.' },
   { g: 'Music', k: 'musicMove', label: 'Music movement', min: 0, max: 1, v: 0.5, hint: 'Sparse single notes ↔ flowing phrases.' },
   { g: 'Touch', k: 'touch', label: 'Touch level (preview)', min: 0, max: 1, v: 0, hint: 'Phase 1: touch is computed and measured here, not sent to any device. Starts at 0, fades in over about 3 seconds, and journeys never change it.' },
@@ -145,6 +148,20 @@ export function musicDensity(P: Params, phase: string): number {
   const base = (0.25 + 1.25 * n('musicMove')) * (0.6 + 0.6 * motion);
   return base * (phase === 'rising' ? 0.35 : phase === 'after' ? 0.5 : 1);
 }
+
+// ── Atmosphere (pure, tested): a pink-noise air bed and a breathing chord ──
+/** Pink-ish noise (Paul Kellet's economy filter), scaled to stay within ±1. Deterministic for a given seed. */
+export function pinkNoise(n: number, seed = 1): Float32Array<ArrayBuffer> {
+  const out = new Float32Array(n); let s = seed >>> 0 || 1, b0 = 0, b1 = 0, b2 = 0;
+  for (let i = 0; i < n; i++) {
+    s = (s * 1664525 + 1013904223) >>> 0; const w = s / 4294967296 * 2 - 1;
+    b0 = 0.99765 * b0 + w * 0.099046; b1 = 0.963 * b1 + w * 0.2965164; b2 = 0.57 * b2 + w * 1.0526913;
+    out[i] = Math.max(-1, Math.min(1, (b0 + b1 + b2 + w * 0.1848) * 0.2));
+  }
+  return out;
+}
+/** The swell's chord on the field's fundamental: root an octave down, fifth, root, and the fifth above. */
+export const swellChord = (f0: number) => [f0 / 2, f0 * 0.75, f0, f0 * 1.5];
 
 // ── Touch (pure, tested): four tactile channels derived from the field, never from the music ──
 // Design brief 2026-11-22 (founder: "Yes, start Phase 1"). Phase 1 computes and measures touch only; no device output.
@@ -370,6 +387,24 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
   const mDl = keep(ctx.createDelay(1)); mDl.delayTime.value = 0.37; const mFb = gain(0.32), mLp = biquad('lowpass', 2600), mEcho = gain(0.35);
   musicIn.connect(mDl); mDl.connect(mLp); mLp.connect(mFb); mFb.connect(mDl); mLp.connect(mEcho); mEcho.connect(musicDuck);
   const mCv = keep(ctx.createConvolver()); mCv.buffer = ir; const mVerb = gain(0.45); musicIn.connect(mVerb); mVerb.connect(mCv); mCv.connect(musicDuck);
+  // ── Atmosphere: part of the field (journeys can shape it), never part of touch. It sits outside the throb, so it
+  // stays still and wide while the voice pulses; most of it goes to the hall for distance.
+  const nb = ctx.createBuffer(2, Math.floor(sr * 8), sr); nb.copyToChannel(pinkNoise(nb.length, 7), 0); nb.copyToChannel(pinkNoise(nb.length, 11), 1);
+  const airSrc = ctx.createBufferSource(); airSrc.buffer = nb; airSrc.loop = true;
+  const airSplit = keep(ctx.createChannelSplitter(2)), airMerge = keep(ctx.createChannelMerger(2)), airG = gain(0), airBr = gain(0.5);
+  airSrc.connect(airSplit);
+  const breath = osc(num('breath')), breathD = gain(0.35); breath.connect(breathD); breathD.connect(airBr.gain);
+  const airBands = [0, 1].map(ch => {
+    const bp = biquad('bandpass', 700, 0.9), lp = biquad('lowpass', 4500), sweep = osc(num('breath') * (ch ? 0.83 : 1.21)), sweepD = gain(450);
+    sweep.connect(sweepD); sweepD.connect(bp.frequency); airSplit.connect(bp, ch); bp.connect(lp); lp.connect(airMerge, 0, ch); return { sweep };
+  });
+  airMerge.connect(airBr); airBr.connect(airG); airG.connect(fieldBus); const airVerb = gain(0); airG.connect(airVerb); airVerb.connect(cv);
+  const swellG = gain(0), swellLp = biquad('lowpass', 700, 0.8), swellBr = gain(0.5), swellOsc = swellChord(f0).map((f, i) => {
+    const o = osc(f, i % 2 ? 'triangle' : 'sawtooth'), g = gain(i === 0 ? 0.32 : 0.2); o.detune.value = (i - 1.5) * 4; o.connect(g); g.connect(swellLp); return o;
+  });
+  const swellLfo = osc(num('breath') * 0.7), swellCut = gain(500), swellAmp = gain(0.4);
+  swellLfo.connect(swellCut); swellCut.connect(swellLp.frequency); swellLfo.connect(swellAmp); swellAmp.connect(swellBr.gain);
+  swellLp.connect(swellBr); swellBr.connect(swellG); swellG.connect(fieldBus); const swellVerb = gain(0); swellG.connect(swellVerb); swellVerb.connect(cv);
 
   const apply = (now = false) => {
     const t = ctx.currentTime, k = now ? 0.01 : 0.08, set = (param: AudioParam, v: number) => param.setTargetAtTime(v, t, k);
@@ -388,6 +423,11 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
     set(drive.gain, 1 + num('body') * 5); set(driveOut.gain, 1 / (1 + num('body') * 1.6));
     set(binL.frequency, F * 2); set(binR.frequency, F * 2 + Math.min(45, rate)); set(binG.gain, num('binaural') * 0.12 * (0.6 + 0.4 * center));
     set(spG.gain, num('spiral'));
+    const air = num('air'), sw = num('swell'), br = num('breath');
+    set(airG.gain, air * 0.55); set(airVerb.gain, air * 0.9); set(breath.frequency, br);
+    airBands.forEach((b, ch) => set(b.sweep.frequency, br * (ch ? 0.83 : 1.21)));
+    set(swellG.gain, sw * 0.35); set(swellVerb.gain, sw * 0.7); set(swellLfo.frequency, br * 0.7);
+    swellChord(F).forEach((f, i) => set(swellOsc[i].frequency, f));
     set(pO.frequency, num('pressF')); set(pL.frequency, num('pressRate') + (rate - num('pressRate')) * num('pressLink')); set(pG.gain, num('press') * 0.6);
     const T = TOUCH_LIMITS.fadeTau;
     tLevel.gain.setTargetAtTime(num('touch'), t, T);
@@ -531,7 +571,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
     }
   }, TICK_MS);
 
-  srcs.forEach(o => o.start());
+  srcs.forEach(o => o.start()); airSrc.start();
   apply(true);
   fadePresence(1, 2);
 
@@ -600,7 +640,8 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
     dispose: () => {
       if (disposed) return;
       disposed = true; clearInterval(interval); J = null; tween = null;
-      for (const o of srcs) { try { o.stop(); } catch { /* already stopped */ } }
+      for (const o of [...srcs, airSrc]) { try { o.stop(); } catch { /* already stopped */ } }
+      try { airSrc.disconnect(); } catch { /* gone */ }
       for (const n of nodes) { try { n.disconnect(); } catch { /* gone */ } }
     },
   };

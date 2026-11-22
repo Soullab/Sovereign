@@ -84,6 +84,13 @@ const server = http.createServer((req, res) => {
     await page.locator('[data-liquid-param="music"]').fill('0.5');
     results.push(`music layer: off by default; music alone measures energy ${eMusic}; key shown`);
 
+    // Atmosphere: air and swell reach the live engine, and no page errors arise from the noise source.
+    const aOut = k => page.locator(`[data-liquid-param="${k}"]`).locator('xpath=following-sibling::span[1]').innerText();
+    await page.locator('[data-liquid-param="air"]').fill('0.8'); await page.locator('[data-liquid-param="swell"]').fill('0.8');
+    await page.waitForTimeout(1500);
+    assert.equal(await aOut('air'), '0.80'); assert.equal(await aOut('swell'), '0.80');
+    results.push('atmosphere: air and swell controls act on the running engine');
+
     // Touch (Phase 1 preview): zero until the listener raises it; then lower and upper zones carry signal, nothing above
     // 150 Hz (the music layer is at 0.5 here and must not leak in), and the upper zones swing left-right with rotation.
     const meter = async () => page.evaluate(() => [...document.querySelectorAll('[data-liquid-touch-meter]')].map(m => Number(m.dataset.rms)));

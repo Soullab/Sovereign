@@ -22,7 +22,7 @@ const store = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.st
 // The engine keeps running in the player when the member moves to another view, so the desk re-attaches to it.
 const shared: { engine: LiquidEngine | null; params: Params; loaded: boolean } = { engine: null, params: { ...DEFAULT_PARAMS }, loaded: false };
 
-const GROUPS = ['Music', 'Touch', 'Voice', 'Oscillation', 'Frequency shifts', 'Pressure', 'Space', 'Rise'] as const;
+const GROUPS = ['Atmosphere', 'Music', 'Touch', 'Voice', 'Oscillation', 'Frequency shifts', 'Pressure', 'Space', 'Rise'] as const;
 const mmss = (x: number) => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, '0')}`;
 const stepLabel = (st: Step) => st.type === 'morph' ? st.name : st.type === 'end' ? 'End' : st.type[0].toUpperCase() + st.type.slice(1);
 
@@ -253,7 +253,7 @@ export default function LiquidHarmonicsDesk() {
       <canvas ref={canvas} width={720} height={110} className={styles.liquidSpectrum} aria-label="Spectrum of the sound, low to high" />
 
       {GROUPS.map(g => (
-        <details className={styles.orbitDetails} key={g} open={g === 'Voice' || g === 'Music'} data-liquid-group={g}>
+        <details className={styles.orbitDetails} key={g} open={g === 'Voice' || g === 'Music' || g === 'Atmosphere'} data-liquid-group={g}>
           <summary>{g === 'Music' ? 'Music layer' : g}</summary>
           {g === 'Touch' && <>
             <p className={styles.muted} data-liquid-touch-note="true">
