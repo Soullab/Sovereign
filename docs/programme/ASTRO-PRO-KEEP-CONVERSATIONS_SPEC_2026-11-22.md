@@ -26,12 +26,11 @@ members reasonably expect.
 3. **Purpose:** members build on these conversations for themselves and for clients, and expect MAIA to
    remember, pattern-match and expand on them across sessions.
 
-Open for founder confirmation (asked once, with recommendation):
-
-- **Client charts.** Recommended: a conversation about a client's chart is kept in *that client's* record
-  only. MAIA builds on it across sessions about that client; it never enters the astrologer's personal MAIA
-  memory or another client's record, and it is deleted with the client record. Phase 1 already scopes every
-  thread to its subject, so this ruling governs only Phase 2 recall.
+4. **Client charts — per client only** (confirmed 2026-11-22, "Yes, per client only"): a conversation
+   about a client's chart is kept in *that client's* record only. MAIA builds on it across sessions about
+   that client; it never enters the astrologer's personal MAIA memory or another client's record, and it is
+   deleted with the client record. Phase 1 already scopes every thread to its subject; this ruling governs
+   Phase 2 recall.
 
 ## Design
 
@@ -60,7 +59,9 @@ Open for founder confirmation (asked once, with recommendation):
 - Own-chart threads with Keep on become available to MAIA's memory under the existing consent and
   return rules (memory atoms), so MAIA can recognise patterns across Pro and main conversations.
   This lifts R4F #1817 for the member's **own** chart only, under this ruling.
-- Client threads: per-client recall only, per the client ruling above.
+- Client threads: per-client recall only, per ruling 4.
+- Owed in Phase 2: a client thread must be deleted with its client record (Phase 1 keys threads by chart
+  subject but does not yet cascade on saved-chart deletion).
 
 ## Growth-obligation answers (CLAUDE.md)
 
