@@ -10,7 +10,7 @@ import {
 } from '@/lib/listening/soundStudioExperience';
 import styles from './listen.module.css';
 
-export type StudioView = 'now' | 'focus' | 'fields' | 'shelf' | 'studio' | 'lab';
+export type StudioView = 'now' | 'focus' | 'fields' | 'shelf' | 'studio' | 'library' | 'lab';
 export type StudioNavigate = (view: StudioView, workId?: string) => void;
 
 // SOUND-STUDIO-UIUX-02 · Now: the daily entrance. Two deliberate actions reach
@@ -66,6 +66,7 @@ export default function SoundStudioNow({ onNavigate }: { onNavigate: StudioNavig
 
       <div className={styles.nowMore}>
         <button type="button" onClick={() => onNavigate('fields')}>Browse all fields</button>
+        <button type="button" onClick={() => onNavigate('library')}>Explore the Living Library</button>
         <button type="button" onClick={() => onNavigate('shelf')}>Open my Shelf</button>
         <Link href="/maia">Ask MAIA</Link>
       </div>

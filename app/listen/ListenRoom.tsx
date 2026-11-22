@@ -18,6 +18,7 @@ import FocusAdhdSupport from './FocusAdhdSupport';
 import ToneLabDesk from './ToneLabDesk';
 import OrbitThresholdDesk from './OrbitThresholdDesk';
 import LiquidHarmonicsDesk from './LiquidHarmonicsDesk';
+import SoundAtlasDesk from './SoundAtlasDesk';
 import type { StudioView } from './SoundStudioNow';
 import FocusFieldDesk from '@/components/listening/FocusFieldDesk';
 import type { MemberCollection, TrackReference } from '@/lib/listening/portableCollections';
@@ -240,6 +241,7 @@ export default function ListenRoom() {
     { view: 'fields', label: 'Fields', glyph: '◌' },
     { view: 'shelf', label: 'Shelf', glyph: '▤' },
     { view: 'studio', label: 'Studio', glyph: '◇' },
+    { view: 'library', label: 'Library', glyph: '✦' },
     { view: 'lab', label: 'Lab', glyph: '△' },
   ];
   const activeSection: StudioView = view === 'focus' ? 'now' : view;
@@ -262,6 +264,7 @@ export default function ListenRoom() {
       {view==='now' && <SoundStudioNow onNavigate={go} />}
       {view==='focus' && <div className={styles.body}><button type="button" className={styles.backLink} onClick={()=>go('now')}>← Now</button><FocusAdhdSupport /><FocusSoundPicker /><FocusFieldDesk /></div>}
       {view==='fields' && <SoundStudioField key={fieldKey} initialWorkId={fieldWork} />}
+      {view==='library' && <div className={styles.body}><SoundAtlasDesk /></div>}
       {view==='shelf' && <div className={styles.body}>
         <section aria-labelledby="shelf-title" className={styles.shelfHead}><span className={styles.smallcaps}>SOUND SHELF</span><h2 id="shelf-title">What you keep, and how.</h2><p className={styles.muted}>Your collections, private notes, local files and backup. Nothing here is analyzed, and nothing leaves your device unless you export it.</p></section>
         <section className={styles.panel} aria-labelledby="journal-title"><span className={styles.smallcaps}>PRIVATE · THIS TAB ONLY</span><h2 id="journal-title">What did you notice?</h2><label htmlFor="listen-note">A listening reflection, without MAIA interpretation</label><textarea id="listen-note" rows={3} value={note} onChange={e=>setNote(e.target.value.slice(0,4000))} placeholder="An image, a feeling, or nothing at all…"/><p className={styles.muted}>No server storage, microphone access, or AI analysis. Save an encrypted backup below to keep it privately.</p></section>
