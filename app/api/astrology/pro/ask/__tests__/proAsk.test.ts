@@ -9,7 +9,16 @@ import { getLLMProvider } from '@/lib/consciousness/LLMProvider';
 import { loadSubjectBirth } from '@/lib/astrology/proSubjectBirth';
 import { PRO_ASK_SAFETY_REPLY } from '@/lib/astrology/proAskMaiaSections';
 import { loadMemberMemoryAtomsForPrompt } from '@/lib/maia/memoryAtomsLoader';
+import { appendExchange, openThread, ownsKeptThread } from '@/lib/astrology/proConversationStore';
 import { POST } from '../route';
+
+jest.mock('@/lib/astrology/proConversationStore', () => ({
+  PRO_SUBJECT_KEY_MAX: 200,
+  isThreadId: (v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v),
+  openThread: jest.fn(async () => '11111111-1111-1111-1111-111111111111'),
+  ownsKeptThread: jest.fn(async () => true),
+  appendExchange: jest.fn(async () => true),
+}));
 
 jest.mock('@/lib/consciousness/LLMProvider', () => ({ getLLMProvider: jest.fn() }));
 jest.mock('@/lib/astrology/proSubjectBirth', () => ({ loadSubjectBirth: jest.fn() }));
@@ -304,6 +313,61 @@ describe('Ask MAIA inside Pro', () => {
 
     it('refuses an ayanamsa outside the supported list', async () => {
       expect((await ask({ section: 'vedic', subject: 'first', ayanamsa: 'made-up', question: 'x?' })).status).toBe(400);
+    });
+  });
+
+  describe('kept conversations', () => {
+    const base = { section: 'natal', subject: 'own', question: 'What stands out?', subjectKey: 'ask.natal.own.' };
+    beforeEach(() => {
+      jest.mocked(openThread).mockClear(); jest.mocked(appendExchange).mockClear().mockResolvedValue(true);
+      jest.mocked(ownsKeptThread).mockClear().mockResolvedValue(true);
+    });
+
+    it('stores the exchange and returns threadId when Keep is on (the default)', async () => {
+      const body = await (await ask(base)).json();
+      expect(body.threadId).toBe('11111111-1111-1111-1111-111111111111');
+      expect(body.kept).toBe(true);
+      expect(appendExchange).toHaveBeenCalledWith(body.threadId, `member-${testMember}`, 'What stands out?', 'The composite Sun…');
+    });
+
+    it('continues a thread the member owns instead of opening another', async () => {
+      const id = '22222222-2222-2222-2222-222222222222';
+      const body = await (await ask({ ...base, threadId: id })).json();
+      expect(openThread).not.toHaveBeenCalled();
+      expect(body.threadId).toBe(id);
+    });
+
+    it('opens a fresh thread when the given one is not the member\'s', async () => {
+      jest.mocked(ownsKeptThread).mockResolvedValue(false);
+      const body = await (await ask({ ...base, threadId: '22222222-2222-2222-2222-222222222222' })).json();
+      expect(openThread).toHaveBeenCalled();
+      expect(body.threadId).toBe('11111111-1111-1111-1111-111111111111');
+    });
+
+    it('stores nothing when Keep is off', async () => {
+      const body = await (await ask({ ...base, keep: false })).json();
+      expect(openThread).not.toHaveBeenCalled();
+      expect(appendExchange).not.toHaveBeenCalled();
+      expect(body.threadId).toBeUndefined();
+      expect(body.answer).toBe('The composite Sun…');
+    });
+
+    it('still returns the answer, without threadId, when storage fails', async () => {
+      jest.spyOn(console, 'log').mockImplementation(() => {});
+      jest.mocked(appendExchange).mockRejectedValue(new Error('db down'));
+      const res = await ask(base);
+      const body = await res.json();
+      expect(res.status).toBe(200);
+      expect(body.answer).toBe('The composite Sun…');
+      expect(body.kept).toBe(false);
+      expect(body.threadId).toBeUndefined();
+    });
+
+    it('never stores a safety reply', async () => {
+      const body = await (await ask({ ...base, question: 'I want to die' })).json();
+      expect(body.safety).toBe(true);
+      expect(appendExchange).not.toHaveBeenCalled();
+      expect(openThread).not.toHaveBeenCalled();
     });
   });
 });
