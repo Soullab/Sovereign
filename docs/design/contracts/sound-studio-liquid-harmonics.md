@@ -68,6 +68,15 @@ experience_verification: >
     the boost.
   - The ceiling also removes the earlier overshoot at no boost: the compressor's make-up had let peaks reach about
     +0.6 dBFS after the trim.
+  2026-11-22 nature & voices (founder: "Yes, build it"; "we could associate them with the elemental steps"; "playful
+  where playfulness is appropriate, deeper and mysterious where it is needed, earthy … airy, watery, firey, atheric"):
+  - Witness 15/15: all six controls act on the running engine; with all six at 0.6 the silence breakthrough still
+    measures energy 0.
+  - Unit tests 12/12: the choir is in the field's key (major pentatonic, root above it); noise is bounded and
+    deterministic; journeys may shape the layer within range; the layer feeds the field bus and never touch; the
+    layer file contains no recording, decode or network call.
+  - Living Library's own checks still pass (catalog 6/6, browser 14/14).
+  - Loudness under the Spiral's Arrival field (−19.5 dB RMS): each layer at 0.8 adds about 3–4 dB. Felt effect not witnessed.
 ---
 
 # Sound Studio / Liquid Harmonics — Experience Contract
@@ -113,6 +122,24 @@ Because the atmosphere is part of the field:
 - it never reaches touch.
 
 It is inspired by long-form atmospheric listening, but borrows no recordings, scripts, level names or methods from any existing program, and makes no claim.
+
+## Nature & voices
+
+A shared, fully synthesized layer, `lib/listening/natureVoiceLayer.ts`. Any Sound department's engine can host it; Liquid Harmonics hosts it today, so every Living Library study that runs on this engine can use it too. It has six parts:
+- **Rain:** a hiss plus scattered droplets.
+- **Stream:** babbling bands of brown noise.
+- **Wind:** a gusting, sweeping resonant band.
+- **Fire:** a low roar and irregular crackle.
+- **Distant calls:** invented glides, not any species.
+- **Wordless choir:** five sawtooth voices through the field's own vowel formants, with vibrato and ensemble detune, singing a pentatonic chord on the field's fundamental.
+
+Because the layer is part of the field:
+- journeys shape it per movement;
+- it falls silent with a silence breakthrough;
+- it fades with the end;
+- it never reaches touch.
+
+There are no recordings, samples, recorded or AI voices, and no claim. Real nature recordings or other people's voices would need rights and consent admission first.
 
 ## Music layer
 

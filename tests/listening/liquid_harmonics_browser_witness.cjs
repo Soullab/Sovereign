@@ -91,6 +91,12 @@ const server = http.createServer((req, res) => {
     assert.equal(await aOut('air'), '0.80'); assert.equal(await aOut('swell'), '0.80');
     results.push('atmosphere: air and swell controls act on the running engine');
 
+    // Nature & voices: all six raised (they stay up through the journey below, so the silence check covers them).
+    for (const k of ['rain', 'stream', 'wind', 'fire', 'birds', 'choir']) await page.locator(`[data-liquid-param="${k}"]`).fill('0.6');
+    await page.waitForTimeout(1500);
+    for (const k of ['rain', 'stream', 'wind', 'fire', 'birds', 'choir']) assert.equal(await aOut(k), '0.60', `${k} reaches the engine`);
+    results.push('nature & voices: rain, stream, wind, fire, calls and choir act on the running engine');
+
     // Extra loudness: at the maximum boost the study's own output never passes the ceiling, and it is louder.
     const outRms = () => page.evaluate(() => Number(document.querySelector('canvas').dataset.rms));
     const r0 = []; for (let i = 0; i < 10; i++) { r0.push(await outRms()); await page.waitForTimeout(150); }
@@ -189,7 +195,7 @@ const server = http.createServer((req, res) => {
     await page.waitForTimeout(5500);
     const back = await energy();
     assert.ok(back > silent * 10 + 1000, `the next step brings the sound back (${back})`);
-    results.push(`breakthrough: silence (energy ${silent}, with the music layer at 0.5); next step returns (energy ${back})`);
+    results.push(`breakthrough: silence (energy ${silent}, with the music layer at 0.5 and all nature & voices at 0.6); next step returns (energy ${back})`);
     assert.equal(await mOut(), '0.50', 'a journey never moves the listener’s music balance');
     assert.equal(await page.locator('[data-liquid-param="touch"]').locator('xpath=following-sibling::span[1]').innerText(), '1.00', 'nor the touch level');
     const later = await page.locator('[data-liquid-timeline-note]').innerText();

@@ -15,10 +15,11 @@ const { ceilingCurve, OUTPUT_CEILING, pinkNoise, swellChord, touchCarrier, touch
 const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
 const code = rel => strip(fs.readFileSync(path.join(root, rel), 'utf8'));
 
-test('43 controls (39 field incl. 3 atmosphere + listener: 2 music, 1 touch, 1 loudness); defaults are the founder settings of 21 Nov (sawtooth throb, 209 Hz, 6 voices)', () => {
-  assert.equal(CONTROLS.length, 43);
+test('49 controls (45 field incl. 3 atmosphere and 6 nature & voices + listener: 2 music, 1 touch, 1 loudness); defaults are the founder settings of 21 Nov (sawtooth throb, 209 Hz, 6 voices)', () => {
+  assert.equal(CONTROLS.length, 49);
+  for (const k of ['rain', 'stream', 'wind', 'fire', 'birds', 'choir']) assert.equal(DEFAULT_PARAMS[k], 0, `${k} is off by default`);
   assert.equal(DEFAULT_PARAMS.boost, 0, 'no extra loudness by default');
-  assert.equal(CONTROLS.filter(c => c.g !== 'Music' && c.g !== 'Touch' && c.g !== 'Loudness').length, 39, 'the field: 36 + 3 atmosphere');
+  assert.equal(CONTROLS.filter(c => c.g !== 'Music' && c.g !== 'Touch' && c.g !== 'Loudness').length, 45, 'the field: 36 + 3 atmosphere + 6 nature & voices');
   assert.equal(DEFAULT_PARAMS.air, 0); assert.equal(DEFAULT_PARAMS.swell, 0);
   assert.equal(DEFAULT_PARAMS.touch, 0, 'touch starts at zero');
   assert.equal(DEFAULT_PARAMS.music, 0, 'the music layer is off until the listener raises it');
@@ -163,4 +164,22 @@ test('loudness: listener-owned boost, and an output ceiling that is transparent 
   for (let i = 1; i < n; i++) assert.ok(c[i] >= c[i - 1], 'monotonic, so no folding or harshness');
   const s = cleanScore({ steps: [{ type: 'morph', params: { boost: 9, f0: 98 }, seconds: 10, hold: 0 }] });
   assert.deepEqual(s.steps[0].params, { f0: 98 }, 'a journey never sets the loudness');
+});
+
+test('nature & voices: a shared synthesized layer, choir in key, journey-shaped, silent with the field, never in touch', async () => {
+  const NV = await import(pathToFileURL(path.join(root, 'lib/listening/natureVoiceLayer.ts')).href);
+  for (const f0 of [55, 73.4, 98, 147, 209]) {
+    const ch = NV.choirChord(f0), r = ch[0];
+    assert.ok(r >= 110, 'choir sits above the field');
+    assert.equal(((Math.round(12 * Math.log2(r / f0)) % 12) + 12) % 12, 0, 'choir root is the field fundamental');
+    for (const f of ch) assert.ok([0, 2, 4, 7, 9].includes(((Math.round(12 * Math.log2(f / r)) % 12) + 12) % 12), `${f} in the pentatonic`);
+  }
+  for (const kind of ['white', 'pink', 'brown']) { const n = NV.layerNoise(44100, kind, 3); assert.ok(n.every(x => x >= -1 && x <= 1), `${kind} bounded`); assert.deepEqual(n, NV.layerNoise(44100, kind, 3)); }
+  const s = cleanScore({ steps: [{ type: 'morph', params: { rain: 2, choir: 0.5, birds: -1 }, seconds: 10, hold: 0 }] });
+  assert.deepEqual(s.steps[0].params, { rain: 1, choir: 0.5, birds: 0 }, 'journeys may shape nature & voices, within range');
+  const src = code('lib/listening/liquidHarmonics.ts');
+  assert.match(src, /natureBus\.connect\(fieldBus\)/, 'the layer is part of the field (presence, silence, fades)');
+  assert.doesNotMatch(src, /natureBus\.connect\(t[A-Z]/, 'and never touch');
+  const layer = code('lib/listening/natureVoiceLayer.ts');
+  assert.doesNotMatch(layer, /\b(fetch|XMLHttpRequest|decodeAudioData|new Audio|<audio|\.mp3|\.wav)\b/, 'no recordings or network: synthesized only');
 });
