@@ -34,6 +34,10 @@ experience_verification: >
   tests/listening/liquid_harmonics.test.mjs. This is a logic witness, NOT a listening witness: no audible or
   calibrated level check, no headphone, subwoofer, Safari, iPhone or screen-lock test, and no authenticated walk of
   /listen. The founder's felt acceptance of this port (that it sounds as the local sketch did) is separate and not claimed.
+  2026-11-22 addition (founder request after first listening: "it doesnt show below the arc of the journey"): a journey
+  timeline under Begin / Play. The same witness, now 10/10, checks one segment per step and no playhead before playing; the
+  playhead only moves forward (0.11 → 0.86 of the journey); and the line names the step ("Step 2 of 4 · Rise · … · rising",
+  then "Step 3 of 4 · Gather"). There is still no overflow at 390 px. Logic witness only.
 ---
 
 # Sound Studio / Liquid Harmonics — Experience Contract
@@ -55,6 +59,15 @@ It lives in the Lab because it is a study under review, not a finished work.
 A journey is a score the listener writes: morph to a kept setting, gather, release, rise, end. Each rise has takeoff controls: pitch climb (up to two octaves), harmonics emerging, voice → digital, and separate acceleration for throb, pitch and harmonics (1 steady, 5 sudden takeoff). Hold here, Extend +30 s and Next step work between rises, never during one. A score can be saved and loaded as a plain file.
 
 Every score passes through `cleanScore` before it plays: every value is clamped to its control's range, transitions have minimum lengths, unknown keys and steps are dropped, and a score is capped at 40 steps and two hours. Whoever or whatever wrote it, the player keeps it within these limits. The starter score is labelled as a template written by Claude, not as the founder's composition.
+
+## Following a journey
+
+A timeline sits under Begin and Play. It has one band per step, each as wide as its share of the time and named (a morph by its setting's name). It previews a loaded score before it plays. While a journey plays:
+- a playhead moves along the band;
+- a line reads "Step n of N · name · elapsed / total", adding held, rising or fading where that applies;
+- Hold, Extend and Next change how long a step actually takes, and the band stretches or shrinks to match.
+
+The timeline only displays where the journey is; it is not a control. The playhead's motion respects reduced-motion settings.
 
 ## Safety
 

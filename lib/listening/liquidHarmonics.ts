@@ -182,7 +182,7 @@ const smooth = (f: number) => f * f * (3 - 2 * f);
 export type Phase = 'free' | 'journey' | 'rising' | 'after' | 'returning';
 export type LiquidView = {
   phase: Phase; note: string; centreNote: string;
-  journey: { i: number; n: number; type: string; elapsed: number; total: number; held: boolean; ending: boolean } | null;
+  journey: { i: number; n: number; type: string; elapsed: number; stepElapsed: number; total: number; held: boolean; ending: boolean } | null;
 };
 export type LiquidEngine = ProceduralStudyHandle & {
   params: Params;
@@ -204,7 +204,7 @@ const RETURN_KEYS = ['rate', 'depth', 'body', 'voices', 'center', 'wobble', 'spi
 
 type Tween = { t0: number; dur: number; from: Record<string, number>; to: Record<string, number>; ease: (f: number) => number;
   easeFor?: Record<string, (f: number) => number>; done?: () => void };
-type Journey = { steps: Step[]; i: number; t0: number; lastT: number | null; waitUntil: number | null; next: number | 'stop'; ending: boolean; held: boolean };
+type Journey = { steps: Step[]; i: number; t0: number; s0: number; lastT: number | null; waitUntil: number | null; next: number | 'stop'; ending: boolean; held: boolean };
 
 export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, params: Params, api: ProceduralStudyAPI): LiquidEngine {
   const P = params;
@@ -351,7 +351,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
   const finishJourney = () => { J = null; phase = 'free'; note = 'Journey complete.'; };
   const runStep = (i: number) => {
     if (!J) return;
-    J.i = i; const st = J.steps[i];
+    J.i = i; J.s0 = ctx.currentTime; const st = J.steps[i];
     const wait = (h: number) => () => { if (J) { J.waitUntil = ctx.currentTime + h; J.next = i + 1; } };
     if (!st) { finishJourney(); return; }
     if (silenced) { silenced = false; presence.gain.cancelScheduledValues(ctx.currentTime); presence.gain.setValueAtTime(0, ctx.currentTime); presence.gain.linearRampToValueAtTime(1, ctx.currentTime + 8); }
@@ -378,7 +378,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
     const t = ctx.currentTime;
     if (J) {
       const dt = t - (J.lastT ?? t); J.lastT = t;
-      if (J.held) { if (tween) tween.t0 += dt; if (J.waitUntil !== null) J.waitUntil += dt; J.t0 += dt; }
+      if (J.held) { if (tween) tween.t0 += dt; if (J.waitUntil !== null) J.waitUntil += dt; J.t0 += dt; J.s0 += dt; }
     }
     stepTween(t);
     if (J && !J.held && J.waitUntil !== null && t >= J.waitUntil) {
@@ -443,7 +443,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
       if (J || !s.steps.length || !(phase === 'free' || phase === 'after')) return false;
       if (silenced) { silenced = false; fadePresence(1, 8); }
       gatherTo = null; centreNote = ''; tween = null;
-      J = { steps: s.steps, i: 0, t0: ctx.currentTime, lastT: null, waitUntil: null, next: 0, ending: false, held: false };
+      J = { steps: s.steps, i: 0, t0: ctx.currentTime, s0: ctx.currentTime, lastT: null, waitUntil: null, next: 0, ending: false, held: false };
       runStep(0);
       return true;
     },
@@ -459,7 +459,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
       let journey: LiquidView['journey'] = null;
       if (J) {
         const total = J.steps.reduce((a, st) => a + stepSeconds(st), 0);
-        journey = { i: J.i, n: J.steps.length, type: J.steps[J.i]?.type ?? '', elapsed: Math.min(total, Math.max(0, ctx.currentTime - J.t0)), total, held: J.held, ending: J.ending };
+        journey = { i: J.i, n: J.steps.length, type: J.steps[J.i]?.type ?? '', elapsed: Math.min(total, Math.max(0, ctx.currentTime - J.t0)), stepElapsed: Math.max(0, ctx.currentTime - J.s0), total, held: J.held, ending: J.ending };
       }
       return { phase, note, centreNote, journey };
     },

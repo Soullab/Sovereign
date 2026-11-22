@@ -88,12 +88,19 @@ const server = http.createServer((req, res) => {
       { type: 'gather', seconds: 5, hold: 2 },
       { type: 'end', seconds: 3 },
     ] });
+    // The timeline previews the loaded journey before it plays: one segment per step, no playhead yet.
+    assert.equal(await page.locator('[data-liquid-timeline] [data-liquid-seg]').count(), 4, 'timeline: one segment per step');
+    assert.equal(await page.locator('[data-liquid-playhead]').count(), 0, 'no playhead before playing');
+    assert.match(await page.locator('[data-liquid-timeline-note]').innerText(), /4 steps/);
     await page.click('[data-liquid-journey-play]');
     await page.waitForTimeout(5800);
-    const rates = [];
+    const rates = [], heads = [], notes = new Set();
+    const head = async () => Number(await page.locator('[data-liquid-playhead]').getAttribute('data-liquid-playhead'));
     let holdLocked = true;
     for (let i = 0; i < 8; i++) {
       rates.push(await rate());
+      heads.push(await head());
+      notes.add(await page.locator('[data-liquid-timeline-note]').innerText());
       if (!(await page.locator('[data-liquid-hold]').isDisabled())) holdLocked = false;
       if (i === 3) await page.locator('[data-liquid-harmonics]').screenshot({ path: path.join(shots, 'sound-studio-liquid-harmonics-desktop.png') });
       await page.waitForTimeout(3500);
@@ -102,6 +109,8 @@ const server = http.createServer((req, res) => {
     assert.ok(rates[rates.length - 1] > rates[0] * 3, 'and climbs a long way');
     assert.ok(holdLocked, 'Hold / Extend / Next are locked during a rise');
     results.push(`rise: throb ${rates.map(r => r.toFixed(1)).join(' → ')} /s; Hold locked throughout`);
+    for (let i = 1; i < heads.length; i++) assert.ok(heads[i] > heads[i - 1], `the playhead moves forward: ${heads.join(', ')}`);
+    assert.ok([...notes].some(n => /^Step 2 of 4 · Rise · .* · rising$/.test(n)), `timeline names the step: ${[...notes].join(' | ')}`);
 
     // Breakthrough into true silence.
     for (let i = 0; i < 40 && !/Silence/.test(await page.locator('[data-liquid-note]').innerText()); i++) await page.waitForTimeout(250);
@@ -112,6 +121,10 @@ const server = http.createServer((req, res) => {
     const back = await energy();
     assert.ok(back > silent * 10 + 1000, `the next step brings the sound back (${back})`);
     results.push(`breakthrough: silence (energy ${silent}); next step returns (energy ${back})`);
+    const later = await page.locator('[data-liquid-timeline-note]').innerText();
+    assert.match(later, /^Step [34] of 4 · (Gather|End)/);
+    assert.ok(await head() > heads[heads.length - 1], 'playhead keeps moving after the rise');
+    results.push(`timeline: playhead ${heads[0].toFixed(2)} → ${(await head()).toFixed(2)} of the journey; "${later}"`);
 
     // End fades out, the study ends itself, and the player pauses and releases the output.
     for (let i = 0; i < 60 && !/PAUSED/.test(await dock()); i++) await page.waitForTimeout(250);

@@ -24,6 +24,43 @@ const shared: { engine: LiquidEngine | null; params: Params; loaded: boolean } =
 
 const GROUPS = ['Voice', 'Oscillation', 'Frequency shifts', 'Pressure', 'Space', 'Rise'] as const;
 const mmss = (x: number) => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, '0')}`;
+const stepLabel = (st: Step) => st.type === 'morph' ? st.name : st.type === 'end' ? 'End' : st.type[0].toUpperCase() + st.type.slice(1);
+
+// How long each step of the running journey actually took (Hold pauses a step, Extend lengthens it, Next shortens it),
+// so the timeline stretches or shrinks to what really happened rather than only what the score planned.
+type Track = { i: number; last: number; done: number[] };
+const newTrack = (): Track => ({ i: -1, last: 0, done: [] });
+
+function JourneyTimeline({ score, J, phase, track }: { score: Score; J: LiquidView['journey']; phase: string; track: Track }) {
+  const widths = score.steps.map((st, i) => {
+    const planned = stepSeconds(st);
+    if (!J || i > J.i) return planned;
+    if (i < J.i) return track.done[i] ?? planned;
+    return Math.max(planned, J.stepElapsed);
+  });
+  const total = widths.reduce((a, x) => a + x, 0) || 1;
+  const at = J ? widths.slice(0, J.i).reduce((a, x) => a + x, 0) + Math.min(widths[J.i] ?? 0, J.stepElapsed) : 0;
+  const cur = J ? score.steps[J.i] : null;
+  const state = J ? (J.held ? ' · held' : phase === 'rising' ? ' · rising' : J.ending ? ' · fading' : '') : '';
+  return (
+    <div className={styles.liquidTimelineWrap} data-liquid-timeline="true">
+      <div className={styles.liquidTimeline} role="img"
+        aria-label={`Journey timeline: ${score.steps.map(stepLabel).join(', ')}`}>
+        {score.steps.map((st, i) => (
+          <span key={i} className={`${styles.liquidSeg} ${styles[`liquidSeg_${st.type}`] ?? ''} ${J && i === J.i ? styles.liquidSegNow : ''} ${J && i < J.i ? styles.liquidSegDone : ''}`}
+            style={{ flexGrow: widths[i] }} title={`${stepLabel(st)} · ${mmss(widths[i])}`} data-liquid-seg={st.type}>
+            <span>{stepLabel(st)}</span>
+          </span>
+        ))}
+        {J && <span className={styles.liquidPlayhead} style={{ left: `${(at / total) * 100}%` }} data-liquid-playhead={(at / total).toFixed(4)} />}
+      </div>
+      <p className={styles.muted} data-liquid-timeline-note="true">
+        {J && cur ? `Step ${J.i + 1} of ${J.n} · ${stepLabel(cur)} · ${mmss(at)} / ${mmss(total)}${state}`
+          : `Journey: ${score.title} · ${score.steps.length} steps · ${mmss(total)}. Play journey (below) to follow it here.`}
+      </p>
+    </div>
+  );
+}
 
 function download(name: string, data: unknown) {
   const a = document.createElement('a');
@@ -56,6 +93,7 @@ export default function LiquidHarmonicsDesk() {
   const [message, setMessage] = useState('');
   const canvas = useRef<HTMLCanvasElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const track = useRef<Track>(newTrack());
   const live = transport?.snapshot.kind === 'sketch' && transport.snapshot.title === LIQUID_STUDY_TITLE &&
     transport.snapshot.playback === 'playing';
   const P = shared.params;
@@ -76,6 +114,9 @@ export default function LiquidHarmonicsDesk() {
       const e = shared.engine;
       if (canvas.current) drawSpectrum(canvas.current, e, bins);
       const v = e?.view() ?? null;
+      const t = track.current, jv = v?.journey;
+      if (!jv) { if (t.i !== -1) track.current = newTrack(); }
+      else { if (jv.i !== t.i) { if (t.i >= 0) t.done[t.i] = t.last; t.i = jv.i; } t.last = jv.stepElapsed; }
       const key = v ? `${v.phase}|${v.note}|${v.centreNote}|${v.journey ? `${v.journey.i}|${Math.floor(v.journey.elapsed)}|${v.journey.held}` : ''}` : '';
       if (key !== last) { last = key; setView(v); }
       // While a tween moves the sliders, redraw them a few times a second.
@@ -190,6 +231,8 @@ export default function LiquidHarmonicsDesk() {
         <button type="button" className={styles.focusChoice} data-liquid-return="true" disabled={!live || phase !== 'after' || Boolean(J)} onClick={() => shared.engine?.returnFromRise()}>Return</button>
         <span className={styles.muted} data-liquid-note="true" aria-live="polite">{[view?.centreNote, view?.note].filter(Boolean).join(' · ')}</span>
       </div>
+
+      {score && score.steps.length > 0 && <JourneyTimeline score={score} J={J} phase={phase} track={track.current} />}
 
       <canvas ref={canvas} width={720} height={110} className={styles.liquidSpectrum} aria-label="Spectrum of the sound, low to high" />
 
