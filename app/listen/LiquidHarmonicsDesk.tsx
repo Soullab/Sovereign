@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePersistentListening } from '@/components/listening/PersistentListeningProvider';
 import {
   BREAKTHROUGHS, CONTROLS, DEFAULT_PARAMS, LIQUID_NOTES, LIQUID_STUDY_TITLE, cleanParams, cleanScore, formatValue, fromSlider,
-  liquidHarmonicsStudy, scoreSeconds, starterScore, stepSeconds, toSlider,
+  liquidHarmonicsStudy, scoreSeconds, starterScore, stepSeconds, toSlider, TOUCH_ZONES,
 } from '@/lib/listening/liquidHarmonics';
 import type { Control, LiquidEngine, LiquidView, Params, Score, Step } from '@/lib/listening/liquidHarmonics';
 import styles from './listen.module.css';
@@ -22,7 +22,7 @@ const store = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.st
 // The engine keeps running in the player when the member moves to another view, so the desk re-attaches to it.
 const shared: { engine: LiquidEngine | null; params: Params; loaded: boolean } = { engine: null, params: { ...DEFAULT_PARAMS }, loaded: false };
 
-const GROUPS = ['Music', 'Voice', 'Oscillation', 'Frequency shifts', 'Pressure', 'Space', 'Rise'] as const;
+const GROUPS = ['Music', 'Touch', 'Voice', 'Oscillation', 'Frequency shifts', 'Pressure', 'Space', 'Rise'] as const;
 const mmss = (x: number) => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, '0')}`;
 const stepLabel = (st: Step) => st.type === 'morph' ? st.name : st.type === 'end' ? 'End' : st.type[0].toUpperCase() + st.type.slice(1);
 
@@ -94,6 +94,7 @@ export default function LiquidHarmonicsDesk() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const track = useRef<Track>(newTrack());
+  const meters = useRef<(HTMLSpanElement | null)[]>([]);
   const live = transport?.snapshot.kind === 'sketch' && transport.snapshot.title === LIQUID_STUDY_TITLE &&
     transport.snapshot.playback === 'playing';
   const P = shared.params;
@@ -113,6 +114,9 @@ export default function LiquidHarmonicsDesk() {
     const frame = (now: number) => {
       const e = shared.engine;
       if (canvas.current) drawSpectrum(canvas.current, e, bins);
+      // Touch preview meters: written straight to the DOM each frame (no re-render).
+      const tm = e ? e.touch() : { rms: [0, 0, 0, 0], above150: 0 }, tr = tm.rms;
+      meters.current.forEach((m, i) => { if (m) { const v = Math.min(1, tr[i] / 0.35); m.style.width = `${(v * 100).toFixed(1)}%`; m.dataset.rms = tr[i].toFixed(4); m.dataset.above150 = tm.above150.toFixed(4); } });
       const v = e?.view() ?? null;
       const t = track.current, jv = v?.journey;
       if (!jv) { if (t.i !== -1) track.current = newTrack(); }
@@ -251,6 +255,21 @@ export default function LiquidHarmonicsDesk() {
       {GROUPS.map(g => (
         <details className={styles.orbitDetails} key={g} open={g === 'Voice' || g === 'Music'} data-liquid-group={g}>
           <summary>{g === 'Music' ? 'Music layer' : g}</summary>
+          {g === 'Touch' && <>
+            <p className={styles.muted} data-liquid-touch-note="true">
+              Phase 1 preview. Touch is worked out from the field (the pressure below, the throb and its left-right movement above)
+              and measured here. It is not sent to any device yet. The music layer never reaches touch; every touch channel stays
+              between 20 and 150 Hz, pulses no faster than 20 per second, and goes silent with the sound.
+            </p>
+            <div className={styles.liquidTouch} aria-label="Touch preview, four zones">
+              {TOUCH_ZONES.map((z, i) => (
+                <div key={z} className={styles.liquidTouchRow}>
+                  <span>{z}</span>
+                  <span className={styles.liquidTouchTrack}><span ref={el => { meters.current[i] = el; }} className={styles.liquidTouchBar} data-liquid-touch-meter={i} /></span>
+                </div>
+              ))}
+            </div>
+          </>}
           {g === 'Music' && <p className={styles.muted} data-liquid-music-note="true">
             A melody above the field, in its key{view?.music.on ? ` (now ${view.music.key})` : ''}. It follows the journey: sparse and low in heavier
             settings, flowing where the field moves, quiet during a rise. The balance is yours; journeys never change it.

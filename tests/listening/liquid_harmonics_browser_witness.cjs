@@ -84,6 +84,32 @@ const server = http.createServer((req, res) => {
     await page.locator('[data-liquid-param="music"]').fill('0.5');
     results.push(`music layer: off by default; music alone measures energy ${eMusic}; key shown`);
 
+    // Touch (Phase 1 preview): zero until the listener raises it; then lower and upper zones carry signal, nothing above
+    // 150 Hz (the music layer is at 0.5 here and must not leak in), and the upper zones swing left-right with rotation.
+    const meter = async () => page.evaluate(() => [...document.querySelectorAll('[data-liquid-touch-meter]')].map(m => Number(m.dataset.rms)));
+    const above = () => page.evaluate(() => Number(document.querySelector('[data-liquid-touch-meter]').dataset.above150));
+    assert.ok(Math.max(...await meter()) < 1e-3, 'touch is zero until raised');
+    await page.click('[data-liquid-harmonics] summary:text-is("Touch")');
+    await page.locator('[data-liquid-param="touch"]').fill('1');
+    await page.waitForTimeout(5000);
+    // The pressure swells and draws back, so take each zone's peak over two seconds rather than one instant.
+    const tm = [0, 0, 0, 0];
+    for (let i = 0; i < 14; i++) { (await meter()).forEach((v, j) => { tm[j] = Math.max(tm[j], v); }); await page.waitForTimeout(150); }
+    assert.ok(tm[0] > 0.01 && tm[1] > 0.01 && tm[2] > 0.01 && tm[3] > 0.01, `all four zones carry touch (${tm.map(x => x.toFixed(3))})`);
+    const hi = await above();
+    assert.ok(hi < 0.01, `touch stays below 150 Hz with the music layer on (share above 150 Hz: ${hi})`);
+    // Gathered (the earlier Gather has just finished at centre 1): both upper zones stay equal.
+    const g0 = []; for (let i = 0; i < 6; i++) { const m = await meter(); g0.push(Math.abs(m[2] - m[3])); await page.waitForTimeout(150); }
+    assert.ok(Math.max(...g0) < 0.005, `gathered: left and right touch stay equal (${Math.max(...g0)})`);
+    // Released to the periphery: the upper zones follow the rotation left and right.
+    await page.click('[data-liquid-harmonics] summary:text-is("Space")');
+    await page.locator('[data-liquid-param="center"]').fill('0');
+    await page.waitForTimeout(1500);
+    const diffs = [];
+    for (let i = 0; i < 24; i++) { const m = await meter(); diffs.push(m[2] - m[3]); await page.waitForTimeout(200); }
+    assert.ok(Math.max(...diffs) > 0.01 && Math.min(...diffs) < -0.01, `upper zones swing left-right (${Math.min(...diffs).toFixed(3)}..${Math.max(...diffs).toFixed(3)})`);
+    results.push(`touch: zero until raised; zones ${tm.map(x => x.toFixed(2)).join('/')}; above 150 Hz ${(hi * 100).toFixed(2)}%; left-right swing ${Math.min(...diffs).toFixed(2)}..${Math.max(...diffs).toFixed(2)}`);
+
     // A hostile score file is clamped by the player itself.
     await loadScore({ title: 'hostile', steps: [{ type: 'rise', peak: 9999, length: 1, pitch: 99 }, { type: 'rm -rf' }, { type: 'morph', params: { f0: 1e6 } }] });
     const fields = await page.locator('[data-liquid-step="rise"] [data-liquid-step-field]').evaluateAll(els => Object.fromEntries(els.map(e => [e.dataset.liquidStepField, +e.value])));
@@ -135,12 +161,15 @@ const server = http.createServer((req, res) => {
     for (let i = 0; i < 40 && !/Silence/.test(await page.locator('[data-liquid-note]').innerText()); i++) await page.waitForTimeout(250);
     await page.waitForTimeout(1500);
     const silent = await energy();
+    const tSilent = Math.max(...await meter());
+    assert.ok(tSilent < 1e-3, `touch is silent with the sound (${tSilent})`);
     assert.ok(silent < e0 / 50, `silence measures ~0 (${silent})`);
     await page.waitForTimeout(5500);
     const back = await energy();
     assert.ok(back > silent * 10 + 1000, `the next step brings the sound back (${back})`);
     results.push(`breakthrough: silence (energy ${silent}, with the music layer at 0.5); next step returns (energy ${back})`);
     assert.equal(await mOut(), '0.50', 'a journey never moves the listener’s music balance');
+    assert.equal(await page.locator('[data-liquid-param="touch"]').locator('xpath=following-sibling::span[1]').innerText(), '1.00', 'nor the touch level');
     const later = await page.locator('[data-liquid-timeline-note]').innerText();
     assert.match(later, /^Step [34] of 4 · (Gather|End)/);
     assert.ok(await head() > heads[heads.length - 1], 'playhead keeps moving after the rise');

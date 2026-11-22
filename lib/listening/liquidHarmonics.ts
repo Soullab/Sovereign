@@ -10,7 +10,7 @@
 import type { ProceduralStudy, ProceduralStudyAPI, ProceduralStudyHandle } from './proceduralStudy';
 
 // ── Controls ──────────────────────────────────────────────────────────────────────────────────────────
-export type Group = 'Voice' | 'Oscillation' | 'Frequency shifts' | 'Rise' | 'Pressure' | 'Space' | 'Music';
+export type Group = 'Voice' | 'Oscillation' | 'Frequency shifts' | 'Rise' | 'Pressure' | 'Space' | 'Music' | 'Touch';
 export type Control = {
   g: Group; k: string; label: string; v: number | string;
   min?: number; max?: number; step?: number; log?: boolean; unit?: string; hint?: string;
@@ -59,6 +59,7 @@ export const CONTROLS: readonly Control[] = Object.freeze([
   { g: 'Space', k: 'center', label: 'Periphery → centre', min: 0, max: 1, v: 0.34, hint: '0: all around you. 1: gathered to one point. Or use Gather / Release.' },
   { g: 'Music', k: 'music', label: 'Field ↔ music', min: 0, max: 1, v: 0, hint: '0: the field alone. 0.5: both in full. 1: the music alone. The music stays in the key of the field and follows the journey; this balance is yours and journeys never change it.' },
   { g: 'Music', k: 'musicMove', label: 'Music movement', min: 0, max: 1, v: 0.5, hint: 'Sparse single notes ↔ flowing phrases.' },
+  { g: 'Touch', k: 'touch', label: 'Touch level (preview)', min: 0, max: 1, v: 0, hint: 'Phase 1: touch is computed and measured here, not sent to any device. Starts at 0, fades in over about 3 seconds, and journeys never change it.' },
   { g: 'Space', k: 'glass', label: 'Glass shimmer', min: 0, max: 1.5, v: 0.96, hint: 'High crystalline partials.' },
 ] as Control[]);
 
@@ -104,7 +105,7 @@ const clampN = (v: unknown, lo: number, hi: number, d: number) => { const n = Nu
 export function cleanParams(src: unknown, withRise = false): Params {
   const s = (src && typeof src === 'object' ? src : {}) as Record<string, unknown>, out: Params = {};
   for (const c of CONTROLS) {
-    if ((!withRise && (c.g === 'Rise' || c.g === 'Music')) || !(c.k in s)) continue;
+    if ((!withRise && (c.g === 'Rise' || c.g === 'Music' || c.g === 'Touch')) || !(c.k in s)) continue;
     if (c.options) { if (c.options.includes(String(s[c.k]))) out[c.k] = String(s[c.k]); }
     else out[c.k] = clampN(s[c.k], c.min!, c.max!, c.v as number);
   }
@@ -143,6 +144,19 @@ export function musicDensity(P: Params, phase: string): number {
   const motion = Math.min(1, n('vowelMove') * 0.6 + n('rotate') * 2 + n('swirl') * 0.2);
   const base = (0.25 + 1.25 * n('musicMove')) * (0.6 + 0.6 * motion);
   return base * (phase === 'rising' ? 0.35 : phase === 'after' ? 0.5 : 1);
+}
+
+// ── Touch (pure, tested): four tactile channels derived from the field, never from the music ──
+// Design brief 2026-11-22 (founder: "Yes, start Phase 1"). Phase 1 computes and measures touch only; no device output.
+export const TOUCH_LIMITS = Object.freeze({ lowHz: 20, highHz: 150, maxRate: 20, ceiling: 0.5, fadeTau: 1 });
+export const TOUCH_ZONES = Object.freeze(['Lower left', 'Lower right', 'Upper left', 'Upper right']);
+/** The felt carrier: the field's fundamental folded by octaves into 40–120 Hz. */
+export function touchCarrier(f0: number): number { let f = Math.max(1, f0); while (f > 120) f /= 2; while (f < 40) f *= 2; return f; }
+/** The felt pulse follows the throb but never faster than the cap. */
+export const touchRate = (rate: number) => Math.max(0.1, Math.min(TOUCH_LIMITS.maxRate, rate));
+/** Soft ceiling: no output sample can exceed TOUCH_LIMITS.ceiling, however hot the input. */
+export function touchCurve(n = 1024): Float32Array<ArrayBuffer> {
+  const c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; c[i] = TOUCH_LIMITS.ceiling * Math.tanh(2 * x); } return c;
 }
 
 export type MorphStep = { type: 'morph'; name: string; params: Params; seconds: number; hold: number };
@@ -232,6 +246,8 @@ export type LiquidEngine = ProceduralStudyHandle & {
   view: () => LiquidView;
   energy: () => number;
   analyser: AnalyserNode;
+  /** RMS of each touch channel (T1–T4: lower L/R, upper L/R), and the share of touch energy above 150 Hz. Phase 1 preview. */
+  touch: () => { rms: number[]; above150: number };
 };
 
 // The study's own output trim, before the player's shared level (as for Orbit & Threshold).
@@ -325,6 +341,25 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
   // Sub-bass pressure: mono, centred, straight to presence (the limiter still guards it).
   const pO = osc(num('pressF')), pAm = gain(0.5), pL = osc(num('pressRate')), pLd = gain(0.5); pL.connect(pLd); pLd.connect(pAm.gain);
   const pG = gain(0), pHp = biquad('highpass', 20); pO.connect(pAm); pAm.connect(pHp); pHp.connect(pG); pG.connect(fieldBus);
+  // ── Touch bus (Phase 1: measured, not sent anywhere). Sources are the pressure and a felt throb only; the music
+  // layer has no path here. Every channel: 20 Hz high-pass, 150 Hz low-pass, a soft ceiling, a second 150 Hz low-pass, then presence.
+  const tPresence = gain(0), tLevel = gain(0), tMerge = keep(ctx.createChannelMerger(4)), tSplit = keep(ctx.createChannelSplitter(4));
+  const tSrcLow = gain(0); pAm.connect(tSrcLow);                                   // pressure → lower zones
+  const tCar = osc(touchCarrier(f0)), tLfo = osc(touchRate(num('rate'))), tAm = gain(1), tDepth = gain(0);
+  tLfo.connect(tDepth); tDepth.connect(tAm.gain); tCar.connect(tAm);                // felt throb → upper zones (sine, so no steps)
+  const tSrcHigh = gain(0); tAm.connect(tSrcHigh);
+  // Left-right movement follows the field's rotation; gathered (centre 1) holds both sides equal.
+  const tPan = gain(0); rot.connect(tPan);
+  const tNeg = gain(-1); tPan.connect(tNeg);
+  const zone = (src: AudioNode, side: -1 | 1, ch: number) => {
+    const g = gain(0.5); src.connect(g); (side < 0 ? tNeg : tPan).connect(g.gain);
+    const hp = biquad('highpass', TOUCH_LIMITS.lowHz), lp1 = biquad('lowpass', TOUCH_LIMITS.highHz, 0.7), lp2 = biquad('lowpass', TOUCH_LIMITS.highHz, 0.7);
+    const ws = keep(ctx.createWaveShaper()); ws.curve = touchCurve(); ws.oversample = '2x';
+    g.connect(hp); hp.connect(lp1); lp1.connect(ws); ws.connect(lp2); lp2.connect(tMerge, 0, ch); // filter, ceiling, filter again: the ceiling's own harmonics are removed too
+  };
+  zone(tSrcLow, -1, 0); zone(tSrcLow, 1, 1); zone(tSrcHigh, -1, 2); zone(tSrcHigh, 1, 3);
+  tMerge.connect(tLevel); tLevel.connect(tPresence); tPresence.connect(tSplit);
+  const tAn = [0, 1, 2, 3].map(i => { const a = keep(ctx.createAnalyser()); a.fftSize = 2048; a.smoothingTimeConstant = 0; tSplit.connect(a, i); return a; });
   // Binaural core goes straight to presence so it stays centred.
   const binL = osc(f0 * 2), binR = osc(f0 * 2 + 7), mg = keep(ctx.createChannelMerger(2)); binL.connect(mg, 0, 0); binR.connect(mg, 0, 1);
   const binG = gain(0); mg.connect(binG); binG.connect(fieldBus);
@@ -354,6 +389,12 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
     set(binL.frequency, F * 2); set(binR.frequency, F * 2 + Math.min(45, rate)); set(binG.gain, num('binaural') * 0.12 * (0.6 + 0.4 * center));
     set(spG.gain, num('spiral'));
     set(pO.frequency, num('pressF')); set(pL.frequency, num('pressRate') + (rate - num('pressRate')) * num('pressLink')); set(pG.gain, num('press') * 0.6);
+    const T = TOUCH_LIMITS.fadeTau;
+    tLevel.gain.setTargetAtTime(num('touch'), t, T);
+    tSrcLow.gain.setTargetAtTime(Math.min(1, num('press')) * 0.9, t, T); tSrcHigh.gain.setTargetAtTime(0.8, t, T);
+    tCar.frequency.setTargetAtTime(touchCarrier(F), t, 0.2); tLfo.frequency.setTargetAtTime(touchRate(rate), t, 0.2);
+    tAm.gain.setTargetAtTime(1 - num('depth') / 2, t, 0.2); tDepth.gain.setTargetAtTime(num('depth') / 2, t, 0.2);
+    tPan.gain.setTargetAtTime(rotate > 0.001 ? 0.5 * (1 - center) : 0, t, 0.2);
     const bal = num('music'); set(fieldBus.gain, Math.min(1, 2 * (1 - bal))); set(musicBus.gain, Math.min(1, 2 * bal) * MUSIC_LEVEL);
     if (now) form.forEach((b, j) => b.frequency.setValueAtTime(vowelAt(num('vowel'))[j], t));
   };
@@ -363,9 +404,10 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
   let tween: Tween | null = null, preRise: Params | null = null, J: Journey | null = null;
   let gatherTo: number | null = null, gatherFrom = 0, gatherT0 = 0, vowelPos: number | null = null, lastStep = 0;
 
-  const fadePresence = (to: number, seconds: number) => {
-    const t = ctx.currentTime, g = presence.gain;
-    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(to, t + seconds);
+  // Sound and touch share one presence: silence, fades and the end apply to both together.
+  const fadePresence = (to: number, seconds: number, from?: number) => {
+    const t = ctx.currentTime;
+    for (const g of [presence.gain, tPresence.gain]) { g.cancelScheduledValues(t); g.setValueAtTime(from ?? g.value, t); g.linearRampToValueAtTime(to, t + seconds); }
   };
   const startTween = (to: Record<string, number>, dur: number, ease: (f: number) => number, done?: () => void) => {
     tween = { t0: ctx.currentTime, dur, from: Object.fromEntries(Object.keys(to).map(k => [k, num(k)])), to, ease, done };
@@ -404,7 +446,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
     J.i = i; J.s0 = ctx.currentTime; const st = J.steps[i];
     const wait = (h: number) => () => { if (J) { J.waitUntil = ctx.currentTime + h; J.next = i + 1; } };
     if (!st) { finishJourney(); return; }
-    if (silenced) { silenced = false; presence.gain.cancelScheduledValues(ctx.currentTime); presence.gain.setValueAtTime(0, ctx.currentTime); presence.gain.linearRampToValueAtTime(1, ctx.currentTime + 8); }
+    if (silenced) { silenced = false; fadePresence(1, 8, 0); }
     phase = 'journey'; note = '';
     if (st.type === 'morph') {
       const to: Record<string, number> = {};
@@ -542,6 +584,17 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
         journey = { i: J.i, n: J.steps.length, type: J.steps[J.i]?.type ?? '', elapsed: Math.min(total, Math.max(0, ctx.currentTime - J.t0)), stepElapsed: Math.max(0, ctx.currentTime - J.s0), total, held: J.held, ending: J.ending };
       }
       return { phase, note, centreNote, journey, music: { on: num('music') >= 0.01, key: musicKeyName(num('f0')), notes: mNotes, last: mLast } };
+    },
+    touch: () => {
+      const buf = new Float32Array(2048), fb = new Float32Array(tAn[0].frequencyBinCount);
+      let hi = 0, all = 0;
+      const rms = tAn.map(a => {
+        a.getFloatTimeDomainData(buf); let s2 = 0; for (const x of buf) s2 += x * x;
+        a.getFloatFrequencyData(fb); const bin = a.context.sampleRate / a.fftSize;
+        fb.forEach((db, i) => { const p = Math.pow(10, db / 10); all += p; if (i * bin > 150) hi += p; });
+        return Math.sqrt(s2 / buf.length);
+      });
+      return { rms, above150: all > 0 ? hi / all : 0 };
     },
     energy: () => { const b = new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(b); return b.reduce((a, x) => a + x, 0); },
     dispose: () => {

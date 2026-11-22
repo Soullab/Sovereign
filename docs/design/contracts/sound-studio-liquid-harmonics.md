@@ -46,6 +46,14 @@ experience_verification: >
     drop the music keys; it is sparser in a rise.
   - Loudness, measured on the study analyser at founder defaults: field alone about −6 dB RMS; music alone about
     −16 dB RMS, with peaks about −2 dB (after a +17 dB make-up). The felt balance is not witnessed.
+  2026-11-22 touch, Phase 1 (founder: "Yes, start Phase 1"; Tactile Field design brief):
+  - Witness 12/12: touch is zero until raised; at full level all four zones carry signal (RMS about 0.33); with the
+    music layer on, 0.11% of touch energy is above 150 Hz (the filter's slope); gathered, left and right stay equal;
+    released, the upper zones swing left and right (about −0.45 to +0.45); touch is silent at a silence
+    breakthrough; a journey leaves the touch level unchanged.
+  - Unit tests 9/9: carrier 40–120 Hz; rate cap 20/s; the curve never exceeds the 0.5 ceiling; no music node
+    connects to touch; touch is not routed to any output.
+  - Preview only. No device, transducer or body.
 ---
 
 # Sound Studio / Liquid Harmonics — Experience Contract
@@ -89,6 +97,22 @@ A melody above the field, so attention has something human to rest on while the 
   - silent in a silence breakthrough, because it runs through the same presence, limiter and fades.
 - **It is synthesized**: soft sine-and-triangle bells with their own echo and hall. There are no recordings and no second player.
 - **No claim** is made that the layering does anything. It is offered as music.
+
+## Touch (Phase 1 preview)
+
+Four touch channels are worked out from the field and measured on the desk:
+- **Lower left and right** carry the sub-bass pressure.
+- **Upper left and right** carry a felt throb (the field's fundamental folded into 40–120 Hz). It swings left and right with the rotation, and gathered it holds both sides equal.
+
+They are **not sent to any device**. That is Phase 2, a bench test with nobody on it, under the design brief. The listener's own Touch level starts at 0, fades in over about 3 seconds, and journeys never change it.
+
+Fixed in code, on every channel:
+- a 20 Hz high-pass;
+- a 150 Hz low-pass before and after a soft ceiling of 0.5;
+- a pulse rate of at most 20 per second;
+- the same presence as the sound, so silence, fades and the end apply to touch too.
+
+The music layer has no path to touch.
 
 ## Safety
 

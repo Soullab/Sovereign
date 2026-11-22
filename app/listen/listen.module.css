@@ -230,3 +230,7 @@
 .liquidTimelineWrap p{margin:6px 0 0;font-size:13px}
 @media (prefers-reduced-motion:reduce){.liquidPlayhead{transition:none}}
 .liquidPlay:disabled,[data-liquid-harmonics] .focusChoice:disabled{opacity:.4;cursor:default}
+.liquidTouch{display:flex;flex-direction:column;gap:6px;margin:8px 0 12px;max-width:520px}
+.liquidTouchRow{display:grid;grid-template-columns:110px minmax(0,1fr);align-items:center;gap:10px;font-size:13px;color:#ddd0bb}
+.liquidTouchTrack{display:block;height:10px;border-radius:5px;background:rgba(226,216,194,.1);overflow:hidden}
+.liquidTouchBar{display:block;height:100%;width:0;border-radius:5px;background:rgba(214,120,78,.85)}
