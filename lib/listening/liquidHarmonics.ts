@@ -10,7 +10,7 @@
 import type { ProceduralStudy, ProceduralStudyAPI, ProceduralStudyHandle } from './proceduralStudy';
 
 // ── Controls ──────────────────────────────────────────────────────────────────────────────────────────
-export type Group = 'Voice' | 'Oscillation' | 'Frequency shifts' | 'Rise' | 'Pressure' | 'Space';
+export type Group = 'Voice' | 'Oscillation' | 'Frequency shifts' | 'Rise' | 'Pressure' | 'Space' | 'Music';
 export type Control = {
   g: Group; k: string; label: string; v: number | string;
   min?: number; max?: number; step?: number; log?: boolean; unit?: string; hint?: string;
@@ -57,6 +57,8 @@ export const CONTROLS: readonly Control[] = Object.freeze([
   { g: 'Space', k: 'rotate', label: 'Rotation around you', min: 0, max: 1.5, v: 0.26, unit: 'Hz' },
   { g: 'Space', k: 'verb', label: 'Space', min: 0, max: 1.3, v: 0.94 },
   { g: 'Space', k: 'center', label: 'Periphery → centre', min: 0, max: 1, v: 0.34, hint: '0: all around you. 1: gathered to one point. Or use Gather / Release.' },
+  { g: 'Music', k: 'music', label: 'Field ↔ music', min: 0, max: 1, v: 0, hint: '0: the field alone. 0.5: both in full. 1: the music alone. The music stays in the key of the field and follows the journey; this balance is yours and journeys never change it.' },
+  { g: 'Music', k: 'musicMove', label: 'Music movement', min: 0, max: 1, v: 0.5, hint: 'Sparse single notes ↔ flowing phrases.' },
   { g: 'Space', k: 'glass', label: 'Glass shimmer', min: 0, max: 1.5, v: 0.96, hint: 'High crystalline partials.' },
 ] as Control[]);
 
@@ -97,15 +99,50 @@ export function vowelAt(x: number): number[] {
 }
 const clampN = (v: unknown, lo: number, hi: number, d: number) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
 
-/** Every known control, clamped to its range; unknown keys dropped. `withRise` keeps the free-rise controls. */
+/** Every known control, clamped to its range; unknown keys dropped. `withRise` keeps the free-rise and the listener's own
+ * music-balance controls; without it (a journey morph) those are dropped, so a score never moves the listener's balance. */
 export function cleanParams(src: unknown, withRise = false): Params {
   const s = (src && typeof src === 'object' ? src : {}) as Record<string, unknown>, out: Params = {};
   for (const c of CONTROLS) {
-    if ((!withRise && c.g === 'Rise') || !(c.k in s)) continue;
+    if ((!withRise && (c.g === 'Rise' || c.g === 'Music')) || !(c.k in s)) continue;
     if (c.options) { if (c.options.includes(String(s[c.k]))) out[c.k] = String(s[c.k]); }
     else out[c.k] = clampN(s[c.k], c.min!, c.max!, c.v as number);
   }
   return out;
+}
+
+// ── Music layer (pure, tested): a melody in the key of the field ──
+// The root is the field's fundamental snapped to the nearest semitone and placed in 220–440 Hz; the melody uses the
+// major pentatonic on that root, so every note is consonant with the drone beneath it.
+export const PENTATONIC = Object.freeze([0, 2, 4, 7, 9]);
+const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+export function musicRoot(f0: number): number {
+  const m = Math.round(69 + 12 * Math.log2(Math.max(20, f0) / 440));
+  let r = 440 * Math.pow(2, (m - 69) / 12);
+  while (r < 220 - 1e-9) r *= 2; while (r >= 440 - 1e-9) r /= 2;
+  return r;
+}
+export const musicKeyName = (f0: number) => NOTE_NAMES[((Math.round(69 + 12 * Math.log2(Math.max(20, f0) / 440)) % 12) + 12) % 12];
+/** Scale degree → Hz. Degree 0 is the root; 5 is an octave up; −1 is the sixth below. */
+export function musicNote(root: number, degree: number): number {
+  const o = Math.floor(degree / 5), i = degree - o * 5;
+  return root * Math.pow(2, o + PENTATONIC[i] / 12);
+}
+export const MUSIC_DEGREES = Object.freeze({ lo: -2, hi: 9 });
+/** The next degree: steps when the music is calm, leaps when it moves, drawn back toward a centre set by brightness. */
+export function nextDegree(prev: number, move: number, centre: number, rnd: () => number): number {
+  const maxStep = 1 + Math.round(Math.min(1, Math.max(0, move)) * 2);
+  const size = 1 + Math.floor(rnd() * maxStep);
+  const up = rnd() < 0.5 + Math.max(-0.35, Math.min(0.35, (centre - prev) * 0.12));
+  const step = rnd() < 0.15 ? 0 : up ? size : -size;
+  return Math.max(MUSIC_DEGREES.lo, Math.min(MUSIC_DEGREES.hi, prev + step));
+}
+/** Notes per second: the listener's movement setting, the field's own motion, and the journey phase (quiet in a rise). */
+export function musicDensity(P: Params, phase: string): number {
+  const n = (k: string) => Number(P[k]);
+  const motion = Math.min(1, n('vowelMove') * 0.6 + n('rotate') * 2 + n('swirl') * 0.2);
+  const base = (0.25 + 1.25 * n('musicMove')) * (0.6 + 0.6 * motion);
+  return base * (phase === 'rising' ? 0.35 : phase === 'after' ? 0.5 : 1);
 }
 
 export type MorphStep = { type: 'morph'; name: string; params: Params; seconds: number; hold: number };
@@ -183,6 +220,7 @@ export type Phase = 'free' | 'journey' | 'rising' | 'after' | 'returning';
 export type LiquidView = {
   phase: Phase; note: string; centreNote: string;
   journey: { i: number; n: number; type: string; elapsed: number; stepElapsed: number; total: number; held: boolean; ending: boolean } | null;
+  music: { on: boolean; key: string; notes: number; last: number };
 };
 export type LiquidEngine = ProceduralStudyHandle & {
   params: Params;
@@ -198,6 +236,10 @@ export type LiquidEngine = ProceduralStudyHandle & {
 
 // The study's own output trim, before the player's shared level (as for Orbit & Threshold).
 export const LIQUID_OUTPUT_TRIM = 0.5;
+// The music bus at full balance, under the same presence, limiter and trim as the field.
+export const MUSIC_LEVEL = 0.9;
+// Make-up gain for the sparse notes (measured 22 Nov: without it the music alone sat ~25 dB under the field).
+const MUSIC_GAIN = 7;
 const STACK = [1.189, 1.5, 1.782, 2.245, 2.997, 3.564, 4.49];
 const HA = [0.6923878, 0.9360654322959, 0.9882295226860, 0.9987488452737], HB = [0.4021921162426, 0.8561710882420, 0.9722909545651, 0.9952884791278];
 const RETURN_KEYS = ['rate', 'depth', 'body', 'voices', 'center', 'wobble', 'spiralSpeed', 'shift', 'verb', 'rotate', 'f0', 'overtone', 'otMove', 'glass', 'vowel'];
@@ -276,16 +318,23 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
   const flFb = gain(0); mix.connect(fl); fl.connect(flFb); flFb.connect(fl); const flWet = gain(0); fl.connect(flWet); flWet.connect(post);
   // Rotation around the listener, then space
   const pan = keep(ctx.createStereoPanner()), rot = osc(num('rotate')), rotD = gain(0.85); rot.connect(rotD); rotD.connect(pan.pan); post.connect(pan);
-  pan.connect(presence);
+  // The field and the music each have a bus into presence, so silence, fades and the limiter govern both.
+  const fieldBus = gain(1), musicBus = gain(0), musicDuck = gain(1), musicIn = gain(MUSIC_GAIN);
+  fieldBus.connect(presence); musicIn.connect(musicDuck); musicDuck.connect(musicBus); musicBus.connect(presence);
+  pan.connect(fieldBus);
   // Sub-bass pressure: mono, centred, straight to presence (the limiter still guards it).
   const pO = osc(num('pressF')), pAm = gain(0.5), pL = osc(num('pressRate')), pLd = gain(0.5); pL.connect(pLd); pLd.connect(pAm.gain);
-  const pG = gain(0), pHp = biquad('highpass', 20); pO.connect(pAm); pAm.connect(pHp); pHp.connect(pG); pG.connect(presence);
+  const pG = gain(0), pHp = biquad('highpass', 20); pO.connect(pAm); pAm.connect(pHp); pHp.connect(pG); pG.connect(fieldBus);
   // Binaural core goes straight to presence so it stays centred.
   const binL = osc(f0 * 2), binR = osc(f0 * 2 + 7), mg = keep(ctx.createChannelMerger(2)); binL.connect(mg, 0, 0); binR.connect(mg, 0, 1);
-  const binG = gain(0); mg.connect(binG); binG.connect(presence);
+  const binG = gain(0); mg.connect(binG); binG.connect(fieldBus);
   const sr = ctx.sampleRate, len = Math.floor(sr * 3.2), ir = ctx.createBuffer(2, len, sr);
   for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5) * 0.5; }
-  const cv = keep(ctx.createConvolver()); cv.buffer = ir; const verb = gain(0); pan.connect(verb); verb.connect(cv); cv.connect(presence);
+  const cv = keep(ctx.createConvolver()); cv.buffer = ir; const verb = gain(0); pan.connect(verb); verb.connect(cv); cv.connect(fieldBus);
+  // The music's own space: a soft echo and the same hall, so it sits in the room with the field.
+  const mDl = keep(ctx.createDelay(1)); mDl.delayTime.value = 0.37; const mFb = gain(0.32), mLp = biquad('lowpass', 2600), mEcho = gain(0.35);
+  musicIn.connect(mDl); mDl.connect(mLp); mLp.connect(mFb); mFb.connect(mDl); mLp.connect(mEcho); mEcho.connect(musicDuck);
+  const mCv = keep(ctx.createConvolver()); mCv.buffer = ir; const mVerb = gain(0.45); musicIn.connect(mVerb); mVerb.connect(mCv); mCv.connect(musicDuck);
 
   const apply = (now = false) => {
     const t = ctx.currentTime, k = now ? 0.01 : 0.08, set = (param: AudioParam, v: number) => param.setTargetAtTime(v, t, k);
@@ -305,6 +354,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
     set(binL.frequency, F * 2); set(binR.frequency, F * 2 + Math.min(45, rate)); set(binG.gain, num('binaural') * 0.12 * (0.6 + 0.4 * center));
     set(spG.gain, num('spiral'));
     set(pO.frequency, num('pressF')); set(pL.frequency, num('pressRate') + (rate - num('pressRate')) * num('pressLink')); set(pG.gain, num('press') * 0.6);
+    const bal = num('music'); set(fieldBus.gain, Math.min(1, 2 * (1 - bal))); set(musicBus.gain, Math.min(1, 2 * bal) * MUSIC_LEVEL);
     if (now) form.forEach((b, j) => b.frequency.setValueAtTime(vowelAt(num('vowel'))[j], t));
   };
 
@@ -372,6 +422,35 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
     }
   };
 
+  // ── Music layer: soft bell-like notes scheduled a little ahead, in the key of the field ──
+  let mNext = 0, mDeg = 2, mLeft = 0, mSide = 1, mNotes = 0, mLast = 0;
+  const playNote = (hz: number, when: number, dur: number, vel: number, panv: number, bright: number) => {
+    const g = ctx.createGain(), p = ctx.createStereoPanner(), a = ctx.createOscillator(), b = ctx.createOscillator(), bg = ctx.createGain();
+    a.type = 'sine'; b.type = 'triangle'; a.frequency.value = hz; b.frequency.value = hz * 2; bg.gain.value = 0.12 + 0.35 * bright;
+    g.gain.setValueAtTime(0, when); g.gain.linearRampToValueAtTime(vel, when + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    p.pan.value = panv; a.connect(g); b.connect(bg); bg.connect(g); g.connect(p); p.connect(musicIn);
+    a.start(when); b.start(when); a.stop(when + dur + 0.05); b.stop(when + dur + 0.05);
+    b.onended = () => { try { p.disconnect(); } catch { /* gone */ } };
+  };
+  const musicTick = (t: number) => {
+    musicDuck.gain.setTargetAtTime(phase === 'rising' ? 0.35 : 1, t, 1.5);
+    if (num('music') < 0.01 || silenced) { mNext = 0; return; }
+    if (mNext < t) mNext = t + 0.2;
+    while (mNext < t + 0.3) {
+      const d = musicDensity(P, phase), root = musicRoot(num('f0'));
+      if (mLeft <= 0) { mLeft = 3 + Math.floor(Math.random() * 5); mNext += mNotes ? 0.8 + Math.random() * 2.2 / Math.max(0.3, d) : 0; mDeg = Math.max(0, Math.min(4, mDeg)); }
+      const centre = 2 + Math.round(num('glass') * 2) - Math.round(num('sub') * 2);
+      mDeg = nextDegree(mDeg, Math.min(1, num('vowelMove') * 0.5 + num('musicMove') * 0.7), centre, Math.random);
+      const low = num('sub') > 0.5 && mLeft === 1 && Math.random() < 0.35;
+      const hz = low ? root / 2 : musicNote(root, mDeg);
+      const dur = Math.min(5, Math.max(1.2, 2.2 / d));
+      const spread = Math.min(0.8, 0.15 + num('rotate') * 3); mSide = -mSide;
+      playNote(hz, mNext, dur, low ? 0.22 : 0.16 + Math.random() * 0.06, mSide * spread * (0.5 + Math.random() * 0.5), Math.min(1, num('glass') / 1.5));
+      mNotes++; mLast = hz; mLeft--;
+      mNext += (1 / d) * (0.75 + Math.random() * 0.5);
+    }
+  };
+
   const TICK_MS = 100;
   const interval = setInterval(() => {
     if (disposed || ctx.state !== 'running') return;
@@ -381,6 +460,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
       if (J.held) { if (tween) tween.t0 += dt; if (J.waitUntil !== null) J.waitUntil += dt; J.t0 += dt; J.s0 += dt; }
     }
     stepTween(t);
+    musicTick(t);
     if (J && !J.held && J.waitUntil !== null && t >= J.waitUntil) {
       J.waitUntil = null;
       if (J.next === 'stop') { J = null; phase = 'free'; note = 'Journey complete.'; api.ended('Liquid Harmonics: journey complete.'); return; }
@@ -461,7 +541,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
         const total = J.steps.reduce((a, st) => a + stepSeconds(st), 0);
         journey = { i: J.i, n: J.steps.length, type: J.steps[J.i]?.type ?? '', elapsed: Math.min(total, Math.max(0, ctx.currentTime - J.t0)), stepElapsed: Math.max(0, ctx.currentTime - J.s0), total, held: J.held, ending: J.ending };
       }
-      return { phase, note, centreNote, journey };
+      return { phase, note, centreNote, journey, music: { on: num('music') >= 0.01, key: musicKeyName(num('f0')), notes: mNotes, last: mLast } };
     },
     energy: () => { const b = new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(b); return b.reduce((a, x) => a + x, 0); },
     dispose: () => {

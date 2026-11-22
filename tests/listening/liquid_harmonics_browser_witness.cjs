@@ -73,6 +73,17 @@ const server = http.createServer((req, res) => {
     assert.match(await page.locator('[data-liquid-note]').innerText(), /Gathering/);
     results.push('slider and Gather act on the running engine');
 
+    // Music layer: off by default; at full balance the field is gone and only the in-key melody sounds.
+    const mOut = () => page.locator('[data-liquid-param="music"]').locator('xpath=following-sibling::span[1]').innerText();
+    assert.equal(await mOut(), '0.00', 'music layer starts off');
+    await page.locator('[data-liquid-param="music"]').fill('1');
+    await page.waitForTimeout(4000);
+    const eMusic = await energy();
+    assert.ok(eMusic > 1000, `music alone is heard (${eMusic})`);
+    assert.match(await page.locator('[data-liquid-music-note]').innerText(), /\(now [A-G][♯♭]?\)/, 'the desk names the key');
+    await page.locator('[data-liquid-param="music"]').fill('0.5');
+    results.push(`music layer: off by default; music alone measures energy ${eMusic}; key shown`);
+
     // A hostile score file is clamped by the player itself.
     await loadScore({ title: 'hostile', steps: [{ type: 'rise', peak: 9999, length: 1, pitch: 99 }, { type: 'rm -rf' }, { type: 'morph', params: { f0: 1e6 } }] });
     const fields = await page.locator('[data-liquid-step="rise"] [data-liquid-step-field]').evaluateAll(els => Object.fromEntries(els.map(e => [e.dataset.liquidStepField, +e.value])));
@@ -95,6 +106,7 @@ const server = http.createServer((req, res) => {
     // Journey controls sit under the timeline too; start the journey from there this time.
     assert.equal(await page.locator('[data-liquid-top-journey] button').count(), 4, 'Play / Hold / Extend / Next under the timeline');
     await page.click('[data-liquid-top-journey-play]');
+    // The journey keeps the music balance at 0.5 (checked after the morph below).
     await page.waitForTimeout(500);
     assert.ok(await page.locator('[data-liquid-journey-play]').isDisabled(), 'both Play journey buttons lock while it plays');
     assert.ok(await page.locator('[data-liquid-top-journey-play]').isDisabled());
@@ -127,7 +139,8 @@ const server = http.createServer((req, res) => {
     await page.waitForTimeout(5500);
     const back = await energy();
     assert.ok(back > silent * 10 + 1000, `the next step brings the sound back (${back})`);
-    results.push(`breakthrough: silence (energy ${silent}); next step returns (energy ${back})`);
+    results.push(`breakthrough: silence (energy ${silent}, with the music layer at 0.5); next step returns (energy ${back})`);
+    assert.equal(await mOut(), '0.50', 'a journey never moves the listener’s music balance');
     const later = await page.locator('[data-liquid-timeline-note]').innerText();
     assert.match(later, /^Step [34] of 4 · (Gather|End)/);
     assert.ok(await head() > heads[heads.length - 1], 'playhead keeps moving after the rise');

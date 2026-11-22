@@ -17,7 +17,7 @@ reference_surfaces:
   - docs/design/contracts/sound-studio-orbit-threshold.md — the neighbouring Lab study and the procedural-study path it introduced
   - docs/design/contracts/sound-studio-tone-lab.md — the Lab's honesty about claims
 shared_with_house: the same deep contained field, editorial serif headings, restrained gold signal and plain language; the same persistent player bar carries the sound, its Level, Pause and Stop
-distinct_to_room: an instrument rather than a piece. Thirty-six controls in six groups, a live spectrum in the house gold, and a journey written as a plain list of steps the listener can read, edit, save and load
+distinct_to_room: an instrument rather than a piece. Thirty-six field controls in six groups, plus a two-control music layer the listener balances, a live spectrum in the house gold, and a journey written as a plain list of steps the listener can read, edit, save and load
 screenshot_desktop:
   - docs/design/contracts/screenshots/sound-studio-liquid-harmonics-desktop.png
 screenshot_mobile:
@@ -39,6 +39,13 @@ experience_verification: >
   playhead only moves forward (0.11 → 0.86 of the journey); and the line names the step ("Step 2 of 4 · Rise · … · rising",
   then "Step 3 of 4 · Gather"). There is still no overflow at 390 px. The controls under the timeline start the journey; both Play
   buttons lock while it plays; Hold works during a morph and is locked during the rise, top and bottom. Logic witness only.
+  2026-11-22 music layer (founder: "Yes, prototype it"):
+  - Witness 11/11: off by default; music alone is heard; the desk names the key; with the music at 0.5, the
+    breakthrough still measures energy 0; a journey leaves the listener's balance at 0.50.
+  - Unit tests 8/8: every reachable note is a major-pentatonic degree of the field's own fundamental; journey morphs
+    drop the music keys; it is sparser in a rise.
+  - Loudness, measured on the study analyser at founder defaults: field alone about −6 dB RMS; music alone about
+    −16 dB RMS, with peaks about −2 dB (after a +17 dB make-up). The felt balance is not witnessed.
 ---
 
 # Sound Studio / Liquid Harmonics — Experience Contract
@@ -70,6 +77,19 @@ A timeline sits under Begin and Play. It has one band per step, each as wide as 
 
 The band itself is not a control. Right under it are the four journey controls: Play journey, Hold here, Extend +30 s and Next step. They are the same controls as at the foot of the Journey panel, so a journey can be followed and steered without scrolling. While a journey plays, both Play buttons read "Journey playing" and are visibly greyed; during a rise, Hold, Extend and Next are greyed in both places. The playhead's motion respects reduced-motion settings.
 
+## Music layer
+
+A melody above the field, so attention has something human to rest on while the field carries the body. Both layers are always audible and the listener sets the balance (Field ↔ music: 0 the field alone, 0.5 both in full, 1 the music alone). It is off until the listener raises it, and **journeys never change it**.
+- **In key.** The root is the field's fundamental, snapped to the nearest semitone, so every note is a major-pentatonic degree consonant with the drone.
+- **It follows the journey:**
+  - sparse and lower where the field is heavy (more sub, less glass);
+  - flowing where the field moves (vowel drift, rotation, swirl);
+  - spread left and right with the rotation;
+  - ducked and sparser during a rise;
+  - silent in a silence breakthrough, because it runs through the same presence, limiter and fades.
+- **It is synthesized**: soft sine-and-triangle bells with their own echo and hall. There are no recordings and no second player.
+- **No claim** is made that the layering does anything. It is offered as music.
+
 ## Safety
 
 - Member-initiated only. Arriving plays nothing; changing a setting or loading a score starts nothing.
@@ -83,4 +103,4 @@ Any claim that the sound produces, imitates or induces a state, a realm, an enti
 
 ## Not in this change
 
-No member access: the review flag and the named-member list are untouched. No recorded media (Study 01/02 audio stays outside). No AI composition, no Hugging Face generation. No server storage of settings or scores. No cymatic, somatic or physiological capture. No screen-lock keep-alive for iPhone. No analytics.
+No member access: the review flag and the named-member list are untouched. No recorded media (Study 01/02 audio and the founder's HUSO reference files stay outside). No AI composition, no Hugging Face generation. No server storage of settings or scores. No cymatic, somatic or physiological capture. No screen-lock keep-alive for iPhone. No analytics.

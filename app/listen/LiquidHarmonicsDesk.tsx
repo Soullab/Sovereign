@@ -22,7 +22,7 @@ const store = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.st
 // The engine keeps running in the player when the member moves to another view, so the desk re-attaches to it.
 const shared: { engine: LiquidEngine | null; params: Params; loaded: boolean } = { engine: null, params: { ...DEFAULT_PARAMS }, loaded: false };
 
-const GROUPS = ['Voice', 'Oscillation', 'Frequency shifts', 'Pressure', 'Space', 'Rise'] as const;
+const GROUPS = ['Music', 'Voice', 'Oscillation', 'Frequency shifts', 'Pressure', 'Space', 'Rise'] as const;
 const mmss = (x: number) => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, '0')}`;
 const stepLabel = (st: Step) => st.type === 'morph' ? st.name : st.type === 'end' ? 'End' : st.type[0].toUpperCase() + st.type.slice(1);
 
@@ -117,7 +117,7 @@ export default function LiquidHarmonicsDesk() {
       const t = track.current, jv = v?.journey;
       if (!jv) { if (t.i !== -1) track.current = newTrack(); }
       else { if (jv.i !== t.i) { if (t.i >= 0) t.done[t.i] = t.last; t.i = jv.i; } t.last = jv.stepElapsed; }
-      const key = v ? `${v.phase}|${v.note}|${v.centreNote}|${v.journey ? `${v.journey.i}|${Math.floor(v.journey.elapsed)}|${v.journey.held}` : ''}` : '';
+      const key = v ? `${v.phase}|${v.note}|${v.centreNote}|${v.journey ? `${v.journey.i}|${Math.floor(v.journey.elapsed)}|${v.journey.held}` : ''}|${v.music.on}|${v.music.key}` : '';
       if (key !== last) { last = key; setView(v); }
       // While a tween moves the sliders, redraw them a few times a second.
       if (e && v && v.phase !== 'free' && now - lastSync > 250) { lastSync = now; setTick(n => n + 1); store(KEYS.last, shared.params); }
@@ -249,8 +249,12 @@ export default function LiquidHarmonicsDesk() {
       <canvas ref={canvas} width={720} height={110} className={styles.liquidSpectrum} aria-label="Spectrum of the sound, low to high" />
 
       {GROUPS.map(g => (
-        <details className={styles.orbitDetails} key={g} open={g === 'Voice'}>
-          <summary>{g}</summary>
+        <details className={styles.orbitDetails} key={g} open={g === 'Voice' || g === 'Music'} data-liquid-group={g}>
+          <summary>{g === 'Music' ? 'Music layer' : g}</summary>
+          {g === 'Music' && <p className={styles.muted} data-liquid-music-note="true">
+            A melody above the field, in its key{view?.music.on ? ` (now ${view.music.key})` : ''}. It follows the journey: sparse and low in heavier
+            settings, flowing where the field moves, quiet during a rise. The balance is yours; journeys never change it.
+          </p>}
           {CONTROLS.filter(c => c.g === g).map(slider)}
         </details>
       ))}

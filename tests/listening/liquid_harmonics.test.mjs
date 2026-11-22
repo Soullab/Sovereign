@@ -10,13 +10,15 @@ import { pathToFileURL } from 'node:url';
 register('./ts_resolution_loader.mjs', import.meta.url);
 const root = path.join(import.meta.dirname, '../..');
 const L = await import(pathToFileURL(path.join(root, 'lib/listening/liquidHarmonics.ts')).href);
-const { CONTROLS, DEFAULT_PARAMS, cleanScore, cleanParams, starterScore, riseTargets, lerpKey, accel, stepSeconds, scoreSeconds, SCORE_LIMITS, LIQUID_NOTES, toSlider, fromSlider, vowelAt } = L;
+const { musicRoot, musicKeyName, musicNote, nextDegree, musicDensity, PENTATONIC, MUSIC_DEGREES, CONTROLS, DEFAULT_PARAMS, cleanScore, cleanParams, starterScore, riseTargets, lerpKey, accel, stepSeconds, scoreSeconds, SCORE_LIMITS, LIQUID_NOTES, toSlider, fromSlider, vowelAt } = L;
 
 const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
 const code = rel => strip(fs.readFileSync(path.join(root, rel), 'utf8'));
 
-test('36 controls; defaults are the founder settings of 21 Nov (sawtooth throb, 209 Hz, 6 voices)', () => {
-  assert.equal(CONTROLS.length, 36);
+test('38 controls (36 field + 2 listener music); defaults are the founder settings of 21 Nov (sawtooth throb, 209 Hz, 6 voices)', () => {
+  assert.equal(CONTROLS.length, 38);
+  assert.equal(CONTROLS.filter(c => c.g !== 'Music').length, 36, 'the field itself still has 36');
+  assert.equal(DEFAULT_PARAMS.music, 0, 'the music layer is off until the listener raises it');
   assert.equal(DEFAULT_PARAMS.shape, 'sawtooth'); assert.equal(DEFAULT_PARAMS.f0, 209); assert.equal(DEFAULT_PARAMS.voices, 6);
   for (const c of CONTROLS) if (!c.options) {
     assert.ok(c.v >= c.min && c.v <= c.max, `${c.k} default in range`);
@@ -96,4 +98,32 @@ test('copy makes no state, effect or health claim', () => {
   assert.match(LIQUID_NOTES.claim, /makes no health claim/);
   assert.match(LIQUID_NOTES.safety, /Stop always works/);
   assert.match(LIQUID_NOTES.local, /only in this browser/);
+});
+
+test('music layer: in the key of the field, consonant, never moved by a journey, quiet in a rise', () => {
+  // Root: the fundamental snapped to a semitone, placed in 220–440 Hz.
+  for (const [f0, key] of [[98, 'G'], [73.4, 'D'], [110, 'A'], [147, 'D'], [196, 'G'], [209, 'A♭'], [55, 'A'], [440, 'A']]) {
+    const r = musicRoot(f0);
+    assert.ok(r >= 220 - 1e-9 && r < 440, `${f0} → root ${r} in range`);
+    assert.equal(musicKeyName(f0), key, `${f0} Hz is ${key}`);
+    const semis = Math.round(12 * Math.log2(r / f0)); assert.equal(((semis % 12) + 12) % 12, 0, 'root is the field fundamental, octave-shifted');
+  }
+  // Every note the melody can reach is a major-pentatonic degree of the root.
+  const root = musicRoot(98);
+  for (let d = MUSIC_DEGREES.lo; d <= MUSIC_DEGREES.hi; d++) {
+    const semi = Math.round(12 * Math.log2(musicNote(root, d) / root));
+    assert.ok(PENTATONIC.includes(((semi % 12) + 12) % 12), `degree ${d} is in the pentatonic`);
+  }
+  // Wandering stays in range whatever the random source does.
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  let deg = 2; for (let i = 0; i < 5000; i++) { deg = nextDegree(deg, i % 2, (i % 9) - 2, rnd); assert.ok(deg >= MUSIC_DEGREES.lo && deg <= MUSIC_DEGREES.hi); }
+  assert.ok(Math.abs(nextDegree(3, 0, 3, () => 0.99) - 3) <= 1, 'calm music moves by step');
+  // The listener's balance is never written by a score.
+  const s = cleanScore({ steps: [{ type: 'morph', params: { music: 1, musicMove: 1, f0: 98 }, seconds: 10, hold: 0 }] });
+  assert.deepEqual(s.steps[0].params, { f0: 98 }, 'music keys are dropped from journey morphs');
+  assert.deepEqual(cleanParams({ music: 0.5 }, true), { music: 0.5 }, 'but kept for the listener’s own last settings');
+  // Quieter and sparser in a rise.
+  const P = { ...DEFAULT_PARAMS, musicMove: 0.5 };
+  assert.ok(musicDensity(P, 'rising') < musicDensity(P, 'journey') * 0.5);
+  assert.ok(musicDensity({ ...P, musicMove: 1 }, 'free') > musicDensity({ ...P, musicMove: 0 }, 'free') * 2, 'movement setting is audible in density');
 });
