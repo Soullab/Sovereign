@@ -162,6 +162,15 @@ export default function LiquidHarmonicsDesk() {
     </label>
   );
 
+  // The same four journey controls appear under the timeline (top) and in the Journey panel (bottom).
+  // Distinct data attributes per place, so each can be checked on its own.
+  const journeyButtons = (at: '' | 'top-') => <>
+    <button type="button" className={`${styles.play} ${styles.liquidPlay}`} {...{ [`data-liquid-${at}journey-play`]: 'true' }} disabled={!transport || Boolean(J) || !score?.steps.length} onClick={() => void playJourney()}>{J ? '▶  Journey playing' : '▶  Play journey'}</button>
+    <button type="button" className={styles.focusChoice} {...{ [`data-liquid-${at}hold`]: 'true' }} disabled={journeyLocked} onClick={() => shared.engine?.hold()}>{J?.held ? 'Continue' : 'Hold here'}</button>
+    <button type="button" className={styles.focusChoice} {...{ [`data-liquid-${at}extend`]: 'true' }} disabled={journeyLocked} onClick={() => shared.engine?.extend()}>Extend +30 s</button>
+    <button type="button" className={styles.focusChoice} {...{ [`data-liquid-${at}next`]: 'true' }} disabled={journeyLocked} onClick={() => shared.engine?.next()}>Next step</button>
+  </>;
+
   const editStep = (i: number, patch: Partial<Step> & Record<string, unknown>) => {
     if (!score) return; const steps = score.steps.slice(); steps[i] = { ...steps[i], ...patch } as Step; setScore({ ...score, steps });
   };
@@ -232,7 +241,10 @@ export default function LiquidHarmonicsDesk() {
         <span className={styles.muted} data-liquid-note="true" aria-live="polite">{[view?.centreNote, view?.note].filter(Boolean).join(' · ')}</span>
       </div>
 
-      {score && score.steps.length > 0 && <JourneyTimeline score={score} J={J} phase={phase} track={track.current} />}
+      {score && score.steps.length > 0 && <>
+        <JourneyTimeline score={score} J={J} phase={phase} track={track.current} />
+        <div className={styles.orbitRow} data-liquid-top-journey="true">{journeyButtons('top-')}</div>
+      </>}
 
       <canvas ref={canvas} width={720} height={110} className={styles.liquidSpectrum} aria-label="Spectrum of the sound, low to high" />
 
@@ -291,10 +303,7 @@ export default function LiquidHarmonicsDesk() {
             ))}
           </div>
           <div className={styles.orbitRow}>
-            <button type="button" className={styles.play} data-liquid-journey-play="true" disabled={!transport || Boolean(J) || !score.steps.length} onClick={() => void playJourney()}>▶  Play journey</button>
-            <button type="button" className={styles.focusChoice} data-liquid-hold="true" disabled={journeyLocked} onClick={() => shared.engine?.hold()}>{J?.held ? 'Continue' : 'Hold here'}</button>
-            <button type="button" className={styles.focusChoice} data-liquid-extend="true" disabled={journeyLocked} onClick={() => shared.engine?.extend()}>Extend +30 s</button>
-            <button type="button" className={styles.focusChoice} data-liquid-next="true" disabled={journeyLocked} onClick={() => shared.engine?.next()}>Next step</button>
+            {journeyButtons('')}
           </div>
           <div className={styles.orbitRow}>
             <button type="button" className={styles.ghost} disabled={Boolean(J)} onClick={() => setScore(starterScore(kept.length ? kept[kept.length - 1].name : 'the current sound', kept.length ? kept[kept.length - 1].params : P))}>Write a first score</button>

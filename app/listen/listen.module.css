@@ -229,3 +229,4 @@
 .liquidPlayhead{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:#f1efe7;box-shadow:0 0 6px rgba(241,239,231,.7);transition:left 1s linear;pointer-events:none}
 .liquidTimelineWrap p{margin:6px 0 0;font-size:13px}
 @media (prefers-reduced-motion:reduce){.liquidPlayhead{transition:none}}
+.liquidPlay:disabled,[data-liquid-harmonics] .focusChoice:disabled{opacity:.4;cursor:default}

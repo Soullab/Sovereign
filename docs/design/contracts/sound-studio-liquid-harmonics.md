@@ -37,7 +37,8 @@ experience_verification: >
   2026-11-22 addition (founder request after first listening: "it doesnt show below the arc of the journey"): a journey
   timeline under Begin / Play. The same witness, now 10/10, checks one segment per step and no playhead before playing; the
   playhead only moves forward (0.11 → 0.86 of the journey); and the line names the step ("Step 2 of 4 · Rise · … · rising",
-  then "Step 3 of 4 · Gather"). There is still no overflow at 390 px. Logic witness only.
+  then "Step 3 of 4 · Gather"). There is still no overflow at 390 px. The controls under the timeline start the journey; both Play
+  buttons lock while it plays; Hold works during a morph and is locked during the rise, top and bottom. Logic witness only.
 ---
 
 # Sound Studio / Liquid Harmonics — Experience Contract
@@ -67,7 +68,7 @@ A timeline sits under Begin and Play. It has one band per step, each as wide as 
 - a line reads "Step n of N · name · elapsed / total", adding held, rising or fading where that applies;
 - Hold, Extend and Next change how long a step actually takes, and the band stretches or shrinks to match.
 
-The timeline only displays where the journey is; it is not a control. The playhead's motion respects reduced-motion settings.
+The band itself is not a control. Right under it are the four journey controls: Play journey, Hold here, Extend +30 s and Next step. They are the same controls as at the foot of the Journey panel, so a journey can be followed and steered without scrolling. While a journey plays, both Play buttons read "Journey playing" and are visibly greyed; during a rise, Hold, Extend and Next are greyed in both places. The playhead's motion respects reduced-motion settings.
 
 ## Safety
 

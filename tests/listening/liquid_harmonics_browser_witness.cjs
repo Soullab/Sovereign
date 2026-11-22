@@ -92,8 +92,14 @@ const server = http.createServer((req, res) => {
     assert.equal(await page.locator('[data-liquid-timeline] [data-liquid-seg]').count(), 4, 'timeline: one segment per step');
     assert.equal(await page.locator('[data-liquid-playhead]').count(), 0, 'no playhead before playing');
     assert.match(await page.locator('[data-liquid-timeline-note]').innerText(), /4 steps/);
-    await page.click('[data-liquid-journey-play]');
-    await page.waitForTimeout(5800);
+    // Journey controls sit under the timeline too; start the journey from there this time.
+    assert.equal(await page.locator('[data-liquid-top-journey] button').count(), 4, 'Play / Hold / Extend / Next under the timeline');
+    await page.click('[data-liquid-top-journey-play]');
+    await page.waitForTimeout(500);
+    assert.ok(await page.locator('[data-liquid-journey-play]').isDisabled(), 'both Play journey buttons lock while it plays');
+    assert.ok(await page.locator('[data-liquid-top-journey-play]').isDisabled());
+    assert.equal(await page.locator('[data-liquid-top-hold]').isDisabled(), false, 'top Hold works during a morph');
+    await page.waitForTimeout(5300);
     const rates = [], heads = [], notes = new Set();
     const head = async () => Number(await page.locator('[data-liquid-playhead]').getAttribute('data-liquid-playhead'));
     let holdLocked = true;
@@ -102,6 +108,7 @@ const server = http.createServer((req, res) => {
       heads.push(await head());
       notes.add(await page.locator('[data-liquid-timeline-note]').innerText());
       if (!(await page.locator('[data-liquid-hold]').isDisabled())) holdLocked = false;
+      if (!(await page.locator('[data-liquid-top-hold]').isDisabled())) holdLocked = false;
       if (i === 3) await page.locator('[data-liquid-harmonics]').screenshot({ path: path.join(shots, 'sound-studio-liquid-harmonics-desktop.png') });
       await page.waitForTimeout(3500);
     }
