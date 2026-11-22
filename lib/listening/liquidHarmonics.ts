@@ -10,7 +10,7 @@
 import type { ProceduralStudy, ProceduralStudyAPI, ProceduralStudyHandle } from './proceduralStudy';
 
 // ── Controls ──────────────────────────────────────────────────────────────────────────────────────────
-export type Group = 'Voice' | 'Oscillation' | 'Frequency shifts' | 'Rise' | 'Pressure' | 'Space' | 'Atmosphere' | 'Music' | 'Touch';
+export type Group = 'Voice' | 'Oscillation' | 'Frequency shifts' | 'Rise' | 'Pressure' | 'Space' | 'Atmosphere' | 'Music' | 'Touch' | 'Loudness';
 export type Control = {
   g: Group; k: string; label: string; v: number | string;
   min?: number; max?: number; step?: number; log?: boolean; unit?: string; hint?: string;
@@ -57,6 +57,7 @@ export const CONTROLS: readonly Control[] = Object.freeze([
   { g: 'Space', k: 'rotate', label: 'Rotation around you', min: 0, max: 1.5, v: 0.26, unit: 'Hz' },
   { g: 'Space', k: 'verb', label: 'Space', min: 0, max: 1.3, v: 0.94 },
   { g: 'Space', k: 'center', label: 'Periphery → centre', min: 0, max: 1, v: 0.34, hint: '0: all around you. 1: gathered to one point. Or use Gather / Release.' },
+  { g: 'Loudness', k: 'boost', label: 'Extra loudness', min: 0, max: 9, v: 0, step: 0.5, unit: 'dB', hint: 'Raises the whole study above the player’s Level, for when the top of the Level is not loud enough. A ceiling keeps it from distorting. Raise it slowly; journeys never change it.' },
   { g: 'Atmosphere', k: 'air', label: 'Air and distance', min: 0, max: 1, v: 0, hint: 'A soft, slowly moving wash of air far around you, like wind or distant surf.' },
   { g: 'Atmosphere', k: 'swell', label: 'Cinematic swell', min: 0, max: 1, v: 0, hint: 'A warm low chord on the field’s own tone that slowly opens and breathes.' },
   { g: 'Atmosphere', k: 'breath', label: 'Breathing of the atmosphere', min: 0.02, max: 0.3, v: 0.06, log: true, unit: 'Hz', hint: 'How slowly the air and the swell rise and fall (0.06 Hz is about one swell every 17 seconds).' },
@@ -108,7 +109,7 @@ const clampN = (v: unknown, lo: number, hi: number, d: number) => { const n = Nu
 export function cleanParams(src: unknown, withRise = false): Params {
   const s = (src && typeof src === 'object' ? src : {}) as Record<string, unknown>, out: Params = {};
   for (const c of CONTROLS) {
-    if ((!withRise && (c.g === 'Rise' || c.g === 'Music' || c.g === 'Touch')) || !(c.k in s)) continue;
+    if ((!withRise && (c.g === 'Rise' || c.g === 'Music' || c.g === 'Touch' || c.g === 'Loudness')) || !(c.k in s)) continue;
     if (c.options) { if (c.options.includes(String(s[c.k]))) out[c.k] = String(s[c.k]); }
     else out[c.k] = clampN(s[c.k], c.min!, c.max!, c.v as number);
   }
@@ -265,10 +266,23 @@ export type LiquidEngine = ProceduralStudyHandle & {
   analyser: AnalyserNode;
   /** RMS of each touch channel (T1–T4: lower L/R, upper L/R), and the share of touch energy above 150 Hz. Phase 1 preview. */
   touch: () => { rms: number[]; above150: number };
+  /** The study's own output (after trim, boost and ceiling), before the player's Level. */
+  output: () => { rms: number; peak: number };
 };
 
 // The study's own output trim, before the player's shared level (as for Orbit & Threshold).
 export const LIQUID_OUTPUT_TRIM = 0.5;
+/** The study's output never exceeds this sample value (about −0.5 dBFS), at any boost. */
+export const OUTPUT_CEILING = 0.94;
+/** Transparent below 0.7, then a smooth knee that approaches OUTPUT_CEILING. The curve spans ±4 of input (pre-scaled by 1/4). */
+export function ceilingCurve(n = 4096): Float32Array<ArrayBuffer> {
+  const c = new Float32Array(n), knee = 0.7, room = OUTPUT_CEILING - knee;
+  for (let i = 0; i < n; i++) {
+    const x = ((i / (n - 1)) * 2 - 1) * 4, a = Math.abs(x);
+    c[i] = Math.sign(x) * (a <= knee ? a : knee + room * Math.tanh((a - knee) / room));
+  }
+  return c;
+}
 // The music bus at full balance, under the same presence, limiter and trim as the field.
 export const MUSIC_LEVEL = 0.9;
 // Make-up gain for the sparse notes (measured 22 Nov: without it the music alone sat ~25 dB under the field).
@@ -294,7 +308,11 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
   const presence = gain(0);
   const out = gain(LIQUID_OUTPUT_TRIM);
   const lim = keep(ctx.createDynamicsCompressor()); lim.threshold.value = -14; lim.ratio.value = 12; lim.attack.value = 0.003; lim.release.value = 0.25;
-  presence.connect(lim); lim.connect(out); out.connect(destination);
+  // Output: trim × the listener's boost, then a ceiling so no sample can exceed OUTPUT_CEILING (measured 22 Nov:
+  // the compressor's automatic make-up let peaks reach about +0.6 dBFS after the trim; the ceiling removes that).
+  const ceilIn = gain(0.25), ceil = keep(ctx.createWaveShaper()); ceil.curve = ceilingCurve(); ceil.oversample = 'none'; // oversampling filters overshoot past the curve (measured 1.15); 'none' holds the ceiling exactly
+  const outAn = keep(ctx.createAnalyser()); outAn.fftSize = 2048;
+  presence.connect(lim); lim.connect(out); out.connect(ceilIn); ceilIn.connect(ceil); ceil.connect(destination); ceil.connect(outAn);
   const analyser = keep(ctx.createAnalyser()); analyser.fftSize = 4096; analyser.smoothingTimeConstant = 0.8; lim.connect(analyser);
 
   // Single-sideband frequency shifter (Niemitalo's Hilbert pair as IIR allpass chains): plain Web Audio nodes, no worklet.
@@ -435,6 +453,7 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
     tCar.frequency.setTargetAtTime(touchCarrier(F), t, 0.2); tLfo.frequency.setTargetAtTime(touchRate(rate), t, 0.2);
     tAm.gain.setTargetAtTime(1 - num('depth') / 2, t, 0.2); tDepth.gain.setTargetAtTime(num('depth') / 2, t, 0.2);
     tPan.gain.setTargetAtTime(rotate > 0.001 ? 0.5 * (1 - center) : 0, t, 0.2);
+    set(out.gain, LIQUID_OUTPUT_TRIM * Math.pow(10, num('boost') / 20));
     const bal = num('music'); set(fieldBus.gain, Math.min(1, 2 * (1 - bal))); set(musicBus.gain, Math.min(1, 2 * bal) * MUSIC_LEVEL);
     if (now) form.forEach((b, j) => b.frequency.setValueAtTime(vowelAt(num('vowel'))[j], t));
   };
@@ -624,6 +643,11 @@ export function createLiquidEngine(ctx: AudioContext, destination: AudioNode, pa
         journey = { i: J.i, n: J.steps.length, type: J.steps[J.i]?.type ?? '', elapsed: Math.min(total, Math.max(0, ctx.currentTime - J.t0)), stepElapsed: Math.max(0, ctx.currentTime - J.s0), total, held: J.held, ending: J.ending };
       }
       return { phase, note, centreNote, journey, music: { on: num('music') >= 0.01, key: musicKeyName(num('f0')), notes: mNotes, last: mLast } };
+    },
+    output: () => {
+      const b = new Float32Array(outAn.fftSize); outAn.getFloatTimeDomainData(b);
+      let s2 = 0, pk = 0; for (const x of b) { s2 += x * x; pk = Math.max(pk, Math.abs(x)); }
+      return { rms: Math.sqrt(s2 / b.length), peak: pk };
     },
     touch: () => {
       const buf = new Float32Array(2048), fb = new Float32Array(tAn[0].frequencyBinCount);

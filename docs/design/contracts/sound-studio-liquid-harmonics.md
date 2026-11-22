@@ -61,6 +61,13 @@ experience_verification: >
     journeys may shape the atmosphere within range; no atmosphere node feeds touch.
   - Level under the Spiral's Arrival settings: −19.3 dB RMS without atmosphere; −17.6 with air 0.8; −16.4 with
     swell 0.8. These are 5-second windows of a slowly breathing layer, so they are approximate. Felt effect not witnessed.
+  2026-11-22 extra loudness (founder: "volume could be louder option"):
+  - Witness 14/14: at the +9 dB maximum the output averages 7.0 dB louder, and its peak is 0.940, exactly at the 0.94
+    ceiling. A first attempt using 4x oversampling overshot to 1.15; 'none' holds.
+  - Unit tests 11/11: the ceiling curve is transparent below 0.7, monotonic and never above 0.94; journeys never set
+    the boost.
+  - The ceiling also removes the earlier overshoot at no boost: the compressor's make-up had let peaks reach about
+    +0.6 dBFS after the trim.
 ---
 
 # Sound Studio / Liquid Harmonics — Experience Contract
@@ -135,6 +142,14 @@ Fixed in code, on every channel:
 - the same presence as the sound, so silence, fades and the end apply to touch too.
 
 The music layer has no path to touch.
+
+## Loudness
+
+**Extra loudness** (0 to +9 dB, default 0) raises the whole study above the player's Level, for listeners who find the top of the Level not loud enough. It belongs to the listener and journeys never change it.
+
+The study's output passes through a ceiling: transparent below 0.7, rounding off smoothly toward 0.94 (about −0.5 dBFS), and never above it. At high boost, loud passages are therefore compressed, not distorted.
+
+The safety note still asks for a low start.
 
 ## Safety
 

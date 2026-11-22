@@ -91,6 +91,21 @@ const server = http.createServer((req, res) => {
     assert.equal(await aOut('air'), '0.80'); assert.equal(await aOut('swell'), '0.80');
     results.push('atmosphere: air and swell controls act on the running engine');
 
+    // Extra loudness: at the maximum boost the study's own output never passes the ceiling, and it is louder.
+    const outRms = () => page.evaluate(() => Number(document.querySelector('canvas').dataset.rms));
+    const r0 = []; for (let i = 0; i < 10; i++) { r0.push(await outRms()); await page.waitForTimeout(150); }
+    await page.locator('[data-liquid-param="boost"]').fill('1');
+    await page.evaluate(() => { document.querySelector('canvas').dataset.peak = '0'; });
+    await page.waitForTimeout(800);
+    await page.evaluate(() => { document.querySelector('canvas').dataset.peak = '0'; });
+    const r9 = []; for (let i = 0; i < 40; i++) { r9.push(await outRms()); await page.waitForTimeout(150); }
+    const peak9 = await page.evaluate(() => Number(document.querySelector('canvas').dataset.peak));
+    const avg = a => a.reduce((x, y) => x + y, 0) / a.length, gainDb = 20 * Math.log10(avg(r9) / avg(r0));
+    assert.ok(peak9 <= 0.94 + 1e-3, `output peak stays under the ceiling at +9 dB (${peak9})`);
+    assert.ok(gainDb > 3, `and it is louder (${gainDb.toFixed(1)} dB)`);
+    await page.locator('[data-liquid-param="boost"]').fill('0');
+    results.push(`loudness: +9 dB boost → ${gainDb.toFixed(1)} dB louder on average; peak ${peak9.toFixed(3)} (ceiling 0.94)`);
+
     // Touch (Phase 1 preview): zero until the listener raises it; then lower and upper zones carry signal, nothing above
     // 150 Hz (the music layer is at 0.5 here and must not leak in), and the upper zones swing left-right with rotation.
     const meter = async () => page.evaluate(() => [...document.querySelectorAll('[data-liquid-touch-meter]')].map(m => Number(m.dataset.rms)));
