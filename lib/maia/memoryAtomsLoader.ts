@@ -84,7 +84,11 @@ export type MemoryAtomSourceType =
   | 'change'
   | 'session_excerpt'
   | 'spontaneous'
+  | 'astro_pro_exchange'
   | 'practitioner_observation';
+
+/** Longest part of MAIA's earlier reading carried into a prompt for an astro_pro_exchange atom. */
+export const ASTRO_PRO_ATOM_READING_MAX = 600;
 
 export type MemoryScope = 'personal' | 'colab' | 'client' | 'encounter';
 
@@ -462,6 +466,18 @@ export function projectAtomSections(atoms: MemoryAtomSnapshot[]): AtomSections {
     lines.push('');
 
     for (const atom of memberAtoms) {
+      // ASTRO-PRO-KEEP Phase 2: an exchange the member carried from Pro Astrology.
+      // Their question is their own words; MAIA's answer was her reading at the
+      // time — an interpretation, never a finding about the member.
+      if (atom.sourceType === 'astro_pro_exchange') {
+        lines.push(`- In Pro Astrology, about their own chart, the member asked: "${atom.title}" — kept ${relativeTime(atom.keptAt)}${atom.status === 'still_alive' ? ' — marked still alive by the member' : ''}${atom.isBreakthrough ? ' — marked as a breakthrough by the member' : ''}`);
+        const reading = (atom.body ?? '').trim();
+        if (reading) {
+          const truncated = reading.length > ASTRO_PRO_ATOM_READING_MAX ? reading.slice(0, ASTRO_PRO_ATOM_READING_MAX) + '…' : reading;
+          lines.push(`    Your reading then (an interpretation offered at the time, not a finding about them): ${truncated}`);
+        }
+        continue;
+      }
       const parts: string[] = [`"${atom.title}"`];
       parts.push(`kept ${relativeTime(atom.keptAt)}`);
 

@@ -416,6 +416,16 @@ export async function keepSource(
     await resolveCapsuleDeclarationSource(memberId, input.sourceId!);
   }
 
+  // A carried Pro Astrology exchange is minted only by the carry route, which has
+  // verified the member's own kept own-chart thread and passes its origin. Without
+  // that origin there is nothing to attribute, so refuse.
+  if (input.sourceType === 'astro_pro_exchange' && !input.astroProOrigin) {
+    throw new Error("keepSource: 'astro_pro_exchange' atoms require astroProOrigin (carry route only)");
+  }
+  if (input.sourceType !== 'astro_pro_exchange' && input.astroProOrigin) {
+    throw new Error('keepSource: astroProOrigin is only for astro_pro_exchange atoms');
+  }
+
   // Declaring the same source twice returns the first declaration.
   //
   // The member presses once. A double-tap, a retry after a dropped response, or
@@ -456,19 +466,26 @@ export async function keepSource(
   // The reasoning, for whoever does that work: on a fresh INSERT the row has no
   // updating transaction, so xmax is 0; on the ON CONFLICT path the row was
   // locked and updated, so xmax carries the updating xid.
+  // ASTRO-PRO-KEEP Phase 2: a carried Pro exchange states its return authority,
+  // provenance and epistemic standing at the write site (P6: return authority is
+  // constructed from the member's act, never acquired from a column default).
+  // Every other source type is written exactly as before.
+  const origin = input.sourceType === 'astro_pro_exchange' ? input.astroProOrigin : undefined;
+  const extraColumns = origin ? ', return_preference, provenance, epistemological_status' : '';
+  const extraValues = origin ? ', $10, $11, $12' : '';
   const result = await query<AtomRow & { was_created: boolean }>(
     `INSERT INTO member_memory_atoms (
        member_id, source_type, source_id, title, body,
        primary_register, registers, elemental_lenses, thread_ids,
        status,
        kept_at, last_touched_at,
-       posture_at_creation, generated_by
+       posture_at_creation, generated_by${extraColumns}
      ) VALUES (
        $1, $2, $3, $4, $5,
        $6, $7, $8, $9,
        'active',
        NOW(), NOW(),
-       'normal', 'member-gesture'
+       'normal', 'member-gesture'${extraValues}
      )
      ON CONFLICT (member_id, source_type, source_id) WHERE source_id IS NOT NULL
        DO UPDATE SET member_id = EXCLUDED.member_id
@@ -483,6 +500,7 @@ export async function keepSource(
       input.registers ?? [],
       input.elementalLenses ?? [],
       input.threadIds ?? [],
+      ...(origin ? ['contextual_doorway', JSON.stringify(origin.provenance), 'inferred'] : []),
     ],
   );
 

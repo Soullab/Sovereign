@@ -39,3 +39,7 @@
 .chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .chips button { font: inherit; font-size: .82rem; text-align: left; color: #e9dfcc; background: transparent; border: 1px solid rgba(223, 189, 132, .35); border-radius: 50px; padding: 5px 12px; cursor: pointer; }
 .chips button:hover { background: rgba(223, 189, 132, .1); border-color: rgba(223, 189, 132, .6); }
+
+/* ASTRO-PRO-KEEP Phase 2: the member's own "Keep with MAIA" press on one answer. */
+.carry { align-self: flex-start; margin: 2px 0 0 14px; padding: 3px 10px; font-size: .76rem; border-radius: 999px; border: 1px solid #5d6f78; background: transparent; color: #e2c48f; cursor: pointer; }
+.carry:disabled { opacity: .55; cursor: default; }

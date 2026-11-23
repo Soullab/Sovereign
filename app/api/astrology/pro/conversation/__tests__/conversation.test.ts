@@ -30,10 +30,11 @@ describe('GET conversation', () => {
     jest.mocked(query)
       .mockResolvedValueOnce({ rows: [{ id: THREAD, keep: true }] } as never)
       .mockResolvedValueOnce({ rows: [
-        { speaker: 'member', body: 'Q1' }, { speaker: 'maia', body: 'A1' },
+        { speaker: 'member', body: 'Q1', turn_index: 0, carried: false },
+        { speaker: 'maia', body: 'A1', turn_index: 1, carried: true },
       ] } as never);
     const body = await (await get('ask.natal.own.')).json();
-    expect(body).toEqual({ threadId: THREAD, keep: true, turns: [{ q: 'Q1', a: 'A1' }] });
+    expect(body).toEqual({ threadId: THREAD, keep: true, turns: [{ q: 'Q1', a: 'A1', turnIndex: 1, carried: true }] });
   });
 
   it('filters every query by the caller\'s member id, so another member\'s thread cannot be returned', async () => {
