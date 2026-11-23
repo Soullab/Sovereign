@@ -57,7 +57,7 @@ describe('the Work conversation carries the convention rulings', () => {
     const { promptHash } = await systemFor(ctx(false));
     expect(promptHash).toBe(workAskPromptHash());
     const src = fs.readFileSync(path.join(process.cwd(), 'lib/manuscript/ask/askReader.ts'), 'utf8');
-    expect(src).toContain("update(`${WORK_STANDING}\\n${WORK_LEVELS_RULES}\\n${WORK_CONVENTION_RULES}\\n${workIntegrityRules(hasHistory)}${style}${teaching}${program}`)");
+    expect(src).toContain("update(`${WORK_STANDING}\\n${WORK_LEVELS_RULES}\\n${WORK_CONVENTION_RULES}\\n${workIntegrityRules(hasHistory)}${style}${teaching}${program}${intent}`)");
   });
 
   it('defeat candidate: the Work prompt as it was before (no rules) fails the guard', async () => {
@@ -147,7 +147,7 @@ describe('the Work conversation takes the writer\'s working style and a Teach me
 
   it('the route forwards both into the Work conversation', () => {
     const route = fs.readFileSync(path.join(process.cwd(), 'app/api/sovereign/manuscripts/[id]/ask/route.ts'), 'utf8');
-    expect(route).toContain('responseStyle, teachingAnchor, roomActs });');
+    expect(route).toContain('responseStyle, teachingAnchor, roomActs, studioIntent });');
     expect(route).toContain('...(responseStyle ? { responseStyle } : {}),');
     expect(route).toContain('...(teachingAnchor ? { teachingAnchor } : {}),');
   });

@@ -18,6 +18,7 @@
  * be and where the author makes it, because the author makes it.
  */
 
+import { beginningTurnInstruction, type StudioIntent } from '@/lib/writersStudio/beginningTurn';
 import type { CarriedReading, CarriedSet } from './carriedReadings';
 import { createHash } from 'crypto';
 import { runStructured } from '@/lib/writersStudio/meteredStructured'; // the structured seam, unchanged, plus the shadow MAIA meter
@@ -168,7 +169,7 @@ Do not use headings, bullets or lists. Write to them in prose. Be brief: a few s
 
 ${WRITERS_CONSTELLATION_REFERRAL}`;
 
-export function workAskPromptHash(responseStyle?: ExplanationDepth, teachingAnchor?: TeachingAnchor, hasHistory = false, programInstructions: readonly string[] = []): string {
+export function workAskPromptHash(responseStyle?: ExplanationDepth, teachingAnchor?: TeachingAnchor, hasHistory = false, programInstructions: readonly string[] = [], studioIntent?: StudioIntent): string {
   /* G-3: like developmentalAskPromptHash, the per-turn style and teaching shape are part of what the hash names.
      Independent review (2026-11-09): the integrity rules differ between a first turn and a later one, so the hash names
      whichever actually ran. */
@@ -176,7 +177,8 @@ export function workAskPromptHash(responseStyle?: ExplanationDepth, teachingAnch
   const teaching = teachingAnchor ? `\n${teachingTurnInstruction(teachingAnchor)}` : '';
   /* Case study F3: the Work's own rules (questions-only, program posture) are part of what ran, so the hash names them. */
   const program = programInstructions.length > 0 ? `\n${programInstructions.join('\n')}` : '';
-  return createHash('sha256').update(`${WORK_STANDING}\n${WORK_LEVELS_RULES}\n${WORK_CONVENTION_RULES}\n${workIntegrityRules(hasHistory)}${style}${teaching}${program}`).digest('hex');
+  const intent = studioIntent ? `\n${beginningTurnInstruction(studioIntent)}` : '';
+  return createHash('sha256').update(`${WORK_STANDING}\n${WORK_LEVELS_RULES}\n${WORK_CONVENTION_RULES}\n${workIntegrityRules(hasHistory)}${style}${teaching}${program}${intent}`).digest('hex');
 }
 
 /**
@@ -358,6 +360,8 @@ export interface WorkContext {
   responseStyle?: ExplanationDepth;
   /** G-3: the Teach me pressed (F1). The teaching shape is server-owned and never rides in the writer's question. */
   teachingAnchor?: TeachingAnchor;
+  /** A pressed Studio button with a server-owned answer shape (today: "Help me find a beginning"). Never rides in the writer's words. */
+  studioIntent?: StudioIntent;
   /** The conversation's room can carry out acting offers (today: the Develop stage). Absent ⇒ she is told only about buttons every room shows. */
   roomActs?: boolean;
 }
@@ -705,6 +709,7 @@ export async function askMaia(
     ? [WORK_STANDING, '', WORK_LEVELS_RULES, '', WORK_CONVENTION_RULES, '', workIntegrityRules(history.length > 0), '',
        ...(ctx.responseStyle ? [explanationInstruction(ctx.responseStyle), ''] : []),
        ...(ctx.teachingAnchor ? [teachingTurnInstruction(ctx.teachingAnchor), ''] : []),
+       ...(ctx.studioIntent ? [beginningTurnInstruction(ctx.studioIntent), ''] : []),
        '--- THE WORK YOU ARE SPEAKING WITH ---', workSays(ctx), '',
        '--- WHERE THEY ARE IN IT ---', workAnchorSays(ctx), '',
        '--- HOW MUCH OF THIS IS STILL TRUE ---', stalenessSays(ctx.staleness), '',
@@ -766,7 +771,7 @@ export async function askMaia(
         provider: 'anthropic',
         model,
         promptHash: ctx.kind === 'arrival' ? arrivalAskPromptHash(history.length > 0, ctx.moment ?? 'spark', ctx.pathId)
-          : ctx.kind === 'work' ? workAskPromptHash(ctx.responseStyle, ctx.teachingAnchor, history.length > 0, ctx.programInstructions ?? []) : askPromptHash(),
+          : ctx.kind === 'work' ? workAskPromptHash(ctx.responseStyle, ctx.teachingAnchor, history.length > 0, ctx.programInstructions ?? [], ctx.studioIntent) : askPromptHash(),
         askerVersion: ASKER_VERSION,
         answeredAt: new Date().toISOString(),
         stopReason: outcome.result.stopReason,

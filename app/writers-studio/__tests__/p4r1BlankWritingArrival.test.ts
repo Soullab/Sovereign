@@ -107,8 +107,13 @@ test('Write mounts the threshold only for a true blank Work and keeps MAIA start
   expect(write).toContain('&& props.work');
   expect(write).toContain('&& !blankArrivalDismissed');
   expect(write).toContain('<P4R1BlankWritingArrival');
-  expect(write).toContain('Nothing feeding this Work has been handed to you automatically.');
-  expect(write).toContain('Do not assume you have read any Idea or Source');
+  // Newcomer walk 2026-11-23: the "no Source was handed to you" guard is MAIA's instruction, so it is server-owned
+  // (beginningTurn.ts) and never placed in the writer's box as their words.
+  expect(write).toContain('openWorkConversation(BEGINNING_WORDS)');
+  expect(write).not.toContain('Do not assume you have read any Idea or Source');
+  const beginning = fs.readFileSync(path.join(ROOT, 'lib/writersStudio/beginningTurn.ts'), 'utf8');
+  expect(beginning).toContain('Nothing feeding this Work has been handed to you automatically');
+  expect(beginning).toContain('do not assume you have read any Idea or Source');
 
   expect(conversation).toContain("initialDraft?: string");
   // WS-STEP4 B: the composer opens empty; the starter is a suggestion outside it.
@@ -121,6 +126,9 @@ test('Write mounts the threshold only for a true blank Work and keeps MAIA start
   expect(starterMentions.length).toBeLessThanOrEqual(4);
   expect(conversation).not.toContain('void send(initialDraft)');
   expect(conversation).not.toContain('send(initialDraft)');
+  // The beginning intent is sent only by the writer's press, never on mount.
+  expect(conversation).toContain('onClick={() => void send(undefined, startIntent)}');
+  expect((conversation.match(/send\(undefined, startIntent\)/g) ?? []).length).toBe(1);
 });
 
 test('starting to write dismisses the helper and focuses the real PC3 editor without seeding text', () => {

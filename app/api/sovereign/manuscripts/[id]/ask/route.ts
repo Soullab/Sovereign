@@ -43,6 +43,7 @@
  */
 
 import { isTeachingAnchor, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
+import { isStudioIntent, type StudioIntent } from '@/lib/writersStudio/beginningTurn';
 import { NextRequest, NextResponse } from 'next/server';
 import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
@@ -288,6 +289,12 @@ async function postHandler(
     return NextResponse.json({ refusal: 'malformed', detail: 'teachingAnchor' }, { status: 400 });
   }
   const teachingAnchor: TeachingAnchor | undefined = body.teachingAnchor;
+  /* Newcomer walk 2026-11-23: "Help me find a beginning" is a closed intent, like a Teach me. The answer's shape is server-owned;
+     the writer's turn is only the button's words. ⛔ An unknown intent is refused, never ignored. */
+  if (!(body.studioIntent === undefined || isStudioIntent(body.studioIntent))) {
+    return NextResponse.json({ refusal: 'malformed', detail: 'studioIntent' }, { status: 400 });
+  }
+  const studioIntent: StudioIntent | undefined = body.studioIntent;
   /* WS-WHOLE-BOOK-CONVERSATION (founder approval 2026-11-10, D1): the carried account's scope is DECLARED by the writer's "About" control.
      ⛔ Never inferred from the question text: anything but an explicit 'whole_book' is the ordinary chapter scope. */
   const carryScope: CarryScope = body.carryScope === 'whole_book' ? 'whole_book' : 'here';
@@ -349,6 +356,10 @@ async function postHandler(
      A client with no saved settings declares ordinary (canon: Sanctuary is off by default); a posture that exists but cannot be
      read is undeclared, and an undeclared posture keeps nothing. The Work lane can answer without keeping (below). The reading-anchored
      lanes (structure, developmental) are built on kept records, so in Sanctuary or with an undeclared posture they refuse BEFORE any write. */
+  /* A Studio intent belongs to the whole-Work conversation only; elsewhere it would silently do nothing. */
+  if (studioIntent && effectiveAnchor.on !== 'work') {
+    return NextResponse.json({ refusal: 'malformed', detail: 'studioIntent' }, { status: 400 });
+  }
   const studioPosture = await resolveStudioPosture(memberId, body as Record<string, unknown>);
   const postureDeclared = studioPosture.declared;
   const turnPosture = TurnPosture.resolve({ sanctuary: studioPosture.sanctuary });
@@ -442,7 +453,7 @@ async function postHandler(
   if (check.anchor.on === 'work') {
     return workTurn({ keep: studioPosture.witness, manuscriptId: id, memberId, anchor: check.anchor, existing,
                       question, sectionId: bodySectionId, carryScope, posture: turnPosture, postureKnown: postureDeclared,
-                      responseStyle, teachingAnchor, roomActs });
+                      responseStyle, teachingAnchor, roomActs, studioIntent });
   }
 
   if (!reading) {
@@ -612,6 +623,8 @@ async function workTurn(input: {
   /** WS-CRAFT-CONVENTIONS-01 · G-3: the writer's working style and a pressed Teach me. */
   responseStyle?: ExplanationDepth;
   teachingAnchor?: TeachingAnchor;
+  /** A pressed "Help me find a beginning" (closed intent; server-owned answer shape). */
+  studioIntent?: StudioIntent;
   /** WS-WHOLE-BOOK-CONVERSATION: the writer's declared scope for her carried account. */
   carryScope?: CarryScope;
   /** The conversation's room can carry out MAIA's acting offers (the Develop stage). */
@@ -780,6 +793,7 @@ async function workTurn(input: {
     /* WS-CRAFT-CONVENTIONS-01 · G-3: the writer's working style and a pressed Teach me reach the Work conversation, as they do the observation dialogue. */
     ...(responseStyle ? { responseStyle } : {}),
     ...(teachingAnchor ? { teachingAnchor } : {}),
+    ...(input.studioIntent ? { studioIntent: input.studioIntent } : {}),
     ...(input.roomActs ? { roomActs: true } : {}),
     ...(programInstructions.length > 0 ? { programInstructions } : {}) };
   let outcome = await askMaia(workCtx, workHistory, question);

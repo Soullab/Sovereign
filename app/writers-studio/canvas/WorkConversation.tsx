@@ -33,6 +33,7 @@ import type { KeepWordsResult } from '@/lib/writersStudio/keepWords';
 import { createWriterCorrection } from '@/lib/writersStudio/writerCorrectionsClient';
 import { readWorkingStyle, writeWorkingStyle } from '@/lib/writersStudio/workingStyle';
 import { teachingQuestion, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
+import { BEGINNING_WORDS, type StudioIntent } from '@/lib/writersStudio/beginningTurn';
 import {
   proposePresentationRequest, writeStudioPresentation,
   type SafePresentationProposal,
@@ -161,6 +162,7 @@ export function answerReadSentence(read: readonly { sectionId: string; label: st
 const DELIVERED_AFTER_DROP = 'The connection dropped, but your question did reach her. Her answer is above.';
 /* Review (2026-11-09): a failed Teach me never touched the box, so it must not say the question is still there. */
 const TEACH_NOT_ANSWERED = 'MAIA couldn’t answer the Teach me this time. Nothing you wrote was changed; press it again when you’re ready.';
+const BEGINNING_NOT_ANSWERED = 'MAIA couldn’t answer this time. Nothing you wrote was changed; press “Help me find a beginning” again when you’re ready.';
 const REFUSAL_SAYS: Record<string, string> = {
   /* WS-F1: "That didn't reach her" was removed. Every 'unreachable' now goes through afterDrop, and neither a transport error nor
      one re-read showing nothing new proves the question never arrived (it may still be on its way).
@@ -196,6 +198,11 @@ export interface WorkConversationProps {
   sectionId: string | null;
   /** Optional member-facing starter, offered OUTSIDE the composer as a suggestion ("Use this"). Never auto-sent. Never placed in the box by itself. */
   initialDraft?: string;
+  /**
+   * A Studio button the writer pressed that opened this conversation (today: "Help me find a beginning"). Offered as one press
+   * that sends the button's own words with a closed intent; the server owns how MAIA answers. Never placed in the box.
+   */
+  startIntent?: StudioIntent;
   /**
    * The draft opens a NEW topic the writer brought from elsewhere (e.g. "Show MAIA this note" from a College Essay stage). When the
    * Work has several conversations, begin a new one instead of asking which to continue, so Send never silently waits (live walk
@@ -262,7 +269,7 @@ export default function WorkConversation(props: WorkConversationProps) {
 }
 
 function ScopedWorkConversation({
-  work, manuscriptId, sectionId, initialDraft = '', placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity, startFresh: freshForNewTopic = false, onKeepWords,
+  work, manuscriptId, sectionId, initialDraft = '', startIntent, placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity, startFresh: freshForNewTopic = false, onKeepWords,
 }: WorkConversationProps & { identity: ReturnType<typeof useMemberIdentity> }) {
   /* A program Work (e.g. a college essay) names its whole-Work scope in its own words; an ordinary Work keeps "the whole book". */
   const wholeScope = studioPathById(work.studioPath ?? null)?.studioCopy.wholeScope ?? 'the whole book';
@@ -331,6 +338,8 @@ function ScopedWorkConversation({
      explicit "Use this", never merged into text she has typed (Benchmark 01: a pre-filled starter merged with S4/S6). */
   const [draft, setDraft] = useState('');
   const [suggestion, setSuggestion] = useState<string | null>(initialDraft.trim() ? initialDraft : null);
+  /* Newcomer walk 2026-11-23: the beginning button is offered as one press, never as words placed in the writer's box. */
+  const [intentOffered, setIntentOffered] = useState(Boolean(startIntent && manuscriptId));
   /* WS-WHOLE-BOOK-CONVERSATION (founder approval 2026-11-10, D1): the writer DECLARES what a question is about. "where I am" is the
      default; "the whole book" carries her complete account. ⛔ A phrase in the draft may only OFFER the whole book, never switch to it. */
   /* Held in component state only: this surface reads and writes no browser storage (identity-is-server-truth law). It lasts while the
@@ -525,11 +534,14 @@ function ScopedWorkConversation({
 
   /* G-3: `teach` is a pressed Teach me (the writer's click on MAIA's offer). Its words are the button's own; the writer's draft is
      neither sent nor cleared. */
-  const send = async (teach?: TeachingAnchor) => {
-    const question = teach ? teachingQuestion(teach) : draft.trim();
+  const send = async (teach?: TeachingAnchor, intent?: StudioIntent) => {
+    /* A pressed button (Teach me, Help me find a beginning) sends only its own words; the draft is neither sent nor cleared. */
+    const pressed = Boolean(teach || intent);
+    const question = teach ? teachingQuestion(teach) : intent ? BEGINNING_WORDS : draft.trim();
+    const pressedNotAnswered = teach ? TEACH_NOT_ANSWERED : BEGINNING_NOT_ANSWERED;
     // Synchronous guard: two send events can fire before pending state renders.
     if (!question || pending !== null || inFlightRef.current) return;
-    const requestedPresentation = teach ? null : proposePresentationRequest(question, readWorkingStyle());
+    const requestedPresentation = pressed ? null : proposePresentationRequest(question, readWorkingStyle());
     if (requestedPresentation) {
       setPresentationConfirmation(requestedPresentation);
       setPresentationNotice(null);
@@ -556,14 +568,14 @@ function ScopedWorkConversation({
         setThread(t);   // her question (and, if it exists, her answer) is shown as the server holds it
       }
       if (delivery === 'answered') {
-        if (!teach) setDraft((current) => draftRevisionRef.current === submittedRevision ? '' : current);
+        if (!pressed) setDraft((current) => draftRevisionRef.current === submittedRevision ? '' : current);
         setDeliveryNote(DELIVERED_AFTER_DROP);
         return;
       }
       // 'held' keeps the words in the box (an unchanged resend would reuse the held turn), but does not invite a resend: the first
       // request may still be running. 'not_arrived' after a transport error is only "nothing visible yet", never proof, so it is
       // said as unconfirmed (review 2026-11-21).
-      setRefusal(teach ? TEACH_NOT_ANSWERED
+      setRefusal(pressed ? pressedNotAnswered
         : delivery === 'held' ? REFUSAL_SAYS.held
         : REFUSAL_SAYS.unconfirmed);
     };
@@ -582,6 +594,7 @@ function ScopedWorkConversation({
             /* G-3: the writer's own working-style preference, as the observation dialogue sends it; and a pressed Teach me. */
             responseStyle: readWorkingStyle().explanation,
             ...(teach ? { teachingAnchor: teach } : {}),
+            ...(intent ? { studioIntent: intent } : {}),
             /* WS-WHOLE-BOOK-CONVERSATION: the writer's declared scope, exactly as the "About" control shows it. */
             ...(carryScope === 'whole_book' ? { carryScope } : {}),
             /* Only a room that can carry out her acting offers (onStudioAct) says so; elsewhere she is told only about buttons shown here. */
@@ -599,9 +612,10 @@ function ScopedWorkConversation({
         return;
       }
       if (r.ok) {
+        if (intent) setIntentOffered(false);
         // Text can be edited away and retyped identically. Compare edit
         // ownership, not string equality; read the live ref in the updater.
-        if (!teach) setDraft((current) => draftRevisionRef.current === submittedRevision ? '' : current);
+        if (!pressed) setDraft((current) => draftRevisionRef.current === submittedRevision ? '' : current);
         if (r.sanctuary) {
           // Not kept: nothing was stored, so there is no thread to reload. Show the exchange here only.
           setSanctuaryTurns((list) => [...list, { question: r.sanctuary!.question, answer: r.sanctuary!.answer, after: thread?.turns.length ?? 0 }]);
@@ -620,7 +634,7 @@ function ScopedWorkConversation({
       if (r.refusal === 'unreachable') { await afterDrop(r.threadId); return; }
       // Refusals must retain literal text and any server-returned thread id.
       if (r.threadId) { setThreadId(r.threadId); void adopt(r.threadId); }
-      setRefusal(teach ? TEACH_NOT_ANSWERED : REFUSAL_SAYS[r.refusal] ?? REFUSAL_SAYS.not_answered);
+      setRefusal(pressed ? pressedNotAnswered : REFUSAL_SAYS[r.refusal] ?? REFUSAL_SAYS.not_answered);
     } catch {
       // A transport error is an ambiguous delivery, never an automatic retry: checked against the server, never assumed (WS-F1).
       await afterDrop();
@@ -1204,6 +1218,23 @@ function ScopedWorkConversation({
                 Ask about {wholeScope}?
               </button>
             ) : null}
+          </div>
+        ) : null}
+        {intentOffered && startIntent ? (
+          <div data-start-intent={startIntent} role="group" aria-label="Help me find a beginning"
+            style={{ border: `1px dashed ${RULE.soft}`, borderRadius: RADIUS.sm, padding: SPACE.snug, marginBottom: SPACE.tight }}>
+            <StudioText role="metadata" tone="quiet" as="span">MAIA will ask you one question to help you begin. Your words stay yours.</StudioText>
+            <div style={{ display: 'flex', gap: SPACE.tight, marginTop: 6 }}>
+              <button type="button" data-start-intent-send="true" disabled={pending !== null || mode.kind === 'blocked'}
+                onClick={() => void send(undefined, startIntent)}
+                style={{ fontSize: 12, padding: '2px 8px', borderRadius: RADIUS.sm, border: `1px solid ${INK.primary}`, background: 'transparent', color: INK.primary, cursor: 'pointer' }}>
+                Help me find a beginning
+              </button>
+              <button type="button" data-start-intent-dismiss="true" onClick={() => setIntentOffered(false)}
+                style={{ fontSize: 12, padding: '2px 8px', border: 'none', background: 'transparent', color: INK.secondary, textDecoration: 'underline', cursor: 'pointer' }}>
+                Not now
+              </button>
+            </div>
           </div>
         ) : null}
         {suggestion !== null ? (
