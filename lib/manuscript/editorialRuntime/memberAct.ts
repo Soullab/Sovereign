@@ -33,9 +33,10 @@
  * would answer it by accident.
  */
 
-import type { KeepWitness } from '@/lib/sanctuary/studioPosture';
+import { assertKeepWitness, type KeepWitness } from '@/lib/sanctuary/studioPosture';
 import { transaction, type TransactionClient } from '@/lib/db/postgres';
 import { appendTurnWithClient } from '../ask/threadStore';
+import { isHeldRetry } from '../ask/retry';
 import { UNMEASURED } from '../ask/staleness';
 import { createMemberDirectionWithExecutor } from '../editorialWorkspace/store';
 import type { EditorialDirection } from '../editorialWorkspace/ontology';
@@ -129,6 +130,31 @@ async function bindTurnToDirection(
     [threadId, turnIndex, chainId, directionId]);
 }
 
+/**
+ * ⭐ P0-A (#1800): A RESEND IS THE SAME TURN, NOT A SECOND ONE.
+ *
+ * The writer's turn is durable before MAIA is called, so after a dropped connection
+ * the words are already on the thread. Re-sending them used to append an identical
+ * author turn, and the conversation recorded the question twice. The Ask path solved
+ * this with `isHeldRetry`; this is the same narrow rule at the editorial seam: only
+ * the LAST turn counts, it must be the author's, byte-identical, and unanswered.
+ * Reworded text is a new turn. Only plain discourse is eligible — a declared
+ * Direction creates rows of its own and is never folded.
+ *
+ * Ownership is already proven by `resolveEditorialChain` in the same transaction.
+ */
+async function heldAuthorTurn(
+  tx: TransactionClient, threadId: string, text: string,
+): Promise<number | null> {
+  const r = await tx.query<{ turn_index: number | string; speaker: 'author' | 'maia'; body: string }>(
+    `SELECT turn_index, speaker, body FROM ask_turns
+      WHERE thread_id = $1 ORDER BY turn_index DESC LIMIT 1`,
+    [threadId]);
+  const last = r.rows[0];
+  if (!last || !isHeldRetry([{ speaker: last.speaker, body: last.body }], text)) return null;
+  return Number(last.turn_index);
+}
+
 export async function persistMemberEditorialAct(
   input: MemberEditorialActInput,
 ): Promise<MemberActResult> {
@@ -137,6 +163,14 @@ export async function persistMemberEditorialAct(
   try {
     return await transaction(async (tx) => {
       const chainId = await resolveEditorialChain(tx, threadId, memberId);
+
+      if (act.act === 'discourse') {
+        /* ⛔ Reusing a turn writes nothing, so the Sanctuary closure is asserted
+           here explicitly — a resend may never be the way around it. */
+        assertKeepWitness(keep, 'ask_turns');
+        const held = await heldAuthorTurn(tx, threadId, act.text);
+        if (held !== null) return { ok: true as const, turnIndex: held, chainId, direction: null };
+      }
 
       /* ⭐ THE ONLY THING CONSULTED IS `act.act`. */
       const turnIndex = await appendTurnWithClient(tx, { keep,

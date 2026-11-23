@@ -43,10 +43,12 @@ import {
   openBoundEditorialThread,
   readBoundEditorialThread,
   sendBoundEditorialTurn,
+  TRANSPORT_DROPPED,
   type AdoptionWireOutcome,
   type RebuildEditorialRelationship,
   type RebuildEditorialThread,
 } from '@/lib/writersStudio/rebuild/editorialCollaboration';
+import { deliveryAfterDrop } from '@/lib/writersStudio/deliveryAfterDrop';
 import { useEditingLatitude } from '@/app/writers-studio/insight/EditingLatitude';
 import { DEFAULT_EDITORIAL_DEPTH, type EditorialDepth } from '@/lib/writersStudio/editorialDepth';
 import type { ProposalPolicy } from '@/lib/manuscript/editorialScope/sequence';
@@ -125,6 +127,11 @@ type EditorialReturnCandidate = {
 };
 
 const UNVERIFIED_URL_THREAD = 'This saved manuscript conversation has not been verified for the current Living Work. Nothing was opened, sent, saved or applied.';
+/* P0-A (#1800), after WS-F1: a dropped connection is not evidence either way. The thread is
+   re-read before the writer is told anything, and neither message invites an immediate resend:
+   the first request may still be running, and a second press could start a second MAIA call. */
+const PASSAGE_HELD_AFTER_DROP = 'Your words are saved in this conversation, but MAIA’s reply isn’t available yet. Give her a moment, then reopen the passage before sending again.';
+const PASSAGE_UNCONFIRMED_AFTER_DROP = 'The connection dropped before her reply came back, so it isn’t known whether your words reached her. They’re still in the box. Reopen the passage to check before you send them again.';
 
 /** Search params can lag the Studio's own address rewrites; read the live one. */
 function addressStillNames(threadId: string): boolean {
@@ -1495,15 +1502,15 @@ export default function FlagshipWriteEditController() {
   const sendEditorial = useCallback(async (
     requestText?: string,
     options?: { proposalPolicy?: ProposalPolicy; proposalRequested?: boolean; displayText?: string; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageAct; origin?: ArrivalOriginRef },
-  ) => {
+  ): Promise<boolean> => {
     // displayText belongs to the local author-facing Craft presentation only.
     // It is neither a persistable author-turn field nor server authority.
     const text = (requestText ?? editorialDraft).trim();
-    if (!text || editorialBusy) return;
+    if (!text || editorialBusy) return false;
     if (!focusId || !context || !work || !currentWorkGesture()) {
       // A refusal the writer cannot see reads as a dead button.
       setEditorialFailure('I can’t see this passage just now. Select it again, or reopen the Work, and ask me again. I haven’t sent anything, and your writing is untouched.');
-      return;
+      return false;
     }
     // A current or formerly current A2 that failed a fresh check is not an
     // invitation to silently fall through to manuscript-global legacy send.
@@ -1512,13 +1519,13 @@ export default function FlagshipWriteEditController() {
       || a2PendingGestureRef.current?.scope === currentLivingWorkScope
     )) {
       setEditorialFailure('The MAIA relationship is not available for current use or is being checked. Confirm a relationship for this Work before sending; your writing remains here.');
-      return;
+      return false;
     }
     // A manuscript may remain the same while the Living Work changes. Never
     // launch a new request with an earlier Work's MAIA thread or context.
     if (workReentryRequired.current || (editorialThread && !scopedEditorialThread)) {
       setEditorialFailure('This is a different Living Work. The earlier MAIA conversation is not shared automatically. Reenter through an authorized Work relationship.');
-      return;
+      return false;
     }
 
     // The writing queue is fresher than the parent context during a pending
@@ -1533,14 +1540,14 @@ export default function FlagshipWriteEditController() {
       || !Number.isSafeInteger(revisionAtGesture) || Number(revisionAtGesture) < 0
       || unsettled(writingAtGesture)) {
       setEditorialFailure('Finish or reconcile your current manuscript writing before MAIA reads this passage. No editorial request was sent.');
-      return;
+      return false;
     }
     const heldAtGesture = selectedPassage?.draftSectionId === focusId ? selectedPassage : null;
     if (heldAtGesture
       && (heldAtGesture.revisionNumber !== revisionAtGesture
         || Array.from(bodyAtGesture).slice(heldAtGesture.start, heldAtGesture.end).join('') !== heldAtGesture.text)) {
       setEditorialFailure('The selected manuscript words or revision changed. Select the current passage before requesting MAIA.');
-      return;
+      return false;
     }
     const scopeAtGesture = editorialActScopeRef.current;
     const generation = ++editorialActGenerationRef.current;
@@ -1570,18 +1577,18 @@ export default function FlagshipWriteEditController() {
 
     try {
       const thread = await resolveEditorialForAct(stillCurrent);
-      if (!thread || !stillCurrent()) return;
+      if (!thread || !stillCurrent()) return false;
       const desired = selectedPassage?.draftSectionId === focusId
         ? selectedPassage.text : focusSection?.body ?? '';
       if (thread.workId !== context.manuscriptId
         || thread.targetSectionId !== focusId || thread.locusText !== desired) {
         setEditorialFailure('I couldn’t match our conversation to this exact Work and passage, so I haven’t sent anything. Select the passage again and I’ll pick it up.');
-        return;
+        return false;
       }
       const posture = readCurrentSanctuaryPosture();
       if (!stillCurrent() || !posture.resolved || posture.sanctuary) {
         if (stillCurrent()) setEditorialFailure('Sanctuary is on, or you haven’t chosen how I should hold this yet, so I haven’t sent anything. Your passage is unchanged.');
-        return;
+        return false;
       }
       // The current writer act MUST contain ONLY the authored text. Any
       // register, pedagogy or model policy is server-owned and never stored as
@@ -1631,12 +1638,55 @@ export default function FlagshipWriteEditController() {
       // Never publish an obsolete reply as guidance on the current Source.
       if (!stillCurrent()) {
         if (sameVisibleRequest()) setEditorialFailure('MAIA’s earlier reply was withheld because the current Work, relationship, passage or writing could not be reconfirmed. No change was applied.');
-        return;
+        return false;
       }
       const currentPosture = readCurrentSanctuaryPosture();
       if (!currentPosture.resolved || currentPosture.sanctuary) {
         setEditorialFailure('The session privacy posture changed during MAIA’s response. The old response was not shown.');
-        return;
+        return false;
+      }
+      if (!outcome.ok && outcome.reason === 'unavailable' && outcome.detail === TRANSPORT_DROPPED) {
+        // Ask the server before telling the writer anything (WS-F1, applied to the passage path).
+        const reread = await readBoundEditorialThread(thread.threadId, focusId, a2Relationship?.id ?? null)
+          .catch(() => null);
+        if (!stillCurrent()) return false;
+        const after = reread?.ok && reread.thread.threadId === thread.threadId ? reread.thread : null;
+        const delivery = deliveryAfterDrop(thread.turns.length, after, exactWords);
+        const publishable = after !== null && mayPublishEditorialResponse({
+          scope: scopeAtGesture, generation, threadId: thread.threadId,
+          workId: context.manuscriptId, sectionId: focusId,
+        }, {
+          scope: editorialActScopeRef.current,
+          generation: editorialActGenerationRef.current,
+          posture: readCurrentSanctuaryPosture(),
+        }, after);
+        if ((delivery === 'answered' || delivery === 'held') && publishable) setEditorialThread(after);
+        if (delivery === 'answered' && publishable) {
+          if (!requestText) setEditorialDraft('');
+          return true;
+        }
+        setEditorialFailure(delivery === 'held' ? PASSAGE_HELD_AFTER_DROP : PASSAGE_UNCONFIRMED_AFTER_DROP);
+        return false;
+      }
+      if (!outcome.ok && typeof outcome.memberTurnIndex === 'number') {
+        /* P0-A (#1800, E0 walk 2026-11-23): the server KEPT the writer's turn and refused only
+           MAIA's reply. The screen must show what the server holds. Left stale, the thread
+           looked empty: the writer's question vanished from view, and the panel's "MAIA opens"
+           step fired on a thread that was not new, so its "couldn't start" note replaced the
+           real reason. Only the exact thread named in this request is adopted. */
+        const reread = await readBoundEditorialThread(thread.threadId, focusId, a2Relationship?.id ?? null)
+          .catch(() => null);
+        if (!stillCurrent()) return false;
+        if (reread?.ok && reread.thread.threadId === thread.threadId && mayPublishEditorialResponse({
+          scope: scopeAtGesture, generation, threadId: thread.threadId,
+          workId: context.manuscriptId, sectionId: focusId,
+        }, {
+          scope: editorialActScopeRef.current,
+          generation: editorialActGenerationRef.current,
+          posture: readCurrentSanctuaryPosture(),
+        }, reread.thread)) {
+          setEditorialThread(reread.thread);
+        }
       }
       if (!outcome.ok) {
         if (outcome.reason === 'scope_refused') {
@@ -1669,7 +1719,7 @@ export default function FlagshipWriteEditController() {
           if (outcome.detail) console.warn('[editorial/turn] refused:', outcome.detail);
           setEditorialFailure('MAIA couldn’t answer that just now. Nothing was changed. Please try again.');
         }
-        return;
+        return false;
       }
 
       if (!mayPublishEditorialResponse({
@@ -1681,12 +1731,18 @@ export default function FlagshipWriteEditController() {
         posture: currentPosture,
       }, outcome.thread)) {
         setEditorialFailure('An earlier MAIA response no longer belongs to the active Work and passage. It was not shown.');
-        return;
+        return false;
       }
       setEditorialThread(outcome.thread);
       setVoiceNotice(outcome.voice?.note ?? null);
       if (outcome.producedVersionId) setSuggestedVersionId(outcome.producedVersionId);
       if (!requestText) setEditorialDraft('');
+      return true;
+    } catch (error) {
+      // A thrown send must not vanish silently: say so, and keep the writer's words.
+      console.warn('[editorial/turn] send failed:', error);
+      if (sameVisibleRequest()) setEditorialFailure('MAIA couldn’t answer that just now. Nothing was changed. Your words are still here.');
+      return false;
     } finally {
       if (sameVisibleRequest()) setEditorialBusy(false);
     }
@@ -2586,6 +2642,7 @@ export default function FlagshipWriteEditController() {
         writingRef.current = writing;
         return (
           <P4R1Pc3WriteEditView
+            livingWorkId={work?.id ?? null}
             context={context}
             writing={writing}
             work={work}
@@ -2674,7 +2731,7 @@ export default function FlagshipWriteEditController() {
             )}
             onDepth={(value) => { if (currentContextGesture()) setEditorialDepth(value); }}
             onInstruction={(text) => { if (currentContextGesture()) setEditorialDraft(text); }}
-            onSendEditorial={(text, options) => void sendEditorial(text, options)}
+            onSendEditorial={(text, options) => sendEditorial(text, options)}
             onStopEditorial={stopEditorialForAuthor}
             onOpenWithMaia={openWithMaia}
             openingFailure={openingFailure}

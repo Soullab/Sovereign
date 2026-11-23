@@ -379,9 +379,15 @@ export async function sendBoundEditorialTurn(
     return { ok: true, thread: reread.thread, producedVersionId, voice,
       memberTurnIndex, maiaTurnIndex };
   } catch {
-    return { ok: false, reason: 'unavailable' };
+    /* P0-A (#1800): a thrown request is a transport fact, not a verdict. It says nothing
+       about which side of the wire the writer's words reached, so it is labelled for the
+       caller to re-read the thread before telling the writer anything (WS-F1). */
+    return { ok: false, reason: 'unavailable', detail: TRANSPORT_DROPPED };
   }
 }
+
+/** The detail on an `unavailable` outcome that came from a thrown request, not a server answer. */
+export const TRANSPORT_DROPPED = 'transport_dropped';
 
 /**
  * R2 "MAIA opens" (O1(a)). The writer's deliberate gesture asks MAIA to speak first on a
