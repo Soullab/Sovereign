@@ -32,7 +32,7 @@ import type { LivingWork } from '../useLivingWorks';
 import type { KeepWordsResult } from '@/lib/writersStudio/keepWords';
 import { createWriterCorrection } from '@/lib/writersStudio/writerCorrectionsClient';
 import { readWorkingStyle, writeWorkingStyle } from '@/lib/writersStudio/workingStyle';
-import { teachingQuestion, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
+import { TEACHING_ANCHORS, teachingQuestion, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
 import { BEGINNING_WORDS, type StudioIntent } from '@/lib/writersStudio/beginningTurn';
 import {
   proposePresentationRequest, writeStudioPresentation,
@@ -162,6 +162,13 @@ export function answerReadSentence(read: readonly { sectionId: string; label: st
 const DELIVERED_AFTER_DROP = 'The connection dropped, but your question did reach her. Her answer is above.';
 /* Review (2026-11-09): a failed Teach me never touched the box, so it must not say the question is still there. */
 const TEACH_NOT_ANSWERED = 'MAIA couldn’t answer the Teach me this time. Nothing you wrote was changed; press it again when you’re ready.';
+/* Beginning walk 2026-11-23: a pressed button's words (Teach me, Help me find a beginning) are stored as the writer's turn, but
+   they are not writing. Keep my words is offered only under what the writer said themselves. */
+const PRESSED_BUTTON_WORDS: ReadonlySet<string> = new Set([
+  BEGINNING_WORDS,
+  ...TEACHING_ANCHORS.filter((a) => a !== 'change').map((a) => teachingQuestion(a)),
+]);
+const isPressedButtonWords = (body: string) => PRESSED_BUTTON_WORDS.has(body.trim());
 const BEGINNING_NOT_ANSWERED = 'MAIA couldn’t answer this time. Nothing you wrote was changed; press “Help me find a beginning” again when you’re ready.';
 const REFUSAL_SAYS: Record<string, string> = {
   /* WS-F1: "That didn't reach her" was removed. Every 'unreachable' now goes through afterDrop, and neither a transport error nor
@@ -847,7 +854,7 @@ function ScopedWorkConversation({
             >
               {t.speaker === 'maia' ? parseStudioActions(t.body, 'work-conversation').text : t.body}
             </StudioText>
-            {t.speaker === 'author' && onKeepWords && t.body.trim() ? (
+            {t.speaker === 'author' && onKeepWords && t.body.trim() && !isPressedButtonWords(t.body) ? (
               keptToPage.has(keepKey(t.index)) ? (
                 /* Says what happened (placed), never "saved": the page's own status line is the authority on saving. */
                 <StudioText role="metadata" tone="quiet" as="p" data-keep-words-done={t.index}>Placed on your page, exactly as you wrote it. It saves like anything you type.</StudioText>
