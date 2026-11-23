@@ -64,8 +64,10 @@ export async function appendExchange(threadId: string, memberId: string, q: stri
 }
 
 /**
- * keep=false deletes the whole thread (its turns go by cascade), so nothing of a
- * conversation the member stopped keeping remains, not even when it was had.
+ * keep=false deletes the whole thread (its turns go by cascade), so nothing of the
+ * conversation the member stopped keeping remains here, not even when it was had.
+ * An exchange the member carried into MAIA's memory ("Keep with MAIA") is their
+ * separate Keep act and stays until they remove it in Keep (Phase 2 design §3).
  * Returns false if it is not the member's thread.
  */
 export async function setKeep(threadId: string, memberId: string, keep: boolean): Promise<boolean> {
