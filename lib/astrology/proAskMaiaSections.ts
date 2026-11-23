@@ -245,6 +245,8 @@ export function proAskSystemPrompt(section: ProAskSection, facts: string,
     continuing?: boolean;
     /** The astrologer's own chart, read with what they have kept with MAIA (may be empty). */
     personal?: { kept: string };
+    /** Earlier kept exchanges about this same chart from other sections (ASTRO-PRO-KEEP Phase 2). */
+    recalled?: Array<{ section: string; q: string; a: string; at: string }>;
   } = {}): string {
   const deep = where.depth === 'deep';
   const length = deep
@@ -262,9 +264,12 @@ export function proAskSystemPrompt(section: ProAskSection, facts: string,
     ? `
 - This is the astrologer's own chart, and they have asked you to read it with what they have chosen to keep with you (below). Speak to them as "you". Relate the chart to what they have kept where the two genuinely meet, and say which is which: "your chart shows…" is the chart; "you once kept…" is their own words. Never say or imply the chart caused, predicted or explains anything in their life: it offers a language for it. Offer what you notice, then ask what they recognise; they are the author of the meaning. Do not recite their kept material back at length.${where.personal.kept ? '' : '\n- They have kept nothing with you that may be brought here, so say so in one sentence and read the chart on its own.'}`
     : '';
-  const memory = where.continuing
-    ? '- The earlier questions and answers of this visit are in the conversation: build on them and do not repeat yourself. Nothing is kept after the visit.'
-    : '- Nothing is remembered between visits.';
+  const recalled = where.recalled ?? [];
+  const memory = recalled.length > 0
+    ? `${where.continuing ? '- The earlier questions and answers of this conversation are in the conversation: build on them and do not repeat yourself.\n' : ''}- Below the facts are earlier conversations the astrologer kept about this same chart, word for word and dated. They were readings at the time, not settled facts about anyone. Where something there genuinely meets the question, you may point to a possible connection and ask whether it holds; never state a conclusion about the person, and never treat an earlier reading as established. Do not recite them back.`
+    : where.continuing
+      ? '- The earlier questions and answers of this visit are in the conversation: build on them and do not repeat yourself. Nothing is kept after the visit.'
+      : '- Nothing is remembered between visits.';
   return `You are MAIA, an AI companion in Soullab, speaking with a professional astrologer in their own workspace. They are asking about ${SECTION_FOCUS[section]}.${looking} You are MAIA, not the astrologer and not a person.
 
 HOW YOU SPEAK:
@@ -283,7 +288,17 @@ ${proGuideInstruction()}
 ${facts}${where.personal?.kept ? `
 
 ──────── WHAT THE ASTROLOGER HAS CHOSEN TO KEEP WITH YOU (their own words and marks, not from the chart) ────────
-${where.personal.kept}` : ''}`;
+${where.personal.kept}` : ''}${recalled.length > 0 ? `
+
+──────── EARLIER CONVERSATIONS ABOUT THIS CHART (kept by the astrologer; verbatim; readings at the time, not facts) ────────
+${formatRecalledExchanges(recalled)}` : ''}`;
+}
+
+/** Earlier exchanges about one chart, dated and labelled by who said what. Verbatim. */
+export function formatRecalledExchanges(recalled: Array<{ section: string; q: string; a: string; at: string }>): string {
+  return recalled
+    .map((r) => `[${r.at}${r.section ? `, ${r.section}` : ''}]\nThe astrologer asked: ${r.q}\nYour reading then: ${r.a}`)
+    .join('\n\n');
 }
 
 /** The fixed reply when a question shows crisis or serious distress. MAIA is not asked. */

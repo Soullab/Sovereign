@@ -9,7 +9,7 @@ import { getLLMProvider } from '@/lib/consciousness/LLMProvider';
 import { loadSubjectBirth } from '@/lib/astrology/proSubjectBirth';
 import { PRO_ASK_SAFETY_REPLY } from '@/lib/astrology/proAskMaiaSections';
 import { loadMemberMemoryAtomsForPrompt } from '@/lib/maia/memoryAtomsLoader';
-import { appendExchange, openThread, ownsKeptThread } from '@/lib/astrology/proConversationStore';
+import { appendExchange, openThread, ownsKeptThread, recallSubjectExchanges } from '@/lib/astrology/proConversationStore';
 import { POST } from '../route';
 
 jest.mock('@/lib/astrology/proConversationStore', () => ({
@@ -17,7 +17,8 @@ jest.mock('@/lib/astrology/proConversationStore', () => ({
   isThreadId: (v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v),
   openThread: jest.fn(async () => '11111111-1111-1111-1111-111111111111'),
   ownsKeptThread: jest.fn(async () => true),
-  appendExchange: jest.fn(async () => true),
+  appendExchange: jest.fn(async () => 1),
+  recallSubjectExchanges: jest.fn(async () => []),
 }));
 
 jest.mock('@/lib/consciousness/LLMProvider', () => ({ getLLMProvider: jest.fn() }));
@@ -319,7 +320,7 @@ describe('Ask MAIA inside Pro', () => {
   describe('kept conversations', () => {
     const base = { section: 'natal', subject: 'own', question: 'What stands out?', subjectKey: 'ask.natal.own.' };
     beforeEach(() => {
-      jest.mocked(openThread).mockClear(); jest.mocked(appendExchange).mockClear().mockResolvedValue(true);
+      jest.mocked(openThread).mockClear(); jest.mocked(appendExchange).mockClear().mockResolvedValue(1);
       jest.mocked(ownsKeptThread).mockClear().mockResolvedValue(true);
     });
 
@@ -363,11 +364,56 @@ describe('Ask MAIA inside Pro', () => {
       expect(body.threadId).toBeUndefined();
     });
 
+    it('returns MAIA\'s turn index so the member can keep that exchange with MAIA', async () => {
+      jest.mocked(appendExchange).mockResolvedValue(5);
+      const body = await (await ask(base)).json();
+      expect(body.turnIndex).toBe(5);
+    });
+
     it('never stores a safety reply', async () => {
       const body = await (await ask({ ...base, question: 'I want to die' })).json();
       expect(body.safety).toBe(true);
       expect(appendExchange).not.toHaveBeenCalled();
       expect(openThread).not.toHaveBeenCalled();
+    });
+  });
+  describe('per-chart recall (ASTRO-PRO-KEEP Phase 2)', () => {
+    // Saved charts known to this test's birth map stand in for two clients.
+    const CLIENT = 'first';
+    const OTHER = 'second';
+    const earlier = [{ section: 'transits', q: 'What about Saturn now?', a: 'Saturn squares the Moon…', at: '2026-11-01' }];
+    beforeEach(() => { jest.mocked(recallSubjectExchanges).mockReset().mockResolvedValue(earlier); });
+
+    it('gives MAIA earlier kept exchanges about the same chart, framed as readings at the time', async () => {
+      const body = await (await ask({ section: 'natal', subject: CLIENT, question: 'Q?', subjectKey: `ask.natal.${CLIENT}.` })).json();
+      expect(recallSubjectExchanges).toHaveBeenCalledWith(`member-${testMember}`, CLIENT, `ask.natal.${CLIENT}.`);
+      const prompt = generateSimple.mock.calls[0][0].systemPrompt as string;
+      expect(prompt).toContain('EARLIER CONVERSATIONS ABOUT THIS CHART');
+      expect(prompt).toContain('Your reading then: Saturn squares the Moon…');
+      expect(prompt).toContain('readings at the time, not settled facts');
+      expect(prompt).toContain('never state a conclusion about the person');
+      expect(prompt).not.toContain('Nothing is remembered between visits');
+      expect(body.recalledUsed).toBe(1);
+    });
+
+    it('never recalls for a two-chart question, so another person never enters this chart\'s context', async () => {
+      await ask({ section: 'biwheel', subject: CLIENT, other: OTHER, question: 'Q?', subjectKey: `ask.biwheel.${CLIENT}.${OTHER}` });
+      expect(recallSubjectExchanges).not.toHaveBeenCalled();
+      expect(generateSimple.mock.calls[0][0].systemPrompt).not.toContain('EARLIER CONVERSATIONS');
+    });
+
+    it('does not recall when Keep is off, in mentor mode, or without a subject key', async () => {
+      await ask({ section: 'natal', subject: CLIENT, question: 'Q?', subjectKey: `ask.natal.${CLIENT}.`, keep: false });
+      await ask({ section: 'natal', subject: CLIENT, question: 'Q?', subjectKey: `ask.natal.${CLIENT}.`, mode: 'mentor' });
+      await ask({ section: 'natal', subject: CLIENT, question: 'Q?' });
+      expect(recallSubjectExchanges).not.toHaveBeenCalled();
+    });
+
+    it('still answers when recall fails', async () => {
+      jest.mocked(recallSubjectExchanges).mockRejectedValue(new Error('db down'));
+      const res = await ask({ section: 'natal', subject: 'own', question: 'Q?', subjectKey: 'ask.natal.own.' });
+      expect(res.status).toBe(200);
+      expect((await res.json()).recalledUsed).toBeUndefined();
     });
   });
 });

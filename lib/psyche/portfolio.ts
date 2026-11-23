@@ -25,6 +25,11 @@
  */
 
 import { query } from '@/lib/db/postgres';
+import {
+  memberConferredReturn,
+  returnPreferenceValue,
+  type AuthorizedReturnPreference,
+} from './returnAuthority';
 import { resolveCapsuleDeclarationSource } from '@/lib/psyche/sources/capsule';
 import type {
   AtomGesture,
@@ -416,6 +421,16 @@ export async function keepSource(
     await resolveCapsuleDeclarationSource(memberId, input.sourceId!);
   }
 
+  // A carried Pro Astrology exchange is minted only by the carry route, which has
+  // verified the member's own kept own-chart thread and passes its origin. Without
+  // that origin there is nothing to attribute, so refuse.
+  if (input.sourceType === 'astro_pro_exchange' && !input.astroProOrigin) {
+    throw new Error("keepSource: 'astro_pro_exchange' atoms require astroProOrigin (carry route only)");
+  }
+  if (input.sourceType !== 'astro_pro_exchange' && input.astroProOrigin) {
+    throw new Error('keepSource: astroProOrigin is only for astro_pro_exchange atoms');
+  }
+
   // Declaring the same source twice returns the first declaration.
   //
   // The member presses once. A double-tap, a retry after a dropped response, or
@@ -456,19 +471,47 @@ export async function keepSource(
   // The reasoning, for whoever does that work: on a fresh INSERT the row has no
   // updating transaction, so xmax is 0; on the ON CONFLICT path the row was
   // locked and updated, so xmax carries the updating xid.
+  // P6 — RETURN AUTHORITY IS NOW EXPLICIT AT THE WRITE SITE.
+  //
+  // This INSERT used to omit `return_preference` and inherit the column
+  // DEFAULT, which migration 20260523000001 flipped to `contextual_doorway`
+  // ("Keeping is the consent act. Return is the default meaning of keeping.").
+  //
+  // That doctrine is UNCHANGED and this call preserves it exactly: a member
+  // keeping their own material confers contextual return by the keep gesture.
+  // What changed is that the permission is now CONSTRUCTED from the member's
+  // identity rather than inherited from a column default that applied to
+  // whoever happened to be writing. `memberConferredReturn` throws unless the
+  // acting principal is the subject, so no non-member writer can reach this
+  // value by omission.
+  const keepReturnAuthority: AuthorizedReturnPreference = memberConferredReturn(
+    'contextual_doorway',
+    { actingMemberId: memberId, subjectMemberId: memberId, gesture: 'keep' },
+  );
+
+  // ASTRO-PRO-KEEP Phase 2: a carried Pro exchange also states its provenance
+  // and epistemic standing at the write site. Its return authority is the same
+  // member-conferred keep authority as every other keep (above). Every other
+  // source type is written exactly as before.
+  const origin = input.sourceType === 'astro_pro_exchange' ? input.astroProOrigin : undefined;
+  const extraColumns = origin ? ', provenance, epistemological_status' : '';
+  const extraValues = origin ? ', $11, $12' : '';
+
   const result = await query<AtomRow & { was_created: boolean }>(
     `INSERT INTO member_memory_atoms (
        member_id, source_type, source_id, title, body,
        primary_register, registers, elemental_lenses, thread_ids,
        status,
        kept_at, last_touched_at,
-       posture_at_creation, generated_by
+       posture_at_creation, generated_by,
+       return_preference${extraColumns}
      ) VALUES (
        $1, $2, $3, $4, $5,
        $6, $7, $8, $9,
        'active',
        NOW(), NOW(),
-       'normal', 'member-gesture'
+       'normal', 'member-gesture',
+       $10${extraValues}
      )
      ON CONFLICT (member_id, source_type, source_id) WHERE source_id IS NOT NULL
        DO UPDATE SET member_id = EXCLUDED.member_id
@@ -483,6 +526,8 @@ export async function keepSource(
       input.registers ?? [],
       input.elementalLenses ?? [],
       input.threadIds ?? [],
+      returnPreferenceValue(keepReturnAuthority),
+      ...(origin ? [JSON.stringify(origin.provenance), 'inferred'] : []),
     ],
   );
 
@@ -637,13 +682,27 @@ export async function applyAtomGesture(
       params = [memberId, atomId, gesture.threadId];
       break;
 
-    case 'set_return_preference':
+    case 'set_return_preference': {
+      // P6 — the ONE member-conferred assignment path.
+      //
+      // The value goes through the same boundary as every other writer, so the
+      // member's own act and a non-member's attempt are not two code paths that
+      // merely happen to differ. `applyAtomGesture` runs with the authenticated
+      // principal and the row is scoped to that same member, so acting
+      // principal and subject are the same person by construction here — which
+      // is exactly what the constructor requires and enforces.
+      const authorized = memberConferredReturn(gesture.preference, {
+        actingMemberId: memberId,
+        subjectMemberId: memberId,
+        gesture: 'set_return_preference',
+      });
       sql = `UPDATE member_memory_atoms
                 SET return_preference = $3, last_touched_at = NOW()
               WHERE member_id = $1 AND id = $2
               RETURNING ${ATOM_COLUMNS}`;
-      params = [memberId, atomId, gesture.preference];
+      params = [memberId, atomId, returnPreferenceValue(authorized)];
       break;
+    }
 
     case 'touch':
       // The "Still here" gesture: member-explicit witness.
