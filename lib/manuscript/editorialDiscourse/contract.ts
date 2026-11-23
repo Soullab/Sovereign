@@ -480,8 +480,38 @@ export function versionsAreStructural(
  * to V1 reaches MAIA without the structural fact needed to know what V1 IS,
  * unless the Version carried its own identity when it arrived.
  */
+/**
+ * ⭐ AUTHORSHIP IS NOT OWNERSHIP. When the writer chooses Use it, the desk saves
+ * MAIA's wording as a writer-controlled version that succeeds hers. The records
+ * say so exactly: the writer's version names MAIA's as its predecessor and its
+ * wording is byte-identical. ⛔ Nothing here compares meaning; any difference at
+ * all means the writer changed it, and then it is theirs.
+ */
+export interface VersionLineage {
+  /** On the writer's version: the MAIA version whose wording it carries unchanged. */
+  readonly adoptedFrom?: string;
+  /** On MAIA's version: the writer's version that carried it forward unchanged. */
+  readonly adoptedAs?: string;
+}
+
+export function versionLineage(
+  versions: readonly VersionRecord[],
+): ReadonlyMap<string, VersionLineage> {
+  const byId = new Map(versions.map((v) => [v.id, v]));
+  const out = new Map<string, VersionLineage>();
+  for (const v of versions) {
+    if (v.author !== 'member' || v.supersedes === null) continue;
+    const prior = byId.get(v.supersedes);
+    if (!prior || prior.author !== 'maia' || prior.wording !== v.wording) continue;
+    out.set(v.id, { ...out.get(v.id), adoptedFrom: prior.id });
+    out.set(prior.id, { ...out.get(prior.id), adoptedAs: v.id });
+  }
+  return out;
+}
+
 export function renderRecord(
   r: EditorialRecord, bindings: readonly TurnBinding[] = [],
+  lineage?: VersionLineage,
 ): string {
   const who = r.author === 'member' ? 'the writer' : 'MAIA';
   /** ⭐ `, in turn N` — the producing turn, when one was supplied. */
@@ -502,7 +532,10 @@ export function renderRecord(
         + `${inTurn('version', r.id)}`
         /* ⭐ The writer's act on it, from receipts. ⛔ A proposal is never described
            as the manuscript; only `applied` says the manuscript took it. */
-        + `${r.application === 'applied' ? ' · APPLIED by the writer: the manuscript took this wording'
+        + `${lineage?.adoptedFrom ? ` · MAIA's suggested wording (from ${lineage.adoptedFrom}), which the writer chose to use unchanged`
+          : ''}`
+        + `${lineage?.adoptedAs ? ` · the writer chose to use this wording, carried forward unchanged as their version ${lineage.adoptedAs}; see that version for what happened to it`
+          : r.application === 'applied' ? ' · APPLIED by the writer: the manuscript took this wording'
           : r.application === 'undone' ? ' · the writer applied this, then UNDID it: the manuscript does not hold it'
           : ' · only proposed: never applied to the manuscript'}]`
         + ` ${r.wording}`;
@@ -597,7 +630,9 @@ export function editorialCandidates(
              count: turns.length + versions.length + insights.length + directions.length };
   };
 
-  const render = (r: EditorialRecord) => renderRecord(r, input.bindings);
+  const lineage = versionLineage(input.versions);
+  const render = (r: EditorialRecord) => renderRecord(r, input.bindings,
+    r.kind === 'version' ? lineage.get(r.id) : undefined);
 
   const compose = (
     producerId: EditorialProducerId, heading: string,

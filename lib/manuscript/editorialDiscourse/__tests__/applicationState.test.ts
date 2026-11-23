@@ -39,6 +39,37 @@ describe('what the writer did with a proposal reaches MAIA', () => {
   });
 });
 
+describe('authorship is not ownership', () => {
+  function chain(memberWording: string): string {
+    const out = editorialCandidates({
+      locus: { chainId: 'c1', originalText: ORIGINAL, presentNow: true },
+      surround: null, turns: [], insights: [], directions: [], bindings: [], declaredAct: 'discourse',
+      versions: [
+        { kind: 'version', id: 'maia-1', author: 'maia', wording: CUT, supersedes: null },
+        { kind: 'version', id: 'writer-2', author: 'member', wording: memberWording, supersedes: 'maia-1', application: 'undone' },
+      ],
+    });
+    if (!out.ok) throw new Error(out.reason);
+    return out.blocks.map((b) => b.text).join('\n');
+  }
+
+  test('wording the writer used unchanged stays MAIA\'s, and her line points to what happened', () => {
+    const text = chain(CUT);
+    expect(text).toContain("MAIA's suggested wording (from maia-1), which the writer chose to use unchanged");
+    expect(text).toContain('carried forward unchanged as their version writer-2');
+    expect(text).toContain('the writer applied this, then UNDID it');
+    // Her line no longer claims a bare "never applied" for wording that was applied as the writer's version.
+    const maiaLine = text.split('\n').find((l) => l.includes('maia-1,') || l.includes('wording maia-1'))!;
+    expect(maiaLine).not.toContain('only proposed: never applied');
+  });
+
+  test('wording the writer changed is theirs: no claim that it was MAIA\'s', () => {
+    const text = chain(CUT + ' Then the tide came in.');
+    expect(text).not.toContain("MAIA's suggested wording");
+    expect(text).not.toContain('carried forward unchanged');
+  });
+});
+
 describe('whether the page still reads the passage reaches MAIA', () => {
   test('present now', () => {
     expect(render({}, true)).toContain('The manuscript reads exactly this wording now.');
