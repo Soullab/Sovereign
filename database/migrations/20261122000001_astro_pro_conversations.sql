@@ -24,6 +24,7 @@
 -- Additive. Creates two new tables.
 
 BEGIN;
+SET LOCAL lock_timeout = '5s';
 
 CREATE TABLE IF NOT EXISTS astro_pro_threads (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
