@@ -136,7 +136,15 @@ const renderSignCard = (sign: MayanBirthSign, title: string, isToday: boolean = 
   </motion.div>
 );
 
-const renderPathOfLife = (profile: CompleteMayanProfile) => {
+/** "Ask MAIA about this in Pro", shown only when the page knows the member has Pro. */
+const AskInPro = ({ href, tone }: { href?: string; tone: string }) =>
+  href ? (
+    <a href={href} className={`block text-center text-xs mt-4 underline underline-offset-4 ${tone}`}>
+      Ask MAIA about this stage in Pro →
+    </a>
+  ) : null;
+
+const renderPathOfLife = (profile: CompleteMayanProfile, askHref?: string) => {
   const { pathOfLife, cardinalDirection, lifeCycleInsight, haab } = profile;
 
   const getDirectionColor = (dir: string) => {
@@ -166,9 +174,13 @@ const renderPathOfLife = (profile: CompleteMayanProfile) => {
     >
       {/* Life Cycle Insight */}
       <div className="bg-gradient-to-br from-stone-900/80 via-amber-950/40 to-stone-900/80 backdrop-blur-xl border border-amber-900/30 rounded-2xl p-8">
-        <h2 className="text-2xl font-bold text-amber-100 mb-4 text-center">Your Life Cycle Reading</h2>
+        <h2 className="text-2xl font-bold text-amber-100 mb-4 text-center">Your Dreamspell Life-Cycle Reading</h2>
         <p className="text-amber-300/90 text-lg leading-relaxed text-center italic">
           "{lifeCycleInsight}"
+        </p>
+        <p className="text-amber-400/50 text-xs mt-4 text-center">
+          The three stages and their ages (about 26 and 52) are the Dreamspell’s own modern scheme, offered to reflect
+          with. They are not a forecast and not part of the traditional Chol Q’ij count.
         </p>
       </div>
 
@@ -182,9 +194,9 @@ const renderPathOfLife = (profile: CompleteMayanProfile) => {
           className={`bg-gradient-to-br ${getPillarGradient('youth')} backdrop-blur-xl border border-purple-500/30 rounded-2xl p-6`}
         >
           <div className="text-center mb-4">
-            <span className="text-purple-400/60 text-xs uppercase tracking-wider">Past Influence</span>
+            <span className="text-purple-400/60 text-xs uppercase tracking-wider">Dreamspell · first stage</span>
             <h3 className="text-xl font-bold text-purple-100">Youth</h3>
-            <p className="text-purple-300/60 text-sm">Birth to ~26 years</p>
+            <p className="text-purple-300/60 text-sm">Read from birth to about 26</p>
           </div>
           <div className="text-center mb-4">
             <div className="text-6xl mb-2">{pathOfLife.youth.daySign.glyph}</div>
@@ -201,9 +213,10 @@ const renderPathOfLife = (profile: CompleteMayanProfile) => {
               <span className="text-purple-200">{pathOfLife.youth.daySign.essence}</span>
             </div>
             <p className="text-purple-300/70 text-xs mt-3 italic">
-              Early life patterns shaped by {pathOfLife.youth.daySign.meaning.toLowerCase()}
+              The Dreamspell reads this stage through {pathOfLife.youth.daySign.meaning.toLowerCase()}.
             </p>
           </div>
+          <AskInPro href={askHref} tone="text-purple-300/70 hover:text-purple-200" />
         </motion.div>
 
         {/* Adulthood Pillar (Main) */}
@@ -214,9 +227,9 @@ const renderPathOfLife = (profile: CompleteMayanProfile) => {
           className={`bg-gradient-to-br ${getPillarGradient('adulthood')} backdrop-blur-xl border border-amber-500/30 rounded-2xl p-6 ring-2 ring-amber-500/20`}
         >
           <div className="text-center mb-4">
-            <span className="text-amber-400/60 text-xs uppercase tracking-wider">Core Identity</span>
+            <span className="text-amber-400/60 text-xs uppercase tracking-wider">Dreamspell · middle stage</span>
             <h3 className="text-xl font-bold text-amber-100">Adulthood</h3>
-            <p className="text-amber-300/60 text-sm">Your Primary Signature</p>
+            <p className="text-amber-300/60 text-sm">Your Dreamspell signature</p>
           </div>
           <div className="text-center mb-4">
             <div className="text-7xl mb-2">{pathOfLife.adulthood.daySign.glyph}</div>
@@ -237,6 +250,7 @@ const renderPathOfLife = (profile: CompleteMayanProfile) => {
               <span className="text-amber-200">{pathOfLife.adulthood.daySign.essence}</span>
             </div>
           </div>
+          <AskInPro href={askHref} tone="text-amber-300/70 hover:text-amber-200" />
         </motion.div>
 
         {/* Future Pillar */}
@@ -247,9 +261,9 @@ const renderPathOfLife = (profile: CompleteMayanProfile) => {
           className={`bg-gradient-to-br ${getPillarGradient('future')} backdrop-blur-xl border border-teal-500/30 rounded-2xl p-6`}
         >
           <div className="text-center mb-4">
-            <span className="text-teal-400/60 text-xs uppercase tracking-wider">Destiny</span>
-            <h3 className="text-xl font-bold text-teal-100">Future</h3>
-            <p className="text-teal-300/60 text-sm">Fading in from ~52 years</p>
+            <span className="text-teal-400/60 text-xs uppercase tracking-wider">Dreamspell · later stage</span>
+            <h3 className="text-xl font-bold text-teal-100">Later life</h3>
+            <p className="text-teal-300/60 text-sm">Read from about 52</p>
           </div>
           <div className="text-center mb-4">
             <div className="text-6xl mb-2">{pathOfLife.future.daySign.glyph}</div>
@@ -266,9 +280,11 @@ const renderPathOfLife = (profile: CompleteMayanProfile) => {
               <span className="text-teal-200">{pathOfLife.future.daySign.essence}</span>
             </div>
             <p className="text-teal-300/70 text-xs mt-3 italic">
-              Your soul evolves toward {pathOfLife.future.daySign.meaning.toLowerCase()}
+              The Dreamspell reads this later stage through {pathOfLife.future.daySign.meaning.toLowerCase()}: a lens to
+              reflect with, not a forecast.
             </p>
           </div>
+          <AskInPro href={askHref} tone="text-teal-300/70 hover:text-teal-200" />
         </motion.div>
       </div>
 
@@ -351,6 +367,6 @@ export function MayanSignCard({ sign, title, isToday = false }: { sign: MayanBir
   return renderSignCard(sign, title, isToday);
 }
 
-export function MayanPathOfLife({ profile }: { profile: CompleteMayanProfile }) {
-  return renderPathOfLife(profile);
+export function MayanPathOfLife({ profile, askHref }: { profile: CompleteMayanProfile; askHref?: string }) {
+  return renderPathOfLife(profile, askHref);
 }
