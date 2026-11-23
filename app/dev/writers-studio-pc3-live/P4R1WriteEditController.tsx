@@ -1668,6 +1668,26 @@ export default function FlagshipWriteEditController() {
         setEditorialFailure(delivery === 'held' ? PASSAGE_HELD_AFTER_DROP : PASSAGE_UNCONFIRMED_AFTER_DROP);
         return false;
       }
+      if (!outcome.ok && typeof outcome.memberTurnIndex === 'number') {
+        /* P0-A (#1800, E0 walk 2026-11-23): the server KEPT the writer's turn and refused only
+           MAIA's reply. The screen must show what the server holds. Left stale, the thread
+           looked empty: the writer's question vanished from view, and the panel's "MAIA opens"
+           step fired on a thread that was not new, so its "couldn't start" note replaced the
+           real reason. Only the exact thread named in this request is adopted. */
+        const reread = await readBoundEditorialThread(thread.threadId, focusId, a2Relationship?.id ?? null)
+          .catch(() => null);
+        if (!stillCurrent()) return false;
+        if (reread?.ok && reread.thread.threadId === thread.threadId && mayPublishEditorialResponse({
+          scope: scopeAtGesture, generation, threadId: thread.threadId,
+          workId: context.manuscriptId, sectionId: focusId,
+        }, {
+          scope: editorialActScopeRef.current,
+          generation: editorialActGenerationRef.current,
+          posture: readCurrentSanctuaryPosture(),
+        }, reread.thread)) {
+          setEditorialThread(reread.thread);
+        }
+      }
       if (!outcome.ok) {
         if (outcome.reason === 'scope_refused') {
           if (outcome.scope?.wholeParagraphsRemoved) {
