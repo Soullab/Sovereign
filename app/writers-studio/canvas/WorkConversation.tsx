@@ -29,6 +29,7 @@ import {
   type ResumeDecision, type ThreadDiscovery,
 } from '@/lib/writersStudio/observationDialogueResume';
 import type { LivingWork } from '../useLivingWorks';
+import type { KeepWordsResult } from '@/lib/writersStudio/keepWords';
 import { createWriterCorrection } from '@/lib/writersStudio/writerCorrectionsClient';
 import { readWorkingStyle, writeWorkingStyle } from '@/lib/writersStudio/workingStyle';
 import { teachingQuestion, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
@@ -183,6 +184,7 @@ const when = (iso: string) => {
   return Number.isNaN(d.getTime()) ? 'earlier' : d.toLocaleDateString();
 };
 
+
 export interface WorkConversationProps {
   work: LivingWork;
   /** Null before a manuscript exists; the conversation then belongs directly to the Living Work. */
@@ -226,7 +228,8 @@ export interface WorkConversationProps {
    * writing queue — the same path as typing. Never offered on MAIA's words. Resolves
    * whether the words are now on the page. Absent → no button.
    */
-  onKeepWords?: (text: string) => Promise<boolean> | boolean;
+  /** true = the words are on the page; 'saving' = refused while the page saves; false = they could not be placed here. */
+  onKeepWords?: (text: string) => Promise<KeepWordsResult> | KeepWordsResult;
 }
 
 export type StudioAct =
@@ -840,8 +843,10 @@ function ScopedWorkConversation({
                     onClick={async () => {
                       setKeepWordsNote(null);
                       const placed = await onKeepWords(t.body);
-                      if (placed) setKeptToPage((s) => new Set(s).add(keepKey(t.index)));
-                      else setKeepWordsNote({ key: keepKey(t.index), text: 'Your page is still saving. Try again in a moment; nothing was changed.' });
+                      if (placed === true) setKeptToPage((s) => new Set(s).add(keepKey(t.index)));
+                      else setKeepWordsNote({ key: keepKey(t.index), text: placed === 'saving'
+                        ? 'Your page is still saving. Try again in a moment; nothing was changed.'
+                        : 'These words could not be placed on this page. Nothing was changed.' });
                     }}
                     style={{ background: 'transparent', border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm,
                       padding: `${SPACE.hairline}px ${SPACE.tight}px`, cursor: 'pointer', color: INK.secondary }}>

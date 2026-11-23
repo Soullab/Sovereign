@@ -15,6 +15,7 @@ import { apiFetch } from '@/lib/http/apiBase';
 import ContinuousDraftWayIn, { writeForwardFor } from '@/app/writers-studio/ContinuousDraftWayIn';
 import { readCurrentSanctuaryPosture, type CurrentPostureRead } from '@/lib/sanctuary/currentClientPosture';
 import { useLivingWorks } from '@/app/writers-studio/useLivingWorks';
+import { placeWordsOnSection, type KeepWordsResult } from '@/lib/writersStudio/keepWords';
 import { currentWork } from '@/app/writers-studio/workContext';
 import { resolveSituatedWorkContext, studioHomeReturnSearch } from '@/app/writers-studio/situatedWork';
 import { useHouseStudioH1WorkClaim } from '@/app/writers-studio/useHouseStudioH1WorkClaim';
@@ -1506,16 +1507,9 @@ export default function FlagshipWriteEditController() {
    * ⛔ Refused (nothing changed) while that section has unsaved typing in flight: the
    * editor would otherwise hold its own text over the appended words.
    */
-  const keepWordsOnPage = useCallback((text: string): boolean => {
-    const writing = writingRef.current;
-    if (!writing || !focusId || !text.trim()) return false;
-    if (writing.hasUnsavedWork() || ['dirty', 'saving', 'conflict', 'error'].includes(writing.statusOf(focusId))) return false;
-    const body = writing.bodyOf(focusId);
-    if (typeof body !== 'string') return false;
-    const before = body.replace(/\s+$/, '');
-    writing.editSection(focusId, before ? `${before}\n\n${text}` : text);
-    return true;
-  }, [focusId]);
+  const keepWordsOnPage = useCallback((text: string): KeepWordsResult => (
+    placeWordsOnSection(writingRef.current, focusId, text)
+  ), [focusId]);
 
   const sendEditorial = useCallback(async (
     requestText?: string,

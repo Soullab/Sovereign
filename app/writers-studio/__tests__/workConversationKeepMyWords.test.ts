@@ -64,7 +64,7 @@ async function say(words: string) {
   const send = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent?.trim() === 'Send')!;
   await act(async () => { send.click(); });
 }
-async function mount(onKeepWords?: (text: string) => Promise<boolean> | boolean) {
+async function mount(onKeepWords?: (text: string) => Promise<boolean | 'saving'> | boolean | 'saving') {
   await act(async () => { root.render(React.createElement(WorkConversation, {
     work, manuscriptId: 'fictional-manuscript', sectionId: 'section-a', onClose: jest.fn(),
     ...(onKeepWords ? { onKeepWords } : {}),
@@ -84,7 +84,7 @@ test('the writer\'s own message can be kept, exactly as written — and the note
 });
 
 test('when the page cannot take them yet, nothing is claimed', async () => {
-  await mount(jest.fn(async () => false)); await say(WRITER_WORDS);
+  await mount(jest.fn(async () => 'saving' as const)); await say(WRITER_WORDS);
   await act(async () => { keepButtons()[0].click(); });
   expect(host.textContent).not.toContain('Placed on your page');
   expect(host.textContent).toContain('Your page is still saving. Try again in a moment; nothing was changed.');
@@ -101,6 +101,14 @@ test('a new conversation does not inherit "placed" from the last one (turn numbe
   expect(host.textContent).toContain(SECOND_WORDS);
   expect(host.textContent).not.toContain(PLACED);
   expect(keepButtons().map((b) => b.getAttribute('data-keep-words-button'))).toEqual(['0']);
+});
+
+test('when the words could not be placed at all, the note says so and does not blame saving', async () => {
+  await mount(jest.fn(async () => false)); await say(WRITER_WORDS);
+  await act(async () => { keepButtons()[0].click(); });
+  expect(host.textContent).not.toContain('Placed on your page');
+  expect(host.textContent).not.toContain('still saving');
+  expect(host.textContent).toContain('These words could not be placed on this page. Nothing was changed.');
 });
 
 test('MAIA\'s words are never offered for keeping', async () => {
