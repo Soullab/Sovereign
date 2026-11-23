@@ -179,8 +179,21 @@ export async function savedChartExists(ownerMemberId: string, chartId: string): 
 
 /** Hard delete. Returns false when no chart with this id belongs to the owner. */
 export async function deleteSavedChart(ownerMemberId: string, chartId: string): Promise<boolean> {
+  // One statement, so it is atomic: the chart and every kept Pro conversation
+  // about it (as subject or as the other chart) go together. Founder ruling
+  // 2026-11-22: a client's conversation is deleted with the client record.
+  // Subject keys are ask.<section>.<subject>.<other>; chart ids are UUIDs.
   const result = await query<{ id: string }>(
-    'DELETE FROM astrology_pro_saved_charts WHERE id = $1 AND owner_member_id = $2 RETURNING id',
+    `WITH chart AS (
+       DELETE FROM astrology_pro_saved_charts WHERE id = $1 AND owner_member_id = $2 RETURNING id
+     ), conversations AS (
+       DELETE FROM astro_pro_threads
+        WHERE member_id = $2
+          AND (split_part(subject_key, '.', 3) IN (SELECT id::text FROM chart)
+            OR split_part(subject_key, '.', 4) IN (SELECT id::text FROM chart))
+       RETURNING id
+     )
+     SELECT id FROM chart`,
     [chartId, ownerMemberId],
   );
   return result.rows.length > 0;
