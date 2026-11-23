@@ -18,6 +18,12 @@ export interface EditingOutcome {
   /** Section heading where the edit landed, or null when it cannot be named. */
   readonly place: string | null;
   readonly outcome: 'applied' | 'undone';
+  /**
+   * Whether the section still holds the result of that outcome (the applied body, or after an
+   * undo the writer's original), compared exactly in the database. null = cannot be checked.
+   * ⭐ History says what HAPPENED; only this says what is there NOW.
+   */
+  readonly stillThere: boolean | null;
 }
 
 const oneLine = (s: string) => s.replace(/\s*[\r\n]+\s*/g, ' ').trim().slice(0, 120);
@@ -28,9 +34,13 @@ export function editingHistoryText(outcomes: readonly EditingOutcome[]): string 
     "WHAT THE WRITER HAS DONE WITH YOUR SUGGESTED EDITS (from the Studio's records; places only, no wording):",
     ...outcomes.map((o) => {
       const where = o.place ? `In "${oneLine(o.place)}"` : 'In one passage';
-      return o.outcome === 'undone'
-        ? `  - ${where}: the writer applied one of your suggested edits, then undid it. Their own wording stands there now.`
-        : `  - ${where}: the writer applied one of your suggested edits. It is in the manuscript now.`;
+      const changedSince = ' The passage has changed since, so do not assume what the page says there now.';
+      if (o.outcome === 'undone') {
+        return `  - ${where}: the writer applied one of your suggested edits, then undid it.`
+          + (o.stillThere === true ? ' Their own wording stands there now.' : o.stillThere === false ? changedSince : '');
+      }
+      return `  - ${where}: the writer applied one of your suggested edits.`
+        + (o.stillThere === true ? ' It is in the manuscript now.' : o.stillThere === false ? changedSince : '');
     }),
     'Never describe an undone edit as what the page says. Suggestions the writer did not apply are not listed and are not decisions.',
   ].join('\n');
@@ -41,9 +51,15 @@ export async function editingHistoryForManuscript(
   memberId: string,
   manuscriptId: string,
 ): Promise<EditingOutcome[]> {
-  const result = await query<{ heading: string | null; undone: boolean }>(
+  /* still_there: the bodies are COMPARED here and never returned — only a boolean leaves the query. */
+  const result = await query<{ heading: string | null; undone: boolean; still_there: boolean | null }>(
     `SELECT DISTINCT ON (a.proposal_chain_id)
-            ms.heading, (r.undone_at IS NOT NULL) AS undone
+            ms.heading, (r.undone_at IS NOT NULL) AS undone,
+            CASE WHEN ds.text IS NULL OR r.authorization_id IS NULL THEN NULL
+                 WHEN r.undone_at IS NOT NULL
+                   THEN length(r.before_body) > 0 AND position(r.before_body IN ds.text) > 0
+                 ELSE length(r.after_body) > 0 AND position(r.after_body IN ds.text) > 0
+            END AS still_there
        FROM manuscript_revision_authorizations a
        LEFT JOIN manuscript_application_recovery r ON r.authorization_id = a.id
        LEFT JOIN manuscript_draft_sections ds ON ds.id = a.target_section_id
@@ -53,7 +69,10 @@ export async function editingHistoryForManuscript(
       LIMIT 24`,
     [memberId, manuscriptId],
   );
-  return result.rows.map((r) => ({ place: r.heading, outcome: r.undone ? 'undone' : 'applied' }));
+  return result.rows.map((r) => ({
+    place: r.heading, outcome: r.undone ? 'undone' : 'applied',
+    stillThere: r.still_there === null || r.still_there === undefined ? null : Boolean(r.still_there),
+  }));
 }
 
 export async function editingHistoryContextForManuscript(
