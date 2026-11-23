@@ -31,6 +31,7 @@ const SOURCE_WORDS: Record<string, string> = {
   decision: 'a decision',
   change: 'a change',
   session_excerpt: 'a conversation',
+  astro_pro_exchange: 'a Pro Astrology conversation',
   spontaneous: 'a personal note',
 }
 

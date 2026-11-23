@@ -59,6 +59,11 @@ members reasonably expect.
 
 ### Phase 2 — memory (after Phase 1 is witnessed; not built here)
 
+> **Design (2026-11-23, PROPOSED, founder ruling open):** `ASTRO-PRO-KEEP_PHASE2_MEMORY_DESIGN_2026-11-23.md`.
+> It finds that "lifts R4F" below is the spec author's sentence, not Kelly's own words, and that R4H principles 1–2
+> (#1817) and the no-crossing memory canon still govern. The client-deletion item below is already done in
+> `deleteSavedChart` (merged in `1c70c3c6f`).
+
 - Own-chart threads with Keep on become available to MAIA's memory under the existing consent and
   return rules (memory atoms), so MAIA can recognise patterns across Pro and main conversations.
   This lifts R4F #1817 for the member's **own** chart only, under this ruling.

@@ -421,6 +421,16 @@ export async function keepSource(
     await resolveCapsuleDeclarationSource(memberId, input.sourceId!);
   }
 
+  // A carried Pro Astrology exchange is minted only by the carry route, which has
+  // verified the member's own kept own-chart thread and passes its origin. Without
+  // that origin there is nothing to attribute, so refuse.
+  if (input.sourceType === 'astro_pro_exchange' && !input.astroProOrigin) {
+    throw new Error("keepSource: 'astro_pro_exchange' atoms require astroProOrigin (carry route only)");
+  }
+  if (input.sourceType !== 'astro_pro_exchange' && input.astroProOrigin) {
+    throw new Error('keepSource: astroProOrigin is only for astro_pro_exchange atoms');
+  }
+
   // Declaring the same source twice returns the first declaration.
   //
   // The member presses once. A double-tap, a retry after a dropped response, or
@@ -479,6 +489,14 @@ export async function keepSource(
     { actingMemberId: memberId, subjectMemberId: memberId, gesture: 'keep' },
   );
 
+  // ASTRO-PRO-KEEP Phase 2: a carried Pro exchange also states its provenance
+  // and epistemic standing at the write site. Its return authority is the same
+  // member-conferred keep authority as every other keep (above). Every other
+  // source type is written exactly as before.
+  const origin = input.sourceType === 'astro_pro_exchange' ? input.astroProOrigin : undefined;
+  const extraColumns = origin ? ', provenance, epistemological_status' : '';
+  const extraValues = origin ? ', $11, $12' : '';
+
   const result = await query<AtomRow & { was_created: boolean }>(
     `INSERT INTO member_memory_atoms (
        member_id, source_type, source_id, title, body,
@@ -486,14 +504,14 @@ export async function keepSource(
        status,
        kept_at, last_touched_at,
        posture_at_creation, generated_by,
-       return_preference
+       return_preference${extraColumns}
      ) VALUES (
        $1, $2, $3, $4, $5,
        $6, $7, $8, $9,
        'active',
        NOW(), NOW(),
        'normal', 'member-gesture',
-       $10
+       $10${extraValues}
      )
      ON CONFLICT (member_id, source_type, source_id) WHERE source_id IS NOT NULL
        DO UPDATE SET member_id = EXCLUDED.member_id
@@ -509,6 +527,7 @@ export async function keepSource(
       input.elementalLenses ?? [],
       input.threadIds ?? [],
       returnPreferenceValue(keepReturnAuthority),
+      ...(origin ? [JSON.stringify(origin.provenance), 'inferred'] : []),
     ],
   );
 
