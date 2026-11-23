@@ -134,6 +134,9 @@ const UNVERIFIED_URL_THREAD = 'This saved manuscript conversation has not been v
 const PASSAGE_HELD_AFTER_DROP = 'Your words are saved in this conversation, but MAIA’s reply isn’t available yet. Give her a moment, then reopen the passage before sending again.';
 const PASSAGE_UNCONFIRMED_AFTER_DROP = 'The connection dropped before her reply came back, so it isn’t known whether your request reached her. Reopen the passage to check before you send it again.';
 
+/** A manuscript that is not the signed-in writer's, or no longer exists. Never says which. */
+export const NOT_YOURS_OR_GONE = 'This manuscript isn’t one of yours, or it no longer exists. Each Work belongs to the writer who made it. Nothing has changed.';
+
 /** Search params can lag the Studio's own address rewrites; read the live one. */
 function addressStillNames(threadId: string): boolean {
   if (typeof window === 'undefined') return true;
@@ -329,6 +332,14 @@ export default function FlagshipWriteEditController() {
         '/api/writers-studio/rebuild/context?manuscriptId=' + encodeURIComponent(manuscriptId),
       );
       if (response.status === 401) { setPhase('unauthorized'); return; }
+      /* Storyteller-elder walk 2026-11-23: a helper opening a Work that is not theirs saw "could not read this manuscript just
+         now", which reads as a passing fault. The server answers not_found for both "not yours" and "gone" (it never says which),
+         so the page says both, honestly, and invites no retry. */
+      if (response.status === 404) {
+        setPhase('error');
+        setMessage(NOT_YOURS_OR_GONE);
+        return;
+      }
       if (!response.ok) throw new Error('context');
       let body = await response.json() as ContextPayload;
 
