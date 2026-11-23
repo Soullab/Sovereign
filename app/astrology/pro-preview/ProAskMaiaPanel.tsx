@@ -111,6 +111,9 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
   const [whole, setWhole] = usePanelState(`${key}.whole`, false);
   // Own chart only, and off until the astrologer turns it on for this conversation.
   const [personal, setPersonal] = usePanelState(`${key}.personal`, false);
+  // Kept conversation: on unless the astrologer turns it off for this conversation.
+  const [threadId, setThreadId] = usePanelState<string | null>(`${key}.threadId`, null);
+  const [keep, setKeep] = usePanelState(`${key}.keep`, true);
   const [status, setStatus] = useState<'idle' | 'asking'>('idle');
   const [error, setError] = useState<string | null>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -119,6 +122,47 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
   const twoCharts = request.other !== undefined;
   const canBePersonal = stage && request.subject === 'own' && !twoCharts;
   const withMe = canBePersonal && personal && !mentor;
+
+  // Resume: when the log is empty, bring back the latest kept conversation for this subject.
+  useEffect(() => {
+    if (exchanges.length > 0 || !keep) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/astrology/pro/conversation?subjectKey=${encodeURIComponent(key)}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const body = await res.json().catch(() => null);
+        if (cancelled || !body || typeof body.threadId !== 'string' || !Array.isArray(body.turns)) return;
+        const turns = (body.turns as Array<{ q?: unknown; a?: unknown }>)
+          .filter((t) => typeof t.q === 'string' && typeof t.a === 'string')
+          .map((t) => ({ q: t.q as string, a: t.a as string }));
+        if (turns.length === 0) return;
+        setThreadId(body.threadId);
+        setExchanges((list) => (list.length > 0 ? list : turns));
+      } catch { /* resuming is best effort; the panel works without it */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  async function changeKeep(next: boolean) {
+    if (next) { setKeep(true); return; }
+    if (threadId) {
+      if (typeof window !== 'undefined' && !window.confirm('Stop keeping this conversation? What was kept will be deleted.')) return;
+      try {
+        const res = await apiFetch('/api/astrology/pro/conversation', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+          body: JSON.stringify({ threadId, keep: false }),
+        });
+        if (!res.ok && res.status !== 404) { setError('Could not stop keeping this conversation just now. Please try again.'); return; }
+      } catch {
+        setError('Could not stop keeping this conversation just now. Please try again.');
+        return;
+      }
+      setThreadId(null);
+    }
+    setKeep(false);
+  }
 
   useEffect(() => { end.current?.scrollIntoView?.({ block: 'nearest' }); }, [exchanges.length, status]);
 
@@ -142,6 +186,9 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
           // The earlier turns of this visit, so MAIA builds on them. A safety reply is not a turn.
           ...(stage && exchanges.some((e) => !e.safety)
             ? { history: exchanges.filter((e) => !e.safety).slice(-HISTORY_TURNS).map((e) => ({ q: e.q, a: e.a })) } : {}),
+          subjectKey: key,
+          keep,
+          ...(keep && threadId ? { threadId } : {}),
           question: q,
         }),
       });
@@ -150,6 +197,7 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
         setError(ERRORS[body?.error] || 'MAIA could not answer just now. Please try again.');
         return;
       }
+      if (keep && typeof body.threadId === 'string') setThreadId(body.threadId);
       setExchanges((list) => [...list, {
         q, a: body.answer, safety: body.safety === true, mentor,
         ...(typeof body.keptUsed === 'number' ? { keptUsed: body.keptUsed } : {}),
@@ -168,7 +216,14 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
     <>
       <p className={styles.note}>
         MAIA will read {readsWhose} to answer: only the calculated facts of this section, not names or birth
-        details. Nothing is kept. MAIA is an AI, not the astrologer.
+        details. MAIA is an AI, not the astrologer.
+      </p>
+      <label className={styles.check}>
+        <input type="checkbox" role="switch" checked={keep} onChange={(e) => void changeKeep(e.target.checked)} />
+        Keep this conversation
+      </label>
+      <p className={styles.note}>
+        {keep ? 'Kept — you can come back to this conversation.' : 'Not kept — this conversation ends when you leave.'}
       </p>
 
       {stage && (
@@ -194,7 +249,8 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
       {withMe && (
         <p className={styles.personalNote}>
           MAIA will also read what you have chosen to keep with her and allowed to return. It informs this answer
-          only: nothing from this conversation is saved, and your chart is not added to MAIA’s memory.
+          only. {keep ? 'This conversation is kept for you to return to' : 'This conversation is not kept'}, and your chart
+          is not added to MAIA’s memory.
         </p>
       )}
 
@@ -267,7 +323,8 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
         <button type="button" onClick={() => void ask()} disabled={status === 'asking'}>
           {status === 'asking' ? 'MAIA is reading…' : mentor ? 'Ask the mentor' : 'Ask MAIA'}
         </button>
-        {exchanges.length > 0 && <button type="button" onClick={() => setExchanges([])}>Clear</button>}
+        {/* Starts a fresh conversation; a kept one stays kept and can be resumed. */}
+        {exchanges.length > 0 && <button type="button" onClick={() => { setExchanges([]); setThreadId(null); }}>New conversation</button>}
       </div>
     </>
   );

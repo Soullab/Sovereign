@@ -3,15 +3,21 @@
  *
  * POST /api/astrology/pro/ask
  * body: { section, subject, other?, houseSystem?, at?, dayStart?, direction?, question,
- *         mode?, view?, point? }
+ *         mode?, view?, point?, subjectKey?, threadId?, keep? }
+ *
+ * Kept conversations (founder ruling 2026-11-22, ASTRO-PRO-KEEP spec): Keep is
+ * ON by default. After a normal answer the question and answer are stored in
+ * the member's own thread for `subjectKey` and `threadId` is returned. With
+ * `keep: false` nothing is stored. A storage failure never fails the answer
+ * (`kept: false`). Safety replies are never stored.
  *
  * From the cockpit's MAIA dock: `mode: 'mentor'` asks MAIA to teach a technique
  * instead of reading the chart; `view` (one of a fixed list) and `point` (a
  * body of this chart) tell MAIA what the astrologer has open. Neither carries
  * free text into the prompt.
  *
- * A conversation, not single questions: `history` carries the earlier turns of
- * this visit from the page (nothing is stored here), `depth: 'deep'` asks for a
+ * A conversation, not single questions: `history` carries the earlier turns
+ * from the page, `depth: 'deep'` asks for a
  * fuller answer, and `include` widens a natal question to the other systems.
  *
  * `personal: true` (founder ruling 2026-11-09) lets MAIA read the astrologer's
@@ -24,7 +30,8 @@
  *
  * Only chart ids travel; the server reads the verified owner's birth details,
  * recalculates the section and gives MAIA its facts — never a name, birth
- * date, time or place. Nothing is stored or logged but the fact of an answer.
+ * date, time or place. Nothing is logged but the fact of an answer; the
+ * conversation itself is stored only while Keep is on (above).
  * A question showing crisis or serious distress gets a fixed reply and MAIA is
  * not asked.
  */
@@ -53,6 +60,7 @@ import {
 } from '@/lib/astrology/proAskMaiaSections';
 import { PRO_RESPONSE_HEADERS, proError, proOwnerStillCurrent, resolveProOwner } from '@/lib/astrology/proRouteAccess';
 import type { SavedChartBirth } from '@/lib/astrology/proSavedCharts';
+import { PRO_SUBJECT_KEY_MAX, appendExchange, isThreadId, openThread, ownsKeptThread } from '@/lib/astrology/proConversationStore';
 import { formatAtomsForPrompt, loadMemberMemoryAtomsForPrompt } from '@/lib/maia/memoryAtomsLoader';
 
 // A short per-member limit (in memory) so a runaway loop cannot spend MAIA.
@@ -69,7 +77,7 @@ function allowed(memberId: string): boolean {
   return true;
 }
 
-const KEYS = ['section', 'subject', 'other', 'houseSystem', 'at', 'from', 'dayStart', 'direction', 'question', 'include', 'lifeContext', 'mode', 'view', 'point', 'personal', 'history', 'depth', 'ayanamsa'];
+const KEYS = ['section', 'subject', 'other', 'houseSystem', 'at', 'from', 'dayStart', 'direction', 'question', 'include', 'lifeContext', 'mode', 'view', 'point', 'personal', 'history', 'depth', 'ayanamsa', 'subjectKey', 'threadId', 'keep'];
 const DEEP_PARTS = ['four-pillars', 'maya', 'progressions'];
 
 export async function POST(request: NextRequest) {
@@ -129,6 +137,14 @@ export async function POST(request: NextRequest) {
       history.push({ q: q.trim(), a: a.trim() });
     }
   }
+  // Kept conversation: Keep is on unless the member turned it off.
+  if (input.keep !== undefined && typeof input.keep !== 'boolean') return proError(400, 'keep_unsupported');
+  const keep = input.keep !== false;
+  if (input.subjectKey !== undefined && (typeof input.subjectKey !== 'string' || !input.subjectKey || input.subjectKey.length > PRO_SUBJECT_KEY_MAX)) {
+    return proError(400, 'subject_key_invalid');
+  }
+  if (input.threadId !== undefined && !isThreadId(input.threadId)) return proError(400, 'thread_invalid');
+  const subjectKey = typeof input.subjectKey === 'string' ? input.subjectKey : null;
   const twoCharts = section === 'biwheel' || section === 'composite';
   // What MAIA knows of the astrologer goes only with the astrologer's own chart.
   if (input.personal !== undefined && typeof input.personal !== 'boolean') return proError(400, 'personal_unsupported');
@@ -263,7 +279,24 @@ export async function POST(request: NextRequest) {
     // A life story that mentions risk does not stop the reading; it opens with where to turn.
     const contextConcern = deep && lifeContext && (thirdPersonConcern(lifeContext) ||
       ['crisis', 'red'].includes(String(analyzeSafetyCues(lifeContext).severity)));
-    return NextResponse.json({ answer: contextConcern ? `${PRO_DEEP_CONTEXT_NOTE}\n\n${answer}` : answer, ...(personal ? { keptUsed: keptCount } : {}) },
+    const finalAnswer = contextConcern ? `${PRO_DEEP_CONTEXT_NOTE}\n\n${answer}` : answer;
+    // Keep: store the exchange in the member's own thread. Never fails the answer.
+    let keptFields: { threadId?: string; kept?: boolean } = {};
+    if (keep && subjectKey) {
+      try {
+        let threadId: string | null = null;
+        if (typeof input.threadId === 'string') {
+          threadId = (await ownsKeptThread(input.threadId, owner.memberId, subjectKey)) ? input.threadId : null;
+        }
+        if (!threadId) threadId = await openThread(owner.memberId, subjectKey);
+        keptFields = (await appendExchange(threadId, owner.memberId, question, finalAnswer))
+          ? { threadId, kept: true } : { kept: false };
+      } catch {
+        console.log('[astrology/pro/ask] keep failed');
+        keptFields = { kept: false };
+      }
+    }
+    return NextResponse.json({ answer: finalAnswer, ...keptFields, ...(personal ? { keptUsed: keptCount } : {}) },
       { headers: PRO_RESPONSE_HEADERS });
   } catch {
     // Exception text may contain birth inputs; never log or return it.
