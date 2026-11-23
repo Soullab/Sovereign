@@ -1124,7 +1124,7 @@ export function detectAstrologicalRelevance(
       lowerMessage.includes('future')) &&
     context.mayanProfile
   ) {
-    relevantInsights.push(`Their Mayan Path of Life shows three pillars: Youth (${context.mayanProfile.pathOfLife.youth.daySign.name}), Adulthood (${context.mayanProfile.pathOfLife.adulthood.daySign.name}), and Future (${context.mayanProfile.pathOfLife.future.daySign.name}) - ${context.mayanProfile.lifeCycleInsight}`);
+    relevantInsights.push(`Their Dreamspell path of life (a modern system, not the traditional Maya count) has three stages: youth ${context.mayanProfile.pathOfLife.youth.galacticSignature}, adulthood ${context.mayanProfile.pathOfLife.adulthood.galacticSignature}, later ${context.mayanProfile.pathOfLife.future.galacticSignature} - offer it as a lens, never a forecast. ${context.mayanProfile.lifeCycleInsight}`);
   }
 
   // Purpose/destiny themes + Mayan cardinal direction

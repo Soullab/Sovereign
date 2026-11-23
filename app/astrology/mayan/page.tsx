@@ -21,6 +21,7 @@ import { useVerifiedFreeAstrologyBirthProfile } from '@/lib/hooks/useVerifiedFre
 import { motion } from 'framer-motion';
 import { MayanSignCard, MayanPathOfLife } from '@/components/astrology/MayanRoomViews';
 import { CholQijDayCard } from '@/components/astrology/CholQijDayCard';
+import { apiFetch } from '@/lib/http/apiBase';
 import {
   traditionalMaya,
   localCivilDate,
@@ -54,6 +55,19 @@ export default function MayanAstrologyPage() {
   const [activeView, setActiveView] = useState<'signature' | 'pillars' | 'today'>('pillars');
   const [traditionalBirth, setTraditionalBirth] = useState<TraditionalMaya | null>(null);
   const [traditionalToday, setTraditionalToday] = useState<TraditionalMaya | null>(null);
+  // Members with Pro may take a path card into Pro's Mayan Ask MAIA. Pro asks
+  // about their own chart, so the link shows only for their own verified date.
+  const [hasPro, setHasPro] = useState(false);
+  const ownDate = verifiedBirth.status === 'verified' ? verifiedBirth.birthData?.date ?? null : null;
+  useEffect(() => {
+    if (!ownDate) { setHasPro(false); return; }
+    let live = true;
+    apiFetch('/api/astrology/pro/access', { cache: 'no-store' })
+      .then((r) => { if (live) setHasPro(r.ok); })
+      .catch(() => { if (live) setHasPro(false); });
+    return () => { live = false; };
+  }, [ownDate, verifiedBirth.memberId]);
+  const askHref = hasPro && ownDate && birthDate === ownDate ? '/astrology/pro-preview?open=mayan' : undefined;
 
   // Today's day in both counts never needs natal data. The traditional day is
   // the visitor's local civil date.
@@ -236,7 +250,7 @@ export default function MayanAstrologyPage() {
               <MayanSignCard sign={birthSign} title="Your Dreamspell Galactic Signature" />
             </div>
           )}
-          {completeProfile && activeView === 'pillars' && <MayanPathOfLife profile={completeProfile} />}
+          {completeProfile && activeView === 'pillars' && <MayanPathOfLife profile={completeProfile} askHref={askHref} />}
           {todaySign && activeView === 'today' && (
             <div className="max-w-3xl mx-auto">
               <MayanSignCard sign={todaySign} title="Today in the Dreamspell" isToday />
