@@ -89,6 +89,16 @@ test('after the writer\'s own disagreement, Keep opens their words for review; n
   expect(container.textContent).toContain('Kept. MAIA will read your Work this way from now on');
 });
 
+test('kept on another Work (the manuscript is in two): the note names where, never "your Work"', async () => {
+  createWriterCorrection.mockResolvedValueOnce({ ok: true, keptOn: { workId: 'work-first', title: 'The Island' } } as never);
+  render();
+  await writerSends(DISAGREE);
+  await act(async () => { button(CORRECTION_OFFER_ACCEPT)!.click(); });
+  await act(async () => { button('Keep correction')!.click(); });
+  expect(container.textContent).toContain('Kept with “The Island”. MAIA will read it this way here, and in that Work’s whole-Work conversation.');
+  expect(container.textContent).not.toContain('MAIA will read your Work this way');
+});
+
 test('Cancel in review keeps nothing', async () => {
   render();
   await writerSends(DISAGREE);

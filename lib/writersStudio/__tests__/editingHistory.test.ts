@@ -65,3 +65,12 @@ test('the read is scoped to this member and manuscript, and only a yes/no about 
   expect(selectList).not.toMatch(/expected_text|wording|replacement/);
   expect(editingHistoryText(out)).not.toContain(CUT_WORDING);
 });
+
+test('the 24 kept are the most recent outcomes, not the first chains by id (pre-review of #2380)', async () => {
+  query.mockResolvedValueOnce({ rows: [] });
+  await editingHistoryForManuscript('member-1', 'manuscript-1');
+  const [sql] = query.mock.calls[query.mock.calls.length - 1];
+  const outer = sql.slice(sql.lastIndexOf(') latest'));
+  expect(outer).toMatch(/ORDER BY accepted_at DESC\s+LIMIT 24/);
+  expect(sql.slice(0, sql.lastIndexOf(') latest'))).not.toMatch(/LIMIT/);
+});

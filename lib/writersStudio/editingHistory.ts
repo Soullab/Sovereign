@@ -53,8 +53,11 @@ export async function editingHistoryForManuscript(
 ): Promise<EditingOutcome[]> {
   /* still_there: the bodies are COMPARED here and never returned — only a boolean leaves the query. */
   const result = await query<{ heading: string | null; undone: boolean; still_there: boolean | null }>(
-    `SELECT DISTINCT ON (a.proposal_chain_id)
-            ms.heading, (r.undone_at IS NOT NULL) AS undone,
+    /* Pre-review of #2380: DISTINCT ON orders by chain id, so the LIMIT kept arbitrary chains.
+       The latest outcome per chain is chosen inside; the 24 MOST RECENT are kept outside. */
+    `SELECT heading, undone, still_there FROM (
+     SELECT DISTINCT ON (a.proposal_chain_id)
+            a.accepted_at, ms.heading, (r.undone_at IS NOT NULL) AS undone,
             CASE WHEN ds.text IS NULL OR r.authorization_id IS NULL THEN NULL
                  WHEN r.undone_at IS NOT NULL
                    THEN length(r.before_body) > 0 AND position(r.before_body IN ds.text) > 0
@@ -66,6 +69,8 @@ export async function editingHistoryForManuscript(
        LEFT JOIN manuscript_sections ms ON ms.id = ds.source_section_id
       WHERE a.member_id = $1 AND a.work_id = $2 AND a.accepted_at IS NOT NULL
       ORDER BY a.proposal_chain_id, a.resulting_version DESC
+     ) latest
+      ORDER BY accepted_at DESC
       LIMIT 24`,
     [memberId, manuscriptId],
   );

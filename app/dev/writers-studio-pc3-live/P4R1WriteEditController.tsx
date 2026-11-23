@@ -132,7 +132,7 @@ const UNVERIFIED_URL_THREAD = 'This saved manuscript conversation has not been v
    re-read before the writer is told anything, and neither message invites an immediate resend:
    the first request may still be running, and a second press could start a second MAIA call. */
 const PASSAGE_HELD_AFTER_DROP = 'Your words are saved in this conversation, but MAIA’s reply isn’t available yet. Give her a moment, then reopen the passage before sending again.';
-const PASSAGE_UNCONFIRMED_AFTER_DROP = 'The connection dropped before her reply came back, so it isn’t known whether your words reached her. They’re still in the box. Reopen the passage to check before you send them again.';
+const PASSAGE_UNCONFIRMED_AFTER_DROP = 'The connection dropped before her reply came back, so it isn’t known whether your request reached her. Reopen the passage to check before you send it again.';
 
 /** Search params can lag the Studio's own address rewrites; read the live one. */
 function addressStillNames(threadId: string): boolean {
