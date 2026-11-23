@@ -696,24 +696,20 @@ export function generateLifeCycleInsight(birthDate: Date, pathOfLife: PathOfLife
 
   const { youth, adulthood, future } = pathOfLife;
 
+  // Lens language, never a forecast (founder direction 2026-11-23): the stages
+  // are the Dreamspell's own modern scheme, offered to reflect with.
   if (age < 26) {
-    const youthInfluence = Math.max(0, 26 - age);
-    return `At ${age}, you're still in your Youth cycle, strongly influenced by ${youth.daySign.name} (${youth.daySign.archetype}). ` +
-      `The ${youth.daySign.essence} essence shapes your early path. ` +
-      `Over the next ${youthInfluence} years, you'll gradually transition into your core ${adulthood.daySign.name} nature, ` +
-      `moving from ${youth.daySign.power} toward ${adulthood.daySign.power}.`;
+    return `At ${age}, you are in what the Dreamspell calls its youth stage, read through ${youth.galacticSignature} ` +
+      `(${youth.daySign.archetype}; ${youth.daySign.essence}). In this modern system your adulthood signature, ` +
+      `${adulthood.galacticSignature}, is the one it reads from about 26. A lens to reflect with, not a forecast.`;
   } else if (age < 52) {
-    const yearsToFuture = 52 - age;
-    return `At ${age}, your ${adulthood.daySign.name} (${adulthood.daySign.archetype}) signature is fully active. ` +
-      `The ${adulthood.daySign.power} power guides your actions while ${adulthood.daySign.essence} defines your essence. ` +
-      `In ${yearsToFuture} years, the ${future.daySign.name} energy will begin weaving into your path, ` +
-      `bringing themes of ${future.daySign.essence} and ${future.daySign.meaning}.`;
+    return `At ${age}, you are in what the Dreamspell calls its adulthood stage, read through your signature ` +
+      `${adulthood.galacticSignature} (${adulthood.daySign.archetype}; ${adulthood.daySign.power}, ${adulthood.daySign.essence}). ` +
+      `The system also names a later stage, ${future.galacticSignature}, which it reads from about 52. A lens to reflect with, not a forecast.`;
   } else {
-    const futureYears = age - 52;
-    return `At ${age}, you've entered your Future cycle where ${future.daySign.name} (${future.daySign.archetype}) ` +
-      `increasingly shapes your destiny. For ${futureYears} years now, the ${future.daySign.power} power has been ` +
-      `awakening within you. Your journey synthesizes ${adulthood.daySign.essence} with ${future.daySign.essence}, ` +
-      `revealing the deeper purpose of ${future.daySign.meaning}.`;
+    return `At ${age}, you are in what the Dreamspell calls its later stage, read through ${future.galacticSignature} ` +
+      `(${future.daySign.archetype}; ${future.daySign.power}, ${future.daySign.essence}) alongside your adulthood signature ` +
+      `${adulthood.galacticSignature}. The Dreamspell offers these as themes to reflect on: a lens, not a destiny or a forecast.`;
   }
 }
 

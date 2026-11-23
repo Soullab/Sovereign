@@ -34,7 +34,7 @@ import ProTransitPanel from './ProTransitPanel';
 import ProAspectGrid from './ProAspectGrid';
 import ProComparePanel from './ProComparePanel';
 import ProDerivedPanel from './ProDerivedPanel';
-import ProSystemsPanel, { type SystemsWork } from './ProSystemsPanel';
+import ProSystemsPanel, { newSystemsWork, type SystemsWork } from './ProSystemsPanel';
 import { PanelMemoryProvider } from './panelMemory';
 import { askKey } from './ProAskMaiaPanel';
 import ProMaiaStage, { maiaSubjectInHand } from './ProMaiaDock';
@@ -203,6 +203,19 @@ function Cockpit({ verifiedSessionMemberId, helpEnabled }: { verifiedSessionMemb
   const [privateViewVerified, setPrivateViewVerified] = useState(false);
   // Working place in panels that unmount while access is re-checked; cleared with the chart.
   const [systemsWork, setSystemsWork] = useState<SystemsWork | null>(null);
+  // `?open=mayan` (from the Free Mayan room's "Ask MAIA about this in Pro"):
+  // once the member's own chart is open, show Traditions → Mayan and calculate
+  // it, so its Ask MAIA is in reach. 'waiting' → 'calculate' → null.
+  const [mayanLink, setMayanLink] = useState<'waiting' | 'calculate' | null>(null);
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('open') !== 'mayan') return;
+      setMayanLink('waiting');
+      url.searchParams.delete('open');
+      window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+    } catch { /* no deep link: Pro opens as usual */ }
+  }, []);
   const privateVerificationEpoch = useRef(0);
   const [chartError, setChartError] = useState<string | null>(null);
   const [skyStatus, setSkyStatus] = useState<SkyStatus>('loading');
@@ -546,6 +559,13 @@ function Cockpit({ verifiedSessionMemberId, helpEnabled }: { verifiedSessionMemb
   const chartLabel = savedSubject ? savedSubject.label : 'my chart';
   const readsWhose = savedSubject ? `${savedSubject.label}’s chart` : 'your chart';
   const systemsTab = systemsWork?.tab ?? 'vedic';
+  useEffect(() => {
+    if (mayanLink !== 'waiting' || !chart || !privateViewVerified || subjectId !== 'own') return;
+    setSystemsWork({ ...newSystemsWork('own'), tab: 'mayan' });
+    openTool('traditions', 'systems');
+    setMayanLink('calculate');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mayanLink, chart, privateViewVerified, subjectId]);
 
   const pointPanel = () => selected && (
     <div className={cockpit.point}>
@@ -645,7 +665,8 @@ function Cockpit({ verifiedSessionMemberId, helpEnabled }: { verifiedSessionMemb
     { id: 'traditions', label: 'Traditions', icon: Globe2, tabs: [
       { id: 'systems', label: 'Vedic · Chinese · Mayan',
         prefer: [systemsTab === 'chinese' ? 'four-pillars' : systemsTab],
-        render: () => <ProSystemsPanel subjectId={subjectId} chartLabel={chartLabel} work={systemsWork} onWork={setSystemsWork} /> },
+        render: () => <ProSystemsPanel subjectId={subjectId} chartLabel={chartLabel} work={systemsWork} onWork={setSystemsWork}
+          calculateNow={mayanLink === 'calculate'} onCalculated={() => setMayanLink(null)} /> },
     ] },
     { id: 'readings', label: 'Readings', icon: BookOpen, tabs: [
       { id: 'deep', label: 'Deep reading',

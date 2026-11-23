@@ -65,9 +65,11 @@ export function newSystemsWork(subjectId: string): SystemsWork {
   return { subjectId, tab: 'vedic', ayanamsa: 'lahiri', dayStart: 'midnight', data: null, luckDirection: null, request: 0 };
 }
 
-export default function ProSystemsPanel({ subjectId, chartLabel, work, onWork }: {
+export default function ProSystemsPanel({ subjectId, chartLabel, work, onWork, calculateNow = false, onCalculated }: {
   subjectId: string; chartLabel: string;
   work: SystemsWork | null; onWork: (update: (current: SystemsWork | null) => SystemsWork | null) => void;
+  /** Calculate once on arrival (the Free Mayan room's link into Pro), as if the button were pressed. */
+  calculateNow?: boolean; onCalculated?: () => void;
 }) {
   const w = work && work.subjectId === subjectId ? work : newSystemsWork(subjectId);
   const [status, setStatus] = useState<'idle' | 'loading'>('idle');
@@ -110,6 +112,13 @@ export default function ProSystemsPanel({ subjectId, chartLabel, work, onWork }:
       if (isLatest()) setStatus('idle');
     }
   }
+
+  useEffect(() => {
+    if (!calculateNow) return;
+    onCalculated?.();
+    if (!w.data) void calculate(w.ayanamsa, w.dayStart);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calculateNow]);
 
   return (
     <div className={styles.panel} id="pro-systems" aria-labelledby="pro-systems-title">
