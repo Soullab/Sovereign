@@ -4,6 +4,7 @@ import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { query } from '@/lib/db/postgres';
 import { currentWriterCorrectionsForWork } from '@/lib/writersStudio/writerCorrectionsServer';
 import { isWriterCorrectionKind } from '@/lib/writersStudio/writerCorrections';
+import { livingWorkIdForManuscript } from '@/lib/manuscript/ask/workOfManuscript';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,7 @@ const MAX_CORRECTION = 4000;
 type TurnRow = {
   living_work_id: string | null;
   manuscript_id: string | null;
+  proposal_chain_id: string | null;
   speaker: string;
   body: string;
 };
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const turn = await query<TurnRow>(
-    `SELECT th.living_work_id, th.manuscript_id, u.speaker, u.body
+    `SELECT th.living_work_id, th.manuscript_id, th.proposal_chain_id, u.speaker, u.body
        FROM ask_threads th
        JOIN ask_turns u ON u.thread_id = th.id AND u.turn_index = $3
       WHERE th.id = $1 AND th.member_id = $2`,
@@ -77,6 +79,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   if (!belongs) return NextResponse.json({ refusal: 'not_found' }, { status: 404 });
 
+  /* Founder ruling 2026-11-23, aligning with the 2026-11-08 review ("a manuscript declared in
+     more than one Work resolves to the earliest declaration every time"): a correction made in
+     a PASSAGE conversation is kept on the Work the passage room reads it from. Otherwise a
+     manuscript in two Works could keep a correction where the passage room never looks. */
+  let keptOn = workId;
+  if (row.proposal_chain_id && row.manuscript_id) {
+    const resolved = await livingWorkIdForManuscript(row.manuscript_id, memberId);
+    if (resolved && (await ownsWork(memberId, resolved))) keptOn = resolved;
+  }
+  const titled = await query<{ title: string | null }>(
+    'SELECT title FROM living_works WHERE id = $1 AND member_id = $2', [keptOn, memberId]);
+  const keptOnTitle = titled.rows[0]?.title ?? null;
+
   let inserted;
   try {
     inserted = await query<{ id: string; created_at: string | Date }>(
@@ -84,7 +99,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
          (member_id, living_work_id, thread_id, maia_turn_index, kind, correction_text)
        VALUES ($1,$2,$3,$4,$5,$6)
        RETURNING id, created_at`,
-      [memberId, workId, threadId, maiaTurnIndex, body.kind, correction],
+      [memberId, keptOn, threadId, maiaTurnIndex, body.kind, correction],
     );
   } catch (error) {
     if ((error as { code?: string })?.code === '42P01') {
@@ -96,7 +111,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({
     correction: {
       id: record.id,
-      workId,
+      workId: keptOn,
       threadId,
       maiaTurnIndex,
       kind: body.kind,
@@ -104,5 +119,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       correction,
       createdAt: record.created_at instanceof Date ? record.created_at.toISOString() : String(record.created_at),
     },
+    /** The Work the correction was kept on, so the surface can say so when it is not the one in view. */
+    keptOn: { workId: keptOn, title: keptOnTitle },
   });
 }

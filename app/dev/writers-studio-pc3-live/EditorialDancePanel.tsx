@@ -1042,9 +1042,12 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
               setCorrectionBusy(false);
               setCorrectionAnswered((s) => new Set(s).add(key));
               setCorrectionDraft(null);
-              setCorrectionNote({ key, text: result.ok
-                ? 'Kept. MAIA will read your Work this way from now on, here and in the whole-Work conversation.'
-                : 'That correction was not kept. Nothing else changed.' });
+              setCorrectionNote({ key, text: !result.ok
+                ? 'That correction was not kept. Nothing else changed.'
+                : result.keptOn && result.keptOn.workId !== workId
+                  /* The manuscript belongs to more than one Work; it was kept where this room reads. */
+                  ? `Kept with ${result.keptOn.title ? `“${result.keptOn.title}”` : 'the first Work this manuscript belongs to'}. MAIA will read it this way here, and in that Work’s whole-Work conversation.`
+                  : 'Kept. MAIA will read your Work this way from now on, here and in the whole-Work conversation.' });
             };
             if (draft !== null) {
               return (

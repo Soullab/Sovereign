@@ -3,7 +3,7 @@ import { withKeepPosture } from '@/lib/writersStudio/keepPosture';
 import type { WriterCorrection, WriterCorrectionKind } from './writerCorrections';
 
 export type CreateWriterCorrectionResult =
-  | { ok: true; correction: WriterCorrection }
+  | { ok: true; correction: WriterCorrection; keptOn?: { workId: string; title: string | null } }
   | { ok: false; refusal: string };
 
 export async function createWriterCorrection(input: {
@@ -31,7 +31,12 @@ export async function createWriterCorrection(input: {
     if (!response.ok || !body?.correction) {
       return { ok: false, refusal: String(body?.refusal ?? `http_${response.status}`) };
     }
-    return { ok: true, correction: body.correction as WriterCorrection };
+    return {
+      ok: true, correction: body.correction as WriterCorrection,
+      ...(body.keptOn && typeof body.keptOn.workId === 'string'
+        ? { keptOn: { workId: body.keptOn.workId, title: typeof body.keptOn.title === 'string' ? body.keptOn.title : null } }
+        : {}),
+    };
   } catch {
     return { ok: false, refusal: 'unreachable' };
   }
