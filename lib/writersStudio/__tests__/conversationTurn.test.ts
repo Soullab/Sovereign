@@ -47,8 +47,10 @@ describe('only the writer’s words are the writer’s turn (F1 applied to the A
 
   it('the typed and spoken questions send the words plus the closed field, no instruction text', () => {
     // F1 arrival framing: withOrigin now adds only a closed reference to the options.
-    expect(panel).toContain("props.onSend(q, withOrigin({ turnShape: 'conversation' as const }))");
-    expect(panel).toContain("onAsk={(text) => props.onSend(text, withOrigin({ turnShape: 'conversation' as const }))}");
+    expect(panel).toContain("sendOwnWords(q, withOrigin({ turnShape: 'conversation' as const }))");
+    expect(panel).toContain("onAsk={(text) => sendOwnWords(text, withOrigin({ turnShape: 'conversation' as const }))}");
+    /* sendOwnWords only records the words and forwards them unchanged (review of #2380). */
+    expect(panel).toMatch(/const sendOwnWords = \(text: string, options[^)]*\) => \{\s*ownWordsRef\.current\.add\(text\.trim\(\)\);\s*return props\.onSend\(text, options\);\s*\};/);
     expect(panel).not.toContain('CONVERSATION_TURN_SHAPE');
     expect(panel).not.toContain('What I want help with:');
   });

@@ -327,6 +327,19 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
   const [correctionAnswered, setCorrectionAnswered] = useState<ReadonlySet<string>>(() => new Set());
   const [correctionBusy, setCorrectionBusy] = useState(false);
   const [correctionNote, setCorrectionNote] = useState<{ key: string; text: string } | null>(null);
+  /* Review of #2380 (2026-11-23): keeping a correction is a REVIEWED step, as in the Work
+     conversation. The writer sees their words in an editable box and presses "Keep correction";
+     nothing is kept by the offer itself. */
+  const [correctionDraft, setCorrectionDraft] = useState<{ key: string; text: string } | null>(null);
+  /* Only the writer's own typed or spoken messages may be offered for keeping. A stored author
+     turn can be a composed request that carries draft wording and instructions (sendTalk, the
+     edit acts); those must never become a correction. Exact text, this session only: a missed
+     offer after a reload is the safe failure. */
+  const ownWordsRef = useRef<Set<string>>(new Set());
+  const sendOwnWords = (text: string, options: Parameters<typeof props.onSend>[1]) => {
+    ownWordsRef.current.add(text.trim());
+    return props.onSend(text, options);
+  };
   const relationshipRef = useRef<HTMLDivElement | null>(null);
   const relationshipBlocks = Boolean(props.maiaRelationship && !props.maiaRelationship.active);
 
@@ -544,7 +557,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
     }
     // Design 3C: only the writer's words are their turn; the conversational
     // shape is server-owned (turnShape), like a Teach-me's (F1).
-    clearWhenSent(props.onSend(q, withOrigin({ turnShape: 'conversation' as const })), q, setStartPrompt);
+    clearWhenSent(sendOwnWords(q, withOrigin({ turnShape: 'conversation' as const })), q, setStartPrompt);
   };
 
   const postureBlocksEditorial = !props.sessionPosture.resolved || props.sessionPosture.sanctuary;
@@ -788,7 +801,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
 
       <P4R1VoiceCapture
         disabled={props.busy || postureBlocksEditorial}
-        onAsk={(text) => props.onSend(text, withOrigin({ turnShape: 'conversation' as const }))}
+        onAsk={(text) => sendOwnWords(text, withOrigin({ turnShape: 'conversation' as const }))}
       />
     </div>
   );
@@ -860,12 +873,13 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
       const q = startPrompt.trim();
       if (!q || props.busy) return;
       if (postureBlocksEditorial || relationshipBlocks || choiceBlocks) {
+        ownWordsRef.current.add(q);
         setHeldAct({ label: q.length > 40 ? q.slice(0, 40) + '…' : q, prompt: q, options: { turnShape: 'conversation' } });
         if (postureBlocksEditorial) setPostureNudge(true); else if (relationshipBlocks) setRelationshipNudge(true);
         setStartPrompt('');
         return;
       }
-      clearWhenSent(props.onSend(q, withOrigin({ turnShape: 'conversation' as const })), q, setStartPrompt);
+      clearWhenSent(sendOwnWords(q, withOrigin({ turnShape: 'conversation' as const })), q, setStartPrompt);
     };
 
     const latestTurn = turns.at(-1);
@@ -1013,29 +1027,51 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
               return <li className="ws-stage-turn is-note" data-correction-note role="status"><p>{correctionNote.text}</p></li>;
             }
             if (correctionAnswered.has(key)) return null;
+            if (!ownWordsRef.current.has(prev.body.trim())) return null;
             const offer = correctionOfferFor(prev.body);
             if (!offer) return null;
             const workId = props.livingWorkId;
-            const answer = async (keep: boolean) => {
-              setCorrectionAnswered((s) => new Set(s).add(key));
-              if (!keep) return;
+            const draft = correctionDraft?.key === key ? correctionDraft.text : null;
+            const keepReviewed = async () => {
+              const correction = (draft ?? '').trim();
+              if (!correction) return;
               setCorrectionBusy(true);
               const result = await createWriterCorrection({
-                workId, threadId, maiaTurnIndex: last.turnIndex, kind: offer.kind, correction: prev.body.trim(),
+                workId, threadId, maiaTurnIndex: last.turnIndex, kind: offer.kind, correction,
               });
               setCorrectionBusy(false);
+              setCorrectionAnswered((s) => new Set(s).add(key));
+              setCorrectionDraft(null);
               setCorrectionNote({ key, text: result.ok
                 ? 'Kept. MAIA will read your Work this way from now on, here and in the whole-Work conversation.'
                 : 'That correction was not kept. Nothing else changed.' });
             };
+            if (draft !== null) {
+              return (
+                <li className="ws-stage-turn is-note" data-correction-review={last.turnIndex}>
+                  <label htmlFor={`correction-review-${key}`}>Your correction, in your words. Change anything before keeping it.</label>
+                  <textarea id={`correction-review-${key}`} data-correction-review-text value={draft} rows={3}
+                    onChange={(e) => setCorrectionDraft({ key, text: e.target.value })} />
+                  <div className="ws-stage-option-actions">
+                    <button type="button" data-correction-review-keep disabled={correctionBusy || !draft.trim()} onClick={() => void keepReviewed()}>
+                      Keep correction
+                    </button>
+                    <button type="button" data-correction-review-cancel disabled={correctionBusy}
+                      onClick={() => { setCorrectionDraft(null); setCorrectionAnswered((s) => new Set(s).add(key)); }}>
+                      Cancel
+                    </button>
+                  </div>
+                </li>
+              );
+            }
             return (
               <li className="ws-stage-turn is-note" data-correction-offer={last.turnIndex} role="status">
                 <p>{CORRECTION_OFFER_COPY}</p>
                 <div className="ws-stage-option-actions">
-                  <button type="button" data-correction-offer-accept disabled={correctionBusy} onClick={() => void answer(true)}>
+                  <button type="button" data-correction-offer-accept onClick={() => setCorrectionDraft({ key, text: prev.body.trim() })}>
                     {CORRECTION_OFFER_ACCEPT}
                   </button>
-                  <button type="button" data-correction-offer-decline disabled={correctionBusy} onClick={() => void answer(false)}>
+                  <button type="button" data-correction-offer-decline onClick={() => setCorrectionAnswered((s) => new Set(s).add(key))}>
                     {CORRECTION_OFFER_DECLINE}
                   </button>
                 </div>

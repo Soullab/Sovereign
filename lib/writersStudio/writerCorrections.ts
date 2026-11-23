@@ -24,7 +24,8 @@ export interface WriterCorrection {
   threadId: string;
   maiaTurnIndex: number;
   kind: WriterCorrectionKind;
-  priorClaim: string;
+  /** null when MAIA's reply was in a passage conversation: its wording is not carried. */
+  priorClaim: string | null;
   correction: string;
   createdAt: string;
 }
@@ -45,7 +46,9 @@ export function writerCorrectionContext(corrections: readonly WriterCorrection[]
     lines.push(
       '',
       `[${WRITER_CORRECTION_LABEL[c.kind]}]`,
-      `MAIA previously said: ${c.priorClaim}`,
+      c.priorClaim === null
+        ? 'MAIA previously gave a reading in a passage conversation (its wording is not carried here).'
+        : `MAIA previously said: ${c.priorClaim}`,
       `Writer correction / current working understanding: ${c.correction}`,
     );
   }
