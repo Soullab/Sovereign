@@ -15,27 +15,48 @@ export const dynamic = 'force-dynamic';
  *
  * WITHDRAWAL — exact semantics, because the word could mean several things:
  *
- *   It removes the DECLARATION. It does not delete, complete, archive, or
- *   finish anything.
+ *   It removes the WORK, and with it everything that hangs from the Work row.
+ *   It does not delete the member's writing, and it is not an archive.
  *
- *   - Expressions are never touched. Manuscripts, drafts, revisions, sources
- *     and keeps are untouched by construction: nothing here writes to them,
- *     and `member_manuscripts` has no foreign key to a Living Work. A
- *     manuscript does not know it belonged to anything, so it cannot lose
- *     anything when the work goes.
- *   - `living_work_expressions` rows cascade. Those rows ARE declarations of
- *     membership, not the members themselves. Removing the work removes the
- *     statements "this belongs to that" — which is exactly what withdrawing a
- *     declaration means — and removes nothing that was declared.
- *   - It is reversible by a member act: the member may declare again. This
- *     route does NOT soft-delete, because a `withdrawn_at` column would be a
- *     status, and status is excluded from this ontology. The consequence is
- *     honest and stated in the UI: the name is not kept.
+ *   - Manuscripts, drafts, revisions, sources and keeps are untouched by
+ *     construction: nothing here writes to them, and `member_manuscripts` has
+ *     no foreign key to a Living Work. A manuscript does not know it belonged
+ *     to anything, so it cannot lose anything when the work goes.
+ *   - EVERYTHING that references the Work row with ON DELETE CASCADE goes with
+ *     it: the declarations of membership (`living_work_expressions`), and since
+ *     September 2026 also the conversations that belong to the Work row itself
+ *     (`ask_threads.living_work_id`; a conversation about a WRITING belongs to the
+ *     manuscript, carries no Work id, and stays), what the
+ *     writer told MAIA about it (`living_work_writer_understanding`), the
+ *     writer's corrections, the Work's materials and their considerations, its
+ *     editorial relationship record and where the writer last returned, and its
+ *     image (the row cascades; the BYTES are queued below and destroyed by the
+ *     sweep). The authoritative list is lib/writersStudio/__tests__/
+ *     removalCopyDrift.test.ts, which fails when a table is added without the
+ *     member-facing copy being revisited.
+ *   - It cannot be undone. The member may declare a new Work, but the name, the
+ *     conversations and the corrections of this one are not kept. This route
+ *     does NOT soft-delete, because a `withdrawn_at` column would be a status,
+ *     and status is excluded from this ontology.
+ *   - The image bytes are the one part that is not transactional. If they are
+ *     not yet destroyed when the response is written, the response says so
+ *     (500 {removed:true, refusal:'image_bytes_owed'}) instead of reporting a
+ *     plain success: the row is gone, the bytes are queued, and the member is
+ *     not told it is finished until it is.
+ *   - The removal is RECORDED, in the same transaction: the recovery-capture
+ *     advisory lock first, then the Work row, and once the row is really gone a
+ *     `member_deletion` manifest and a `living_works` tombstone
+ *     (lib/manuscript/source/workDeletionRecord.ts). Without the tombstone a
+ *     governed restore from a backup taken before the removal would bring the
+ *     Work back. The independent R20 ledger is NOT sealed here (see that module).
  */
 
+import { stageById, studioPathById } from '@/lib/writersStudio/studioPaths';
+import { ageAttestationAdmits, latestAgeAttestation } from '@/lib/studios/ageAttestationRead';
 import { NextRequest, NextResponse } from 'next/server';
 import { query, transaction } from '@/lib/db/postgres';
 import { sweepVaultErasureQueue } from '@/lib/manuscript/source/eraseManuscript';
+import { takeRecoveryCaptureLock, writeWorkDeletionRecord } from '@/lib/manuscript/source/workDeletionRecord';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { refuseTitle } from '@/lib/livingWork/domain';
 import { cabinStore, cabinMemberFromRequest, setCabinSessionCookie } from '@/lib/cabin/request';
@@ -49,6 +70,9 @@ interface WorkRow {
   form: string | null;
   stage: string | null;
   manuscript_state: string | null;
+  maia_revisions_paused?: boolean;
+  studio_path?: string | null;
+  studio_stage?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -124,8 +148,12 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       form?: unknown;
       stage?: unknown;
       manuscriptState?: unknown;
+      maiaRevisionsPaused?: unknown;
+      studioPath?: unknown;
+      studioStage?: unknown;
     };
-    if (!('title' in body) && !('purpose' in body) && !('form' in body) && !('stage' in body) && !('manuscriptState' in body)) {
+    if (!('title' in body) && !('purpose' in body) && !('form' in body) && !('stage' in body) && !('manuscriptState' in body)
+        && !('maiaRevisionsPaused' in body) && !('studioPath' in body) && !('studioStage' in body)) {
       return NextResponse.json({ error: 'nothing to change' }, { status: 400 });
     }
 
@@ -210,6 +238,68 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       manuscriptState = body.manuscriptState;
     }
 
+    /* "MAIA asks, never rewrites" for this whole Work (founder authorization
+       2026-11-13, ledger #1938). Member-declared like form and stage; the only
+       writer is this member act. A strict boolean: anything else is refused,
+       never coerced. */
+    let maiaRevisionsPaused = false;
+    if ('maiaRevisionsPaused' in body) {
+      if (typeof body.maiaRevisionsPaused !== 'boolean') {
+        return NextResponse.json({ error: 'maiaRevisionsPaused must be true or false' }, { status: 400 });
+      }
+      maiaRevisionsPaused = body.maiaRevisionsPaused;
+    }
+
+    /* The Studio program (path) this Work belongs to (ledger #1938). CONTRACT:
+       A Work's program is explicitly declared through an authenticated, authorized action by the member who owns that Work.
+       The declaration must identify a registered program. Once established, the program is immutable. No title, invitation,
+       system process, or inferred context may silently assign or change it. (Founder contract ACCEPT_F2_MEMBER_DECLARATION_ONCE_FIXED,
+       2026-11-15; supersedes earlier "Begin-only" wording, including this migration's header. The contract is member authorization,
+       not button provenance: existing session authorization and request-integrity protections apply, and the client submits an
+       explicit program selection, never an inferred one.)
+       Enforced here (owner-scoped Work, registered id only, set once: same id is a no-op, clear 400, change 409) and in
+       the database (FK to studio_programs, fixed-once trigger). */
+    let studioPath: string | null = null;
+    if ('studioPath' in body) {
+      if (typeof body.studioPath !== 'string' || studioPathById(body.studioPath) === null) {
+        return NextResponse.json({ error: 'unknown_studio_path' }, { status: 400 });
+      }
+      studioPath = body.studioPath;
+      const current = await query<{ studio_path: string | null }>(
+        `SELECT studio_path FROM living_works WHERE id = $1 AND member_id = $2`, [id, memberId]);
+      if (current.rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      const existing = current.rows[0].studio_path;
+      if (existing !== null && existing !== studioPath) {
+        return NextResponse.json({ error: 'studio_path_fixed' }, { status: 409 });
+      }
+      /* Founder ruling 2026-11-16 (#1900): a Work can JOIN a program students may use only after the member has said they are
+         18+, or 13–17 with adult supervision. Fails closed (an unreadable record never admits). Re-sending the program a Work
+         already has is a no-op, not a join, so it is not asked again (review follow-up 2026-11-16: a grandfathered Work got 403). */
+      if (existing === null && studioPathById(studioPath)?.requiresAgeAttestation
+          && !ageAttestationAdmits(await latestAgeAttestation(memberId))) {
+        return NextResponse.json({ error: 'age_attestation_required' }, { status: 403 });
+      }
+    }
+
+    /* Where in its program's arc the writer puts this Work (founder 2026-11-16: all College Essay stages). The writer's own
+       "Move to …" only; never inferred, never advanced by the system. Only a built stage of THIS Work's program is accepted
+       (the program being chosen in this same request, or the one the Work already has); a Work with no program has no stage. */
+    let studioStage: string | null = null;
+    if ('studioStage' in body) {
+      let programId = studioPath;
+      if (programId === null) {
+        const cur = await query<{ studio_path: string | null }>(
+          `SELECT studio_path FROM living_works WHERE id = $1 AND member_id = $2`, [id, memberId]);
+        if (cur.rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+        programId = cur.rows[0].studio_path;
+      }
+      const program = studioPathById(programId);
+      if (!program) return NextResponse.json({ error: 'no_studio_program' }, { status: 400 });
+      const stage = stageById(program, body.studioStage);
+      if (!stage) return NextResponse.json({ error: 'unknown_studio_stage' }, { status: 400 });
+      studioStage = stage.id;
+    }
+
     // Only the fields the member actually addressed change; COALESCE-style
     // partial updates would silently keep a value the member tried to clear.
     const sets: string[] = [];
@@ -234,6 +324,18 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       params.push(manuscriptState);
       sets.push(`manuscript_state = $${params.length}`);
     }
+    if ('maiaRevisionsPaused' in body) {
+      params.push(maiaRevisionsPaused);
+      sets.push(`maia_revisions_paused = $${params.length}`);
+    }
+    if ('studioPath' in body) {
+      params.push(studioPath);
+      sets.push(`studio_path = $${params.length}`);
+    }
+    if ('studioStage' in body) {
+      params.push(studioStage);
+      sets.push(`studio_stage = $${params.length}`);
+    }
 
     // Member-scoped in the predicate, not after the fact: another member's id
     // cannot reach this row at all.
@@ -241,7 +343,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       `UPDATE living_works
           SET ${sets.join(', ')}, updated_at = now()
         WHERE id = $1 AND member_id = $2
-      RETURNING id, title, purpose, form, stage, manuscript_state, created_at, updated_at`,
+      RETURNING id, title, purpose, form, stage, manuscript_state, maia_revisions_paused, studio_path, studio_stage, created_at, updated_at`,
       params
     );
     if (updated.rows.length === 0) {
@@ -256,11 +358,19 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
         form: r.form,
         stage: r.stage,
         manuscriptState: r.manuscript_state,
+        maiaRevisionsPaused: r.maia_revisions_paused === true,
+        studioPath: r.studio_path ?? null,
+        studioStage: r.studio_stage ?? null,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
       },
     });
   } catch (error) {
+    // A racing second program choice is refused by the database's fixed-once trigger: same answer as the pre-check.
+    if ((error as { code?: string; message?: string })?.code === '23514'
+        && String((error as { message?: string })?.message ?? '').includes('studio_path is fixed')) {
+      return NextResponse.json({ error: 'studio_path_fixed' }, { status: 409 });
+    }
     console.error('[living-works] name failed', error);
     return NextResponse.json({ error: 'Could not save that name' }, { status: 500 });
   }
@@ -299,8 +409,22 @@ export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: 
        *unreferenced but retained* state WS-DELETE-01 forbids, restated by the
        founder for Work visuals on 2026-09-07. */
     const removed = await transaction(async (tx) => {
+      /* LOCK ORDER. eraseManuscript takes the recovery-capture advisory lock FIRST, then the Work row, then the image row afterwards, so
+         this takes all three in the SAME order. Taking the Work row before the advisory lock, or the image row (the read below is FOR
+         UPDATE) before the Work row, forms a real cycle with a Delete of the Work's writing: PostgreSQL breaks it by aborting one of the
+         two with a 500 for an act that did not happen. The advisory lock is unconditional (it is taken even for an id that is not this
+         member's), because a lock taken only after finding the row would come after a row lock on that path. It also means a Remove
+         waits, with no timeout, while anything else holds the key: a writing Delete holds it for its whole transaction, and eraseManuscript.ts
+         documents a coherent R20 backup as a holder too (no such backup caller is in this tree). A row that is not this member's, or is
+         already gone, ends at the next statement (404) without writing anything. */
+      await takeRecoveryCaptureLock(tx);
+      const owned = await tx.query<{ id: string }>(
+        `SELECT id FROM living_works WHERE id = $1 AND member_id = $2 FOR UPDATE`,
+        [id, memberId],
+      );
+      if (owned.rows.length === 0) return null;
       const visual = await tx.query<{ storage_path: string }>(
-        `SELECT storage_path FROM living_work_visuals WHERE living_work_id = $1 AND member_id = $2`,
+        `SELECT storage_path FROM living_work_visuals WHERE living_work_id = $1 AND member_id = $2 FOR UPDATE`,
         [id, memberId],
       );
       const gone = await tx.query<{ id: string }>(
@@ -309,17 +433,37 @@ export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: 
       );
       if (gone.rows.length === 0) return null;
 
+      /* The record of the removal, written only now that THIS statement really deleted the row (a lost race writes nothing), with the
+         id the DELETE returned and not the one from the URL. Same transaction: if it cannot be written the Work is not removed. */
+      await writeWorkDeletionRecord(tx, gone.rows[0].id, 'Writer Work removed by verified member request');
+
       const path = visual.rows[0]?.storage_path;
+      let queueId: string | null = null;
       if (path) {
-        await tx.query(`INSERT INTO vault_erasure_queue (artifact_ref) VALUES ($1)`, [path]);
+        const queued = await tx.query<{ id: string }>(
+          `INSERT INTO vault_erasure_queue (artifact_ref) VALUES ($1) RETURNING id`,
+          [path],
+        );
+        queueId = queued.rows[0]?.id ?? null;
       }
-      return { id: gone.rows[0].id, hadVisual: Boolean(path) };
+      return { id: gone.rows[0].id, queueId };
     });
 
     if (!removed) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
-    if (removed.hadVisual) await sweepVaultErasureQueue();
+    if (removed.queueId) {
+      await sweepVaultErasureQueue(100, [removed.queueId]);
+      /* Only THIS Work's image decides the answer: the queue is shared, and someone else's stuck row is not this member's. */
+      const stillOwed = await query<{ id: string }>(
+        `SELECT id FROM vault_erasure_queue WHERE id = $1`,
+        [removed.queueId],
+      );
+      if (stillOwed.rows.length > 0) {
+        console.error('[living-works] Work removed; its image bytes are still owed destruction');
+        return NextResponse.json({ removed: true, refusal: 'image_bytes_owed', unconfirmed: { image: true } }, { status: 500 });
+      }
+    }
     return NextResponse.json({ withdrawn: removed.id });
   } catch (error) {
     console.error('[living-works] withdraw failed', error);

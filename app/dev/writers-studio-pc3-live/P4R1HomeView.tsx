@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Shell } from '@/app/writers-studio/full-redesign/Shell';
 import { HOME_GEOMETRY } from '@/app/writers-studio/full-redesign/tokens';
 import { HOME_COPY, REMOVE_OR_DELETE } from '@/app/writers-studio/full-redesign/fixtures';
@@ -19,8 +19,16 @@ import type { MarkedLine } from '@/app/writers-studio/useMarkedLines';
 import type { StudioAct } from '@/app/writers-studio/studioHistory';
 import { sentenceFor } from '@/app/writers-studio/studioHistory';
 import P4R1WorkMaterialsSummary from './P4R1WorkMaterialsSummary';
+import { WritingDeleteConfirm } from './WritingDeleteConfirm';
+import { INITIAL_DOOR, useWorkDeleteDoor, writingDeleteKindFor, type DoorState } from './useWorkDeleteDoor';
+import { P4R1HistoryContainer } from './P4R1HistoryPage';
+import { NoticeList, useNoticeStack } from './useNoticeStack';
+import { DeletionNotice, DeletionSharedMaterial, DeletionUnconfirmed, deleteConfirmCopy, type ActResult } from '@/lib/writersStudio/deleteWork';
 import P4R1ProducePanel from './P4R1ProducePanel';
 import type { Appearance } from '@/app/writers-studio/full-redesign/types';
+import StudioInspirationOpening from './StudioInspirationOpening';
+import { STUDIO_PATHS, currentStage, studioPathById, type StudioPath } from '@/lib/writersStudio/studioPaths';
+import { INSPIRATION_COPY, LOOK_AROUND_COPY, MAX_SPARK_CHARS, returnGreeting, writtenFact } from '@/lib/writersStudio/inspirationOpening';
 
 function fixedDate(iso: string | null | undefined): string {
   if (!iso) return 'date not recorded';
@@ -39,6 +47,15 @@ function wordsFromChars(chars: number): number {
   return Math.max(0, Math.round(chars / 6));
 }
 
+/** What kind of Work this is, as the writer sees it on Home: its Studio program's own name first (e.g. "College essay"),
+ *  then the form they gave it, then "Work" (case study F4, 2026-11-16). */
+export function workKind(work: Pick<LivingWork, 'form' | 'studioPath' | 'studioStage'>): string {
+  const program = studioPathById(work.studioPath ?? null);
+  // A program Work also says where the writer has put it in the arc (founder 2026-11-16), e.g. "College essay · Meaning".
+  if (program) return `${program.name} · ${currentStage(program, work.studioStage).stage}`;
+  return work.form?.trim() || 'Work';
+}
+
 function workFacts(work: LivingWork, manuscripts: readonly CurrentManuscript[]): { extent: string; written: string } {
   const choices = manuscriptsForWork(work, manuscripts);
   if (choices.length > 1) {
@@ -55,9 +72,9 @@ function workFacts(work: LivingWork, manuscripts: readonly CurrentManuscript[]):
     extent: manuscript.sectionCount > 0
       ? `${manuscript.sectionCount} section${manuscript.sectionCount === 1 ? '' : 's'} · ~${words.toLocaleString()} words`
       : words > 0 ? `~${words.toLocaleString()} words` : 'No writing yet',
-    written: manuscript.lastMemberDraftActivityAt
+    written: writtenFact(manuscript.lastMemberDraftActivityAt
       ? `worked ${fixedDate(manuscript.lastMemberDraftActivityAt)}`
-      : 'no authored return date recorded',
+      : null),
   };
 }
 
@@ -67,30 +84,68 @@ function LiveWorkVisual({ workId, title }: { workId: string; title: string }) {
   return <img className="p4r1-home-work-image" src={visual.src} alt={`${title} — the image this Work carries`} />;
 }
 
-function WorkAnchor({ work, manuscripts, activity, onOpen, onStartWriting, busy }: {
+function WorkAnchor({ work, allWorks, manuscripts, activity, onOpen, onStartWriting, busy, produceInitially = false, onDeleteWork, onRemoveWork, onDeletionNotice, doorFor }: {
   work: LivingWork;
+  /** Every Work the member has: the hero Work is a Work like any other, with the same way to delete or remove it. */
+  allWorks: readonly LivingWork[];
+  onDeleteWork: (workId: string, manuscriptId: string | null) => Promise<ActResult | void>;
+  onRemoveWork: (workId: string) => Promise<ActResult | void>;
+  onDeletionNotice: (message: string, urgent?: boolean) => void;
+  /** This Work's delete/remove state lives in the page (keyed by Work id), so a re-read that moves the Work between cards loses nothing. */
+  doorFor: (workId: string) => { readonly state: DoorState; readonly update: (patch: Partial<DoorState>) => void };
   manuscripts: readonly CurrentManuscript[];
   activity: SectionActivity | null;
   onOpen: (manuscriptId: string, sectionId?: string) => void;
   onStartWriting: (workId: string) => void;
   busy: boolean;
+  produceInitially?: boolean;
 }) {
   const choices = manuscriptsForWork(work, manuscripts);
   const manuscript = choices.length === 1 ? choices[0] : null;
-  const [producing, setProducing] = useState(false);
+  const [producing, setProducing] = useState(produceInitially);
+  const hasWriting = choices.some((m) => homeWritingExtent(m) > 0);
+  const greeting = returnGreeting({ title: work.title?.trim() || 'Untitled Work', hasWriting, distinctPlace: activity?.kind === 'distinct' });
+
+  useEffect(() => {
+    if (produceInitially) setProducing(true);
+  }, [produceInitially]);
   const facts = workFacts(work, manuscripts);
   const title = work.title?.trim() || 'Untitled Work';
   const sectionId = activity?.kind === 'distinct' ? activity.sectionId : undefined;
   const hasManuscriptExpression = work.expressions.some((expression) => expression.expressionType === 'manuscript');
+  const del = useWorkDeleteDoor({ work, title, manuscripts, allWorks, ...doorFor(work.id), onDeleteWork, onRemoveWork, onDeletionNotice });
+  if (del.settled) {
+    return (
+      <section className="fr-home-anchor fr-home-return p4r1-home-anchor" data-field="anchor" data-removed>
+        <p role="status">{del.settled}</p>
+      </section>
+    );
+  }
+  if (del.dialog) {
+    return (
+      <section
+        className="fr-home-anchor fr-home-return p4r1-home-anchor"
+        data-field="anchor"
+        data-deleting-confirmation
+        {...(del.dialogKind === 'remove-shared' ? { 'data-shared-writing': '' } : {})}
+        {...(del.dialogKind === 'remove-many' ? { 'data-many-writings': '' } : {})}
+      >
+        {del.dialog}
+      </section>
+    );
+  }
   return (
     <section className="fr-home-anchor fr-home-return p4r1-home-anchor" data-field="anchor">
       <header className="fr-home-arrive">
-        <p className="fr-home-eyebrow">{HOME_COPY.returnEyebrow}</p>
-        <h1 className="fr-home-greeting">{HOME_COPY.returnWelcome(title)}</h1>
-        {activity?.kind === 'distinct' ? (
-          <p className="fr-home-place">Your last exact writing place is available.</p>
+        <p className="fr-home-eyebrow">{hasWriting ? HOME_COPY.returnEyebrow : 'Your Work'}</p>
+        {/* S5: "Welcome back… Pick up where you left off." only when something has been written (F15). */}
+        <h1 className="fr-home-greeting">{greeting.heading}</h1>
+        {!hasWriting ? (
+          <p className="fr-home-place" data-home-place="empty">{greeting.place}</p>
+        ) : activity?.kind === 'distinct' ? (
+          <p className="fr-home-place" data-home-place="distinct">Pick up where you left off.</p>
         ) : (
-          <p className="fr-home-place">Open this Work without inventing a more precise return place.</p>
+          <p className="fr-home-place" data-home-place="work">Open it and carry on.</p>
         )}
       </header>
       <div className="fr-home-recognize p4r1-home-recognize">
@@ -98,14 +153,14 @@ function WorkAnchor({ work, manuscripts, activity, onOpen, onStartWriting, busy 
         <div className="p4r1-home-work-copy">
           <span className="fr-home-chip fr-home-chip-work">Work</span>
           <h2>{title}</h2>
-          <p className="fr-home-kind">{work.form?.trim() || 'Work'}</p>
+          <p className="fr-home-kind" data-work-kind>{workKind(work)}</p>
           <p className="fr-home-facts">{facts.extent} <span className="fr-home-dot">·</span> {facts.written}</p>
           {work.purpose?.trim() ? <blockquote className="p4r1-home-purpose">“{work.purpose.trim()}”</blockquote> : null}
           {manuscript ? (
             <>
               <div className="fr-home-actions">
                 <button type="button" className="fr-home-primary" onClick={() => onOpen(manuscript.id, sectionId)}>
-                  {HOME_COPY.returnAction}
+                  {hasWriting ? HOME_COPY.returnAction : 'Begin writing'}
                 </button>
                 <button
                   type="button"
@@ -113,7 +168,7 @@ function WorkAnchor({ work, manuscripts, activity, onOpen, onStartWriting, busy 
                   aria-expanded={producing}
                   onClick={() => setProducing((value) => !value)}
                 >
-                  Finish / Produce
+                  Publish
                 </button>
               </div>
               {producing ? (
@@ -144,6 +199,7 @@ function WorkAnchor({ work, manuscripts, activity, onOpen, onStartWriting, busy 
               </span>
             </div>
           ) : null}
+          {del.door}
         </div>
       </div>
       <P4R1WorkMaterialsSummary work={work} />
@@ -151,25 +207,56 @@ function WorkAnchor({ work, manuscripts, activity, onOpen, onStartWriting, busy 
   );
 }
 
-function WorkShelfCard({ work, manuscripts, onOpen, onStartWriting, busy }: {
+function WorkShelfCard({ work, allWorks, manuscripts, onOpen, onStartWriting, busy, onDeleteWork, onRemoveWork, onDeletionNotice, doorFor }: {
   work: LivingWork;
+  /** Every Work the member has, as Home last read them. Whether the writing is STILL shared is derived from this on every render. */
+  allWorks: readonly LivingWork[];
   manuscripts: readonly CurrentManuscript[];
   onOpen: (manuscriptId: string) => void;
   onStartWriting: (workId: string) => void;
   busy: boolean;
+  /** Permanently deletes this Work and its one manuscript (WS-DELETE-01). Rejects with a member-facing message. */
+  onDeleteWork: (workId: string, manuscriptId: string | null) => Promise<ActResult | void>;
+  /** Removes this Work only, leaving its writing(s) where they are. Offered after a shared-writing refusal, and for a Work with several writings. */
+  onRemoveWork: (workId: string) => Promise<ActResult | void>;
+  /** The card is unmounted once the server has removed the Work, so a message the member must still see lives with the page, not here. */
+  onDeletionNotice: (message: string, urgent?: boolean) => void;
+  doorFor: (workId: string) => { readonly state: DoorState; readonly update: (patch: Partial<DoorState>) => void };
 }) {
   const choices = manuscriptsForWork(work, manuscripts);
   const manuscript = choices.length === 1 ? choices[0] : null;
   const facts = workFacts(work, manuscripts);
   const title = work.title?.trim() || 'Untitled Work';
   const hasManuscriptExpression = work.expressions.some((expression) => expression.expressionType === 'manuscript');
+  const del = useWorkDeleteDoor({ work, title, manuscripts, allWorks, ...doorFor(work.id), onDeleteWork, onRemoveWork, onDeletionNotice });
+  // The server removed this Work. Until the list is re-read (or if that read fails) the card says so and offers no door.
+  if (del.settled) {
+    return (
+      <article className="fr-home-workcard p4r1-home-workcard" data-removed style={{ display: 'block' }}>
+        <p role="status">{del.settled}</p>
+      </article>
+    );
+  }
+  if (del.dialog) {
+    return (
+      <article
+        className="fr-home-workcard p4r1-home-workcard"
+        data-deleting-confirmation
+        {...(del.dialogKind === 'remove-shared' ? { 'data-shared-writing': '' } : {})}
+        {...(del.dialogKind === 'remove-many' ? { 'data-many-writings': '' } : {})}
+        style={{ display: 'block' }}
+      >
+        {del.dialog}
+      </article>
+    );
+  }
   return (
     <article className="fr-home-workcard p4r1-home-workcard">
       <LiveWorkVisual workId={work.id} title={title} />
       <div>
         <span className="fr-home-chip fr-home-chip-work">Work</span>
         <h3>{title}</h3>
-        <p className="fr-home-kind">{work.form?.trim() || 'Work'}</p>
+        <p className="fr-home-kind" data-work-kind>{workKind(work)}</p>
         <p className="fr-home-facts">{facts.extent}<br />{facts.written}</p>
         {manuscript ? (
           <button type="button" className="fr-home-link" onClick={() => onOpen(manuscript.id)}>Open</button>
@@ -192,20 +279,40 @@ function WorkShelfCard({ work, manuscripts, onOpen, onStartWriting, busy }: {
             <span>Blank page. Materials stay where they are.</span>
           </div>
         ) : null}
+        {del.door}
       </div>
     </article>
   );
 }
 
-function WritingCard({ manuscript, works, onOpen, onMakeWork, onAddToWork }: {
+function WritingCard({ manuscript, works, onOpen, onMakeWork, onAddToWork, onAskDelete, deletion }: {
   manuscript: CurrentManuscript;
   works: readonly LivingWork[];
   onOpen: (id: string) => void;
   onMakeWork: (id: string, title: string | null) => void;
   onAddToWork: (manuscriptId: string, workId: string) => void;
+  onAskDelete: (id: string) => void;
+  deletion: { confirming: boolean; busy: boolean; error: string | null; onConfirm: () => void; onCancel: () => void };
 }) {
   const [choosing, setChoosing] = useState(false);
   const extent = homeWritingExtent(manuscript);
+  if (deletion.confirming) {
+    const writingTitle = manuscript.title?.trim() || 'Untitled writing';
+    const words = deleteConfirmCopy(writingDeleteKindFor(manuscript.id, works), writingTitle);
+    return (
+      <article className="fr-home-writing p4r1-home-writing" data-kind="writing" data-deleting-confirmation style={{ display: 'block' }}>
+        <WritingDeleteConfirm
+          title={writingTitle}
+          question={words.question}
+          body={words.body}
+          busy={deletion.busy}
+          error={deletion.error}
+          onConfirm={deletion.onConfirm}
+          onCancel={deletion.onCancel}
+        />
+      </article>
+    );
+  }
   return (
     <article className="fr-home-writing p4r1-home-writing" data-kind="writing">
       <span className="fr-home-page" aria-hidden="true">◇</span>
@@ -222,6 +329,7 @@ function WritingCard({ manuscript, works, onOpen, onMakeWork, onAddToWork }: {
           {works.length > 0 ? (
             <button type="button" className="fr-home-quiet" onClick={() => setChoosing((v) => !v)}>Add to a Work</button>
           ) : null}
+          <button type="button" className="fr-home-quiet p4r1-home-delete-open" onClick={() => onAskDelete(manuscript.id)}>Delete</button>
         </div>
         {choosing ? (
           <ul className="fr-home-chooser">
@@ -247,35 +355,132 @@ export interface P4R1HomeViewProps {
   historyActs: readonly StudioAct[];
   busy: boolean;
   error: string | null;
+  publishRequested: boolean;
   pendingMode: {
-    mode: 'write' | 'develop' | 'review';
+    mode: 'write' | 'develop' | 'review' | 'publish' | 'listen';
     manuscriptIds: readonly string[];
   } | null;
-  onMode: (mode: 'home' | 'write' | 'develop' | 'review') => void;
-  onChooseManuscript: (mode: 'write' | 'develop' | 'review', manuscriptId: string) => void;
+  onMode: (mode: 'home' | 'write' | 'develop' | 'review' | 'publish' | 'listen') => void;
+  onChooseManuscript: (mode: 'write' | 'develop' | 'review' | 'publish' | 'listen', manuscriptId: string) => void;
   onBegin: (title: string) => void;
   onOpen: (manuscriptId: string, sectionId?: string) => void;
   onMakeWork: (manuscriptId: string, title: string | null) => void;
   onAddToWork: (manuscriptId: string, workId: string) => void;
+  /** Permanently deletes one writing through the product's own erase (WS-DELETE-01). Rejects with a member-facing message. */
+  onDeleteWriting: (manuscriptId: string) => Promise<ActResult | void>;
+  /** Permanently deletes one Work with its manuscript through the same governed erase. */
+  onDeleteWork: (workId: string, manuscriptId: string | null) => Promise<ActResult | void>;
+  /** Removes one Work and keeps its writing, offered only when Delete was refused because another Work holds the same writing. */
+  onRemoveWork: (workId: string) => Promise<ActResult | void>;
   onStartWriting: (workId: string) => void;
+  /** JARVIS-WRITERS-STUDIO-INSPIRATION-OPENING-01: a first visit (no Works, no writing) opens on the Spark door. */
+  inspirationDoor?: boolean;
+  /** The writer chose where to begin from the door. `purpose` is exactly what sparkCommitPlan allowed, or null. */
+  onDoorBegin?: (destination: 'write' | 'import', purpose: string | null) => void;
+  /** "I don't know yet — look around" WITH a held spark: the Work is begun so the spark has somewhere to live. */
+  onDoorLookWithSpark?: (purpose: string) => void;
+  /** Studio paths: the environment the member's own link chose (`?path=`), shown at the door instead of the Spark question. */
+  studioPath?: StudioPath | null;
+  /** The member's Begin on a path: their title, their confirmation of each recommended setting, and any spark they held. */
+  onPathBegin?: (choice: { title: string; revisionsPausedConfirmed: boolean; purpose: string | null }) => void;
+  /** A member with Works chose a program on Home ("Start a college essay"): open that program's door. */
+  onStartPath?: (pathId: string) => void;
+  /** The member set the program door aside ("Look around first"): back to Home, the door closed. */
+  onLeavePath?: () => void;
+  /** Q3: later new Works carry one optional line, "What's calling this one?". */
+  onBeginWithSpark?: (title: string, spark: string) => void;
   onImport: () => void;
   onSources: () => void;
 }
 
 export default function P4R1HomeView(props: P4R1HomeViewProps) {
   const [beginning, setBeginning] = useState(false);
+  // The full History view lives inside Home, so Back is this view's own state: nothing Home was showing is reset.
+  const [viewingHistory, setViewingHistory] = useState(false);
   const [title, setTitle] = useState('');
+  // The Spark door is set aside by "I don't know yet" with nothing held: Home's ordinary threshold for this visit only.
+  const [doorSetAside, setDoorSetAside] = useState(false);
+  const [sparkLine, setSparkLine] = useState('');
+  const beginNewWork = () => {
+    if (sparkLine.trim() && props.onBeginWithSpark) props.onBeginWithSpark(title, sparkLine);
+    else props.onBegin(title);
+  };
+  // Only one deletion question is ever open: a confirmation the author has lost track of has stopped confirming anything.
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // What the page has to tell the member about a deletion, in the order it happened. A card that was removed is gone once the list
+  // is re-read, so what it had to say lives here, and a LATER notice can never replace an earlier one the member has not dismissed
+  // (a plain "was removed" must not erase an unacknowledged custody alert).
+  // Every Work's delete/remove state, by Work id (see DoorState).
+  const [doors, setDoors] = useState<Readonly<Record<string, DoorState>>>({});
+  const doorFor = (workId: string) => ({
+    state: doors[workId] ?? INITIAL_DOOR,
+    update: (patch: Partial<DoorState>) => setDoors((current) => ({ ...current, [workId]: { ...(current[workId] ?? INITIAL_DOOR), ...patch } })),
+  });
+  // The stack is shared with History (which is a view inside Home), so a message raised there is still here when the member goes back.
+  const noticeStack = useNoticeStack();
+  const showNotice = noticeStack.notify;
+  const deletionFor = (manuscriptId: string) => ({
+    confirming: confirmingDelete === manuscriptId,
+    busy: deletingId === manuscriptId,
+    error: confirmingDelete === manuscriptId ? deleteError : null,
+    onCancel: () => { if (!deletingId) { setConfirmingDelete(null); setDeleteError(null); } },
+    onConfirm: async () => {
+      if (deletingId) return;
+      setDeletingId(manuscriptId);
+      setDeleteError(null);
+      const writing = props.manuscripts.find((m) => m.id === manuscriptId)?.title?.trim() || 'Untitled writing';
+      try {
+        const result = await props.onDeleteWriting(manuscriptId);
+        setConfirmingDelete(null);
+        if (result && !result.refreshed) showNotice(`“${writing}” was deleted. We could not reload Home, so reload this page to see what is current.`, false);
+      } catch (err) {
+        // The card this question lives in may be gone by now (the re-read the act ran removed the writing from the loose list, or
+        // moved it into a Work), so anything the member must still hear goes to the page, not to a dialog that may no longer exist.
+        if (err instanceof DeletionUnconfirmed) {
+          setConfirmingDelete(null);
+          showNotice(`“${writing}”: ${err.message}`);
+          return;
+        }
+        if (err instanceof DeletionNotice || err instanceof DeletionSharedMaterial) {
+          setConfirmingDelete(null);
+          showNotice(`“${writing}”: ${err.message}`, false);
+          return;
+        }
+        setDeleteError(err instanceof Error ? err.message : 'That writing could not be deleted just now. Nothing was removed. Please try again.');
+      } finally {
+        setDeletingId(null);
+      }
+    },
+  });
 
   const claimed = useMemo(
     () => new Set(props.works.flatMap(manuscriptIdsOf)),
     [props.works],
   );
   const unclaimed = props.manuscripts.filter((m) => !claimed.has(m.id));
+  // ONE element, rendered once at the top of whichever layout the page falls into (including the welcome screen a member lands on
+  // after deleting their last Work). A custody message is an alert (announced at once); a plain confirmation is a status.
+  const deleteNoticeEl = noticeStack.notices.length > 0 ? <NoticeList stack={noticeStack} /> : null;
   // The mode-bar chooser keeps the order it was given (declaration order), never recency.
   const pendingManuscripts = props.pendingMode
     ? manuscriptsInOrder(props.pendingMode.manuscriptIds, props.manuscripts)
     : [];
   const recentHistory = props.historyActs.slice(0, 4).map(sentenceFor).filter((x): x is string => Boolean(x));
+
+  // History stays a short, plain list on Home; the full record (up to the route's maximum, deletable where the writing is
+  // still held) is one gesture away. The control is present even when the short list is empty, so a member is never left
+  // without a way in.
+  const historySection = (
+    <section className="fr-home-region p4r1-home-history">
+      <p className="fr-home-eyebrow">History</p>
+      {recentHistory.length > 0 ? <ol>{recentHistory.map((line, i) => <li key={i}>{line}</li>)}</ol> : null}
+      <button type="button" className="fr-home-quiet p4r1-home-history-all" onClick={() => setViewingHistory(true)}>
+        See all history
+      </button>
+    </section>
+  );
 
   const creationControls = (
     <section className="p4r1-home-create" aria-label="Start or bring writing">
@@ -286,17 +491,30 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
       {!beginning ? (
         <div className="fr-home-actions">
           <button type="button" className="fr-home-primary" onClick={() => setBeginning(true)}>New Work</button>
-          <button type="button" className="fr-home-quiet" onClick={props.onImport}>Upload / import writing</button>
+          <button type="button" className="fr-home-quiet" onClick={props.onImport}>Import writing</button>
           <button type="button" className="fr-home-quiet" onClick={props.onSources}>Notes &amp; sources</button>
+          {props.onStartPath ? STUDIO_PATHS.map((path) => (
+            <button key={path.id} type="button" className="fr-home-quiet" data-start-path={path.id}
+              onClick={() => props.onStartPath?.(path.id)}>{path.startLabel}</button>
+          )) : null}
         </div>
       ) : (
         <div className="p4r1-home-begin-form">
+          {/* Founder Q3 (2026-11-11): later new Works carry the opening question in one line. Leaving it empty is the skip. */}
+          {props.onBeginWithSpark ? (
+            <>
+              <label htmlFor="p4r1-work-spark">{INSPIRATION_COPY.nextWorkQuestion} <span className="wsio-optional">Optional. Leave it empty to skip.</span></label>
+              <div>
+                <input id="p4r1-work-spark" autoFocus value={sparkLine} maxLength={MAX_SPARK_CHARS} onChange={(e) => setSparkLine(e.target.value)} />
+              </div>
+            </>
+          ) : null}
           <label htmlFor="p4r1-work-title">Give the new Work a name, or leave it blank for now.</label>
           <div>
-            <input id="p4r1-work-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !props.busy) props.onBegin(title); if (e.key === 'Escape') setBeginning(false); }} />
-            <button type="button" className="fr-home-primary" disabled={props.busy} onClick={() => props.onBegin(title)}>
-              {props.busy ? 'Beginning…' : 'Begin'}
+            <input id="p4r1-work-title" autoFocus={!props.onBeginWithSpark} value={title} onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !props.busy) beginNewWork(); if (e.key === 'Escape') setBeginning(false); }} />
+            <button type="button" className="fr-home-primary" disabled={props.busy} onClick={beginNewWork}>
+              {props.busy ? 'Beginning…' : 'Start writing'}
             </button>
             <button type="button" className="fr-home-quiet" onClick={() => setBeginning(false)}>Cancel</button>
           </div>
@@ -311,7 +529,11 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
               ? 'Choose a manuscript to write'
               : props.pendingMode.mode === 'develop'
                 ? 'Choose a manuscript to develop'
-                : 'Choose a manuscript to review'
+                : props.pendingMode.mode === 'review'
+                  ? 'Choose a manuscript to review'
+                  : props.pendingMode.mode === 'publish'
+                    ? 'Choose a manuscript to publish'
+                    : 'Choose a manuscript to listen to'
           }
           onChoose={(id) => props.onChooseManuscript(props.pendingMode!.mode, id)}
         />
@@ -319,26 +541,67 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
     </section>
   );
 
+  const unclaimedWriting = unclaimed.length > 0 ? (
+    <section className="fr-home-region" aria-label="Writing not yet in a Work">
+      <p className="fr-home-here">{HOME_COPY.writingHere}</p>
+      <div className="fr-home-writing-list">
+        {unclaimed.map((manuscript) => (
+          <WritingCard key={manuscript.id} manuscript={manuscript} works={props.works}
+            onOpen={(id) => props.onOpen(id)} onMakeWork={props.onMakeWork} onAddToWork={props.onAddToWork}
+            onAskDelete={(id) => { setDeleteError(null); setConfirmingDelete(id); }} deletion={deletionFor(manuscript.id)} />
+        ))}
+      </div>
+    </section>
+  ) : null;
+
   let work: React.ReactNode;
   if (props.returnWork) {
     work = (
       <div className="fr-home fr-home-returning" data-home-return-work={props.returnWork.id}>
         <div className="fr-home-field" data-field="room">
-          {creationControls}
+          {deleteNoticeEl}
           <WorkAnchor
+            key={props.returnWork.id}
             work={props.returnWork}
             manuscripts={props.manuscripts}
             activity={props.returnActivity}
             onOpen={props.onOpen}
             onStartWriting={props.onStartWriting}
             busy={props.busy}
+            produceInitially={props.publishRequested}
+            allWorks={props.works}
+            onDeleteWork={props.onDeleteWork}
+            onRemoveWork={props.onRemoveWork}
+            onDeletionNotice={showNotice}
+            doorFor={doorFor}
           />
-          {recentHistory.length > 0 ? (
-            <section className="fr-home-region p4r1-home-history">
-              <p className="fr-home-eyebrow">History</p>
-              <ol>{recentHistory.map((line, i) => <li key={i}>{line}</li>)}</ol>
+          {unclaimedWriting}
+          {creationControls}
+          {/* Returning to one Work must never hide the writer's others: an
+              import placed in another Work was saved yet invisible on Home. */}
+          {props.works.some((item) => item.id !== props.returnWork!.id) ? (
+            <section className="fr-home-region" aria-label="Your other Works" data-home-other-works>
+              <p className="fr-home-eyebrow">Your other Works</p>
+              <div className="fr-home-shelf">
+                {props.works.filter((item) => item.id !== props.returnWork!.id).map((item) => (
+                  <WorkShelfCard
+                    key={item.id}
+                    work={item}
+                    manuscripts={props.manuscripts}
+                    onOpen={props.onOpen}
+                    onStartWriting={props.onStartWriting}
+                    onDeleteWork={props.onDeleteWork}
+                    onRemoveWork={props.onRemoveWork}
+                    onDeletionNotice={showNotice}
+                    doorFor={doorFor}
+                    allWorks={props.works}
+                    busy={props.busy}
+                  />
+                ))}
+              </div>
             </section>
           ) : null}
+          {historySection}
         </div>
       </div>
     );
@@ -346,13 +609,22 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
     work = (
       <div className="fr-home fr-home-begin">
         <div className="fr-home-field" data-field="room">
+          {deleteNoticeEl}
           <section className="fr-home-anchor fr-home-threshold" data-field="anchor">
-            <h1 className="fr-home-welcome">{HOME_COPY.beginWelcome}</h1>
+            {/* S5: arriving here from the door's "I don't know yet — look around" is not a demand to decide. */}
+            {doorSetAside
+              ? <h1 className="fr-home-welcome" data-look-around>{LOOK_AROUND_COPY.heading}</h1>
+              : <h1 className="fr-home-welcome">{HOME_COPY.beginWelcome}</h1>}
+            {doorSetAside && props.inspirationDoor ? (
+              <button type="button" className="wsio-link" data-look-around-back onClick={() => setDoorSetAside(false)}>
+                {LOOK_AROUND_COPY.back}
+              </button>
+            ) : null}
             {!beginning ? (
               <div className="fr-home-actions">
-                <button type="button" className="fr-home-primary" onClick={() => setBeginning(true)}>Begin a new Work</button>
-                <button type="button" className="fr-home-quiet" onClick={props.onImport}>Upload / import writing</button>
-                <button type="button" className="fr-home-quiet" onClick={props.onSources}>Bring notes &amp; sources</button>
+                <button type="button" className="fr-home-primary" onClick={() => setBeginning(true)}>Start writing</button>
+                <button type="button" className="fr-home-quiet" onClick={props.onImport}>Import writing</button>
+                <button type="button" className="fr-home-quiet" onClick={props.onSources}>Notes &amp; sources</button>
               </div>
             ) : (
               <div className="p4r1-home-begin-form">
@@ -361,7 +633,7 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
                   <input id="p4r1-work-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !props.busy) props.onBegin(title); if (e.key === 'Escape') setBeginning(false); }} />
                   <button type="button" className="fr-home-primary" disabled={props.busy} onClick={() => props.onBegin(title)}>
-                    {props.busy ? 'Beginning…' : 'Begin'}
+                    {props.busy ? 'Beginning…' : 'Start writing'}
                   </button>
                   <button type="button" className="fr-home-quiet" onClick={() => setBeginning(false)}>Cancel</button>
                 </div>
@@ -377,38 +649,72 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
     work = (
       <div className="fr-home fr-home-returning">
         <div className="fr-home-field" data-field="room">
-          {creationControls}
+          {deleteNoticeEl}
           <WorkAnchor
+            key={props.arrival.resume.id}
             work={props.arrival.resume}
             manuscripts={props.manuscripts}
             activity={props.resumeActivity}
             onOpen={props.onOpen}
             onStartWriting={props.onStartWriting}
             busy={props.busy}
+            allWorks={props.works}
+            onDeleteWork={props.onDeleteWork}
+            onRemoveWork={props.onRemoveWork}
+            onDeletionNotice={showNotice}
+            doorFor={doorFor}
           />
+          {unclaimedWriting}
+          {creationControls}
           {props.arrival.alsoWritten.length > 0 ? (
             <section className="fr-home-region">
               <p className="fr-home-eyebrow">Also written</p>
               <div className="fr-home-shelf">
                 {props.arrival.alsoWritten.map((item) => (
                   <WorkShelfCard
-  key={item.id}
-  work={item}
-  manuscripts={props.manuscripts}
-  onOpen={props.onOpen}
-  onStartWriting={props.onStartWriting}
-  busy={props.busy}
-/>
+                    key={item.id}
+                    work={item}
+                    manuscripts={props.manuscripts}
+                    onOpen={props.onOpen}
+                    onStartWriting={props.onStartWriting}
+                    onDeleteWork={props.onDeleteWork}
+                    onRemoveWork={props.onRemoveWork}
+                    onDeletionNotice={showNotice}
+                    doorFor={doorFor}
+                    allWorks={props.works}
+                    busy={props.busy}
+                  />
                 ))}
               </div>
             </section>
           ) : null}
-          {recentHistory.length > 0 ? (
-            <section className="fr-home-region p4r1-home-history">
-              <p className="fr-home-eyebrow">History</p>
-              <ol>{recentHistory.map((line, i) => <li key={i}>{line}</li>)}</ol>
+          {/* The rest of the writer's Works. arrivalFor() puts every Work beyond
+              the three most recently written (and every Work with no authored
+              writing yet, such as an import) in `shelf`; this layout rendered
+              none of it, so a saved import was invisible on Home. */}
+          {props.arrival.shelf.length > 0 ? (
+            <section className="fr-home-region" aria-label="Your other Works" data-home-shelf>
+              <p className="fr-home-eyebrow">Your other Works</p>
+              <div className="fr-home-shelf">
+                {props.arrival.shelf.map((item) => (
+                  <WorkShelfCard
+                    key={item.id}
+                    work={item}
+                    manuscripts={props.manuscripts}
+                    onOpen={props.onOpen}
+                    onStartWriting={props.onStartWriting}
+                    onDeleteWork={props.onDeleteWork}
+                    onRemoveWork={props.onRemoveWork}
+                    onDeletionNotice={showNotice}
+                    doorFor={doorFor}
+                    allWorks={props.works}
+                    busy={props.busy}
+                  />
+                ))}
+              </div>
             </section>
           ) : null}
+          {historySection}
         </div>
       </div>
     );
@@ -416,29 +722,39 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
     work = (
       <div className="fr-home fr-home-unclaimed">
         <div className="fr-home-field" data-field="room">
-          {creationControls}
+          {deleteNoticeEl}
           <p className="fr-home-here">{HOME_COPY.writingHere}</p>
           <div className="fr-home-writing-list">
             {unclaimed.map((manuscript) => (
               <WritingCard key={manuscript.id} manuscript={manuscript} works={props.works}
-                onOpen={(id) => props.onOpen(id)} onMakeWork={props.onMakeWork} onAddToWork={props.onAddToWork} />
+                onOpen={(id) => props.onOpen(id)} onMakeWork={props.onMakeWork} onAddToWork={props.onAddToWork}
+            onAskDelete={(id) => { setDeleteError(null); setConfirmingDelete(id); }} deletion={deletionFor(manuscript.id)} />
             ))}
           </div>
+          {creationControls}
           {props.works.length > 0 ? (
             <section className="fr-home-region">
               <p className="fr-home-eyebrow">Your Works</p>
               <div className="fr-home-shelf">
-                {props.works.map((item) => <WorkShelfCard
-  key={item.id}
-  work={item}
-  manuscripts={props.manuscripts}
-  onOpen={props.onOpen}
-  onStartWriting={props.onStartWriting}
-  busy={props.busy}
-/>)}
+                {props.works.map((item) => (
+                  <WorkShelfCard
+                    key={item.id}
+                    work={item}
+                    manuscripts={props.manuscripts}
+                    onOpen={props.onOpen}
+                    onStartWriting={props.onStartWriting}
+                    onDeleteWork={props.onDeleteWork}
+                    onRemoveWork={props.onRemoveWork}
+                    onDeletionNotice={showNotice}
+                    doorFor={doorFor}
+                    allWorks={props.works}
+                    busy={props.busy}
+                  />
+                ))}
               </div>
             </section>
           ) : null}
+          {historySection}
         </div>
       </div>
     );
@@ -446,22 +762,123 @@ export default function P4R1HomeView(props: P4R1HomeViewProps) {
     work = (
       <div className="fr-home fr-home-many">
         <div className="fr-home-field" data-field="room">
-          {creationControls}
+          {deleteNoticeEl}
           <section className="fr-home-region">
             <p className="fr-home-eyebrow">Your Works</p>
             <div className="fr-home-shelf fr-home-shelf-4">
-              {props.works.map((item) => <WorkShelfCard
-  key={item.id}
-  work={item}
-  manuscripts={props.manuscripts}
-  onOpen={props.onOpen}
-  onStartWriting={props.onStartWriting}
-  busy={props.busy}
-/>)}
+              {props.works.map((item) => (
+                <WorkShelfCard
+                  key={item.id}
+                  work={item}
+                  manuscripts={props.manuscripts}
+                  onOpen={props.onOpen}
+                  onStartWriting={props.onStartWriting}
+                  onDeleteWork={props.onDeleteWork}
+                  onRemoveWork={props.onRemoveWork}
+                  onDeletionNotice={showNotice}
+                  doorFor={doorFor}
+                  allWorks={props.works}
+                  busy={props.busy}
+                />
+              ))}
             </div>
           </section>
+          {creationControls}
+          {historySection}
         </div>
       </div>
+    );
+  }
+
+  // A writer who chooses New Work enters a quiet threshold, not a form
+  // squeezed beside the Work they just left. Home data stays available and
+  // reappears on Cancel; no manuscript is modified or silently reselected.
+  if (beginning && props.arrival.kind !== 'begin') {
+    work = (
+      <div className="fr-home fr-home-new-work">
+        <div className="fr-home-field" data-field="room">
+          {creationControls}
+        </div>
+      </div>
+    );
+  }
+
+  /* A program door for a member who already has Works (their own link, or "Start a college essay" on Home). The first-visit
+     door below already covers a member with nothing yet. Every Begin creates a NEW Work; existing Works are untouched. */
+  if (props.studioPath && props.onPathBegin && !props.inspirationDoor) {
+    return (
+      <Shell
+        mode="home"
+        appearance={props.appearance}
+        geometry={HOME_GEOMETRY}
+        memberInitial=""
+        threshold
+        work={
+          <StudioInspirationOpening
+            busy={props.busy}
+            error={props.error}
+            onBegin={(_destination, purpose) => {
+              // "Look around first": a spark the writer chose to hold is never dropped (the same rule as the first-visit door).
+              if (purpose !== null && props.onDoorLookWithSpark) props.onDoorLookWithSpark(purpose);
+              else props.onLeavePath?.();
+            }}
+            onJustWrite={() => props.onBegin('')}
+            onHavePages={props.onImport}
+            studioPath={props.studioPath}
+            onPathBegin={props.onPathBegin}
+          />
+        }
+      />
+    );
+  }
+
+  if (props.inspirationDoor && !doorSetAside && props.arrival.kind === 'begin' && props.onDoorBegin) {
+    const onDoorBegin = props.onDoorBegin;
+    return (
+      <Shell
+        mode="home"
+        appearance={props.appearance}
+        geometry={HOME_GEOMETRY}
+        memberInitial=""
+        threshold
+        work={
+          <StudioInspirationOpening
+            busy={props.busy}
+            error={props.error}
+            onBegin={(destination, purpose) => {
+              if (destination !== 'look') onDoorBegin(destination, purpose);
+              else if (purpose !== null && props.onDoorLookWithSpark) props.onDoorLookWithSpark(purpose);
+              else setDoorSetAside(true);
+            }}
+            onJustWrite={() => props.onBegin('')}
+            onHavePages={props.onImport}
+            studioPath={props.studioPath ?? null}
+            onPathBegin={props.onPathBegin}
+          />
+        }
+      />
+    );
+  }
+
+  if (viewingHistory) {
+    return (
+      <Shell
+        mode="home"
+        appearance={props.appearance}
+        geometry={HOME_GEOMETRY}
+        memberInitial=""
+        onSelectMode={(mode) => { if (mode === 'home') setViewingHistory(false); else props.onMode(mode); }}
+        work={
+          <P4R1HistoryContainer
+            manuscripts={props.manuscripts}
+            works={props.works}
+            onOpen={(id) => props.onOpen(id)}
+            onDeleteWriting={props.onDeleteWriting}
+            noticeStack={noticeStack}
+            onBack={() => setViewingHistory(false)}
+          />
+        }
+      />
     );
   }
 

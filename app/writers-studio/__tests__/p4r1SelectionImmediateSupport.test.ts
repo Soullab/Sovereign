@@ -1,9 +1,23 @@
+import * as ts from 'typescript';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pc3Paragraphs } from '@/app/writers-studio/full-redesign/liveWriteAdapter';
 
 const ROOT = process.cwd();
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+
+
+function findNode(source: string, predicate: (node: ts.Node) => boolean): {file: ts.SourceFile; node: ts.Node} {
+  const file=ts.createSourceFile('review.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  const found:ts.Node[]=[];
+  const visit=(node:ts.Node)=>{if(predicate(node))found.push(node);ts.forEachChild(node,visit);};visit(file);
+  expect(found).toHaveLength(1);return {file,node:found[0]!};
+}
+function evaluateExpression(expression: string, bindings: Record<string, unknown>): any {
+  const output=ts.transpileModule('const actual = '+expression+';',{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+  const requireOnlyJsx=(name:string)=>{if(name!=='react/jsx-runtime')throw Error('Unexpected review import '+name);return require(name);};
+  return Function('require','exports',...Object.keys(bindings),output+';return actual;')(requireOnlyJsx,{},...Object.values(bindings));
+}
 
 describe('Writer Studio immediate manuscript-selection support', () => {
   const writeView = read('app/dev/writers-studio-pc3-live/P4R1Pc3WriteEditView.tsx');
@@ -24,11 +38,36 @@ describe('Writer Studio immediate manuscript-selection support', () => {
     expect(css).toContain("p[data-write-block='subhead']");
   });
 
+  it('⭐ founder direction 2026-11-12: with the conversation in the centre, going to a place brings the manuscript back (an unsent draft is asked about)', () => {
+    const {file,node}=findNode(writeView,n=>ts.isVariableDeclaration(n)&&n.name.getText()==='go');
+    const callback=((node as ts.VariableDeclaration).initializer as ts.CallExpression).arguments[0]!.getText(file);
+    const setWorkConversationOpen=jest.fn(),setWorkConversationStarter=jest.fn(),setRailSelectionId=jest.fn();
+    const props={writing:{activeId:'current',goToSection:jest.fn()},context:{sections:[{draftSectionId:'current'}]},onFocusSection:jest.fn()};
+    let leave=false;
+    const go=evaluateExpression(callback,{props,setRailSelectionId,requestCraftDeparture:jest.fn(),workConversationOpen:true,requestConversationDeparture:()=>leave,setWorkConversationOpen,setWorkConversationStarter});
+    go('current');
+    expect(setWorkConversationOpen).not.toHaveBeenCalled();expect(setRailSelectionId).not.toHaveBeenCalled();
+    leave=true;go('current');
+    expect(setWorkConversationOpen).toHaveBeenCalledWith(false);expect(setRailSelectionId).toHaveBeenCalledWith('current');
+  });
   it('treats a Write rail choice as an attentional act even when it is already open', () => {
-    expect(writeView).toContain('setRailSelectionId(sectionId);');
-    expect(writeView.indexOf('setRailSelectionId(sectionId);')).toBeLessThan(
-      writeView.indexOf('if (sectionId === props.writing.activeId) return;'),
-    );
+    const {file,node}=findNode(writeView,n=>ts.isVariableDeclaration(n)&&n.name.getText()==='go');
+    const initializer=(node as ts.VariableDeclaration).initializer as ts.CallExpression;
+    const callback=initializer.arguments[0]!.getText(file);
+    const setRailSelectionId=jest.fn(),goToSection=jest.fn(),onFocusSection=jest.fn();
+    let deferred:(()=>void)|null=null;
+    const requestCraftDeparture=jest.fn((_label:string,act:()=>void)=>{deferred=act;});
+    const props={writing:{activeId:'current',goToSection},context:{sections:[{draftSectionId:'current'},{draftSectionId:'next'}]},onFocusSection};
+    const go=evaluateExpression(callback,{props,setRailSelectionId,requestCraftDeparture,workConversationOpen:false,requestConversationDeparture:()=>true,setWorkConversationOpen:jest.fn(),setWorkConversationStarter:jest.fn()});
+    go('current');
+    expect(setRailSelectionId).toHaveBeenCalledWith('current');expect(requestCraftDeparture).not.toHaveBeenCalled();expect(goToSection).not.toHaveBeenCalled();expect(onFocusSection).not.toHaveBeenCalled();
+    go('next');expect(requestCraftDeparture).toHaveBeenCalledTimes(1);expect(goToSection).not.toHaveBeenCalled();
+    expect(deferred).not.toBeNull();(deferred as unknown as ()=>void)();
+    expect(goToSection).toHaveBeenCalledWith('next');expect(onFocusSection).toHaveBeenCalledWith('next');
+    goToSection.mockClear();onFocusSection.mockClear();setRailSelectionId.mockClear();
+    go('next');props.context.sections=[{draftSectionId:'current'}];(deferred as unknown as ()=>void)();
+    expect(goToSection).not.toHaveBeenCalled();expect(onFocusSection).not.toHaveBeenCalled();expect(setRailSelectionId).not.toHaveBeenCalled();
+    requestCraftDeparture.mockClear();go(null);expect(requestCraftDeparture).not.toHaveBeenCalled();
     expect(writeRoom).toContain('if (onOpenChapter) {');
     expect(writeRoom).toContain('onOpenChapter(c.id);');
     expect(writeView).toContain('WRITE_RELATIONAL_GEOMETRY');
@@ -43,8 +82,10 @@ describe('Writer Studio immediate manuscript-selection support', () => {
     expect(developController).toContain("kind: 'section'");
   });
 
-  it('replaces the generic overview with immediate selected-place support', () => {
-    expect(developView).toContain('setRailSelectionId(sectionId);');
+  it('uses the relational locus overlay for subsections but lets chapter roots reveal chapter review', () => {
+    expect(developView).toContain('const selectsChapterRoot = chapter?.root.draftSectionId === sectionId');
+    expect(developView).toContain('setRailSelectionId(selectsChapterRoot ? null : sectionId)');
+    expect(developView).toContain('ChapterReviewPanel own it');
     expect(developView).toContain('data-develop-locus=');
     expect(developView).toContain('Chapter selected');
     expect(developView).toContain('Section selected');

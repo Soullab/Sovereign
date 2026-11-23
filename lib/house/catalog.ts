@@ -20,7 +20,7 @@ export const HOUSE_PLACES = [
   { id:'community', label:'Community', purpose:'Find shared spaces, circles, and people you are connected with.', href:'/commons?from=house', mark:'◉', tone:'blue', group:'practice', aliases:['commons','circles','gatherings','network'], centerEligible:true },
   { id:'studio', label:'Vision Studio', purpose:'Turn an emerging possibility into a vision you can work with.', href:'/maia/vision-studio?from=house', mark:'◇', tone:'gold', group:'create', aliases:['vision','future','possibility','imagine'], centerEligible:true },
   { id:'decisions', label:'Decisions', purpose:'Think through a choice with perspective', href:'/decisions', mark:'⧉', tone:'gold', group:'reflect', aliases:['decision council','choice','choose'], centerEligible:true },
-  { id:'astrology', label:'Astrology', purpose:'Meet pattern, timing and symbolic ecology', href:'/astrology?from=house', mark:'◉', tone:'blue', group:'reflect', aliases:['transits','chart','cycles'], centerEligible:true },
+  { id:'astrology', label:'Free Astrology', purpose:'Explore your personal birth chart and current sky.', href:'/astrology?from=house', mark:'◉', tone:'blue', group:'reflect', aliases:['transits','chart','cycles'], centerEligible:true },
   { id:'journal', label:'Journal', purpose:'Write what you have lived', href:'/journal?from=house', mark:'▯', tone:'slate', group:'reflect', aliases:['journaling','notes','diary'], centerEligible:true },
   { id:'dream', label:'Dream', purpose:'Remember and explore what visits in sleep', href:'/dream?from=house', mark:'◌', tone:'violet', group:'reflect', aliases:['dreams','dreamwork','sleep','unconscious'], centerEligible:true },
   { id:'reflections', label:'Reflections', purpose:'Return to what you have lived, written and kept', href:'/reflections?from=house', mark:'◇', tone:'violet', group:'reflect', aliases:['keeps','review','remember'], centerEligible:true },
@@ -31,6 +31,7 @@ export const HOUSE_PLACES = [
   { id:'divination', label:'Divination', purpose:'Meet a question through symbolic practice', href:'/oracle', mark:'✧', tone:'violet', group:'reflect', aliases:['oracle','cards','symbols'], centerEligible:true },
   { id:'living-field', label:'Living Field', purpose:'See the larger whole and its relationships', href:'/maia/living-field?from=house', mark:'∞', tone:'blue', group:'reflect', aliases:['field','whole','patterns'], centerEligible:true },
   { id:'co-lab', label:'Co-lab', purpose:'Shared work and conversation', href:'/team/for-you', mark:'◎', tone:'blue', group:'practice', aliases:['collaboration','team','network'], centerEligible:true },
+  { id:'pro-studio', label:'Pro Studio', purpose:'Your practice workspace — people, sessions and continuity', href:'/pro-studio', mark:'◈', tone:'gold', group:'practice', aliases:['practice','practitioner','studio','practice portal','clients','sessions'], centerEligible:true },
   { id:'anchor', label:'Daily Anchor', purpose:'Stay connected to one thread in today', href:'/maia/anchor?from=house', mark:'●', tone:'green', group:'practice', aliases:['daily anchor','center','return'], centerEligible:true },
 ] as const satisfies readonly HousePlace[];
 

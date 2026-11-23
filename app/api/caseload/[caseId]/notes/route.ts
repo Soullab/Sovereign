@@ -17,6 +17,7 @@ import { CaseStore } from '@/lib/caseload/CaseStore';
 import { CaseMemoryService } from '@/lib/caseload/CaseMemoryService';
 import { CasePatternService } from '@/lib/caseload/CasePatternService';
 import type { CreateNoteInput, NoteListFilters } from '@/lib/caseload/types';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 interface RouteParams {
   params: Promise<{ caseId: string }>;
@@ -27,8 +28,9 @@ interface RouteParams {
  *
  * List notes for a case with optional filters.
  *
+ * The practitioner is the SESSION member (a `memberId` query param is ignored).
+ *
  * Query params:
- * - memberId (required): Practitioner's member ID
  * - type: Filter by note type (session, observation, etc.)
  * - element: Filter by element focus
  * - from_date: Filter by session date (from)
@@ -42,16 +44,11 @@ export async function GET(request: NextRequest, context: RouteParams) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await context.params;
     const { searchParams } = new URL(request.url);
-    const memberId = searchParams.get('memberId');
-
-    if (!memberId) {
-      return NextResponse.json(
-        { error: 'memberId required' },
-        { status: 400 }
-      );
-    }
 
     // Verify case exists and belongs to practitioner
     const caseData = await CaseStore.getCase(caseId, memberId);
@@ -93,8 +90,9 @@ export async function GET(request: NextRequest, context: RouteParams) {
  *
  * Create a new case note.
  *
+ * The practitioner is the SESSION member (a `memberId` in the body is ignored).
+ *
  * Body:
- * - memberId (required): Practitioner's member ID
  * - note_type (required): session, observation, consultation, progress, intake, discharge, supervision
  * - content (required): Note content
  * - session_date: Date of session (defaults to today)
@@ -107,16 +105,11 @@ export async function GET(request: NextRequest, context: RouteParams) {
  */
 export async function POST(request: NextRequest, context: RouteParams) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await context.params;
-    const body = await request.json();
-    const { memberId, ...noteInput } = body;
-
-    if (!memberId) {
-      return NextResponse.json(
-        { error: 'memberId required' },
-        { status: 400 }
-      );
-    }
+    const noteInput = await request.json();
 
     if (!noteInput.note_type) {
       return NextResponse.json(

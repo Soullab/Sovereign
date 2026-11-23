@@ -46,21 +46,26 @@ describe('C2 editorial dance convergence', () => {
   });
 
   it('makes progressive craft depth real MAIA acts, not decorative toggles', () => {
-    expect(dance).toContain('Teach me why this editorial direction works or does not work in this exact passage.');
+    expect(dance).toContain("props.onSend(teachingQuestion('direction'), { teachingAnchor: 'direction' })");
     expect(dance).toContain('Go deeper on this editorial direction.');
     expect(dance).toContain('props.onSend([');
     expect(dance).toContain('props.lastMaiaTurn?.body');
   });
 
   it('uses one quiet selection affordance instead of the old multi-button ribbon', () => {
-    expect(host).toContain('Work with passage');
+    // Doors ruling (founder, 2026-11-05): one door — the writer's own words or three choices.
+    expect(host).toContain('Talk with MAIA');
     expect(host).toContain('p4r1-selection-menu');
-    expect(host).toContain('<b>Focus</b>');
-    expect(host).toContain('<b>Revise</b>');
-    expect(host).toContain('<b>Discuss</b>');
-    expect(host).toContain('Discuss what is happening in this exact passage with me before proposing any edits.');
-    expect(host).toContain('<b>Teach me</b>');
-    expect(host).toContain('<b>Go deeper</b>');
+    expect(host).toContain('data-passage-ask');
+    expect(host).toContain('What’s happening here?');
+    expect(host).toContain('Show me an edit');
+    expect(host).toContain('Teach me the craft');
+    // The choices store only their words; the instruction is server-owned.
+    expect(host).toContain("prompt: passageActQuestion('discuss'),");
+    expect(host).toContain("options: { proposalPolicy: 'reply_only', passageAct: 'discuss' }");
+    for (const retired of ['<b>Focus</b>', '<b>Revise</b>', '<b>Discuss</b>', '<b>Teach me about this</b>', '<b>Go deeper</b>', '<b>{morePassageOptions']) {
+      expect(host).not.toContain(retired);
+    }
     expect(host).not.toContain('className="p4r1-locus-actions"');
   });
 

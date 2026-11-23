@@ -33,7 +33,39 @@ describe('Writer Studio manuscript typesetting', () => {
     expect(words(blocks.map((b) => b.text).join(' '))).toBe(words(body));
   });
 
-  it('renders likely PDF folios as their own quiet block instead of burying them in prose', () => {
+  it('preserves finished-manuscript paragraph lines before falling back to PDF-wrap inference', () => {
+    const body = [
+      'A finished manuscript paragraph can already arrive as one complete authored line, with its own ending punctuation and no blank-line separator between paragraphs.',
+      'The next authored paragraph is likewise complete and should remain visibly distinct rather than being merged merely because the source is already clean prose.',
+      'A third finished paragraph confirms this is an authored-paragraph profile rather than a sequence of soft PDF wraps that need reconstruction.',
+    ].join('\n');
+    const blocks = typesetManuscriptBody(body);
+    expect(blocks.map((b) => b.kind)).toEqual(['paragraph', 'paragraph', 'paragraph']);
+    expect(blocks).toHaveLength(3);
+    expect(blocks.map((b) => b.text).join('\n')).toBe(body);
+    expect(words(blocks.map((b) => b.text).join(' '))).toBe(words(body));
+  });
+
+  it('keeps a standalone number separate (but authored, not a folio) when the source is not PDF-hard-wrapped', () => {
+    const body = [
+      'A short paragraph ends here.',
+      '161',
+      'The following paragraph begins on the next source page.',
+    ].join('\n');
+    const blocks = typesetManuscriptBody(body);
+    expect(blocks.some((b) => b.kind === 'paragraph' && b.text === '161')).toBe(true);
+    expect(blocks.some((b) => b.kind === 'folio')).toBe(false);
+    expect(blocks.map((b) => b.text).join('\n')).toBe(body);
+    expect(words(blocks.map((b) => b.text).join(' '))).toBe(words(body));
+  });
+
+  it('recognizes markdown-wrapped quotations as epigraphs without changing their source text', () => {
+    const body = '*"To be spiritual means essentially to take responsibility for our inner journey." – Wayne Teasdale*';
+    const blocks = typesetManuscriptBody(body);
+    expect(blocks).toEqual([{ text: body, kind: 'epigraph' }]);
+  });
+
+  it('keeps unproven PDF-looking numbers as authored paragraphs, separately readable', () => {
     const body = [
       'A long typeset line continues across the page with enough characters to establish the normal measure.',
       'Another long typeset line continues across the page with enough characters to establish the measure.',
@@ -41,6 +73,17 @@ describe('Writer Studio manuscript typesetting', () => {
       'The next page continues with another long typeset line carrying the writer’s actual manuscript text.',
     ].join('\n');
     const blocks = typesetManuscriptBody(body);
-    expect(blocks.some((b) => b.kind === 'folio' && b.text === '161')).toBe(true);
+    expect(blocks.some((b) => b.kind === 'paragraph' && b.text === '161')).toBe(true);
+    expect(blocks.some((b) => b.kind === 'folio')).toBe(false);
+    expect(words(blocks.map((b) => b.text).join(' '))).toBe(words(body));
+  });
+
+  it('does not demote an authored standalone year or leading-zero number to a folio', () => {
+    const body = 'In the year\n\n2026\n\nwe returned.\n\nThe code was\n\n007\n\nand it mattered.';
+    const blocks = typesetManuscriptBody(body);
+    expect(blocks.filter((b) => b.text === '2026' || b.text === '007'))
+      .toEqual([{ text: '2026', kind: 'paragraph' }, { text: '007', kind: 'paragraph' }]);
+    expect(blocks.some((b) => b.kind === 'folio')).toBe(false);
+    expect(words(blocks.map((b) => b.text).join(' '))).toBe(words(body));
   });
 });

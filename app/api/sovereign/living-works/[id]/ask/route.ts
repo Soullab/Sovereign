@@ -8,7 +8,10 @@
  * ⛔ Declared Source/Idea bodies do not cross here merely because they belong
  * to the Work. This ordinary conversation receives Work declarations + C14.
  */
+import { withoutProvenance } from '@/lib/disclosure/readingReceiptProjection';
+import { isPostureDeclaration, resolveStudioPosture, type KeepWitness } from '@/lib/sanctuary/studioPosture';
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForWork, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import {
   appendTurn,
@@ -21,6 +24,9 @@ import { askMaia } from '@/lib/manuscript/ask/askReader';
 import { buildLivingWorkOnlyContext } from '@/lib/manuscript/ask/workContext';
 import { isHeldRetry, historyFor } from '@/lib/manuscript/ask/retry';
 import { workContextFingerprint } from '@/lib/writersStudio/workContextFingerprint';
+import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
+import { conversationProgram, conversationProgramInstructions } from '@/lib/manuscript/editorialRuntime/workRevisionPause';
+import { currentStage, studioPathById } from '@/lib/writersStudio/studioPaths';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +53,8 @@ export async function GET(
     if (!thread || thread.livingWorkId !== workId) {
       return NextResponse.json({ refusal: 'not_found' }, { status: 404 });
     }
-    return NextResponse.json({ thread });
+    /* Package C (R20 decision 3): raw answer provenance never goes to the browser. */
+    return NextResponse.json({ thread: thread && withoutProvenance(thread) });
   }
 
   return NextResponse.json({
@@ -55,7 +62,7 @@ export async function GET(
   });
 }
 
-export async function POST(
+async function postHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -73,7 +80,7 @@ export async function POST(
     return NextResponse.json({ refusal: 'malformed' }, { status: 400 });
   }
   const body = raw as Record<string, unknown>;
-  const allowed = new Set(['question', 'threadId']);
+  const allowed = new Set(['question', 'threadId', 'sanctuary']);
   if (Object.keys(body).some((key) => !allowed.has(key))) {
     return NextResponse.json({ refusal: 'malformed', detail: 'unknown field' }, { status: 400 });
   }
@@ -85,6 +92,19 @@ export async function POST(
   if (question.length > MAX_QUESTION) {
     return NextResponse.json({ refusal: 'question_too_long' }, { status: 413 });
   }
+
+  /* ⭐⭐ SANCTUARY CLOSURE (founder ruling 2026-11-09): a turn is kept ONLY when the request DECLARED an ordinary posture. Sanctuary, or a
+     posture the client could not read (undeclared), answers in the moment and keeps nothing: no thread opened, no turn written. */
+  if (body.sanctuary !== undefined && !isPostureDeclaration(body.sanctuary)) {
+    return NextResponse.json({ refusal: 'malformed', detail: 'sanctuary' }, { status: 400 });
+  }
+  const studioPosture = await resolveStudioPosture(memberId, body);
+  const storing = studioPosture.keep;
+  bindMaiaMeter(memberId, { sanctuary: studioPosture.sanctuary === true });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForWork(memberId, workId); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
+  /* The store refuses any write without this witness; it exists only when storing is true. */
+  const keep = studioPosture.witness as KeepWitness;
 
   const requestedThreadId = typeof body.threadId === 'string' ? body.threadId : null;
   const existing = requestedThreadId
@@ -116,16 +136,16 @@ export async function POST(
     return NextResponse.json({ refusal: built.reason }, { status: 422 });
   }
 
-  const liveThreadId = existing?.id ?? await openLivingWorkThread({
+  const liveThreadId = existing?.id ?? (!storing ? '' : await openLivingWorkThread({ keep: keep,
     livingWorkId: workId,
     memberId,
     canonicalAtOpen: currentFingerprint,
     initiatedBy: 'author',
-  });
+  }));
 
   const priorTurns = existing?.turns ?? [];
-  if (!isHeldRetry(priorTurns, question)) {
-    await appendTurn({
+  if (storing && !isHeldRetry(priorTurns, question)) {
+    await appendTurn({ keep: keep,
       threadId: liveThreadId,
       memberId,
       speaker: 'author',
@@ -134,12 +154,22 @@ export async function POST(
     });
   }
 
+  /* Case study F3 (founder 2026-11-16): the same Work rules as the editorial turn and the manuscript conversation. */
+  const programInstructions = conversationProgramInstructions(
+    await conversationProgram(memberId, workId, built.facts.manuscript?.id ?? null),
+    (id) => studioPathById(id)?.studioPosture ?? null,
+    (programId, stageId) => { const p = studioPathById(programId); return p ? currentStage(p, stageId).posture ?? null : null; },
+  );
   const outcome = await askMaia(
     {
       kind: 'work',
       anchor: WORK_ANCHOR,
       facts: built.facts,
       staleness,
+      ...(programInstructions.length > 0 ? { programInstructions } : {}),
+      /* Walk defect 5, Living Work path (independent review 2026-11-09): in Sanctuary she is told so, and is not given the Studio guide
+         or the offers (reading permission, plan, keeping…), exactly as on the manuscript route. */
+      sanctuary: studioPosture.sanctuary === true,
     },
     historyFor(
       priorTurns.map((turn) => ({ speaker: turn.speaker, body: turn.body })),
@@ -150,12 +180,22 @@ export async function POST(
 
   if (!outcome.ok) {
     return NextResponse.json(
-      { threadId: liveThreadId, refusal: outcome.refusal, staleness },
+      { threadId: liveThreadId || null, refusal: outcome.refusal, staleness },
       { status: 502 },
     );
   }
 
-  await appendTurn({
+  if (!storing) {
+    // Answered in the moment, kept nowhere. An earlier ordinary thread (if continuing) is returned unchanged.
+    return NextResponse.json({
+      threadId: existing?.id ?? null,
+      thread: existing ? (await loadLivingWorkThread(existing.id, memberId).then((t) => t && withoutProvenance(t))) : null,
+      sanctuary: { notKept: true, question, answer: outcome.answer },
+      staleness,
+    });
+  }
+
+  await appendTurn({ keep: keep,
     threadId: liveThreadId,
     memberId,
     speaker: 'maia',
@@ -164,7 +204,8 @@ export async function POST(
     answerProvenance: outcome.provenance,
   });
 
-  const thread = await loadLivingWorkThread(liveThreadId, memberId);
+  const loaded = await loadLivingWorkThread(liveThreadId, memberId);
+  const thread = loaded && withoutProvenance(loaded);
   if (!thread) {
     return NextResponse.json(
       { threadId: liveThreadId, refusal: 'answer_not_recorded', staleness },
@@ -178,3 +219,5 @@ export async function POST(
     staleness,
   });
 }
+
+export const POST = meteredRoute('work_ask', postHandler);

@@ -1,6 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import ReadScopeControl from './ReadScopeControl';
+import SettledDecisions from './SettledDecisions';
+import { declaredSanctuaryPosture, readCurrentSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
+import { parseStudioActions, showLabel, SHOW_PLACES, type ShowPlace } from '@/lib/writersStudio/studioActions';
+import { readingProgressText } from '@/lib/writersStudio/readingProgress';
+import type { DevelopmentalLens } from '@/lib/manuscript/developmentalReader/contract';
 import Link from 'next/link';
 import { GROUND, INK, MAIA_ACCENT, RADIUS, RULE, SPACE } from '../studioTheme';
 import { StudioText, typeStyle } from '../studio/StudioType';
@@ -16,13 +22,25 @@ import {
   threadsOnLivingWorkAsk,
   type AskThreadView,
 } from '@/lib/writersStudio/askClient';
+import { deliveryAfterDrop } from '@/lib/writersStudio/deliveryAfterDrop';
+import { receiptSentence } from '@/lib/manuscript/ask/readingReceipt';
 import {
   resumeDecision, sendMode, threadChoiceLabel,
   type ResumeDecision, type ThreadDiscovery,
 } from '@/lib/writersStudio/observationDialogueResume';
 import type { LivingWork } from '../useLivingWorks';
 import { createWriterCorrection } from '@/lib/writersStudio/writerCorrectionsClient';
+import { readWorkingStyle, writeWorkingStyle } from '@/lib/writersStudio/workingStyle';
+import { teachingQuestion, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
+import {
+  proposePresentationRequest, writeStudioPresentation,
+  type SafePresentationProposal,
+} from '@/lib/writersStudio/presentationRequests';
+import { setStudioReadingSize } from '@/lib/writersStudio/readingSizePreference';
+import { CONVERSATION_DEPARTURE_EVENT, requestConversationDeparture } from '@/lib/writersStudio/conversationDeparture';
 import { WRITER_CORRECTION_KINDS, WRITER_CORRECTION_LABEL, type WriterCorrectionKind } from '@/lib/writersStudio/writerCorrections';
+import { CORRECTION_OFFER_ACCEPT, CORRECTION_OFFER_COPY, CORRECTION_OFFER_DECLINE, correctionOfferFor } from '@/lib/writersStudio/correctionOffer';
+import { studioPathById } from '@/lib/writersStudio/studioPaths';
 
 /**
  * MAIA-CONVERGENCE-01 · CANVAS — MAIA's ordinary conversation about the Work,
@@ -115,14 +133,49 @@ import { WRITER_CORRECTION_KINDS, WRITER_CORRECTION_LABEL, type WriterCorrection
 
 export const WORK_CONVERSATION_PLACEHOLDER = 'Ask MAIA about this work…';
 
+/** Offer-only: phrasings that suggest the writer may mean the whole book. It NEVER sets the scope (D1); it only shows the offer. */
+export const WHOLE_BOOK_OFFER = /\b(whole|entire|this)\s+(book|manuscript)\b|\bthroughout\b|\boverall\b|\bfundamentally\b|\bfrom (the )?(start|beginning) to (the )?end\b/i;
+
 const WORK_ANCHOR = { on: 'work' } as const;
 
+const REORIENTATION_PROMPT = [
+  'Help me reorient before we do anything else.',
+  'From only this conversation and the Work context you actually have, tell me briefly:',
+  'where we are, what question or concern brought us here if that is established, what has changed, what remains untouched, and how I can return to the larger Work.',
+  'If any of that is unknown, say so. Do not introduce a new interpretation yet.',
+].join('\n');
+
+/**
+ * D3 (R3.4.4 founder ruling A, 2026-11-19): the per-answer disclosure. `read` is exactly what the server says it handed MAIA
+ * (WS-WORK-CONTINUITY Part B receipts); nothing here infers or widens it. "None of your saved work" is said plainly, because
+ * without a permission (or in Sanctuary) that is the truth, and it is the writer's assurance.
+ */
+export function answerReadSentence(read: readonly { sectionId: string; label: string | null }[]): string {
+  if (read.length === 0) return 'For this answer MAIA read none of your saved work.';
+  const names = read.map((s) => s.label?.trim() || 'an untitled section');
+  return `For this answer MAIA read your saved ${names.length === 1 ? 'section' : 'sections'}: ${names.join(', ')}.`;
+}
+
+/* WS-F1: the connection dropped, the server was asked, and the question HAD arrived. Said once, quietly, above her answer. */
+const DELIVERED_AFTER_DROP = 'The connection dropped, but your question did reach her. Her answer is above.';
+/* Review (2026-11-09): a failed Teach me never touched the box, so it must not say the question is still there. */
+const TEACH_NOT_ANSWERED = 'MAIA couldn’t answer the Teach me this time. Nothing you wrote was changed; press it again when you’re ready.';
 const REFUSAL_SAYS: Record<string, string> = {
-  unreachable: 'That didn’t reach her. Nothing was lost — try again.',
+  /* WS-F1: "That didn't reach her" was removed. Every 'unreachable' now goes through afterDrop, and neither a transport error nor
+     one re-read showing nothing new proves the question never arrived (it may still be on its way).
+     WS-F1: the connection dropped and it is not established whether the question arrived (no re-read, or nothing visible yet). */
+  unconfirmed: 'The connection dropped before her reply came back, so it isn’t known whether that reached her. Your question is still in the box. Reopen this conversation to see whether she answered before you send it again.',
+  /* WS-F1 (review 2026-11-21): the question is saved (kept before the model runs) and no answer is visible YET. It may still be
+     processing, so the writer is NOT told to resend: a second press could start a second model call while the first runs. */
+  held: 'Your question is saved, but MAIA’s answer isn’t available yet. Check the conversation again before sending another request.',
   empty_answer: 'MAIA returned nothing. Try asking again.',
+  /* WS-ASK-ANSWER-TRUNCATION: she ran out of room before finishing, so the cut answer was not kept or shown. */
+  answer_incomplete: 'MAIA ran out of room before she finished, so that answer wasn’t kept. Nothing you wrote was lost — ask again, or ask about a narrower part of the book.',
   question_too_long: 'That is longer than a question this room can carry.',
   unauthenticated: 'You are signed out. Sign in and your question will go through.',
   not_found: 'This Work could not be opened for conversation.',
+  /* Any other failure after the question arrived (e.g. the AI service refused or failed). Said plainly; never shown as one of her answers. */
+  not_answered: 'MAIA couldn’t answer this time. Nothing you wrote was lost — your question is still in the box; send it again when you’re ready.',
 };
 
 const when = (iso: string) => {
@@ -139,44 +192,241 @@ export interface WorkConversationProps {
    * it is handed to the server on each turn and it is not part of the anchor.
    */
   sectionId: string | null;
-  /** Optional member-facing starter held in the composer. Never auto-sent. */
+  /** Optional member-facing starter, offered OUTSIDE the composer as a suggestion ("Use this"). Never auto-sent. Never placed in the box by itself. */
   initialDraft?: string;
+  /**
+   * The draft opens a NEW topic the writer brought from elsewhere (e.g. "Show MAIA this note" from a College Essay stage). When the
+   * Work has several conversations, begin a new one instead of asking which to continue, so Send never silently waits (live walk
+   * 2026-11-16). One existing conversation is still continued, exactly as before. Never sends anything by itself.
+   */
+  startFresh?: boolean;
+  /** Offer words (a starter, or the writer's selected words) to the EXISTING conversation without re-creating it. A new `n` shows
+   *  `text` once as the suggestion outside the composer; the composer itself is never touched (WS-STEP4 B). Never sent. (Founder P0
+   *  direction 2026-11-11: a late or placed text must not reset the conversation or clear the writer's unsent prompt.) */
+  placeDraft?: { text: string; n: number };
+  /** Design 1B: open a Develop place MAIA offered (navigation only). Absent → no such button. */
+  onStudioPlace?: (place: 'develop-overview' | 'editorial-pass') => void;
+  /** The Develop stage keeps MAIA's holdings (reading permission, what you have settled) in its own column, so the conversation stays a conversation. */
+  hideHoldings?: boolean;
+  /** Develop stage: the secondary controls (Where are we?, new conversation, Focus, close, Keeps, Open in MAIA) sit behind one quiet “More”. */
+  quiet?: boolean;
+  /** Which saved sections MAIA was handed for the answer just received (ids + headings only). */
+  onRead?: (read: readonly { sectionId: string; label: string | null }[]) => void;
+  /** G4: MAIA offered "Read this chapter" and the writer clicked it. Absent → no such button. Only the click starts a reading. */
+  onReadChapter?: (lens: DevelopmentalLens) => Promise<{ ok: true; label: string } | { ok: false; message: string }>;
+  /** Design 1B amendment 2: the acting controls MAIA may offer (grant reading, make a plan, note a decision, open the desk). Absent →
+   *  no such buttons. ONLY the writer's click performs one; the host refuses in Sanctuary and says so. */
+  onStudioAct?: (act: StudioAct) => Promise<{ ok: true; text: string } | { ok: false; message: string }>;
+  /** The heading of a chapter id MAIA named, if it is in this Work; null → no "go to chapter" button. */
+  chapterLabel?: (sectionId: string) => string | null;
   onClose: () => void;
 }
 
-export default function WorkConversation({
-  work, manuscriptId, sectionId, initialDraft = '', onClose,
-}: WorkConversationProps) {
+export type StudioAct =
+  | { id: 'grant-reading'; level: 'chapter' | 'work' }
+  | { id: 'make-plan'; ask: string }
+  | { id: 'note-settled'; words: string }
+  | { id: 'open-desk'; words: string | null }
+  | { id: 'show'; place: ShowPlace }
+  | { id: 'go-chapter'; sectionId: string };
+
+/* Offers the host performs (absent host → no button). The conversation's own controls (keeps, focus, close, open in MAIA) it does itself. */
+const ACTING = new Set(['grant-reading', 'make-plan', 'note-settled', 'open-desk', 'show', 'go-chapter']);
+const NAVIGATES = new Set(['show', 'go-chapter']);   // navigation within Develop: nothing is written, so no posture gate
+/** The writer's own words in their latest question, minus the "About “…”:" frame the stage places for a selection. */
+export function latestAuthorWords(turns: readonly { speaker: string; body: string }[]): { question: string; passage: string | null } {
+  const last = [...turns].reverse().find((t) => t.speaker === 'author')?.body ?? '';
+  const m = /^About “([\s\S]+?)”:\s*/.exec(last);
+  return { question: last.trim(), passage: m ? m[1] : null };
+}
+
+export default function WorkConversation(props: WorkConversationProps) {
   const identity = useMemberIdentity();
+  // A retained room must not carry one member's or Work's unsent text and
+  // loaded conversation into another. Section changes keep this same scope.
+  return <ScopedWorkConversation
+    key={JSON.stringify([identity.memberId ?? identity.phase, props.work.id, props.manuscriptId])}
+    {...props}
+    identity={identity}
+  />;
+}
+
+function ScopedWorkConversation({
+  work, manuscriptId, sectionId, initialDraft = '', placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity, startFresh: freshForNewTopic = false,
+}: WorkConversationProps & { identity: ReturnType<typeof useMemberIdentity> }) {
+  /* A program Work (e.g. a college essay) names its whole-Work scope in its own words; an ordinary Work keeps "the whole book". */
+  const wholeScope = studioPathById(work.studioPath ?? null)?.studioCopy.wholeScope ?? 'the whole book';
   const { keeps } = useManuscriptKeeps(manuscriptId);
   const [showKeeps, setShowKeeps] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const showSecondary = !quiet || moreOpen;
   const [focusMode, setFocusMode] = useState(false);
 
   const [decision, setDecision] = useState<ResumeDecision | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [thread, setThread] = useState<AskThreadView | null>(null);
+  /* Sanctuary exchanges: shown for this moment only, held in this component's memory, never stored anywhere. */
+  /* `after` = how many kept turns the conversation had when this exchange happened, so it is shown in its place in time. */
+  const [sanctuaryTurns, setSanctuaryTurns] = useState<{ question: string; answer: string; after: number }[]>([]);
+  /* D3: which saved sections the server handed MAIA for her latest answer (ids + headings, never text), tied to the conversation
+     generation and the turn count it arrived with, so it is never shown under a different answer or conversation. */
+  const [answerRead, setAnswerRead] = useState<{ gen: number; turns: number; read: readonly { sectionId: string; label: string | null }[] } | null>(null);
+  /* ⭐ G4 isolation: every switch of conversation (adopt, start fresh) starts a new generation. An async result from an earlier
+     generation — a late thread load, a late reading — is dropped, never applied to the conversation now on screen. */
+  const conversationGenRef = useRef(0);
+  const nextConversation = () => { conversationGenRef.current += 1; return conversationGenRef.current; };
+  /* G4: a chapter reading the writer started from MAIA's offer. Shown here; MAIA is not asked anything until the writer asks. */
+  const [chapterReading, setChapterReading] = useState<{ phase: 'running'; startedAt: number; now: number } | { phase: 'done' | 'refused'; text: string } | null>(null);
+  useEffect(() => {
+    if (chapterReading?.phase !== 'running') return;
+    const t = window.setInterval(() => setChapterReading((r) => r?.phase === 'running' ? { ...r, now: Date.now() } : r), 1000);
+    return () => window.clearInterval(t);
+  }, [chapterReading?.phase]);
+  const startChapterReading = useCallback(async (lens: DevelopmentalLens) => {
+    if (!onReadChapter) return;
+    // Readings are kept (they are how MAIA remembers having read), so Sanctuary — which keeps nothing — never starts one.
+    const posture = readCurrentSanctuaryPosture();
+    if (posture.resolved && posture.sanctuary) {
+      setChapterReading({ phase: 'refused', text: 'Sanctuary is on, and a reading is kept, so MAIA will not read the chapter now. Turn Sanctuary off if you want her to. Nothing was read.' });
+      return;
+    }
+    const startedAt = Date.now();
+    const gen = conversationGenRef.current;
+    setChapterReading({ phase: 'running', startedAt, now: startedAt });
+    const result = await onReadChapter(lens);
+    if (gen !== conversationGenRef.current) return;   // the writer moved to another conversation; the reading is kept regardless
+    setChapterReading(result.ok
+      ? { phase: 'done', text: `MAIA has read ${result.label}. Ask her what she noticed. Nothing in your writing changed.` }
+      : { phase: 'refused', text: result.message });
+  }, [onReadChapter]);
 
-  const [draft, setDraft] = useState(initialDraft);
+  /* Amendment 2 · what happened when the writer clicked one of MAIA's acting offers. */
+  const [actStatus, setActStatus] = useState<{ busy: boolean; text: string } | null>(null);
+  const [noteDraft, setNoteDraft] = useState<string | null>(null);
+  const performAct = useCallback(async (act: StudioAct) => {
+    if (!onStudioAct) return;
+    // Sanctuary keeps nothing and suspends permissions: none of these is performed there (the host refuses too). Navigation writes nothing.
+    const posture = readCurrentSanctuaryPosture();
+    if (!NAVIGATES.has(act.id) && (!posture.resolved || posture.sanctuary)) {
+      setActStatus({ busy: false, text: posture.resolved ? 'Sanctuary is on, so that is not done here. Nothing was changed.' : 'Your Sanctuary setting could not be read on this device, so nothing was done.' });
+      return;
+    }
+    setActStatus({ busy: true, text: act.id === 'make-plan' ? 'MAIA is making a plan…' : 'One moment…' });
+    const r = await onStudioAct(act);
+    setActStatus({ busy: false, text: r.ok ? r.text : r.message });
+  }, [onStudioAct]);
+
+  /* WS-STEP4 B (founder decision B, 2026-11-20): the composer holds ONLY the writer's own words. It always opens empty. A starter
+     the Studio offers (the starter prop, or a placed text) is shown OUTSIDE the box as a suggestion and enters it only by the writer's
+     explicit "Use this", never merged into text she has typed (Benchmark 01: a pre-filled starter merged with S4/S6). */
+  const [draft, setDraft] = useState('');
+  const [suggestion, setSuggestion] = useState<string | null>(initialDraft.trim() ? initialDraft : null);
+  /* WS-WHOLE-BOOK-CONVERSATION (founder approval 2026-11-10, D1): the writer DECLARES what a question is about. "where I am" is the
+     default; "the whole book" carries her complete account. ⛔ A phrase in the draft may only OFFER the whole book, never switch to it. */
+  /* Held in component state only: this surface reads and writes no browser storage (identity-is-server-truth law). It lasts while the
+     conversation is open and resets to "where I am" when it is reopened. */
+  const [carryScope, setCarryScope] = useState<'here' | 'whole_book'>('here');
+  const offerWholeBook = carryScope === 'here' && WHOLE_BOOK_OFFER.test(draft);
+  /* A new `placeDraft.n` offers its text as the suggestion; it never touches the composer, so a late or placed text can neither
+     reset the conversation nor alter the writer's unsent words (founder P0 direction 2026-11-11 still holds). */
+  const placedRef = useRef(placeDraft?.n ?? 0);
+  useEffect(() => {
+    if (!placeDraft || placeDraft.n === placedRef.current) return;
+    placedRef.current = placeDraft.n;
+    if (placeDraft.text.trim()) setSuggestion(placeDraft.text);
+  }, [placeDraft]);
+  /* "Use this": into an empty composer it is placed; over the writer's own words it replaces them only if she confirms. Never appended. */
+  const useSuggestion = useCallback(() => {
+    if (suggestion === null) return;
+    if (draft.length > 0 && !window.confirm('Replace what you have written with this suggestion?')) return;
+    draftRevisionRef.current += 1;
+    setDraft(suggestion);
+    setSuggestion(null);
+  }, [suggestion, draft]);
+  const [reorientationOffered, setReorientationOffered] = useState(false);
+  const [presentationConfirmation, setPresentationConfirmation] = useState<SafePresentationProposal | null>(null);
+  const [presentationNotice, setPresentationNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
+  /* WS-F1: set when a dropped connection is checked and the question HAD reached her. */
+  const [deliveryNote, setDeliveryNote] = useState<string | null>(null);
   const [correctingTurn, setCorrectingTurn] = useState<number | null>(null);
   const [correctionKind, setCorrectionKind] = useState<WriterCorrectionKind>('interpretation_rejection');
   const [correctionDraft, setCorrectionDraft] = useState('');
   const [correctionBusy, setCorrectionBusy] = useState(false);
   const [correctionStatus, setCorrectionStatus] = useState<string | null>(null);
+  /* Correction offer (2026-11-19): MAIA turns whose offer the writer has answered (accepted or "Not now"), so it never nags. */
+  const [offerAnswered, setOfferAnswered] = useState<ReadonlySet<number>>(() => new Set());
   const endRef = useRef<HTMLDivElement | null>(null);
+  // A draft belongs to its edit generation, not to text equality.
+  const draftRevisionRef = useRef(0);
+  // Synchronous fence for two sends before React rerenders.
+  const inFlightRef = useRef(false);
+
+  useEffect(() => {
+    // Unsent text stays in the mounted conversation. Leaving is an explicit
+    // discard; neither browser storage nor a server turn is created for it.
+    // The box holds only the writer's words (a suggestion lives outside it), so any text in it is hers.
+    const writerDraft = draft.length > 0;
+    const hasUnsentText = writerDraft || correctionDraft.length > 0 || pending !== null;
+    if (!hasUnsentText) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    const confirmDeparture = (event: Event) => {
+      if (event.defaultPrevented) return;
+      if (!window.confirm('You have unsent text in this MAIA conversation. Leave and discard that text?')) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    window.addEventListener(CONVERSATION_DEPARTURE_EVENT, confirmDeparture);
+    return () => {
+      window.removeEventListener('beforeunload', warnBeforeLeaving);
+      window.removeEventListener(CONVERSATION_DEPARTURE_EVENT, confirmDeparture);
+    };
+  }, [draft, correctionDraft, pending]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
   }, [thread, pending]);
 
   const adopt = useCallback(async (id: string) => {
+    // A not-kept Sanctuary exchange belongs to the moment it happened in, never to another conversation — cleared BEFORE loading.
+    const gen = nextConversation();
+    setSanctuaryTurns([]);
+    setChapterReading(null);
     const t = manuscriptId
       ? await loadThread(manuscriptId, id)
       : await loadLivingWorkAskThread(work.id, id);
+    if (gen !== conversationGenRef.current) return;   // a later choice superseded this one
     setThreadId(id);
     if (t) setThread(t);
   }, [manuscriptId, work.id]);
+
+  /* ⭐ Design 2A (founder ruling 2026-11-02): the writer may set this
+     conversation aside and begin again, as in Passage Focus. Nothing is deleted:
+     the earlier thread stays on the server and is offered with the others next
+     time. `fresh` here is the writer's explicit act after a SUCCESSFUL lookup,
+     never a rounded failure, so the next question may lawfully open a thread.
+     The composer draft is the writer's and stays; an unsent correction belongs
+     to a turn of the old thread, so the control waits until it is sent or cleared.
+     It is not shown while a thread is still being adopted (threadId null). */
+  const canStartFresh = pending === null && !correctionBusy && correctionDraft.length === 0
+    && (threadId !== null || decision?.kind === 'choose');
+  const startFresh = () => {
+    if (!canStartFresh || inFlightRef.current) return;
+    nextConversation();
+    setThreadId(null);
+    setThread(null);
+    setDecision({ kind: 'fresh' });
+    setSanctuaryTurns([]);
+    setChapterReading(null);
+    setRefusal(null);
+    setCorrectingTurn(null);
+    setCorrectionStatus(null);
+  };
 
   /* ⛔ `sectionId` IS NOT A DEPENDENCY. Discovery is about the Work. */
   useEffect(() => {
@@ -188,22 +438,52 @@ export default function WorkConversation({
         : await threadsOnLivingWorkAsk(work.id);
       if (cancelled) return;
       const d = resumeDecision(discovery);
-      setDecision(d);
+      // A new topic brought by the writer (startFresh) begins its own conversation rather than waiting on a choice.
+      setDecision(freshForNewTopic && d.kind === 'choose' ? { kind: 'fresh' } : d);
       /* ⭐ One relationship is not a choice. Adopting it writes nothing. */
       if (d.kind === 'resume') await adopt(d.threadId);
     })();
     return () => { cancelled = true; };
-  }, [manuscriptId, work.id, adopt]);
+  }, [manuscriptId, work.id, adopt, freshForNewTopic]);
 
   const mode = sendMode(decision, threadId);
+  // Only a deliberately phrased request is recognized. There is NO model
+  // profiling, no MAIA server turn, and no inferred author preference.
+  const localPresentationRequest = proposePresentationRequest(draft);
+  const displayRequestMaySubmit = Boolean(draft.trim() && (mode.kind !== 'blocked' || localPresentationRequest));
+  const approvePresentation = () => {
+    if (!presentationConfirmation) return;
+    const fresh = proposePresentationRequest(draft, readWorkingStyle());
+    if (!fresh || fresh.label !== presentationConfirmation.label) {
+      setPresentationConfirmation(null);
+      setPresentationNotice('The request changed. Please review it again.');
+      return;
+    }
+    writeWorkingStyle(fresh.style);
+    if (fresh.depth) writeStudioPresentation({depth:fresh.depth});
+    if (fresh.readingSize) setStudioReadingSize(fresh.readingSize);
+    draftRevisionRef.current += 1;
+    setDraft('');
+    setPresentationConfirmation(null);
+    setPresentationNotice('The Studio presentation changed on this device. No manuscript was read or changed, and nothing was sent to MAIA.');
+  };
 
+  const addReorientation = () => {
+    draftRevisionRef.current += 1;
+    setDraft((current) => current.includes(REORIENTATION_PROMPT)
+      ? current
+      : current ? current + '\n\n' + REORIENTATION_PROMPT : REORIENTATION_PROMPT);
+    setReorientationOffered(false);
+    setPresentationConfirmation(null);
+    setPresentationNotice(null);
+  };
   const reorient = () => {
-    setDraft([
-      'Help me reorient before we do anything else.',
-      'From only this conversation and the Work context you actually have, tell me briefly:',
-      'where we are, what question or concern brought us here if that is established, what has changed, what remains untouched, and how I can return to the larger Work.',
-      'If any of that is unknown, say so. Do not introduce a new interpretation yet.',
-    ].join('\n'));
+    if (draft.includes(REORIENTATION_PROMPT)) return;
+    if (draft.length > 0) {
+      setReorientationOffered(true);
+      return;
+    }
+    addReorientation();
   };
 
   const keepCorrection = async (maiaTurnIndex: number) => {
@@ -227,39 +507,111 @@ export default function WorkConversation({
     setCorrectionStatus('Correction kept. MAIA will receive this as the current working understanding for this Work.');
   };
 
-  const send = async () => {
-    const question = draft.trim();
-    /* ⭐⭐ ONE CALL DECIDES BOTH THE PERMISSION AND THE PAYLOAD. A surface that
-       disabled the button from one rule and picked `{anchor}` vs `{threadId}`
-       from another would have two chances to disagree, and the disagreement
-       writes a row. */
-    if (!question || pending !== null || mode.kind === 'blocked') return;
-    setDraft('');
-    setRefusal(null);
-    setPending(question);
-    const r = manuscriptId
-      ? await ask({
-          manuscriptId,
-          question,
-          ...(mode.kind === 'resume' ? { threadId: mode.threadId } : { anchor: WORK_ANCHOR }),
-          ...(sectionId ? { sectionId } : {}),
-        })
-      : await askLivingWork({
-          workId: work.id,
-          question,
-          ...(mode.kind === 'resume' ? { threadId: mode.threadId } : {}),
-        });
-    setPending(null);
-    if (r.ok) {
-      setThreadId(r.threadId);
-      setThread(r.thread);
+  /* G-3: `teach` is a pressed Teach me (the writer's click on MAIA's offer). Its words are the button's own; the writer's draft is
+     neither sent nor cleared. */
+  const send = async (teach?: TeachingAnchor) => {
+    const question = teach ? teachingQuestion(teach) : draft.trim();
+    // Synchronous guard: two send events can fire before pending state renders.
+    if (!question || pending !== null || inFlightRef.current) return;
+    const requestedPresentation = teach ? null : proposePresentationRequest(question, readWorkingStyle());
+    if (requestedPresentation) {
+      setPresentationConfirmation(requestedPresentation);
+      setPresentationNotice(null);
       return;
     }
-    /* The author's turn may already be persisted behind a failed answer; the
-       server returns the thread id with the refusal, and holding it is what
-       makes "nothing was lost" true rather than reassuring. */
-    if (r.threadId) { setThreadId(r.threadId); void adopt(r.threadId); }
-    setRefusal(REFUSAL_SAYS[r.refusal] ?? REFUSAL_SAYS.unreachable);
+    if (mode.kind === 'blocked') return;
+
+    const submittedRevision = draftRevisionRef.current;
+    const gen = conversationGenRef.current;
+    const turnsBefore = thread?.turns.length ?? 0;
+    const knownThreadId = mode.kind === 'resume' ? mode.threadId : null;
+    /* WS-F1: a dropped connection is ambiguous. Ask the server before saying anything; never claim it did not arrive unless it did not. */
+    const afterDrop = async (serverThreadId?: string) => {
+      if (gen !== conversationGenRef.current) return;   // the conversation on screen is no longer the one this send belonged to
+      // G4 isolation: a refusal that names a conversation adopts it AT ONCE (a not-kept exchange is cleared now, not after a load).
+      if (serverThreadId) void adopt(serverThreadId);
+      const checkGen = conversationGenRef.current;
+      const id = serverThreadId ?? knownThreadId;
+      const t = id ? await (manuscriptId ? loadThread(manuscriptId, id) : loadLivingWorkAskThread(work.id, id)).catch(() => null) : null;
+      if (checkGen !== conversationGenRef.current) return;
+      const delivery = id ? deliveryAfterDrop(id === knownThreadId ? turnsBefore : 0, t, question) : 'unknown';
+      if ((delivery === 'answered' || delivery === 'held') && id && t) {
+        setThreadId(id);
+        setThread(t);   // her question (and, if it exists, her answer) is shown as the server holds it
+      }
+      if (delivery === 'answered') {
+        if (!teach) setDraft((current) => draftRevisionRef.current === submittedRevision ? '' : current);
+        setDeliveryNote(DELIVERED_AFTER_DROP);
+        return;
+      }
+      // 'held' keeps the words in the box (an unchanged resend would reuse the held turn), but does not invite a resend: the first
+      // request may still be running. 'not_arrived' after a transport error is only "nothing visible yet", never proof, so it is
+      // said as unconfirmed (review 2026-11-21).
+      setRefusal(teach ? TEACH_NOT_ANSWERED
+        : delivery === 'held' ? REFUSAL_SAYS.held
+        : REFUSAL_SAYS.unconfirmed);
+    };
+    inFlightRef.current = true;
+    setReorientationOffered(false);
+    setRefusal(null);
+    setDeliveryNote(null);
+    setPending(question);
+    try {
+      const r = manuscriptId
+        ? await ask({
+            manuscriptId,
+            question,
+            ...(mode.kind === 'resume' ? { threadId: mode.threadId } : { anchor: WORK_ANCHOR }),
+            ...(sectionId ? { sectionId } : {}),
+            /* G-3: the writer's own working-style preference, as the observation dialogue sends it; and a pressed Teach me. */
+            responseStyle: readWorkingStyle().explanation,
+            ...(teach ? { teachingAnchor: teach } : {}),
+            /* WS-WHOLE-BOOK-CONVERSATION: the writer's declared scope, exactly as the "About" control shows it. */
+            ...(carryScope === 'whole_book' ? { carryScope } : {}),
+            /* Only a room that can carry out her acting offers (onStudioAct) says so; elsewhere she is told only about buttons shown here. */
+            ...(onStudioAct ? { roomActs: true } : {}),
+            /* The member's CURRENT posture, read at this gesture. Unresolved ⇒ omitted, and the server then withholds the standing read. */
+            ...declaredSanctuaryPosture(),
+          })
+        : await askLivingWork({
+            workId: work.id,
+            question,
+            ...(mode.kind === 'resume' ? { threadId: mode.threadId } : {}),
+          });
+      if (gen !== conversationGenRef.current) {
+        // The conversation on screen is no longer the one this answer belongs to; its text stays where it was.
+        return;
+      }
+      if (r.ok) {
+        // Text can be edited away and retyped identically. Compare edit
+        // ownership, not string equality; read the live ref in the updater.
+        if (!teach) setDraft((current) => draftRevisionRef.current === submittedRevision ? '' : current);
+        if (r.sanctuary) {
+          // Not kept: nothing was stored, so there is no thread to reload. Show the exchange here only.
+          setSanctuaryTurns((list) => [...list, { question: r.sanctuary!.question, answer: r.sanctuary!.answer, after: thread?.turns.length ?? 0 }]);
+          if (r.threadId) { setThreadId(r.threadId); }
+          if (r.thread) setThread(r.thread);
+          if (onRead && manuscriptId) onRead([]);
+          return;
+        }
+        setThreadId(r.threadId);
+        setThread(r.thread);
+        setAnswerRead({ gen, turns: r.thread.turns.length, read: r.read ?? [] });
+        if (onRead && manuscriptId) onRead(r.read ?? []);
+        return;
+      }
+      // A transport failure (the client's 'unreachable') is ambiguous: checked against the server, never assumed (WS-F1).
+      if (r.refusal === 'unreachable') { await afterDrop(r.threadId); return; }
+      // Refusals must retain literal text and any server-returned thread id.
+      if (r.threadId) { setThreadId(r.threadId); void adopt(r.threadId); }
+      setRefusal(teach ? TEACH_NOT_ANSWERED : REFUSAL_SAYS[r.refusal] ?? REFUSAL_SAYS.not_answered);
+    } catch {
+      // A transport error is an ambiguous delivery, never an automatic retry: checked against the server, never assumed (WS-F1).
+      await afterDrop();
+    } finally {
+      inFlightRef.current = false;
+      setPending(null);
+    }
   };
 
   if (identity.phase === 'loading') {
@@ -283,6 +635,25 @@ export default function WorkConversation({
   }
 
   const turns = thread?.turns ?? [];
+  /* Not-kept Sanctuary exchanges, each shown in its place in time among the kept turns (G4 isolation). */
+  const sanctuaryAt = (pick: (after: number) => boolean) => {
+    const items = sanctuaryTurns.filter((entry) => pick(entry.after));
+    if (items.length === 0) return null;
+    return (
+      <div data-sanctuary-turns="true" style={{ borderTop: '1px solid color-mix(in srgb, currentColor 16%, transparent)', paddingTop: SPACE.base, marginBottom: SPACE.base }}>
+        <StudioText role="metadata" tone="quiet" style={{ marginBottom: SPACE.base }}>Sanctuary · this exchange is not kept. When you leave, it is gone.</StudioText>
+        {items.map((entry, n) => (
+          <div key={`s${entry.after}-${n}`} style={{ marginBottom: SPACE.base }} data-sanctuary-turn={entry.after}>
+            <StudioText role="metadata" tone="quiet">You</StudioText>
+            <StudioText role="maiaReading" style={{ color: INK.secondary, fontSize: '1rem', lineHeight: 1.7, maxWidth: '64ch', whiteSpace: 'pre-wrap' }}>{entry.question}</StudioText>
+            <StudioText role="metadata" tone="quiet" style={{ marginTop: SPACE.hairline }}>MAIA</StudioText>
+            <StudioText role="maiaReading" style={{ color: MAIA_ACCENT.reading, fontSize: '1rem', lineHeight: 1.7, maxWidth: '64ch', whiteSpace: 'pre-wrap' }}>{parseStudioActions(entry.answer, 'work-conversation').text}</StudioText>
+          </div>
+        ))}
+      </div>
+    );
+  };
+  const latestMaiaIndex = [...turns].reverse().find((x) => x.speaker === 'maia')?.index ?? null;
 
   return (
     <div
@@ -290,8 +661,16 @@ export default function WorkConversation({
       data-maia-focus={focusMode ? 'true' : 'false'}
       style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}
     >
+      {/* D3 (ruling A): with holdings hidden, an ACTIVE permission is still shown with its Stop; the unset choice stays behind More. */}
+      {/* Founder ruling 2026-11-19 (WS B0 + D3 laptop experience): elsewhere the permission is one persistent status line (Change,
+          and Stop always visible when active), not a choice put to the writer before they have said anything. The choice is offered
+          when they turn to the whole book, where a reading permission could serve the question. */}
+      {manuscriptId ? (hideHoldings
+        ? <ReadScopeControl manuscriptId={manuscriptId} compact />
+        : <ReadScopeControl manuscriptId={manuscriptId} status offerNow={carryScope === 'whole_book'} />) : null}
+      {!hideHoldings ? <SettledDecisions workId={work.id} /> : null}
       {/* ── The Work this exchange is in, where the member can see it. ── */}
-      <div
+      {showSecondary && <div
         data-studio-conversation="situated"
         data-work-thread={threadId ?? undefined}
         style={{
@@ -300,11 +679,13 @@ export default function WorkConversation({
           borderBottom: `1px solid ${RULE.soft}`, flexWrap: 'wrap',
         }}
       >
-        <StudioText role="metadata" as="span" tone="quiet">In relation to</StudioText>
-        <StudioText role="navItem" as="span" tone="secondary">
+        {/* data-situated-label: at laptop widths MAIA's column already names the Work, so this label steps aside (CSS) and the
+            conversation's controls keep to one row (founder ruling 2026-11-19, laptop experience). */}
+        <StudioText role="metadata" as="span" tone="quiet" data-situated-label="true">In relation to</StudioText>
+        <StudioText role="navItem" as="span" tone="secondary" data-situated-label="true">
           {work.title ?? 'your work'}
         </StudioText>
-        <span style={{ flex: 1 }} />
+        <span style={{ flex: 1 }} data-situated-label="true" />
         <button
           type="button"
           onClick={reorient}
@@ -317,6 +698,23 @@ export default function WorkConversation({
         >
           <StudioText role="metadata" as="span">Where are we?</StudioText>
         </button>
+        {(threadId !== null || decision?.kind === 'choose') && (
+          <button
+            type="button"
+            onClick={startFresh}
+            disabled={!canStartFresh}
+            data-start-fresh-work-conversation="true"
+            title="Sets this conversation aside. It stays saved."
+            style={{
+              background: 'transparent', border: `1px solid ${RULE.soft}`,
+              borderRadius: RADIUS.sm, padding: `${SPACE.hairline}px ${SPACE.tight}px`,
+              cursor: canStartFresh ? 'pointer' : 'default', color: INK.secondary,
+              opacity: canStartFresh ? 1 : 0.5,
+            }}
+          >
+            <StudioText role="metadata" as="span">Start a new conversation</StudioText>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setFocusMode((v) => !v)}
@@ -333,7 +731,7 @@ export default function WorkConversation({
         </button>
         <button
           type="button"
-          onClick={onClose}
+          onClick={() => { if (requestConversationDeparture()) onClose(); }}
           aria-label="Close the conversation and return to writing"
           data-close-conversation="true"
           style={{
@@ -343,7 +741,7 @@ export default function WorkConversation({
         >
           <StudioText role="metadata" as="span">✕</StudioText>
         </button>
-      </div>
+      </div>}
 
       {/* ── The exchange, as the server holds it ── */}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: SPACE.tight }}>
@@ -368,7 +766,7 @@ export default function WorkConversation({
         {decision?.kind === 'choose' && (
           <div data-discovery="choose" style={{ display: 'flex', flexDirection: 'column', gap: SPACE.snug }}>
             <StudioText role="maiaReading" style={{ color: INK.muted }}>
-              {`You have ${decision.threads.length} conversations about this Work.`}
+              {`You have ${decision.threads.length} conversations about this Work. Choose one to continue, or start a new one. Send waits until you do.`}
             </StudioText>
             {decision.threads.map((t) => (
               <button
@@ -391,24 +789,141 @@ export default function WorkConversation({
 
         {decision?.kind === 'fresh' && turns.length === 0 && pending === null && (
           <StudioText role="metadata" style={{ opacity: 0.7, maxWidth: '34ch' }} data-discovery="fresh">
-            She has your Work in view. She has not been given its text —
-            {keeps.length > 0
+            {/* L8 — the same facts the prompt gives her (askReader workSays). */}
+            {sectionId
+              ? 'She can read the section you are in, and only that one. She sees the other sections by heading.'
+              : 'She has your Work in view by its headings. She has not been given its text —'}
+            {sectionId ? null : keeps.length > 0
               ? ' bring a Keep if you want her to read a passage.'
               : ' a Keep is how you would hand her one.'}
           </StudioText>
         )}
 
-        {turns.map((t) => (
-          <div key={t.index} style={{ marginBottom: SPACE.base }} data-turn={t.index}>
+        {turns.length > 0 ? sanctuaryAt((after) => after === 0) : null}
+        {turns.map((t, position) => (
+          <Fragment key={t.index}>
+          <div style={{ marginBottom: SPACE.base }} data-turn={t.index}>
             <StudioText role="metadata" tone="quiet" style={{ marginBottom: SPACE.hairline }}>
               {t.speaker === 'maia' ? 'MAIA' : 'You'}
             </StudioText>
             <StudioText
               role="maiaReading"
-              style={t.speaker === 'maia' ? { color: MAIA_ACCENT.voice } : { color: INK.secondary }}
+              style={{
+                color: t.speaker === 'maia' ? MAIA_ACCENT.reading : INK.secondary,
+                // Readable at conversation distance: body-size text, open leading, a comfortable line length, and the
+                // author's own line breaks kept, so a reply that has paragraphs is not squashed into one block.
+                fontSize: '1rem', lineHeight: 1.7, maxWidth: '64ch', whiteSpace: 'pre-wrap',
+              }}
             >
-              {t.body}
+              {t.speaker === 'maia' ? parseStudioActions(t.body, 'work-conversation').text : t.body}
             </StudioText>
+            {/* D3 (R3.4.4 ruling A, 2026-11-19): every answer shows which saved sections MAIA read for it. Hosts that show
+                this themselves (onRead, e.g. the Develop stage) keep theirs; everywhere else it is said here, under her answer. */}
+            {/* Package C (R20 decision 1): the server now sends each answer's own receipt, so the line is under EVERY answer and
+                survives reopening. The live `read` remains the fallback for a server that sends no receipt. */}
+            {!onRead && t.speaker === 'maia' && t.receipt ? (
+              <StudioText role="metadata" as="p" data-answer-read={t.receipt.evidence === 'not_recorded' ? 'not_recorded' : t.receipt.reading === 'some_supplied' ? 'sections' : 'none'}
+                data-answer-receipt={t.receipt.evidence}>
+                {receiptSentence(t.receipt)}
+              </StudioText>
+            ) : !onRead && t.speaker === 'maia' && t.index === latestMaiaIndex && answerRead
+              && answerRead.gen === conversationGenRef.current && answerRead.turns === turns.length ? (
+              <StudioText role="metadata" as="p" data-answer-read={answerRead.read.length > 0 ? 'sections' : 'none'}>
+                {answerReadSentence(answerRead.read)}
+              </StudioText>
+            ) : null}
+            {(() => {
+              /* Design 1B: only MAIA's latest reply may offer a control, and only
+                 one this room can honour. Clicking only takes the writer there. */
+              if (t.speaker !== 'maia' || t.index !== latestMaiaIndex) return null;
+              const parsed = parseStudioActions(t.body, 'work-conversation');
+              /* Where the room cannot start a reading itself (no onReadChapter), MAIA's "Read this chapter" offer degrades to the
+                 Design 1B navigation that takes the writer to where they can start one — never to a button that silently does nothing. */
+              const offered = parsed.action?.id === 'read-chapter' && !onReadChapter
+                ? parseStudioActions('[[studio:develop-overview]]', 'work-conversation').action
+                : parsed.action;
+              if (!offered) return null;
+              const place = offered.id === 'develop-overview' || offered.id === 'editorial-pass' ? offered.id : null;
+              if (place && !onStudioPlace) return null;
+              if (ACTING.has(offered.id) && !onStudioAct) return null;   // a room that cannot honour it shows no button
+              const chapterName = offered.id === 'go-chapter' && parsed.target ? chapterLabel?.(parsed.target) ?? null : null;
+              if (offered.id === 'go-chapter' && !chapterName) return null;   // ⛔ an id not in this Work is no button
+              if ((offered.id === 'show-keeps' || offered.id === 'open-in-maia' || offered.id === 'teach-me') && !manuscriptId) return null;
+              if (offered.id === 'teach-me' && !sectionId) return null;   // review: a passage teaching turn needs a passage in view
+              const mine = latestAuthorWords(thread?.turns ?? []);
+              const run = () => {
+                if (offered.id === 'grant-reading') { void performAct({ id: 'grant-reading', level: parsed.level ?? 'chapter' }); return; }
+                if (offered.id === 'make-plan') { if (mine.question) void performAct({ id: 'make-plan', ask: mine.question }); return; }
+                if (offered.id === 'note-settled') { setNoteDraft(mine.question); setActStatus(null); return; }
+                if (offered.id === 'open-desk') { if (requestConversationDeparture()) void performAct({ id: 'open-desk', words: mine.passage }); return; }
+                if (offered.id === 'show' && parsed.target) { void performAct({ id: 'show', place: parsed.target as ShowPlace }); return; }
+                if (offered.id === 'go-chapter' && parsed.target) { void performAct({ id: 'go-chapter', sectionId: parsed.target }); return; }
+                if (offered.id === 'show-keeps') { setMoreOpen(true); setShowKeeps(true); return; }
+                if (offered.id === 'focus') { setFocusMode(true); return; }
+                if (offered.id === 'close-conversation') { if (requestConversationDeparture()) onClose(); return; }
+                if (offered.id === 'open-in-maia') { if (manuscriptId && requestConversationDeparture()) window.location.assign(handoffToMaia('/maia', { workId: work.id, manuscriptId })); return; }
+                if (offered.id === 'new-conversation') { startFresh(); return; }
+                if (offered.id === 'teach-me') { void send('passage'); return; }
+                if (offered.id === 'read-chapter') { void startChapterReading(parsed.lens ?? 'overview'); return; }
+                if (place && requestConversationDeparture()) onStudioPlace?.(place);
+              };
+              const enabled = offered.id === 'new-conversation' ? canStartFresh
+                : offered.id === 'read-chapter' ? pending === null && chapterReading?.phase !== 'running'
+                : ACTING.has(offered.id) ? pending === null && !actStatus?.busy
+                : pending === null;
+              return (
+                <button
+                  type="button"
+                  onClick={run}
+                  disabled={!enabled}
+                  data-studio-action={offered.id}
+                  style={{
+                    marginTop: SPACE.tight, background: 'transparent', border: `1px solid ${RULE.soft}`,
+                    borderRadius: RADIUS.sm, padding: `${SPACE.hairline}px ${SPACE.tight}px`,
+                    cursor: enabled ? 'pointer' : 'default', color: INK.secondary, opacity: enabled ? 1 : 0.5,
+                  }}
+                >
+                  <StudioText role="metadata" as="span">{offered.id === 'grant-reading' && parsed.level === 'work' ? 'Let MAIA read my whole saved work' : offered.id === 'grant-reading' ? 'Let MAIA read this saved chapter' : offered.id === 'show' && (SHOW_PLACES as readonly string[]).includes(parsed.target ?? '') ? showLabel(parsed.target as ShowPlace) : offered.id === 'go-chapter' ? `Go to ${chapterName}` : offered.label}</StudioText>
+                </button>
+              );
+            })()}
+            {(() => {
+              /* Correction offer (WS real-model walk 01): a plain-words disagreement was revised in the moment but lost in the next
+                 conversation; kept through "Correct MAIA" it carried. So under MAIA's LATEST reply to a message that plainly
+                 disagreed, offer to keep it. Accepting only opens the existing form with the writer's own words and a pre-selected
+                 kind; nothing is kept until they press "Keep correction". Kept turns only (Sanctuary exchanges are never kept turns),
+                 and never while Sanctuary is on or the posture is undeclared. */
+              if (t.speaker !== 'maia' || !threadId || t.index !== latestMaiaIndex || correctingTurn === t.index) return null;
+              if (offerAnswered.has(t.index)) return null;
+              const prev = position > 0 ? turns[position - 1] : null;
+              if (!prev || prev.speaker !== 'author') return null;
+              const offer = correctionOfferFor(prev.body);
+              const posture = readCurrentSanctuaryPosture();
+              if (!offer || !posture.resolved || posture.sanctuary) return null;
+              const answer = (accept: boolean) => {
+                setOfferAnswered((s) => new Set(s).add(t.index));
+                if (!accept) return;
+                setCorrectingTurn(t.index);
+                setCorrectionKind(offer.kind);
+                setCorrectionDraft(prev.body.trim());
+                setCorrectionStatus(null);
+              };
+              return (
+                <div data-correction-offer={t.index} role="status"
+                  style={{ marginTop: SPACE.tight, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: SPACE.tight }}>
+                  <StudioText role="metadata" tone="secondary" as="span">{CORRECTION_OFFER_COPY}</StudioText>
+                  <button type="button" data-correction-offer-accept="true" onClick={() => answer(true)}
+                    style={{ background: 'transparent', border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm,
+                      padding: `${SPACE.hairline}px ${SPACE.tight}px`, cursor: 'pointer', color: INK.secondary }}>
+                    <StudioText role="metadata" as="span">{CORRECTION_OFFER_ACCEPT}</StudioText>
+                  </button>
+                  <button type="button" data-correction-offer-decline="true" onClick={() => answer(false)}
+                    style={{ background: 'transparent', border: 0, cursor: 'pointer', color: INK.quiet }}>
+                    <StudioText role="metadata" as="span">{CORRECTION_OFFER_DECLINE}</StudioText>
+                  </button>
+                </div>
+              );
+            })()}
             {t.speaker === 'maia' && threadId ? (
               <div style={{ marginTop: SPACE.tight }} data-maia-correction={t.index}>
                 {correctingTurn !== t.index ? (
@@ -490,7 +1005,44 @@ export default function WorkConversation({
               </div>
             ) : null}
           </div>
+          {position + 1 < turns.length ? sanctuaryAt((after) => after === position + 1) : null}
+          </Fragment>
         ))}
+        {sanctuaryAt((after) => after >= turns.length)}
+
+        {chapterReading ? (
+          <div data-chapter-reading={chapterReading.phase} role="status" aria-live="polite" style={{ marginTop: SPACE.tight }}>
+            <StudioText role="metadata" tone="secondary">
+              {chapterReading.phase === 'running'
+                ? readingProgressText('MAIA is reading the chapter', chapterReading.now - chapterReading.startedAt)
+                : chapterReading.text}
+            </StudioText>
+          </div>
+        ) : null}
+
+        {noteDraft !== null ? (
+          /* A settled decision is the writer's own words: prefilled from what they said, editable, recorded only on "Note it". */
+          <div data-note-settled="true" style={{ marginTop: SPACE.tight, display: 'flex', flexDirection: 'column', gap: SPACE.tight }}>
+            <label htmlFor="ws-note-settled"><StudioText role="metadata" as="span">In your words, what have you settled about the book?</StudioText></label>
+            <textarea id="ws-note-settled" value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} rows={3} maxLength={1000}
+              style={{ font: 'inherit', fontSize: 14, padding: 8, borderRadius: RADIUS.sm, border: `1px solid ${RULE.soft}`, background: 'transparent', color: INK.primary }} />
+            <div style={{ display: 'flex', gap: SPACE.tight }}>
+              <button type="button" data-note-settled-confirm="true" disabled={!noteDraft.trim() || Boolean(actStatus?.busy)}
+                onClick={() => { const words = noteDraft.trim(); setNoteDraft(null); void performAct({ id: 'note-settled', words }); }}
+                style={{ background: 'transparent', border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm, padding: `${SPACE.hairline}px ${SPACE.tight}px`, cursor: 'pointer', color: INK.secondary }}>
+                <StudioText role="metadata" as="span">Note it</StudioText>
+              </button>
+              <button type="button" onClick={() => setNoteDraft(null)} style={{ background: 'transparent', border: 0, cursor: 'pointer', color: INK.quiet }}>
+                <StudioText role="metadata" as="span">Not now</StudioText>
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {actStatus ? (
+          <div data-studio-act-status={actStatus.busy ? 'busy' : 'done'} role="status" aria-live="polite" style={{ marginTop: SPACE.tight }}>
+            <StudioText role="metadata" tone="secondary">{actStatus.text}</StudioText>
+          </div>
+        ) : null}
 
         {correctionStatus ? (
           <StudioText role="metadata" data-correction-status="true">{correctionStatus}</StudioText>
@@ -509,7 +1061,19 @@ export default function WorkConversation({
           </div>
         )}
 
-        {refusal && <StudioText role="metadata">{refusal}</StudioText>}
+        {/* A failed answer is unmistakable: never a quiet line the writer can miss. The question stays in the box; nothing is retried by itself. */}
+        {refusal && (
+          <div role="alert" data-maia-refusal="true"
+            style={{ margin: `${SPACE.snug}px 0`, padding: `${SPACE.tight}px ${SPACE.snug}px`, borderRadius: RADIUS.sm,
+              border: '1px solid color-mix(in srgb, #c0392b 55%, transparent)', background: 'color-mix(in srgb, #c0392b 10%, transparent)' }}>
+            <StudioText role="metadata" as="span">{refusal}</StudioText>
+          </div>
+        )}
+        {deliveryNote && !refusal && (
+          <p role="status" data-maia-delivery-note="true" style={{ margin: `${SPACE.snug}px 0` }}>
+            <StudioText role="metadata" as="span">{deliveryNote}</StudioText>
+          </p>
+        )}
         <div ref={endRef} />
       </div>
 
@@ -538,6 +1102,7 @@ export default function WorkConversation({
                      member decides what to ask about it, and sends it as their
                      own turn. */
                   const quoted = `From ${k.sectionHeading ?? 'my manuscript'}:\n\n“${k.verbatimText}”\n\n`;
+                  draftRevisionRef.current += 1;
                   setDraft((d) => (d ? `${quoted}${d}` : quoted));
                   setShowKeeps(false);
                 }}
@@ -574,9 +1139,52 @@ export default function WorkConversation({
           <StudioText role="panelLabel" as="span">Ask MAIA</StudioText>
           <StudioText role="metadata" tone="quiet" as="span">Write naturally · Enter sends · Shift+Enter adds a line</StudioText>
         </div>
+        {manuscriptId ? (
+          <div role="group" aria-label="What this question is about" data-carry-scope={carryScope}
+            style={{ display: 'flex', alignItems: 'center', gap: SPACE.tight, flexWrap: 'wrap', marginBottom: SPACE.tight }}>
+            <StudioText role="metadata" tone="quiet" as="span">About:</StudioText>
+            {(['here', 'whole_book'] as const).map((s) => (
+              <button key={s} type="button" aria-pressed={carryScope === s} onClick={() => setCarryScope(s)}
+                style={{ fontSize: 12, padding: '2px 8px', borderRadius: RADIUS.sm, cursor: 'pointer',
+                  border: `1px solid ${carryScope === s ? INK.primary : RULE.soft}`,
+                  background: carryScope === s ? GROUND.base : 'transparent', color: INK.primary,
+                  fontWeight: carryScope === s ? 600 : 400 }}>
+                {s === 'here' ? 'where I am' : wholeScope}
+              </button>
+            ))}
+            {carryScope === 'whole_book' ? (
+              <StudioText role="metadata" tone="quiet" as="span" data-whole-book-on="true">
+                Every question here is about {wholeScope} until you choose “where I am”.
+              </StudioText>
+            ) : null}
+            {offerWholeBook ? (
+              <button type="button" data-whole-book-offer="true" onClick={() => setCarryScope('whole_book')}
+                style={{ fontSize: 12, padding: '2px 8px', border: 'none', background: 'transparent', color: INK.secondary, textDecoration: 'underline', cursor: 'pointer' }}>
+                Ask about {wholeScope}?
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {suggestion !== null ? (
+          <div data-composer-starter="true" role="group" aria-label="Suggested start"
+            style={{ border: `1px dashed ${RULE.soft}`, borderRadius: RADIUS.sm, padding: SPACE.snug, marginBottom: SPACE.tight }}>
+            <StudioText role="metadata" tone="quiet" as="span">Suggested start (not in your message)</StudioText>
+            <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', margin: '6px 0' }}>{suggestion}</p>
+            <div style={{ display: 'flex', gap: SPACE.tight }}>
+              <button type="button" data-composer-starter-use="true" onClick={useSuggestion}
+                style={{ fontSize: 12, padding: '2px 8px', borderRadius: RADIUS.sm, border: `1px solid ${INK.primary}`, background: 'transparent', color: INK.primary, cursor: 'pointer' }}>
+                Use this
+              </button>
+              <button type="button" data-composer-starter-dismiss="true" onClick={() => setSuggestion(null)}
+                style={{ fontSize: 12, padding: '2px 8px', border: 'none', background: 'transparent', color: INK.secondary, textDecoration: 'underline', cursor: 'pointer' }}>
+                Not now
+              </button>
+            </div>
+          </div>
+        ) : null}
         <textarea
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => { draftRevisionRef.current += 1; setDraft(e.target.value); setPresentationConfirmation(null); setPresentationNotice(null); }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
@@ -586,6 +1194,7 @@ export default function WorkConversation({
           placeholder={WORK_CONVERSATION_PLACEHOLDER}
           rows={3}
           aria-label="Message MAIA"
+          data-maia-composer-input="true"
           data-send-mode={mode.kind === 'blocked' ? `blocked:${mode.why}` : mode.kind}
           style={{
             ...typeStyle('maiaReading'), width: '100%', resize: 'vertical',
@@ -595,8 +1204,45 @@ export default function WorkConversation({
             padding: SPACE.snug, outline: 'none',
           }}
         />
+        {reorientationOffered ? (
+          <div data-reorientation-confirm role="group" aria-label="Reorientation prompt"
+            style={{ border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm, padding: SPACE.snug, marginTop: SPACE.snug }}>
+            <StudioText role="panelLabel" as="strong">Keep your question, then add a prompt</StudioText>
+            <p style={{ fontSize: 13, whiteSpace: 'pre-wrap', margin: '8px 0' }}>{REORIENTATION_PROMPT}</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: SPACE.tight }}>
+              <button type="button" onClick={addReorientation}
+                style={{ border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm, padding: '8px 12px' }}>
+                Add to my draft
+              </button>
+              <button type="button" onClick={() => setReorientationOffered(false)}
+                style={{ border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm, padding: '8px 12px' }}>
+                Keep my draft
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {presentationConfirmation ? (
+          <div data-maia-presentation-confirm role="group" aria-label="Review Studio presentation change"
+            style={{border:`1px solid ${RULE.soft}`,padding:SPACE.snug,borderRadius:RADIUS.sm,marginTop:SPACE.snug}}>
+            <StudioText role="panelLabel" as="strong">{presentationConfirmation.label}</StudioText>
+            <p style={{margin:'6px 0',fontSize:13}}>{presentationConfirmation.explanation}</p>
+            <p style={{margin:'4px 0',fontSize:12}}>Presentation only. Your words, permissions, and MAIA reading consent remain unchanged.</p>
+            <div style={{display:'flex',gap:10,marginTop:10}}>
+              <button type="button" onClick={approvePresentation}
+                style={{border:`1px solid ${RULE.soft}`,borderRadius:RADIUS.sm,padding:'8px 12px'}}>
+                Apply display change
+              </button>
+              <button type="button" onClick={() => setPresentationConfirmation(null)}
+                style={{border:`1px solid ${RULE.soft}`,borderRadius:RADIUS.sm,padding:'8px 12px'}}>
+                Keep current view
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {presentationNotice ? <p role="status" data-maia-presentation-notice
+          style={{fontSize:12,margin:'8px 0'}}>{presentationNotice}</p> : null}
         <div style={{ display: 'flex', alignItems: 'center', gap: SPACE.base, marginTop: SPACE.snug }}>
-          {manuscriptId ? (
+          {manuscriptId && showSecondary ? (
             <button
               type="button"
               data-keeps-toggle="true"
@@ -615,31 +1261,43 @@ export default function WorkConversation({
             </button>
           ) : null}
           {/* ⚠️ Cross-surface handoff still requires a manuscript return contract. */}
-          {manuscriptId ? (
+          {manuscriptId && showSecondary ? (
             <Link
               href={handoffToMaia('/maia', { workId: work.id, manuscriptId })}
               data-open-in-maia="true"
+              onClick={(event) => { if (!requestConversationDeparture()) event.preventDefault(); }}
               style={{ textDecoration: 'none' }}
             >
               <StudioText role="metadata" as="span">Open in MAIA →</StudioText>
             </Link>
           ) : null}
+          {quiet && decision?.kind === 'choose' && !moreOpen ? (
+            /* The room is asking which conversation to continue: starting a new one must not hide behind More (walk 2026-11-09). */
+            <button type="button" data-start-fresh-quiet="true" onClick={startFresh} disabled={!canStartFresh}
+              style={{ background: 'transparent', border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm, padding: `${SPACE.hairline}px ${SPACE.tight}px`, cursor: 'pointer', color: INK.secondary }}>
+              <StudioText role="metadata" as="span">Start a new conversation</StudioText>
+            </button>
+          ) : null}
+          {quiet ? (
+            <button type="button" data-conversation-more="true" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: INK.secondary, padding: 0 }}>
+              <StudioText role="metadata" as="span">{moreOpen ? 'Fewer options' : 'More'}</StudioText>
+            </button>
+          ) : null}
           <span style={{ flex: 1 }} />
           <button
             type="button"
             onClick={() => void send()}
-            disabled={pending !== null || draft.trim() === '' || mode.kind === 'blocked'}
+            disabled={pending !== null || !displayRequestMaySubmit}
             style={{
               background: GROUND.active, border: `1px solid ${RULE.soft}`,
               borderRadius: RADIUS.sm, padding: `${SPACE.tight}px ${SPACE.base}px`,
-              cursor: pending !== null || draft.trim() === '' || mode.kind === 'blocked'
-                ? 'default' : 'pointer',
-              opacity: pending !== null || draft.trim() === '' || mode.kind === 'blocked'
-                ? 0.4 : 1,
+              cursor: pending !== null || !displayRequestMaySubmit ? 'default' : 'pointer',
+              opacity: pending !== null || !displayRequestMaySubmit ? 0.4 : 1,
               color: INK.primary,
             }}
           >
-            <StudioText role="metadata" as="span">Send</StudioText>
+            <StudioText role="metadata" as="span">{localPresentationRequest ? 'Review change' : 'Send'}</StudioText>
           </button>
         </div>
       </div>

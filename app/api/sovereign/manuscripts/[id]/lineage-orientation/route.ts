@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { query } from '@/lib/db/postgres';
 import { splitStoredSection } from '@/lib/manuscript/sections/sectionProjection';
 import { sectionIdsOf } from '@/lib/manuscript/development/evidenceRef';
 import { DEVELOPMENTAL_LENSES } from '@/lib/manuscript/developmentalReader/contract';
-import { runStructured } from '@/lib/ai/structured/router';
+import { runStructured } from '@/lib/writersStudio/meteredStructured'; // the structured seam, unchanged, plus the shadow MAIA meter
 import type { StructuredBlock } from '@/lib/ai/structured/types';
 import { explicitRole } from '@/lib/writersStudio/focus/outlineTree';
 import {
@@ -13,6 +14,7 @@ import {
   type IntellectualTerrain,
 } from '@/lib/writersStudio/intellectualLineageOrientation';
 import type { BibliographyEntry } from '@/lib/writersStudio/intellectualLineageScan';
+import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,13 +116,16 @@ function schema(chapterIds: readonly string[], bibliographyKeys: readonly string
   } as const;
 }
 
-export async function POST(
+async function postHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const memberId = await getMemberIdFromRequest(req);
   if (!memberId) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
   const { id: manuscriptId } = await params;
+  bindMaiaMeter(memberId, { sanctuary: false }); // route has no Sanctuary/posture check
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, manuscriptId); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
 
   const current = await query<{ revision_number: number; manuscript_state: string | null }>(
     `SELECT r.revision_number, w.manuscript_state
@@ -381,3 +386,5 @@ export async function POST(
     },
   });
 }
+
+export const POST = meteredRoute('lineage_orientation', postHandler);

@@ -1,5 +1,7 @@
  'use client';
 
+import { FREE_WORK_LIMIT_CODE, FREE_WORK_LIMIT_MESSAGE } from '@/lib/writersStudio/workLimitShared';
+import { withKeepPosture } from '@/lib/writersStudio/keepPosture';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -47,6 +49,7 @@ import {
 } from '@/lib/writersStudio/rebuild/chapterReviewManifest';
 import { canvasWithEditorialThread, canvasWithoutEditorialThread, CANVAS_EDITORIAL_THREAD_PARAM } from '../canvasIdentity';
 import { locationForSection, replacePlaceAddress, SECTION_PARAM } from '@/lib/writersStudio/placeInWork';
+import { teachingQuestion } from '@/lib/writersStudio/teachingTurn';
 import {
   adoptBoundEditorialVersion, changedSpan, discoverEditorialRelationships, exactVersion,
   locateUniquePassage, openBoundEditorialPassage, openBoundEditorialThread,
@@ -558,7 +561,7 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
       const created = await create.json().catch(() => ({}));
       const workId = typeof created?.work?.id === 'string' ? created.work.id : null;
       if (!create.ok || !workId) {
-        setWorkDeclarationMessage('The Work could not be created just now. The manuscript has not changed.');
+        setWorkDeclarationMessage(created?.code === FREE_WORK_LIMIT_CODE ? FREE_WORK_LIMIT_MESSAGE : 'The Work could not be created just now. The manuscript has not changed.');
         return;
       }
       const declare = await apiFetch(`/api/sovereign/living-works/${workId}/expressions`, {
@@ -783,7 +786,7 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
   useEffect(() => {
     if (!requestedEditorialThread || !focusId) return;
     let cancelled = false;
-    void readBoundEditorialThread(requestedEditorialThread, focusId).then((out) => {
+    void readBoundEditorialThread(requestedEditorialThread, focusId, null).then((out) => {
       if (cancelled) return;
       if (out.ok) {
         setEditorialThread(out.thread);
@@ -942,11 +945,11 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
       sessionIdRef.current = sessionId;
       const res = await apiFetch('/api/writers-studio/focus', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify(withKeepPosture({
           sessionId, workRef: focusWire.workRef, scopeKind: focusWire.scopeKind,
           sectionRef: focusWire.sectionRef, range: focusWire.range,
           gesture: 'ask_maia', ask: maiaAsk,
-        }),
+        })),
       });
       if (res.status === 404) {
         setMaiaFailure('Passage cognition is not enabled in this build yet. Nothing was sent.');
@@ -995,7 +998,7 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
   const chooseRelationship = useCallback(async (threadId: string) => {
     if (!focusId || editorialBusy) return;
     setEditorialBusy(true); setEditorialFailure(null);
-    const out = await readBoundEditorialThread(threadId, focusId);
+    const out = await readBoundEditorialThread(threadId, focusId, null);
     if (out.ok) bindEditorialThread(out.thread);
     else setEditorialFailure('That saved revision conversation could not be opened here.');
     setEditorialBusy(false);
@@ -1010,12 +1013,14 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
     const posture = readCurrentSanctuaryPosture();
     const opened = passage
       ? await openBoundEditorialPassage(
-          focusId, { start: passage.start, end: passage.end }, revision, posture,
+          focusId, { start: passage.start, end: passage.end }, revision, posture, null,
         )
-      : await openBoundEditorialThread(focusId, posture);
+      : await openBoundEditorialThread(focusId, posture, null);
     if (!opened.ok) {
       const refusal = 'refusal' in opened ? opened.refusal : undefined;
-      setEditorialFailure(opened.reason === 'posture_unresolved'
+      setEditorialFailure(opened.reason === 'relationship_required'
+        ? 'Open this revision from the current Living Work and choose its MAIA relationship first. Nothing was written.'
+        : opened.reason === 'posture_unresolved'
         ? 'Your Sanctuary setting could not be read on this device, so revision collaboration was not opened. Open MAIA here once, then try again. Nothing was written.'
         : opened.reason === 'sanctuary_unavailable'
           ? 'Sanctuary is on. Revision collaboration is durable by construction, so it is unavailable until Sanctuary is off. Nothing was written.'
@@ -1049,7 +1054,7 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
     const matching = found.relationships.filter((r) => r.locusText === desiredLocus);
     if (matching.length === 0) return startNewEditorial();
     if (matching.length === 1) {
-      const out = await readBoundEditorialThread(matching[0]!.threadId, focusId);
+      const out = await readBoundEditorialThread(matching[0]!.threadId, focusId, null);
       if (out.ok && bindEditorialThread(out.thread)) return out.thread;
       setEditorialFailure('The saved revision conversation could not be safely resumed.');
       return null;
@@ -1173,7 +1178,7 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
     try {
       if (!(await settleWriting())) return;
       const out = await adoptBoundEditorialVersion(
-        editorialThread.threadId, focusId, suggestedVersion.id,
+        editorialThread.threadId, focusId, suggestedVersion.id, null,
       );
       if (!out.ok) {
         setEditorialFailure('The Studio would not apply wording that could not be proven to belong to this exact revision conversation.');
@@ -1203,7 +1208,7 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
       /* ⭐⭐ RECOVERY IS READ AFTER THE WORK HAS SETTLED. The application row
          is the authority for Undo; reading it before the context refresh made
          the inline desk depend on a race between two post-apply projections. */
-      const reread = await readBoundEditorialThread(editorialThread.threadId, focusId);
+      const reread = await readBoundEditorialThread(editorialThread.threadId, focusId, null);
       if (reread.ok) {
         setEditorialThread(reread.thread);
         replaceAddress(focusId, reread.thread.threadId);
@@ -1237,7 +1242,7 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
         }
       } else setUndoMessage('Undo was not performed: the manuscript has changed or this application is no longer reversible. Your current writing is retained.');
       if (editorialThread && focusId) {
-        const reread = await readBoundEditorialThread(editorialThread.threadId, focusId);
+        const reread = await readBoundEditorialThread(editorialThread.threadId, focusId, null);
         if (reread.ok) setEditorialThread(reread.thread);
       }
     } catch { setUndoMessage('Undo could not be confirmed. Reload the manuscript before trying again.'); }
@@ -1393,7 +1398,7 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
     }
     const ask = action === 'challenge'
       ? `Why did you change ${it}? Show me the words in my sentence that led you there, and make the strongest case for keeping mine. Do not propose new wording in this answer.`
-      : `What writing technique is at work in changing ${it}? Describe what it does for a reader, what it may cost, and when my original would be the better choice. Do not test me and do not propose new wording.`;
+      : teachingQuestion('change', `changing ${it}`);
     void sendEditorial(ask);
   }, [sendEditorial]);
 
@@ -1493,7 +1498,7 @@ export default function RebuildStudioClient({ reviewDiscussEnabled = false }: Re
         return false;
       }
       setSuggestedVersionId(body.versionId);
-      const reread = await readBoundEditorialThread(draft.threadId, draft.sectionId);
+      const reread = await readBoundEditorialThread(draft.threadId, draft.sectionId, null);
       if (reread.ok) { setEditorialThread(reread.thread); setSuggestedVersionId(body.versionId); }
       else setEditorialFailure('Your version was saved, but the conversation could not be refreshed. Reopen it before applying. Nothing was applied.');
       return true;

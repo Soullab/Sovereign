@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getInsightsSince } from '@/lib/supervision/SupervisionStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,12 +14,22 @@ export async function GET(req: NextRequest) {
   if (process.env.CAPACITOR_BUILD) {
     return new Response('SSE not available in static export', { status: 200 });
   }
+
+  // Owner-only (PRACTITIONER-SESSION-OWNERSHIP-01). EventSource carries the maia_session cookie; the same
+  // refusal as every other route here for a session that is not the caller's, an unowned legacy one or an
+  // absent id.
+  const actor = await requireSessionMember(req);
+  if ('error' in actor) return actor.error;
+
   const url = new URL(req.url);
   const sessionId = url.searchParams.get('sessionId');
 
   if (!sessionId) {
     return new Response('Missing sessionId', { status: 400 });
   }
+
+  const owned = await requireOwnedSession(actor.memberId, sessionId);
+  if ('error' in owned) return owned.error;
 
   // Support Last-Event-ID for automatic reconnect resume
   const lastEventId = req.headers.get('last-event-id');

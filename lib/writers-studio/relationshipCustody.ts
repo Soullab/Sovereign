@@ -12,7 +12,9 @@ import { query, transaction, type TransactionClient } from '@/lib/db/postgres';
 
 export const A2_RELATIONSHIP_CONTRACT_VERSION = 'A2-1' as const;
 export type ManuscriptLocusScope = 'passage' | 'section';
-export type RelationshipChildKind = 'EDITORIAL_TURN' | 'REVIEW_DISCUSS';
+export type RelationshipChildKind = 'EDITORIAL_TURN' | 'EDITORIAL_OPENING' | 'REVIEW_DISCUSS';
+/** The typed writer gesture that opens a MAIA-first conversation. Never words the writer said. */
+export const EDITORIAL_OPENING_GESTURE = 'opened_conversation_on_passage' as const;
 
 export type RelationshipCustodyRefusal =
   | 'work_not_owned'
@@ -61,6 +63,23 @@ export type EditorialRelationshipEpisode =
   | {
       readonly id: string;
       readonly sequence: number;
+      /** MAIA spoke first; the writer side is a typed gesture, not a turn. */
+      readonly childKind: 'EDITORIAL_OPENING';
+      readonly manuscriptLocusScope: ManuscriptLocusScope;
+      readonly temporalPosture: 'CURRENT_FROZEN_LOCUS';
+      readonly historyPolicy: 'CHILD_LOCAL_MULTI_TURN';
+      readonly continuationAuthorized: true;
+      readonly authorityClass: 'EDITORIAL_CHAIN';
+      readonly carryPolicy: 'PRESENTATION_ONLY';
+      readonly admittedAt: Date;
+      readonly threadId: string;
+      readonly proposalChainId: string;
+      readonly openingGesture: typeof EDITORIAL_OPENING_GESTURE;
+      readonly maiaTurnIndex: number;
+    }
+  | {
+      readonly id: string;
+      readonly sequence: number;
       readonly childKind: 'REVIEW_DISCUSS';
       readonly temporalPosture: 'AS_READ';
       readonly historyPolicy: 'NONE';
@@ -77,6 +96,8 @@ export type EditorialRelationshipEpisode =
 
 export interface RelationshipWithEpisodes {
   readonly relationship: EditorialRelationshipCustody;
+  /** Never infer current authorization from historic existence or a 200 GET. */
+  readonly active: boolean;
   readonly episodes: readonly EditorialRelationshipEpisode[];
 }
 
@@ -105,6 +126,7 @@ interface EpisodeRow {
   editorial_proposal_chain_id: string | null;
   editorial_member_turn_index: number | null;
   editorial_maia_turn_index: number | null;
+  editorial_opening_gesture: string | null;
   review_thread_id: string | null;
   review_maia_turn_index: number | null;
   review_authorization_id: string | null;
@@ -132,6 +154,18 @@ function mapRelationship(r: RelationshipRow): EditorialRelationshipCustody {
 }
 
 function mapEpisode(r: EpisodeRow): EditorialRelationshipEpisode {
+  if (r.child_kind === 'EDITORIAL_OPENING') {
+    return {
+      id: r.id, sequence: Number(r.sequence), childKind: 'EDITORIAL_OPENING',
+      manuscriptLocusScope: r.manuscript_scope_requested!, temporalPosture: 'CURRENT_FROZEN_LOCUS',
+      historyPolicy: 'CHILD_LOCAL_MULTI_TURN', continuationAuthorized: true,
+      authorityClass: 'EDITORIAL_CHAIN', carryPolicy: 'PRESENTATION_ONLY',
+      admittedAt: r.admitted_at,
+      threadId: r.editorial_thread_id!, proposalChainId: r.editorial_proposal_chain_id!,
+      openingGesture: EDITORIAL_OPENING_GESTURE,
+      maiaTurnIndex: Number(r.editorial_maia_turn_index),
+    };
+  }
   if (r.child_kind === 'EDITORIAL_TURN') {
     return {
       id: r.id, sequence: Number(r.sequence), childKind: 'EDITORIAL_TURN',
@@ -235,6 +269,12 @@ export async function listEditorialRelationshipCustody(input: {
     `SELECT r.id, r.living_work_id, r.manuscript_id, r.created_at,
             count(e.id)::text AS episode_count
        FROM writer_editorial_relationships r
+       JOIN living_work_expressions current_declaration
+         ON current_declaration.id = r.creation_expression_id
+        AND current_declaration.living_work_id = r.living_work_id
+        AND current_declaration.expression_type = 'manuscript'
+        AND current_declaration.expression_id = r.manuscript_id
+        AND current_declaration.declared_by = r.member_id
        LEFT JOIN writer_editorial_relationship_episodes e
          ON e.relationship_id = r.id
       WHERE r.member_id = $1
@@ -266,6 +306,26 @@ export async function readEditorialRelationshipCustody(
   );
   if (rel.rows.length === 0) return null;
 
+  const parent = rel.rows[0]!;
+  // Read-only archival metadata remains member-owned, but an inactive parent's
+  // historical MAIA episode pointers must not masquerade as current authority.
+  const current = typeof parent.creation_expression_id === 'string'
+    && parent.creation_expression_id.length > 0
+    ? await query<{ id: string }>(
+        `SELECT id FROM living_work_expressions
+          WHERE id = $1
+            AND living_work_id = $2
+            AND expression_type = 'manuscript'
+            AND expression_id = $3
+            AND declared_by = $4`,
+        [parent.creation_expression_id, parent.living_work_id,
+         parent.manuscript_id, memberId],
+      )
+    : null;
+  const active = current !== null && current.rows.length === 1
+    && current.rows[0]?.id === parent.creation_expression_id;
+  if (!active) return { relationship: mapRelationship(parent), active: false, episodes: [] };
+
   const episodes = await query<EpisodeRow>(
     `SELECT *
        FROM writer_editorial_relationship_episodes
@@ -274,7 +334,8 @@ export async function readEditorialRelationshipCustody(
     [relationshipId],
   );
   return {
-    relationship: mapRelationship(rel.rows[0]!),
+    relationship: mapRelationship(parent),
+    active: true,
     episodes: episodes.rows.map(mapEpisode),
   };
 }
@@ -316,16 +377,21 @@ export async function prepareRelationshipForAppendWithClient(
   );
   if (manuscript.rows.length !== 1) throw new RelationshipCustodyRefused('manuscript_not_owned');
 
-  const declaration = await tx.query(
+  const declaration = await tx.query<{ id: string }>(
     `SELECT id FROM living_work_expressions
       WHERE living_work_id = $1
         AND expression_type = 'manuscript'
         AND expression_id = $2
         AND declared_by = $3
+        AND id = $4
       FOR KEY SHARE`,
-    [r.living_work_id, r.manuscript_id, input.memberId],
+    [r.living_work_id, r.manuscript_id, input.memberId, r.creation_expression_id],
   );
-  if (declaration.rows.length !== 1) {
+  // Re-declaring the same manuscript cannot reauthorize the old A2 parent.
+  if (declaration.rows.length !== 1
+      || typeof r.creation_expression_id !== 'string'
+      || !r.creation_expression_id
+      || declaration.rows[0]?.id !== r.creation_expression_id) {
     throw new RelationshipCustodyRefused('current_declaration_unavailable');
   }
 
@@ -339,7 +405,10 @@ export async function prepareRelationshipForAppendWithClient(
   );
   if (locked.rows.length !== 1) throw new RelationshipCustodyRefused('relationship_not_found');
   const now = locked.rows[0]!;
-  if (now.living_work_id !== r.living_work_id || now.manuscript_id !== r.manuscript_id) {
+  if (now.member_id !== r.member_id
+      || now.living_work_id !== r.living_work_id
+      || now.manuscript_id !== r.manuscript_id
+      || now.creation_expression_id !== r.creation_expression_id) {
     throw new RelationshipCustodyRefused('relationship_binding_changed');
   }
 
@@ -370,6 +439,19 @@ async function existingEditorialEpisode(
         AND editorial_thread_id = $1
         AND editorial_maia_turn_index = $2`,
     [threadId, maiaTurnIndex],
+  );
+  return r.rows[0] ?? null;
+}
+
+async function existingOpeningEpisode(
+  tx: TransactionClient, threadId: string,
+): Promise<{ id: string; relationship_id: string; sequence: number } | null> {
+  const r = await tx.query<{ id: string; relationship_id: string; sequence: number }>(
+    `SELECT id, relationship_id, sequence
+       FROM writer_editorial_relationship_episodes
+      WHERE child_kind = 'EDITORIAL_OPENING'
+        AND editorial_thread_id = $1`,
+    [threadId],
   );
   return r.rows[0] ?? null;
 }
@@ -427,6 +509,55 @@ async function validateEditorialChild(
   );
   if (!member || !maia) throw new RelationshipCustodyRefused('editorial_child_invalid');
 }
+/**
+ * A MAIA-first opening. ⛔ The writer side is a typed gesture, never a turn:
+ * the MAIA turn must be the FIRST turn of its thread (index 0, speaker maia),
+ * and no author turn may exist at or before it. A caller cannot present a
+ * member turn index here — the input type has no such field.
+ */
+async function validateOpeningChild(
+  tx: TransactionClient,
+  prepared: PreparedRelationshipAppend,
+  input: {
+    threadId: string; proposalChainId: string; maiaTurnIndex: number;
+    gesture: string; manuscriptLocusScope: ManuscriptLocusScope;
+  },
+): Promise<void> {
+  /* ⛔ An opening has no writer turn. A caller that presents a member turn index is
+     describing a different act (EDITORIAL_TURN) and is refused, never reinterpreted. */
+  if ('memberTurnIndex' in input
+    || input.gesture !== EDITORIAL_OPENING_GESTURE || input.maiaTurnIndex !== 0) {
+    throw new RelationshipCustodyRefused('editorial_child_invalid');
+  }
+  const subject = await tx.query(
+    `SELECT th.id
+       FROM ask_threads th
+       JOIN proposal_chains pc ON pc.id = th.proposal_chain_id
+      WHERE th.id = $1
+        AND th.member_id = $2
+        AND th.manuscript_id = $3
+        AND th.proposal_chain_id = $4
+        AND pc.id = $4
+        AND pc.member_id = $2
+        AND pc.work_id = $3
+        AND pc.locus_scope_kind = $5`,
+    [input.threadId, prepared.memberId, prepared.manuscriptId, input.proposalChainId,
+     input.manuscriptLocusScope],
+  );
+  if (subject.rows.length !== 1) throw new RelationshipCustodyRefused('editorial_child_invalid');
+
+  const turns = await tx.query<{ turn_index: number; speaker: 'author' | 'maia' }>(
+    `SELECT turn_index, speaker FROM ask_turns
+      WHERE thread_id = $1 AND turn_index <= $2`,
+    [input.threadId, input.maiaTurnIndex],
+  );
+  const maia = turns.rows.some(
+    t => Number(t.turn_index) === input.maiaTurnIndex && t.speaker === 'maia',
+  );
+  const authorBefore = turns.rows.some(t => t.speaker === 'author');
+  if (!maia || authorBefore) throw new RelationshipCustodyRefused('editorial_child_invalid');
+}
+
 async function validateReviewChild(
   tx: TransactionClient,
   prepared: PreparedRelationshipAppend,
@@ -474,17 +605,67 @@ async function recoverInsertedEpisode(
   tx: TransactionClient,
   relationshipId: string,
   child: { kind: 'EDITORIAL_TURN'; threadId: string; maiaTurnIndex: number }
+    | { kind: 'EDITORIAL_OPENING'; threadId: string }
     | { kind: 'REVIEW_DISCUSS'; authorizationId: string },
 ): Promise<{ id: string; sequence: number }> {
   const found = child.kind === 'EDITORIAL_TURN'
     ? await existingEditorialEpisode(tx, child.threadId, child.maiaTurnIndex)
-    : await existingReviewEpisode(tx, child.authorizationId);
+    : child.kind === 'EDITORIAL_OPENING'
+      ? await existingOpeningEpisode(tx, child.threadId)
+      : await existingReviewEpisode(tx, child.authorizationId);
   if (!found) throw new RelationshipCustodyRefused('sequence_conflict');
   if (found.relationship_id !== relationshipId) {
     throw new RelationshipCustodyRefused('child_already_attached_elsewhere');
   }
   return { id: found.id, sequence: Number(found.sequence) };
 }
+export async function appendEditorialOpeningEpisodeWithClient(
+  tx: TransactionClient,
+  prepared: PreparedRelationshipAppend,
+  input: {
+    threadId: string;
+    proposalChainId: string;
+    maiaTurnIndex: number;
+    gesture: string;
+    manuscriptLocusScope: ManuscriptLocusScope;
+  },
+): Promise<{ readonly id: string; readonly sequence: number; readonly existing: boolean }> {
+  const before = await existingOpeningEpisode(tx, input.threadId);
+  if (before) {
+    if (before.relationship_id !== prepared.relationshipId) {
+      throw new RelationshipCustodyRefused('child_already_attached_elsewhere');
+    }
+    return { id: before.id, sequence: Number(before.sequence), existing: true };
+  }
+
+  await validateOpeningChild(tx, prepared, input);
+  const sequence = await nextSequence(tx, prepared.relationshipId);
+  const inserted = await tx.query<{ id: string; sequence: number }>(
+    `INSERT INTO writer_editorial_relationship_episodes
+       (relationship_id, sequence, child_kind, manuscript_scope_requested, manuscript_scope_executed,
+        temporal_posture, history_policy, continuation_authorized,
+        authority_class, carry_policy,
+        editorial_thread_id, editorial_proposal_chain_id,
+        editorial_member_turn_index, editorial_maia_turn_index, editorial_opening_gesture)
+     VALUES
+       ($1, $2, 'EDITORIAL_OPENING', $3, $3,
+        'CURRENT_FROZEN_LOCUS', 'CHILD_LOCAL_MULTI_TURN', TRUE,
+        'EDITORIAL_CHAIN', 'PRESENTATION_ONLY',
+        $4, $5, NULL, $6, $7)
+     ON CONFLICT DO NOTHING
+     RETURNING id, sequence`,
+    [prepared.relationshipId, sequence, input.manuscriptLocusScope, input.threadId,
+     input.proposalChainId, input.maiaTurnIndex, input.gesture],
+  );
+  if (inserted.rows.length === 1) {
+    return { id: inserted.rows[0]!.id, sequence: Number(inserted.rows[0]!.sequence), existing: false };
+  }
+  const recovered = await recoverInsertedEpisode(tx, prepared.relationshipId, {
+    kind: 'EDITORIAL_OPENING', threadId: input.threadId,
+  });
+  return { ...recovered, existing: true };
+}
+
 export async function appendEditorialEpisodeWithClient(
   tx: TransactionClient,
   prepared: PreparedRelationshipAppend,

@@ -7,7 +7,8 @@ export const maxDuration = 120; // large .docx/.pdf extraction can take a moment
 /**
  * Soullab Press — Manuscript upload ingest (DOCX / PDF / TXT / MD → text).
  *
- * POST (multipart/form-data, field `file`) → { text, warnings, title, sourceArrivalId }
+ * POST (multipart/form-data, field `file`; optional `importAgain=true`) → { text, warnings, title, sourceArrivalId }
+ *   or, when the member already holds this exact file, { outcome: 'already_imported', existing } with nothing stored.
  *
  * The extracted text flows back into the member's own hands: it lands in the
  * upload textarea, the member reviews it, then proceeds through the existing
@@ -41,13 +42,43 @@ import {
   CLIENT_ASSERTABLE_IDENTITY_HEADERS,
   forgedIdentityHeaders,
 } from '@/lib/auth/identityAssertions';
-import { parseUpload, UnsupportedUploadError } from '@/lib/manuscript/ingest/parseUpload';
+import { parseUpload, UnsupportedUploadError, UnsupportedDocxStructureError } from '@/lib/manuscript/ingest/parseUpload';
 import { memberRef } from '@/lib/privacy/memberRef';
 import { titleFromFilename } from '@/lib/manuscript/ingest/titleSuggestion';
 import { recordArtifactArrival } from '@/lib/manuscript/source/arrivals';
+import { hashBytes, hashText } from '@/lib/manuscript/source/custody';
+import { checkDuplicateImport } from '@/lib/manuscript/source/duplicateImport';
+import { SourceLandingIncompleteError } from '@/lib/manuscript/source/encryptedLanding';
+import { writerSourceKeyProviderConfigured } from '@/lib/manuscript/source/sourceKeyAuthority';
+import { SOURCE_UPLOAD_IDEMPOTENCY_HEADER } from '@/lib/writersStudio/sourceUploadAttempt';
+import { writerReleaseAuthority } from '@/lib/writersStudio/releaseAuthority';
+import { writersStudioStanding } from '@/lib/writersStudio/betaAccessServer';
+import { createRateLimiter } from '@/lib/http/rateLimit';
+import { TurnPosture } from '@/lib/sanctuary/turnPosture';
+
+// P0 private original manuscript/EPUB intake remains held by the exact server
+// release manifest. No environment variable, browser flag or request header can
+// lift it. Changing the manifest requires a newly admitted and requalified image.
+const PRESS_SOURCE_INTAKE_RELEASED = writerReleaseAuthority().sourceIntakeReleased;
+
+/**
+ * Posture header (D6). Sanctuary canon is absolute: nothing from a Sanctuary session may be saved. An upload lands an
+ * encrypted original AND a plaintext extraction, so it is a content write and follows the same convention as the other
+ * Writer content routes: the client states its CURRENT posture explicitly, Sanctuary is refused, and a missing or
+ * malformed posture fails closed (it is never read as "ordinary").
+ */
+const POSTURE_HEADER = 'x-maia-sanctuary';
+
+/**
+ * Per-member upload budget (D1). In-memory and per-process, which matches the single production container; a retry of the
+ * same file counts, so the budget is deliberately generous for a real author and tight for a script.
+ */
+const UPLOADS_PER_HOUR = 20;
+const uploadLimited = createRateLimiter(UPLOADS_PER_HOUR, 60 * 60 * 1000);
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB — generous for a full book file
 const MAX_TEXT_CHARS = 2_000_000; // mirrors the save path's cap in ../route.ts
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * INGEST-TRANSPORT — the authority boundary this route must carry itself.
@@ -245,6 +276,82 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Application-local ingress guard, after present member-identity checks.
+    // This exact multipart route is intentionally excluded from the Next proxy.
+    // Refuse before formData(), parseUpload() or recordArtifactArrival().
+    if (!PRESS_SOURCE_INTAKE_RELEASED) {
+      return NextResponse.json(
+        { error: 'Original manuscript intake is not available during this beta.' },
+        { status: 423, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+
+    // ── 3a. AUDIENCE (D1) ──────────────────────────────────────────────────
+    // The page that hosts the Import room is roster-gated, but this endpoint is excluded from the proxy and from the
+    // Writer corridor, so on its own it would admit ANY signed-in member the moment the release flips. It asks the same
+    // question the page asks, through the same predicate, so the two cannot drift.
+    const access = await writersStudioStanding(memberId);
+    if (!access.admitted) {
+      return NextResponse.json(
+        { error: 'Original manuscript intake is not available to your account during this beta.' },
+        { status: 403, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+    if (uploadLimited(memberId, Date.now())) {
+      return NextResponse.json(
+        { error: 'Too many uploads in the last hour. Please wait a little and try again.' },
+        { status: 429, headers: { 'Cache-Control': 'no-store', 'Retry-After': '900' } },
+      );
+    }
+
+    // ── 3b. POSTURE (D6) ───────────────────────────────────────────────────
+    // Before the body is read, so a Sanctuary upload never reaches a parser, a vault or a database.
+    const postureClaim = request.headers.get(POSTURE_HEADER);
+    if (postureClaim !== 'true' && postureClaim !== 'false') {
+      return NextResponse.json(
+        { error: 'Choose Ordinary or Sanctuary first. Nothing was saved.', code: 'posture_required' },
+        { status: 428, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+    if (TurnPosture.resolve({ sanctuary: postureClaim === 'true' }).sanctuary) {
+      return NextResponse.json(
+        { error: 'Sanctuary is on. Original files are not saved during Sanctuary.', code: 'sanctuary_unavailable' },
+        { status: 423, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+
+    // ── 3c. CONFIGURATION ──────────────────────────────────────────────────
+    // Released is not the same as possible. Without a key provider every upload fails inside custody and, worse, each
+    // attempt would leave a stranded landing intent and invite "retry the same file", which can never work. Refuse
+    // here, before the body is read and before anything is created, with a sentence that is true. This only ever makes the
+    // route refuse MORE: release is still the source-bound manifest alone, and no setting can release anything.
+    if (!writerSourceKeyProviderConfigured()) {
+      console.warn('[press/manuscripts/ingest] refused: source key provider not configured', { memberRef: memberRef(memberId) });
+      return NextResponse.json(
+        {
+          error: 'Original-file import is not available yet. Nothing was saved. You can still paste your writing.',
+          code: 'source_intake_not_configured',
+          retryable: false,
+        },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+
+    // Every released upload carries a caller-stable UUID. A retry with the same
+    // UUID must resolve to the same member-bound landing intent; a different
+    // original under that UUID is refused. The hold above remains first so no
+    // client can use this validation as an oracle while intake is unavailable.
+    const idempotencyKey = request.headers.get(SOURCE_UPLOAD_IDEMPOTENCY_HEADER);
+    if (!idempotencyKey || !UUID_PATTERN.test(idempotencyKey)) {
+      return NextResponse.json(
+        {
+          error: 'A valid upload retry identifier is required.',
+          requiredHeader: SOURCE_UPLOAD_IDEMPOTENCY_HEADER,
+        },
+        { status: 400, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+
     // ── 4. SANITISE — the SAME request, in place ───────────────────────────
     // Authority has finished inspecting the caller's claims, so nothing
     // downstream may see them. Deleting from `request.headers` mutates the
@@ -315,15 +422,77 @@ export async function POST(request: NextRequest) {
       if (err instanceof UnsupportedUploadError) {
         return NextResponse.json({ error: err.message }, { status: 415 });
       }
+      if (err instanceof UnsupportedDocxStructureError) {
+        // Do not flatten unrepresentable Word structure into an editable draft.
+        // The author sees the bounded reason; nothing enters Source custody.
+        return NextResponse.json({ error: err.message }, { status: 422 });
+      }
       console.error('[press/manuscripts/ingest] parse error:', err);
       return NextResponse.json(
-        { error: 'We could not read that file. Try a .docx, .pdf, .txt, or .md.' },
+        { error: 'We could not read that file. Try a .docx, .pdf, .epub, .txt, or .md.' },
         { status: 422 },
       );
     }
 
     if (result.text.length > MAX_TEXT_CHARS) {
       return NextResponse.json({ error: 'Manuscript too large (2MB of text max)' }, { status: 413 });
+    }
+
+    // ── 4b. REFUSE WHAT CANNOT BE STORED, BEFORE ANYTHING IS STORED (D3) ───────────────────────────────────────
+    // Measured against the real library: empty or NUL-containing extracted text used to pass every check above, land
+    // an encrypted original in the vault, and only then be refused (empty text by commit, NUL by the database). The
+    // member saw a retryable "did not finish" that could never succeed, and an encrypted file and a wrapped key stayed
+    // behind with no door able to remove them. Refusing here costs nothing and leaves nothing behind.
+    if (result.text.trim().length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            'We could not find any readable text in that file. A scanned PDF needs a text layer, or upload the original Word or text file.',
+          code: 'no_readable_text',
+        },
+        { status: 422, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+    if (result.text.includes('\u0000')) {
+      return NextResponse.json(
+        {
+          error:
+            'That file contains characters we cannot store. A text file saved as "Unicode" (UTF-16) is a common cause; save it as UTF-8 and try again.',
+          code: 'unstorable_characters',
+        },
+        { status: 422, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+
+    // ── 4c. ALREADY HELD? (a question, never a decision) ────────────────────────────────────────────────────
+    // If this member CURRENTLY holds a manuscript imported from the byte-identical file (or identical extracted text), do not
+    // take a second arrival into custody and do not let a second manuscript and Work follow. Answer instead, writing nothing, and
+    // let the member choose: open what they have, or send the same file again with the explicit `importAgain` act. Matching uses
+    // hashes already stored on the member's arrivals; a manuscript they deleted is gone from the join and never matches.
+    const importAgain = form.get('importAgain') === 'true';
+    const duplicate = await checkDuplicateImport({
+      memberId,
+      bytesHash: hashBytes(buffer),
+      textHash: hashText(result.text),
+      importAgain,
+    });
+    if (duplicate.outcome === 'already_imported') {
+      console.log(
+        `[MAIA/press] manuscript ingest already held { memberRef: ${memberRef(memberId)}, matchedOn: ${duplicate.matchedOn} }`,
+      );
+      return NextResponse.json(
+        {
+          outcome: 'already_imported',
+          matchedOn: duplicate.matchedOn,
+          existing: {
+            manuscriptId: duplicate.existing.manuscriptId,
+            workId: duplicate.existing.workId,
+            title: duplicate.existing.title,
+          },
+          // Deliberately no text, no arrival id: nothing was taken into custody, so nothing is offered to claim.
+        },
+        { status: 200, headers: { 'Cache-Control': 'no-store' } },
+      );
     }
 
     // Log marker: counts only, never content.
@@ -344,13 +513,35 @@ export async function POST(request: NextRequest) {
         mimeType: file.type || null,
         sourceText: result.text,
         extractor: result.format,
+        idempotencyKey,
       });
       sourceArrivalId = arrival.id;
     } catch (err) {
-      console.error('[press/manuscripts/ingest] source custody failed', err);
+      if (err instanceof SourceLandingIncompleteError) {
+        // A DB-first intent may deliberately survive a failed ciphertext write
+        // or final arrival commit. Never tell the member that "nothing" was
+        // saved; ask for a same-key retry and keep the recoverable state honest.
+        console.error('[press/manuscripts/ingest] encrypted Source landing incomplete', {
+          memberRef: memberRef(memberId),
+          code: err.code,
+          intentRecorded: err.intentId !== null,
+        });
+        return NextResponse.json(
+          {
+            error: 'The upload did not finish. Your protected upload record was preserved; retry the same file.',
+            retryable: true,
+            retryHeader: SOURCE_UPLOAD_IDEMPOTENCY_HEADER,
+          },
+          { status: 503, headers: { 'Cache-Control': 'no-store' } },
+        );
+      }
+      console.error('[press/manuscripts/ingest] source custody failed', {
+        memberRef: memberRef(memberId),
+        code: 'source_landing_refused',
+      });
       return NextResponse.json(
-        { error: 'We could not take custody of that file. Nothing was saved — please try again.' },
-        { status: 500 },
+        { error: 'We could not securely receive that file. No manuscript was created.' },
+        { status: 500, headers: { 'Cache-Control': 'no-store' } },
       );
     }
 
@@ -363,6 +554,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       text: result.text,
       warnings: result.warnings,
+      fidelity: result.fidelity ?? null,
+      paragraphsReconstructed: result.paragraphsReconstructed === true,
       title: titleFromFilename(file.name),
       format: result.format,
       sourceArrivalId,

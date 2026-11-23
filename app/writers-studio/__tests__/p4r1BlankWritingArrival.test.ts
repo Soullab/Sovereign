@@ -111,7 +111,9 @@ test('Write mounts the threshold only for a true blank Work and keeps MAIA start
   expect(write).toContain('Do not assume you have read any Idea or Source');
 
   expect(conversation).toContain("initialDraft?: string");
-  expect(conversation).toContain("const [draft, setDraft] = useState(initialDraft);");
+  // WS-STEP4 B: the composer opens empty; the starter is a suggestion outside it.
+  expect(conversation).toContain("const [draft, setDraft] = useState('');");
+  expect(conversation).toContain("const [suggestion, setSuggestion] = useState<string | null>(initialDraft.trim() ? initialDraft : null);");
 
   // The optional starter is presentation state only. Sending still happens only
   // inside the existing explicit send() function.
@@ -131,7 +133,12 @@ test('starting to write dismisses the helper and focuses the real PC3 editor wit
   const slice = write.slice(start, end);
 
   expect(slice).toContain('setBlankArrivalDismissed(true)');
-  expect(slice).toContain("document.querySelector<HTMLElement>(selector)?.focus");
+  expect(slice).toContain('editor.focus({ preventScroll: true });');
+  expect(slice).toContain('selection.addRange(insertion);');
+  expect(slice).toContain('if (!reveal()) window.setTimeout(reveal, 80)');
+  const css = fs.readFileSync(path.join(process.cwd(), 'app/dev/writers-studio-p4r1/p4r1-live.css'), 'utf8');
+  expect(css).toContain('.p4r1-root .fr-write-page [data-write-editor]');
+  expect(css).toContain('min-height: min(45vh, 440px);');
   expect(slice).not.toContain('props.writing.edit');
   expect(slice).not.toContain('onEditBody');
   expect(slice).not.toContain('material');

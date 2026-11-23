@@ -1,0 +1,111 @@
+/* The Spark door (JARVIS-WRITERS-STUDIO-INSPIRATION-OPENING-01 · S1). Built on the Studio's own tokens and serif. */
+.wsio {
+  max-width: 760px;
+  margin: 0 auto;
+  /* Phone (walk 2026-11-13, the college essay path): a side gutter so text never meets the screen edge, and room at the
+     bottom so the floating Beta journey / Report a bug badges never sit on the door's buttons. */
+  padding-block: clamp(28px, 6vw, 72px) 112px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
+  display: grid;
+  gap: 18px;
+}
+.wsio-top { display: flex; justify-content: flex-end; }
+.wsio-body { display: grid; gap: 18px; justify-items: start; }
+.wsio-ember {
+  width: 46px; height: 46px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 60%, #ffd9a0 0%, #e48a4c 38%, rgba(228, 138, 76, 0) 70%);
+  animation: wsio-breathe 4.5s ease-in-out infinite;
+}
+.wsio-ember.wsio-water { background: radial-gradient(circle at 50% 60%, #d6eef5 0%, #7aa6b4 38%, rgba(122, 166, 180, 0) 70%); }
+@keyframes wsio-breathe { 0%, 100% { transform: scale(.92); opacity: .85; } 50% { transform: scale(1.06); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .wsio-ember { animation: none; } }
+.wsio-who { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; opacity: .55; font-weight: 600; margin: 0; }
+.wsio-maia {
+  font-family: var(--fr-serif, Georgia, serif); font-weight: 400;
+  font-size: clamp(24px, 3vw, 32px); line-height: 1.3; max-width: 30ch; margin: 0; text-wrap: balance;
+}
+.wsio-maia.wsio-small { font-size: clamp(19px, 2.2vw, 23px); max-width: 44ch; text-wrap: pretty; }
+.wsio-writer {
+  font-family: var(--fr-serif, Georgia, serif); font-style: italic; font-size: 18px; line-height: 1.5;
+  max-width: 52ch; margin: 0; padding-left: 14px; border-left: 2px solid currentColor; opacity: .75; white-space: pre-wrap;
+}
+.wsio-note { font-size: 14px; opacity: .65; max-width: 60ch; margin: 0; }
+.wsio-sanctuary { color: #7aa6b4; opacity: 1; }
+.wsio-held { opacity: .8; }
+.wsio-label { font-size: 13px; opacity: .6; }
+.wsio-input {
+  width: 100%; max-width: 640px; box-sizing: border-box; border-radius: 8px; padding: 14px 16px;
+  font-family: var(--fr-serif, Georgia, serif); font-size: 18px; line-height: 1.5; resize: vertical;
+  background: transparent; color: inherit; border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+}
+.wsio-input:focus { outline: 2px solid #c9a43a; outline-offset: 2px; }
+.wsio-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.wsio-ways { margin-top: -4px; }
+.wsio-stack { display: grid; gap: 10px; width: 100%; }
+.wsio-link {
+  background: none; border: 0; padding: 4px; color: inherit; opacity: .7; font: inherit; font-size: 14px;
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+.wsio-link:hover { opacity: 1; }
+.wsio-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; width: 100%; max-width: 720px; }
+.wsio-choice {
+  text-align: left; display: grid; gap: 4px; font: inherit; color: inherit; cursor: pointer; border-radius: 10px; padding: 14px;
+  background: color-mix(in srgb, currentColor 5%, transparent); border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+.wsio-choice:hover:not(:disabled) { border-color: #c9a43a; }
+.wsio-choice:disabled { opacity: .5; cursor: progress; }
+.wsio-choice b { font-weight: 600; font-size: 14px; }
+.wsio-choice span { font-size: 13px; opacity: .65; }
+.wsio-posture { display: inline-flex; flex-wrap: wrap; border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: 999px; padding: 2px; }
+.wsio-posture button { background: none; border: 0; color: inherit; opacity: .65; font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+.wsio-posture button[aria-pressed='true'] { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
+.wsio-posture button[data-sanctuary][aria-pressed='true'] { color: #7aa6b4; }
+.wsio-facet-q { margin-top: 8px; }
+.wsio-talk { display: grid; gap: 14px; width: 100%; }
+.wsio-turn { display: grid; gap: 6px; }
+/* B · The First Page: the blank-page card becomes an invitation line on the page itself. */
+.p4r1-root .p4r1-blank-arrival.p4r1-blank-arrival--invitation {
+  border: 0; background: transparent; box-shadow: none; padding: 0 6px; display: grid; gap: 10px; justify-items: start;
+  /* Below the section heading, where the first sentence will go (the card it replaces sat over the heading). */
+  top: 196px;
+}
+@media (max-width: 900px) { .p4r1-root .p4r1-blank-arrival.p4r1-blank-arrival--invitation { top: 170px; } }
+.p4r1-root .p4r1-blank-invitation {
+  background: none; border: 0; padding: 0; text-align: left; cursor: text;
+  font: italic 400 21px/1.5 var(--fr-serif-stack); color: var(--fr-muted); max-width: 38ch;
+}
+.p4r1-root .p4r1-blank-presence { margin: 0; font: 13px/1.5 var(--fr-sans-stack); color: var(--fr-muted); }
+.p4r1-root .p4r1-blank-arrival-ways { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.p4r1-root .p4r1-blank-arrival-ways > button {
+  background: none; border: 0; padding: 2px 0; cursor: pointer; color: var(--fr-ink2);
+  font: 13px/1.4 var(--fr-sans-stack); text-decoration: underline; text-underline-offset: 3px;
+}
+.p4r1-root .p4r1-blank-arrival-ways > .p4r1-blank-primary { color: var(--fr-title); }
+.p4r1-root .p4r1-blank-arrival-ways > button:hover { color: var(--fr-title); }
+.wsio-first-page { display: grid; gap: 10px; padding: 12px 0; }
+.wsio-first-page blockquote { margin: 0; }
+.wsio-first-page-reply { font-family: var(--fr-serif-stack, Georgia, serif); font-size: 17px; line-height: 1.55; white-space: pre-wrap; }
+/* C · Bring What You Carry: MAIA's question sits above the import, quietly. */
+.wsio-carry-invite { max-width: 760px; margin: 24px auto 0; padding: 0 0 18px; display: grid; gap: 8px; border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent); }
+.wsio-carry-note { max-width: 760px; margin: 18px auto 0; }
+/* S5: the way back to MAIA's question sits under the look-around heading, aligned with it. */
+.fr-home-threshold [data-look-around-back] { align-self: flex-start; justify-self: start; margin-left: 0; padding-left: 0; text-align: left; }
+/* Studio paths: the environment's own head above MAIA's first question. */
+.wsio-path-head { display: grid; gap: 4px; padding-bottom: 6px; }
+.wsio-path-name { margin: 0; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; font-weight: 600; color: #c9a43a; }
+.wsio-path-stage { margin: 0; font-size: 12.5px; opacity: .6; }
+.wsio-check { display: flex; gap: 10px; align-items: flex-start; max-width: 600px; cursor: pointer; }
+.wsio-check input { margin-top: 4px; width: 16px; height: 16px; accent-color: #c9a43a; }
+.wsio-optional { font-size: 12.5px; opacity: .55; margin-left: 6px; }
+.wsio button:focus-visible { outline: 2px solid #c9a43a; outline-offset: 2px; }
+
+/* Age attestation at a program door (founder ruling 2026-11-16, #1900). Wraps on a phone; 44px tap targets. */
+.wsio-age .wsio-row { flex-wrap: wrap; }
+.wsio-age button { min-height: 44px; }
+.wsio-check { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0; line-height: 1.5; cursor: pointer; }
+.wsio-check input { width: 22px; height: 22px; margin-top: 2px; flex: 0 0 auto; }
+
+/* A disabled button must look disabled (live walk 2026-11-16: the 13–17 Continue looked clickable before the supervision tick). */
+.wsio button:disabled, .wsio-age button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; filter: saturate(.4); }

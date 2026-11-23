@@ -11,6 +11,10 @@ export function generateStaticParams() {
  * GET  - Get linked capture sessions or unlinked sessions
  * POST - Link a capture session to case
  * DELETE - Unlink a capture session from case
+ *
+ * The practitioner is the SESSION member on every method; a `memberId` in the query or body is
+ * ignored. The case id and capture session id are RESOURCE ids, each checked against the
+ * session member's own rows.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -22,6 +26,7 @@ import {
   getCase,
 } from '@/lib/caseload/CaseStore';
 import { getSession } from '@/lib/capture/captureStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 export async function GET(
   request: NextRequest,
@@ -32,14 +37,12 @@ export async function GET(
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await params;
     const { searchParams } = new URL(request.url);
-    const memberId = searchParams.get('memberId');
     const unlinked = searchParams.get('unlinked') === 'true';
-
-    if (!memberId) {
-      return NextResponse.json({ error: 'memberId is required' }, { status: 400 });
-    }
 
     // Verify case ownership
     const caseData = await getCase(caseId, memberId);
@@ -79,13 +82,15 @@ export async function POST(
   { params }: { params: Promise<{ caseId: string }> }
 ) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await params;
-    const body = await request.json();
-    const { memberId, captureSessionId } = body;
+    const { captureSessionId } = await request.json();
 
-    if (!memberId || !captureSessionId) {
+    if (!captureSessionId) {
       return NextResponse.json(
-        { error: 'memberId and captureSessionId are required' },
+        { error: 'captureSessionId is required' },
         { status: 400 }
       );
     }
@@ -123,13 +128,15 @@ export async function DELETE(
   { params }: { params: Promise<{ caseId: string }> }
 ) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
+    const { memberId } = actor;
     const { caseId } = await params;
-    const body = await request.json();
-    const { memberId, captureSessionId } = body;
+    const { captureSessionId } = await request.json();
 
-    if (!memberId || !captureSessionId) {
+    if (!captureSessionId) {
       return NextResponse.json(
-        { error: 'memberId and captureSessionId are required' },
+        { error: 'captureSessionId is required' },
         { status: 400 }
       );
     }

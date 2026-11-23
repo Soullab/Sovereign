@@ -16,9 +16,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { randomUUID } from 'crypto';
 import { resolveCanonicalIdentity } from '@/lib/maia/canonical-turn';
 import { TurnPosture } from '@/lib/sanctuary/turnPosture';
+import { resolveStudioPosture } from '@/lib/sanctuary/studioPosture';
 import { performFocusCrossing } from '@/lib/writers-studio/focusCrossing';
 import { assembleFocus } from '@/lib/writers-studio/assembleFocus';
 import { prepareCanonicalHandoff, beginCanonicalGeneration } from '@/lib/writers-studio/writersStudioCognition';
@@ -42,6 +44,17 @@ export async function POST(request: NextRequest) {
   const memberId = identity.memberId;
 
   const body = await request.json().catch(() => ({} as Record<string, unknown>));
+  /* Sanctuary closure (founder ruling 2026-11-09): a Focus crossing is recorded (a disclosure receipt — MAIA read this text), so it
+     needs a declared ordinary posture. ⛔ `TurnPosture.resolve(body)` alone turned an absent posture into ordinary. */
+  const studioPosture = await resolveStudioPosture(memberId, (body ?? {}) as Record<string, unknown>);
+  if (!studioPosture.keep) {
+    return NextResponse.json({
+      error: studioPosture.sanctuary ? 'sanctuary_not_kept' : 'posture_undeclared',
+      message: studioPosture.sanctuary
+        ? 'Sanctuary is on, and MAIA reading this passage would be recorded, so nothing was sent. Turn Sanctuary off to ask about it.'
+        : 'Your Sanctuary setting couldn’t be read on this device, so nothing was sent. Reload and try again.',
+    }, { status: 409 });
+  }
   const { sessionId, workRef, scopeKind, sectionRef, range, gesture, ask } = body ?? {};
 
   if (typeof sessionId !== 'string' || typeof workRef !== 'string' || typeof ask !== 'string') {
@@ -59,6 +72,8 @@ export async function POST(request: NextRequest) {
   if (typeof (body as Record<string, unknown>).focusText === 'string') {
     return NextResponse.json({ error: 'Work text is read server-side, never supplied' }, { status: 400 });
   }
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, workRef); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
 
   // ⭐ ONE identity, minted here at the boundary and carried through consent,
   // receipt and cognition. Never regenerated downstream.
@@ -69,7 +84,7 @@ export async function POST(request: NextRequest) {
 
   const result = await performFocusCrossing(
     {
-      requestId, identity, posture: TurnPosture.resolve(body), memberId, sessionId,
+      requestId, identity, posture: TurnPosture.resolve({ sanctuary: studioPosture.sanctuary }), memberId, sessionId,
       disclosureId, workRef, scopeKind,
       sectionRef: typeof sectionRef === 'string' ? sectionRef : undefined,
       range: range && typeof range === 'object'

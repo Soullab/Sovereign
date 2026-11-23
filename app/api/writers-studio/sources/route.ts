@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { query } from '@/lib/db/postgres';
-import { ingestWorkbenchUpload, IntakeError } from '@/lib/workbench/intake';
+import { SOURCE_UPLOAD_HELD_MESSAGE } from '@/lib/writersStudio/heldDoorCopy';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,18 +33,12 @@ export async function GET(request: NextRequest) {
   });
 }
 
-export async function POST(request: NextRequest) {
-  const memberId = await getMemberIdFromRequest(request);
-  if (!memberId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try {
-    const form = await request.formData();
-    const file = form.get('file');
-    if (!(file instanceof File)) return NextResponse.json({ error: 'Missing file' }, { status: 400 });
-    const source = await ingestWorkbenchUpload(memberId, file);
-    return NextResponse.json({ source }, { status: 201 });
-  } catch (error) {
-    if (error instanceof IntakeError) return NextResponse.json({ error: error.message }, { status: error.status });
-    console.error('[writers-studio/sources] intake failed', error);
-    return NextResponse.json({ error: 'Could not bring that source in' }, { status: 500 });
-  }
+export async function POST() {
+  // SOURCE-LAUNCH-HOLD: a verified member is not authorization to admit
+  // original private files before Source custody, recovery and Class A.
+  // This refusal occurs before multipart parsing, storage or SQL.
+  return NextResponse.json(
+    { error: SOURCE_UPLOAD_HELD_MESSAGE },
+    { status: 423, headers: { 'Cache-Control': 'no-store' } },
+  );
 }

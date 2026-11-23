@@ -23,10 +23,12 @@ import {
   forgedIdentityHeaders,
 } from '@/lib/auth/identityAssertions';
 import { ACCESS_RULES, TIER_RANK, tierSatisfies } from '@/config/accessMatrix';
+import { SOURCE_UPLOAD_IDEMPOTENCY_HEADER } from '@/lib/writersStudio/sourceUploadAttempt';
 
 const REPO = path.resolve(__dirname, '../../../../../..');
 const read = (p: string) => fs.readFileSync(path.join(REPO, p), 'utf8');
-const middleware = () => read('middleware.ts');
+// Next 16 renamed the runtime matcher from middleware.ts to proxy.ts.
+const middleware = () => read('proxy.ts');
 const route = () => read('app/api/sovereign/manuscripts/ingest/route.ts');
 
 const PATH = '/api/sovereign/manuscripts/ingest';
@@ -117,18 +119,22 @@ describe("F2 · a valid member cannot cause custody to be attributed to another 
   });
 });
 
-describe('F3 · a valid member upload succeeds — nothing new gates it', () => {
-  it('the admission block adds no gate beyond authority and sanitisation', () => {
+describe('F3 · valid membership cannot override the authorized Source intake HOLD', () => {
+  it('the exact Press route has a static 423 before multipart reads; no env-based unlock', () => {
     const src = route();
     const admission = src.slice(
       src.indexOf('const forged = forgedIdentityHeaders'),
       src.indexOf('await request.formData()'),
     );
     expect(admission.length).toBeGreaterThan(0);
-    // Four refusals only: forged names, no member, resolvers disagreeing, and
-    // a survivor of sanitisation. (The matrix denials live in a helper.)
+    // Retain all four identity refusals, then a distinct explicit hold.
     expect(admission.match(/status: 401/g) ?? []).toHaveLength(4);
+    expect(src).toContain('const PRESS_SOURCE_INTAKE_RELEASED = writerReleaseAuthority().sourceIntakeReleased');
+    expect(read('lib/writersStudio/releaseAuthority.ts')).toContain('sourceIntakeReleased: true');
+    expect(admission).toMatch(/if \(!PRESS_SOURCE_INTAKE_RELEASED\)[\s\S]{0,260}status: 423/);
     expect(admission).not.toMatch(/process\.env\./);
+    expect(admission.indexOf('if (!PRESS_SOURCE_INTAKE_RELEASED)')).toBeLessThan(
+      admission.indexOf('request.headers.delete(header)'));
   });
 });
 
@@ -216,7 +222,12 @@ describe('F7 · client assertions cannot survive the excluded boundary', () => {
     expect(NEVER_CLIENT_SENT_IDENTITY_HEADERS).toContain('x-maia-member-id');
     expect(forgedIdentityHeaders(new Headers({ 'x-maia-member-id': 'other' })))
       .toEqual(['x-maia-member-id']);
-    expect(read('lib/auth/getMemberFromRequest.ts')).not.toMatch(/x-maia-member-id/);
+    const resolver = read('lib/auth/getMemberFromRequest.ts');
+    expect(resolver).toContain("request.headers.get('x-maia-member-id')");
+    expect(resolver).toContain('claim !== authority.memberId');
+    expect(resolver.indexOf('resolveSessionCredentialAuthority')).toBeLessThan(
+      resolver.indexOf("request.headers.get('x-maia-member-id')"),
+    );
   });
 
   it('x-member-id is the ONLY exemption, and it has a real sender', () => {
@@ -292,6 +303,13 @@ describe('F7 · client assertions cannot survive the excluded boundary', () => {
  * `formData()` is intercepted and, at the moment it is invoked, reads back the
  * request's own headers. Whatever is present there is what the rest of the route
  * — parsing, custody, and anything added later — would be able to see.
+ *
+ * Intake is RELEASED (releaseAuthority.ts, 25e911f8). So a request that is
+ * refused for a reason other than identity is no longer refused by a hold: it is
+ * refused by the audience gate (403). The tests below therefore drive the released
+ * route to its true boundaries. The manifest's HOLD branch is a dormant kill
+ * switch rather than a deleted one, so it is still exercised, last, against a
+ * manifest that re-engages it.
  */
 jest.mock('@/lib/db/postgres', () => ({ query: jest.fn() }));
 jest.mock('next/headers', () => ({ cookies: jest.fn() }));
@@ -304,36 +322,86 @@ jest.mock('@/lib/manuscript/source/arrivals', () => ({ recordArtifactArrival: je
 describe('F7 · behavioural — what the handler can still see when it reads the body', () => {
   const MEMBER = '11111111-1111-1111-1111-111111111111';
   const OTHER = '22222222-2222-2222-2222-222222222222';
+  const KEY = '30000000-0000-4000-8000-000000000001';
 
-  /* eslint-disable @typescript-eslint/no-var-requires */
   const { query } = require('@/lib/db/postgres');
   const { cookies } = require('next/headers');
   const { parseUpload } = require('@/lib/manuscript/ingest/parseUpload');
   const { recordArtifactArrival } = require('@/lib/manuscript/source/arrivals');
-  const { POST } = require('../route');
-  /* eslint-enable @typescript-eslint/no-var-requires */
+  /* The route reads the manifest ONCE, at module load, so each manifest needs its own load. This builds the route under a given
+     manifest inside its own module registry, which keeps two things true: the behavioural tests below describe the RELEASED
+     route's law and do not move when the real manifest does (whether the real manifest says released is pinned statically, in F3
+     and in encryptedSourceUploadContract; coupling the two is how a one-line manifest change broke this block), and the HELD
+     branch is still exercised, in the last test, against a manifest that re-engages it. */
+  const loadRoute = (sourceIntakeReleased: boolean): { POST: (req: NextRequest) => Promise<Response> } => {
+    let loaded!: { POST: (req: NextRequest) => Promise<Response> };
+    jest.isolateModules(() => {
+      jest.doMock('@/lib/writersStudio/releaseAuthority', () => ({
+        writerReleaseAuthority: () => ({
+          manifestId: sourceIntakeReleased ? 'test-released' : 'test-held',
+          sourceIntakeReleased,
+          importFormats: ['docx', 'pdf', 'epub', 'text'],
+          exportsCertified: { pdf: false, epub: false },
+          permanentErasureCertified: false,
+        }),
+      }));
+      loaded = require('../route');
+    });
+    return loaded;
+  };
+  const { POST } = loadRoute(true);
 
+  /** Whether the Writer pilot roster (writersStudioBetaAccess) lists MEMBER. */
+  let onRoster = true;
+
+  /**
+   * A valid, unrevoked session naming MEMBER — both identity resolvers run the same
+   * predicate against auth_sessions, so both are answered here — and the pilot roster
+   * as one row of the two EXISTS columns writersStudioBetaAccess reads. Anything not
+   * named here answers with no rows, which every gate must read as "no".
+   */
+  const answer = async (sql: string) => {
+    if (sql.includes('ops_contacts')) return { rows: [{ beta: onRoster, founder: false }] };
+    if (sql.includes('m.tier')) return { rows: [{ member_id: MEMBER, tier: 'free', roles: ['member'] }] };
+    if (sql.includes('auth_sessions')) return { rows: [{ member_id: MEMBER }] };
+    return { rows: [] };
+  };
+
+  // The released route refuses, before reading the body, when no key provider is configured (it cannot store anything without one).
+  // These tests drive it past that gate, so they run as a configured process; the gate itself is pinned in intakeRefusals.test.ts.
+  const envRef = process.env as Record<string, string | undefined>;
+  let savedProvider: string | undefined;
   beforeEach(() => {
     jest.clearAllMocks();
-    // A valid, unrevoked session naming MEMBER — both resolvers run the same
-    // predicate against auth_sessions, so both are answered here.
-    query.mockImplementation(async (sql: string) => {
-      if (sql.includes('m.tier')) {
-        return { rows: [{ member_id: MEMBER, tier: 'free', roles: ['member'] }] };
-      }
-      if (sql.includes('auth_sessions')) return { rows: [{ member_id: MEMBER }] };
-      return { rows: [] };
-    });
+    savedProvider = envRef.WRITER_SOURCE_KEY_PROVIDER;
+    envRef.WRITER_SOURCE_KEY_PROVIDER = 'local-test';
+    onRoster = true;
+    query.mockImplementation(answer);
     cookies.mockResolvedValue({ get: () => undefined });
     parseUpload.mockResolvedValue({ text: 'hello', warnings: [], format: 'md' });
     recordArtifactArrival.mockResolvedValue({ id: 'arrival-1' });
   });
+  afterEach(() => {
+    if (savedProvider === undefined) delete envRef.WRITER_SOURCE_KEY_PROVIDER; else envRef.WRITER_SOURCE_KEY_PROVIDER = savedProvider;
+  });
+
+  /**
+   * The headers a released upload carries besides identity: an explicit ordinary
+   * posture and a retry identifier. Present on every request below, so that a refusal
+   * can only be attributed to the gate under test and never to a missing precondition
+   * of a later gate.
+   */
+  const released = (headers: Record<string, string>) => ({
+    'x-maia-sanctuary': 'false',
+    [SOURCE_UPLOAD_IDEMPOTENCY_HEADER]: KEY,
+    ...headers,
+  });
 
   /** Run the handler, capturing the request's headers at the body boundary. */
   const runCapturingHeaders = async (headers: Record<string, string>) => {
-    const req = multipartRequest(headers);
+    const req = multipartRequest(released(headers));
     const realFormData = req.formData.bind(req);
-    let atBody: string[] | null = null;
+    let atBody = null as string[] | null;
     jest.spyOn(req, 'formData').mockImplementation(async () => {
       atBody = [...req.headers.keys()];
       return realFormData();
@@ -342,35 +410,58 @@ describe('F7 · behavioural — what the handler can still see when it reads the
     return { res, atBody };
   };
 
-  it('a matching x-member-id is accepted through auth — the upload succeeds', async () => {
-    const { res } = await runCapturingHeaders({
-      'x-session-token': 'tok',
-      'x-member-id': MEMBER,
-    });
-    expect(res.status).toBe(200);
-    expect(recordArtifactArrival).toHaveBeenCalledWith(
-      expect.objectContaining({ memberId: MEMBER }),
-    );
-  });
-
-  it('and NO client-assertable header remains when the body is read', async () => {
+  it('a matching x-member-id passes identity checks and is gone by the time the body is read', async () => {
     const { res, atBody } = await runCapturingHeaders({
       'x-session-token': 'tok',
       'x-member-id': MEMBER,
     });
     expect(res.status).toBe(200);
     expect(atBody).not.toBeNull();
+    // Nothing a caller can assert about who they are survives to the parser...
     for (const header of CLIENT_ASSERTABLE_IDENTITY_HEADERS) {
       expect(atBody).not.toContain(header);
     }
+    // ...while the credential, the posture and the retry identifier do: they are
+    // not identity assertions.
+    expect(atBody).toEqual(expect.arrayContaining([
+      'x-session-token', 'x-maia-sanctuary', SOURCE_UPLOAD_IDEMPOTENCY_HEADER,
+    ]));
+    // Custody is attributed to the member the SESSION names, with the caller's retry key.
+    expect(parseUpload).toHaveBeenCalledTimes(1);
+    expect(recordArtifactArrival).toHaveBeenCalledTimes(1);
+    expect(recordArtifactArrival).toHaveBeenCalledWith(
+      expect.objectContaining({ memberId: MEMBER, idempotencyKey: KEY }),
+    );
   });
 
-  it('while x-session-token IS still there — a credential, not an assertion', async () => {
-    const { atBody } = await runCapturingHeaders({
+  it('a valid member who is not in the Writer pilot is refused before the body, the parser or custody', async () => {
+    onRoster = false;
+    const { res, atBody } = await runCapturingHeaders({
       'x-session-token': 'tok',
       'x-member-id': MEMBER,
     });
-    expect(atBody).toContain('x-session-token');
+    expect(res.status).toBe(403);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(atBody).toBeNull();
+    expect(parseUpload).not.toHaveBeenCalled();
+    expect(recordArtifactArrival).not.toHaveBeenCalled();
+    // The roster was asked exactly once, about the session member (here the header and the session name the same member).
+    const asked = query.mock.calls.filter(([sql]: [string]) => sql.includes('ops_contacts'));
+    expect(asked).toHaveLength(1);
+    expect(asked[0][1]).toEqual([MEMBER]);
+  });
+
+  it('the session credential remains available to auth and the parser; the identity assertion does not', async () => {
+    const req = multipartRequest(released({
+      'x-session-token': 'tok',
+      'x-member-id': MEMBER,
+    }));
+    const body = jest.spyOn(req, 'formData');
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    expect(body).toHaveBeenCalledTimes(1);
+    expect(req.headers.get('x-session-token')).toBe('tok');
+    expect(req.headers.has('x-member-id')).toBe(false);
   });
 
   it('a mismatched x-member-id is refused — the body is never reached', async () => {
@@ -410,5 +501,21 @@ describe('F7 · behavioural — what the handler can still see when it reads the
     expect(res.status).toBe(401);
     expect(atBody).toBeNull();
     expect(await res.json()).toMatchObject({ error: 'Unauthorized' });
+  });
+
+  it('a manifest that re-engages the hold still refuses a valid member with 423, before the body', async () => {
+    const held = loadRoute(false);
+    const req = multipartRequest(released({ 'x-session-token': 'tok', 'x-member-id': MEMBER }));
+    const body = jest.spyOn(req, 'formData');
+    const res = await held.POST(req);
+
+    expect(res.status).toBe(423);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(query).toHaveBeenCalled(); // identity was established first: the hold is not an oracle for strangers
+    expect(body).not.toHaveBeenCalled();
+    expect(parseUpload).not.toHaveBeenCalled();
+    expect(recordArtifactArrival).not.toHaveBeenCalled();
+    // and no roster read happened: the hold sits before the audience gate
+    expect(query.mock.calls.some(([sql]: [string]) => sql.includes('ops_contacts'))).toBe(false);
   });
 });

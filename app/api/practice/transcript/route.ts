@@ -3,6 +3,10 @@
  *
  * GET: Retrieve transcript segments with cursor-based pagination
  * POST: Add new transcript segment (from Whisper transcription)
+ *
+ * Transcript text is PHI. The session must be the caller's own: a session that is not theirs, an
+ * unowned legacy session and an absent id answer the same 404, and nothing is read or written first
+ * (PRACTITIONER-SESSION-OWNERSHIP-01, lib/auth/requireOwnedSession.ts).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,6 +15,8 @@ import {
   getFullTranscript,
   addTranscriptSegment
 } from '@/lib/practice/PracticeStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +26,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
     const { searchParams } = new URL(req.url);
     const sessionId = searchParams.get('sessionId');
     const afterMs = parseInt(searchParams.get('afterMs') || '-1', 10);
@@ -32,6 +40,9 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     // Full transcript (for post-session review)
     if (full) {
@@ -71,6 +82,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
     const body = await req.json();
     const {
       sessionId,
@@ -90,6 +103,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     const segment = await addTranscriptSegment({
       sessionId,

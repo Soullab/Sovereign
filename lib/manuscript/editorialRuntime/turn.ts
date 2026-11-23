@@ -40,13 +40,32 @@
  *   strike-through over their own words for them to police.
  */
 
+import { KeepWitness } from '@/lib/sanctuary/studioPosture';
+import { answerChoicesInstruction } from '@/lib/writersStudio/answerChoices';
+import { randomUUID } from 'node:crypto';
 import { query } from '@/lib/db/postgres';
-import { runStructured } from '@/lib/ai/structured/router';
+import { runStructured } from '@/lib/writersStudio/meteredStructured'; // the structured seam, unchanged, plus the shadow MAIA meter
+import { judgeEditorialQuotes, QUOTE_NOT_IN_TEXT_DETAIL } from './editorialQuoteGate';
+import type { DispatchObservation } from '@/lib/ai/structured/dispatch';
+import { establishDisclosureBoundary, mayCrossBoundary } from '@/lib/disclosure/disclosureBoundary';
+import { confirmDisclosureCrossed } from '@/lib/disclosure/contextDisclosureReceipt';
+import { shouldConfirmCrossing } from '@/lib/disclosure/crossingConfirmation';
+import { TurnPosture } from '@/lib/sanctuary/turnPosture';
 import type { StructuredRequest } from '@/lib/ai/structured/types';
 import { constructEditorialWriterTurn, renderEditorialTurn } from '@/lib/writers-studio/canonicalWriterTurn';
 import { writerUnderstandingContextForManuscript } from '@/lib/writersStudio/writerUnderstandingServer';
+import { decisionContextForManuscript } from '@/lib/writersStudio/decisionRecord';
 import type { CandidateBlock, MemberIdentity, TierStrategy } from '@/lib/maia/canonical-turn';
 import { buildTeachingRuntimeBridge } from '@/lib/maia/teaching/TeachingRuntimeBridge';
+import { editorialDirective, type EditorialDepth, replyLengthInstruction, responsiveLengthDirective, type ReplyLength } from '@/lib/writersStudio/editorialDepth';
+import { teachingTurnInstruction, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
+import { conversationTurnInstruction, type TurnShape } from '@/lib/writersStudio/conversationTurn';
+import { passageActInstruction, type PassageAct } from '@/lib/writersStudio/passageActs';
+import { arrivalOriginInstruction, type ArrivalOrigin } from '@/lib/writersStudio/arrivalOrigin';
+import { OPENING_STAND_IN, conversationOpeningInstruction, type OpeningGesture } from '@/lib/writersStudio/conversationOpening';
+import { studioGuideInstruction } from '@/lib/writersStudio/studioGuide';
+import { studioActionsInstruction } from '@/lib/writersStudio/studioActions';
+import { relationalCraftSystemGuidance } from '@/lib/writersStudio/relationalCraftExchange';
 import {
   admitEditorialToolEnvelope, EDITORIAL_TOOL_NAME, editorialToolSchemaForKinds,
   editorialTurnIdentity, priorRelationshipMaiaEditorialTurnCandidate,
@@ -70,7 +89,10 @@ import {
   type ProposalPolicy,
 } from '../editorialScope/sequence';
 import { assembleEditorialCognition, type AssemblyRefusal } from './assembly';
+import { workPausesRevisions, workQuestionsOnlyInstruction, workStudioProgram, workProgramUncertainInstruction } from './workRevisionPause';
+import { studioPathById } from '@/lib/writersStudio/studioPaths';
 import { persistMaiaEditorialOutcome, type MaiaOutcomeRefusal, type MaiaOutcomeResult } from './maiaOutcome';
+import { detectNoopAdjustment, type NoopAdjustmentReason } from './noopProposal';
 
 /** ⭐ The capability owns its model pin. ⛔ Never chosen by HTTP. */
 export const EDITORIAL_MODEL = process.env.MAIA_EDITORIAL_MODEL || 'claude-opus-5';
@@ -126,6 +148,28 @@ export interface EditorialTurnInput {
   /** Turn-local outcome permission. ⛔ Defaults to allow; exploratory surfaces
    * may close the proposal/direction vocabulary to reply_only. */
   readonly proposalPolicy?: ProposalPolicy;
+  /** Explicitly selected response register; NEVER inferred from the writer. */
+  readonly responseDepth?: EditorialDepth;
+  /** The writer's own length choice (Shorter / Say more). ⛔ A closed value, never text. */
+  readonly replyLength?: ReplyLength;
+  /** The teaching button the writer pressed (F1). Its shape is added here,
+   *  server-side; the writer's turn holds only the button's words. */
+  readonly teachingAnchor?: TeachingAnchor;
+  /** The free Ask box (Design 3C). Its shape is added here, server-side;
+   *  the writer's turn holds only what they typed or said. */
+  readonly turnShape?: TurnShape;
+  /** The card the writer pressed (conversation-first Focus, step 1). Its instruction is
+   *  added here, server-side; the writer's turn holds only the button's words. */
+  readonly passageAct?: PassageAct;
+  /** Where the writer arrived from (F1), resolved by the route from the member's own
+   *  frozen reading. Its framing is added here; ⛔ never stored as the writer's turn. */
+  readonly arrivalOrigin?: ArrivalOrigin;
+  /**
+   * R2: MAIA speaks first. The writer's gesture is a typed event, never a turn: there is
+   * NO author row to read, `currentTurnIndex` must be 0, and the outcome is forced to
+   * reply_only whatever the caller sent.
+   */
+  readonly opening?: { readonly gesture: OpeningGesture };
 }
 
 export type EditorialTurnRefusal =
@@ -143,6 +187,15 @@ export type EditorialTurnRefusal =
   | 'model_unattributable'
   /** The structured seam refused. ⛔ There is no fallback below this. */
   | 'structured_refused'
+  /**
+   * ⭐ Authorization or accountability for the crossing could not be
+   * established. ⛔ NOTHING was sent — the refusal happens before the author's
+   * words enter cognition, which is the whole point of putting it here.
+   */
+  | 'disclosure_unavailable'
+  /** A provider response may already have crossed, but the durable crossing
+   * receipt could not be confirmed. Never retry or describe this as unsent. */
+  | 'disclosure_confirmation_unresolved'
   /**
    * ⭐⭐ THE PROPOSAL IS IN SOMEONE ELSE'S VOCABULARY, far past what the
    * writer's latitude could plausibly mean. ⛔ Below the bound this is REPORTED
@@ -162,7 +215,18 @@ export type EditorialTurnRefusal =
    * ⭐⭐ THE PROPOSAL EXCEEDED THE AUTHOR'S DECLARED LATITUDE.
    * ⛔ Nothing was written, and the wording is not shown.
    */
-  | ScopeRefusal;
+  | ScopeRefusal
+  /**
+   * ⭐⭐ THE PROPOSAL REPEATS MAIA'S OWN IMMEDIATELY PRECEDING WORDING,
+   * BYTE-IDENTICAL, AT THE EXACT FROZEN PREDECESSOR THIS TURN WAS INVOKED
+   * AGAINST (EA-NOOP-ADJUSTMENT-01). ⛔ Nothing was written.
+   */
+  | NoopAdjustmentReason
+  /**
+   * ⭐ MAIA's reply put a long span in quotation marks that is not in the text she was given for this turn
+   * (WS-WORK-CONTINUITY A2). ⛔ Nothing was written; the whole turn is refused, never repaired.
+   */
+  | 'quote_not_in_text';
 
 export type EditorialTurnResult =
   | {
@@ -183,6 +247,14 @@ export type EditorialTurnResult =
       readonly ok: false;
       readonly reason: EditorialTurnRefusal;
       readonly detail?: string;
+      /**
+        * ⭐ Present only on `structured_refused`: whether a provider response was
+        * observed. ⛔ This is what lets a disclosure receipt say whether the
+        * crossing happened, since `reason` alone cannot — an HTTP error and a
+        * refused connection are the same refusal with different `detail`.
+        * ⚠️ `unknown` is a real answer, not a missing one.
+        */
+      readonly dispatch?: DispatchObservation;
       /** ⭐ Present only on a scope refusal, so the writer can be told in counts. */
       readonly scope?: { readonly measure: ScopeMeasure; readonly wouldPassAtLatitude: number | null };
       /** ⭐ Present on a voice refusal, so the writer sees WHICH words. */
@@ -200,16 +272,27 @@ export async function runEditorialTurn(
   const { threadId, currentTurnIndex } = input;
 
   /* 1 ⭐⭐ THE DURABLE TURN IS THE UTTERANCE. */
-  const t = await query<{ body: string }>(
-    `SELECT body FROM ask_turns tu
-       JOIN ask_threads th ON th.id = tu.thread_id
-      WHERE tu.thread_id = $1 AND tu.turn_index = $2
-        AND tu.speaker = 'author' AND th.member_id = $3`,
-    [threadId, currentTurnIndex, memberId]);
-  if (t.rows.length === 0) return { ok: false, reason: 'current_turn_not_found' };
-  const utterance = t.rows[0]!.body;
+  let utterance: string;
+  if (input.opening) {
+    /* R2 / O1(a): no writer words exist. ⛔ Nothing is read from ask_turns and nothing
+       stands in as the writer's speech in storage; this bracketed line is model input only. */
+    if (currentTurnIndex !== 0) return { ok: false, reason: 'current_turn_not_found' };
+    /* An opening is recorded in relationship custody or not at all. */
+    if (input.relationshipId === undefined) return { ok: false, reason: 'relationship_scope_unmeasured' };
+    utterance = OPENING_STAND_IN;
+  } else {
+    const t = await query<{ body: string }>(
+      `SELECT body FROM ask_turns tu
+         JOIN ask_threads th ON th.id = tu.thread_id
+        WHERE tu.thread_id = $1 AND tu.turn_index = $2
+          AND tu.speaker = 'author' AND th.member_id = $3`,
+      [threadId, currentTurnIndex, memberId]);
+    if (t.rows.length === 0) return { ok: false, reason: 'current_turn_not_found' };
 
-  /* 2 · assemble */
+    /* 2 · assemble */
+    utterance = t.rows[0]!.body;
+  }
+
   const assembly = await assembleEditorialCognition({
     memberId, threadId, currentTurnIndex,
     declaredAct: input.declaredAct, currentDirectionId: input.currentDirectionId,
@@ -234,10 +317,65 @@ export async function runEditorialTurn(
   const teachingBlocks: CandidateBlock[] = teaching.active
     ? [{ producerId: 'computed.teaching_intelligence', text: teaching.directive }]
     : [];
-  const declaredWriterContext = await writerUnderstandingContextForManuscript(
+  /* ⭐⭐ THE BOUNDARY — authorization AND accountability, before the author's
+   * words become part of what MAIA is given.
+   *
+   * Founder ruling 2026-09-21: external editorial processing requires
+   * authorization before dispatch AND a durable record naming destination and
+   * disclosed context. `establishDisclosureBoundary` does both in that order —
+   * consent first and fail-closed, then an `attempted` receipt — and returns
+   * permission only when both hold.
+   *
+   * ⭐ WHY HERE AND NOT IN THE ROUTE, where every other boundary is established.
+   * The identities a receipt must name — the Work and the section — are derived
+   * from the thread's locus, which is resolved by `assembleEditorialCognition`.
+   * ⛔ The route does not hold them, and a receipt naming coordinates the caller
+   * supplied rather than the ones the crossing used would be evidence of the
+   * wrong thing.
+   *
+   * ⚠️ AND THE NARROWING, STATED RATHER THAN PAPERED OVER. Assembly has already
+   * read the locus text into this process. The boundary therefore precedes prose
+   * entering COGNITION — which is what `->maia_cognition` names and what a
+   * refusal here prevents — ⛔ but it does NOT precede prose being read from the
+   * database. Making authority precede the read as well requires splitting the
+   * locus read so identity resolves before text, which would touch the frozen
+   * locus the scope law measures against. ⭐ That is the stronger ordering and it
+   * is OWED; it is not what this repair does.
+   */
+  const disclosureId = randomUUID();
+  const boundary = await establishDisclosureBoundary({
+    requestId: input.exchangeId,
+    posture: TurnPosture.resolve({ sanctuary: false }),
     memberId,
-    assembly.manuscriptId,
-  );
+    sessionId: threadId,
+    disclosure: {
+      disclosureId,
+      boundary: 'writers_studio.editorial_turn->maia_cognition',
+      sourceClass: 'work',
+      participationBasis: 'member_invoked',
+      sourceRef: assembly.manuscriptId,
+      /* ⭐ `passage`, and therefore ⛔ NO `sectionRef`. The disclosed thing is the
+         locus, not the section; naming the containing section would materially
+         narrow reconstruction, which the receipt type and a CHECK both refuse. */
+      scopeKind: 'passage',
+      gesture: 'work_with_this',
+    },
+  });
+  if (!mayCrossBoundary(boundary)) {
+    /* ⛔ Nothing assembled into cognition, nothing dispatched. The member's act
+       stands; only the crossing was refused. */
+    return {
+      ok: false, reason: 'disclosure_unavailable',
+      detail: boundary.kind === 'consent_unavailable' ? boundary.reason : boundary.outcome.kind,
+    };
+  }
+
+
+  /* ⭐ WS-DECISION-CONTINUITY — the writer's settled decisions, via the ONE shared read; Sanctuary reads nothing. */
+  const declaredWriterContext = [
+    await writerUnderstandingContextForManuscript(memberId, assembly.manuscriptId),
+    input.sanctuary ? '' : await decisionContextForManuscript(memberId, assembly.manuscriptId),
+  ].filter(Boolean).join("\n\n");
   const intentionBlocks: CandidateBlock[] = declaredWriterContext
     ? [{
         producerId: 'member.writer_intention',
@@ -268,7 +406,23 @@ export async function runEditorialTurn(
      resolutions could disagree, and the one that governs must be the one she
      was told about. */
   const scope: EditorialScopeDeclaration = input.scope ?? DEFAULT_SCOPE_DECLARATION;
-  const proposalPolicy: ProposalPolicy = input.proposalPolicy ?? 'allow';
+  /* ⭐ WORK-WIDE "MAIA asks, never rewrites" (founder authorization 2026-11-13,
+     ledger #1938). The writer's own durable setting on the Work outranks any
+     per-turn declaration: a client cannot send 'allow' past it. Read on every
+     non-opening turn: it also decides MAIA's no-wording instruction, which a client
+     that already sent reply_only still needs (2026-11-15). Fails closed (see
+     workRevisionPause.ts). */
+  const workPaused = !input.opening
+    && await workPausesRevisions(memberId, assembly.chainId, assembly.manuscriptId);
+  /* The Work's Studio program (2026-11-15): MAIA coaches in that program's posture, looked up by id. */
+  const workProgram = input.opening ? { kind: 'none' as const }
+    : await workStudioProgram(memberId, assembly.chainId, assembly.manuscriptId);
+  const workPath = workProgram.kind === 'one' ? studioPathById(workProgram.id) : null;
+  /* Ambiguous, unreadable, or a stored id the registry no longer knows: the conservative common ground (review F3). */
+  const workProgramUncertain = workProgram.kind === 'ambiguous' || workProgram.kind === 'unknown'
+    || (workProgram.kind === 'one' && workPath === null);
+  const proposalPolicy: ProposalPolicy = input.opening || workPaused
+    ? 'reply_only' : (input.proposalPolicy ?? 'allow');
 
   /* ⭐⭐ THE SEQUENCE GATE (founder ruling, 2026-09-20): at latitude 1, and only
      there, MAIA discusses before offering wording — unless the writer has
@@ -315,9 +469,42 @@ export async function runEditorialTurn(
        back, and deleting this line would not change what is permitted. */
     system: [
       proof.systemPrompt,
+      // Server-owned fixed editorial register, not author-authored speech.
+      // Both derive from the exact durable utterance and chosen depth only.
+      // No new context, corpus, or identity crosses this instruction.
+      editorialDirective(input.responseDepth ?? 'guided'),
+      // Founder 2026-11-05: length follows the request in front of her (not Learning,
+      // which keeps its own one-idea rule).
+      responsiveLengthDirective(input.responseDepth ?? 'guided'),
+      // Server-owned teaching shape (F1): how to answer a Teach me, never a
+      // sentence stored as the writer's.
+      input.teachingAnchor ? teachingTurnInstruction(input.teachingAnchor) : '',
+      // Server-owned conversational shape for the free Ask box (Design 3C).
+      input.turnShape === 'conversation' ? conversationTurnInstruction() : '',
+      // Server-owned instruction for the card the writer pressed (step 1).
+      input.passageAct ? passageActInstruction(input.passageAct) : '',
+      // Server-owned arrival framing (F1), from the member's own saved reading.
+      input.arrivalOrigin ? arrivalOriginInstruction(input.arrivalOrigin) : '',
+      // R2: the opening's shape is server-owned too.
+      input.opening ? conversationOpeningInstruction() : '',
+      // Server-owned map of the Studio's real controls (Design 1A), so "how do I"
+      // gets the actual tool instead of a workaround. Names only; she presses nothing.
+      // In Sanctuary it leaves out every tool that reads, keeps or plans (walk 2026-11-09, defect 5).
+      studioGuideInstruction({ sanctuary: input.sanctuary }),
+      // Design 1B: MAIA may offer one control as a marker; the writer clicks it.
+      studioActionsInstruction('passage-focus'),
+      // Founder 2026-11-05: a closed question may carry two or three one-click answers.
+      input.teachingAnchor ? '' : answerChoicesInstruction(),
+      relationalCraftSystemGuidance(utterance),
       latitudeInstruction(scope),
       sequenceInstruction(gated),
       proposalPolicyInstruction(proposalPolicy),
+      // Work-wide "MAIA asks, never rewrites": no wording in any channel (2026-11-15).
+      workPaused ? workQuestionsOnlyInstruction() : '',
+      // The Work's Studio program, in its own posture (registry by id; never client-supplied text).
+      workPath ? workPath.studioPosture : workProgramUncertain ? workProgramUncertainInstruction() : '',
+      // Last, so the writer's own length choice outranks every default shape.
+      input.replyLength ? replyLengthInstruction(input.replyLength) : '',
     ].filter(Boolean).join('\n\n'),
     messages: [{ role: 'user', content: utterance }],
     maxTokens: MAX_TOKENS,
@@ -334,7 +521,49 @@ export async function runEditorialTurn(
   };
   const structured = await runStructured(request);
   if (!structured.ok) {
-    return { ok: false, reason: 'structured_refused', detail: structured.refusal };
+    /* ⭐ `detail` stays the refusal CLASS, unchanged — the caller's contract is
+       not rewritten here. ⛔ What is added is the delivery fact, which the class
+       cannot carry: `provider_unavailable` covers both a request that arrived
+       and was rejected and one that never left. */
+    /* ⭐⭐ CONFIRM FROM ARRIVAL, NOT FROM SUCCESS — founder ruling 2026-09-21.
+     * A provider that answered received the words, whatever it answered. ⛔ A
+     * refusal is not evidence of non-arrival.
+     *
+     * ⚠️ `unknown` does NOT confirm. A timeout may have arrived and been lost,
+     * and the receipt stays `attempted`, which the table defines as *a crossing
+     * MAY have occurred and was not confirmed* — ⛔ never as nothing crossed.
+     * That is the honest state and it needs no new vocabulary. */
+    if (shouldConfirmCrossing({ kind: 'refusal', dispatch: structured.dispatch })) {
+      let confirmed = false;
+      try { confirmed = await confirmDisclosureCrossed(disclosureId); } catch { confirmed = false; }
+      if (!confirmed) {
+        return {
+          ok: false,
+          reason: 'disclosure_confirmation_unresolved',
+          detail: 'provider_disclosure_confirmation_unresolved',
+          dispatch: structured.dispatch,
+        };
+      }
+    }
+    return {
+      ok: false, reason: 'structured_refused', detail: structured.refusal,
+      dispatch: structured.dispatch,
+    };
+  }
+  /* ⭐ A result came back, so the words demonstrably arrived.
+   * ⛔ Confirmation is part of accountability, not telemetry. A failed receipt
+   * confirmation may never be followed by admission/persistence and a 200. */
+  if (shouldConfirmCrossing({ kind: 'result' })) {
+    let confirmed = false;
+    try { confirmed = await confirmDisclosureCrossed(disclosureId); } catch { confirmed = false; }
+    if (!confirmed) {
+      return {
+        ok: false,
+        reason: 'disclosure_confirmation_unresolved',
+        detail: 'provider_disclosure_confirmation_unresolved',
+        dispatch: 'response_observed',
+      };
+    }
   }
 
   /* 6 ⛔ ADMISSION. A refusal here reaches no transaction, and prose is never
@@ -354,12 +583,17 @@ export async function runEditorialTurn(
   if (reportedModel === null || modelAgreement !== 'agreed') {
     return {
       ok: false, reason: 'model_unattributable',
-      detail: `requested=${structured.result.provenance.model} reported=${reportedModel ?? 'none'} agreement=${modelAgreement}`,
+      detail: 'model_attribution_unverified',
     };
   }
 
   const admission = admitEditorialToolEnvelope(structured.result.content);
   if (!admission.ok) return { ok: false, reason: admission.reason };
+
+  /* 6-A2 ⭐ MECHANICAL QUOTE FIDELITY, before any other judgement of the content and before anything is written. */
+  if (!judgeEditorialQuotes(request, admission.outcome as never).ok) {
+    return { ok: false, reason: 'quote_not_in_text', detail: QUOTE_NOT_IN_TEXT_DETAIL };
+  }
 
   /* 6b ⭐⭐ THE SCOPE LAW — WS-EDITORIAL-SCOPE-01.
    *
@@ -396,6 +630,26 @@ export async function runEditorialTurn(
   } | null = null;
 
   if (admission.outcome.kind === 'reply_with_proposal') {
+    /* 6a2 ⭐⭐ THE NO-OP LAW — EA-NOOP-ADJUSTMENT-01.
+     *
+     * ⛔ Measured against the EXACT frozen predecessor this turn was invoked
+     * against (`invocation.authoredAgainstVersionId`), re-read fresh through
+     * the reviewed proposal-work model — never the chain's current head,
+     * which may have moved since invocation, and never any other version in
+     * the lineage. ⭐ Exact byte equality only; a member-authored predecessor
+     * with identical wording, or a candidate that merely matches an older,
+     * non-immediate version, is not this law's business.
+     *
+     * ⛔⛔ REFUSES THE WHOLE TURN, same as the scope law below — never
+     * downgraded to `reply_only`, never repaired by keeping `reply` alone.
+     */
+    const noop = await detectNoopAdjustment({
+      memberId, chainId: invocation.chainId,
+      authoredAgainstVersionId: invocation.authoredAgainstVersionId,
+      candidateReplacementText: admission.outcome.proposal.replacementText,
+    });
+    if (noop.isNoop) return { ok: false, reason: noop.reason, detail: noop.detail };
+
     const verdict = judgeProposalScope(
       invocation.locusText, admission.outcome.proposal.replacementText, scope);
     if (!verdict.ok) {
@@ -440,13 +694,20 @@ export async function runEditorialTurn(
 
   /* 7 · persist, with the provenance of the answer that ACTUALLY came back */
   const persisted = await persistMaiaEditorialOutcome({
+    keep: KeepWitness.fromDeclaration(input.sanctuary),
     memberId, invocation, outcome: admission.outcome,
     ...(input.relationshipId !== undefined
-      ? { relationshipAdmission: {
-          relationshipId: input.relationshipId,
-          memberTurnIndex: input.currentTurnIndex,
-          manuscriptLocusScope: assembly.locusScopeKind!,
-        } }
+      ? { relationshipAdmission: input.opening
+          ? {
+              relationshipId: input.relationshipId,
+              manuscriptLocusScope: assembly.locusScopeKind!,
+              opening: { gesture: input.opening.gesture },
+            }
+          : {
+              relationshipId: input.relationshipId,
+              memberTurnIndex: input.currentTurnIndex,
+              manuscriptLocusScope: assembly.locusScopeKind!,
+            } }
       : {}),
     /* ⭐ ALL THREE FACTS, and `model` keeps its governed meaning:
        requested and SENT. ⛔ It is not redefined to mean "what answered" — that
@@ -459,6 +720,7 @@ export async function runEditorialTurn(
       latencyMs: structured.result.provenance.latencyMs,
       usage: structured.result.usage,
       runtime: 'ws-editorial-runtime-01/er-r4',
+      ...(input.opening ? { opening: { gesture: input.opening.gesture } } : {}),
     },
   });
   if (!persisted.ok) return { ok: false, reason: persisted.reason, detail: persisted.detail };

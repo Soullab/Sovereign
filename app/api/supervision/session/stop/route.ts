@@ -3,6 +3,11 @@
  * POST /api/supervision/session/stop
  *
  * Stops an active session and triggers analysis pipeline.
+ *
+ * Owner-only (PRACTITIONER-SESSION-OWNERSHIP-01). The check comes FIRST: before the segment-gate flush
+ * (which writes a transcript segment), before the assembler is started and before the session is
+ * stopped, so a session that is not the caller's has none of those done to it. It answers the same 404
+ * as an absent id.
  */
 
 export const dynamic = 'force-dynamic';
@@ -23,6 +28,8 @@ import { runSessionSynthesis } from '@/lib/supervision/SessionSynthesizer';
 import { runAssembly } from '@/lib/supervision/transcriptAssembler';
 import { flushPendingCandidate } from '@/lib/supervision/segmentGate';
 import { isLikelyPhantomDuplicate } from '@/lib/scribe/transcriptCleaner';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 interface StopSessionRequest {
   sessionId: string;
@@ -33,6 +40,8 @@ interface StopSessionRequest {
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
     const body: StopSessionRequest = await request.json();
 
     if (!body.sessionId) {
@@ -41,6 +50,9 @@ export async function POST(request: NextRequest) {
         error: 'sessionId is required'
       }, { status: 400 });
     }
+
+    const owned = await requireOwnedSession(actor.memberId, body.sessionId);
+    if ('error' in owned) return owned.error;
 
     // Stop the session
     const session = await stopSession(body.sessionId);

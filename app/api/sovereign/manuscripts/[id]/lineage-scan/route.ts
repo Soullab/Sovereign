@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { query } from '@/lib/db/postgres';
 import { splitStoredSection } from '@/lib/manuscript/sections/sectionProjection';
-import { runStructured } from '@/lib/ai/structured/router';
+import { runStructured } from '@/lib/writersStudio/meteredStructured'; // the structured seam, unchanged, plus the shadow MAIA meter
 import type { StructuredBlock } from '@/lib/ai/structured/types';
 import {
   LINEAGE_SCAN_SYSTEM,
@@ -11,6 +12,7 @@ import {
   type LineageCandidate,
   type LineageScanSection,
 } from '@/lib/writersStudio/intellectualLineageScan';
+import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
 
 export const dynamic = 'force-dynamic';
 
@@ -115,13 +117,16 @@ function schema(sectionIds: readonly string[], bibliographyKeys: readonly string
   } as const;
 }
 
-export async function POST(
+async function postHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const memberId = await getMemberIdFromRequest(req);
   if (!memberId) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
   const { id: manuscriptId } = await params;
+  bindMaiaMeter(memberId, { sanctuary: false }); // route has no Sanctuary/posture check
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, manuscriptId); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
 
   const workState = await query<WorkStateRow>(
     `SELECT w.manuscript_state
@@ -253,3 +258,5 @@ export async function POST(
     },
   });
 }
+
+export const POST = meteredRoute('lineage_scan', postHandler);

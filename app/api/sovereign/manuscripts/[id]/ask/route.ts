@@ -42,7 +42,9 @@
  * crossed, and the claim it accounts for was won long before it.
  */
 
+import { isTeachingAnchor, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { checkAnchor, type AskAnchor, type AnchorRefusal } from '@/lib/manuscript/ask/anchor';
 import { buildWorkContext } from '@/lib/manuscript/ask/workContext';
@@ -51,7 +53,19 @@ import {
 } from '@/lib/manuscript/ask/frozenReading';
 import { computeStaleness, frozenSideFor } from '@/lib/manuscript/ask/staleness';
 import { canonicalFingerprint } from '@/lib/manuscript/structure/canonicalFingerprint';
-import { askMaia } from '@/lib/manuscript/ask/askReader';
+import { askMaia, withoutCarriedReadings, type StandingRead } from '@/lib/manuscript/ask/askReader';
+import { loadActiveGrant, loadSectionSizes, loadSuppliedSections, loadEarlierDigests, loadEarlierLocusDigests } from '@/lib/disclosure/workReadScopeRead';
+import { chaptersInPlay, loadCarriedReadings, type CarryScope } from '@/lib/manuscript/ask/carriedReadings';
+import { selectSections, movedSince, digestOf, MAX_READ_SECTIONS } from '@/lib/manuscript/ask/workReadScope';
+import { writerSectionLabel } from '@/lib/manuscript/ask/writerSectionLabel';
+import { readRecordOf } from '@/lib/manuscript/ask/readingReceipt';
+import { withReceipts, withoutProvenance } from '@/lib/disclosure/readingReceiptProjection';
+import { decisionContextForWork, dismissedObservationKeys } from '@/lib/writersStudio/decisionRecord';
+import { livingWorkKind } from '@/lib/writersStudio/workKind';
+import { ANONYMISE_OFFER_INSTRUCTION, anonymiseOfferAlreadyMade } from '@/lib/writersStudio/practiceOffers';
+import { checkQuoteFidelity, NO_TEXT_ANSWER, CORRECTION_NOTE } from '@/lib/manuscript/ask/quoteFidelity';
+import { formatWorkSituationForPrompt } from '@/lib/writersStudio/workSituation';
+import { confirmDisclosureCrossed } from '@/lib/disclosure/contextDisclosureReceipt';
 import {
   openThread, appendTurn, appendTurnWithClient, loadThread, threadsOnAnchor,
 } from '@/lib/manuscript/ask/threadStore';
@@ -69,10 +83,14 @@ import { deriveSectionOrientations } from '@/lib/manuscript/development/frozenOr
 import { mintAct, claimAct, recordCompletionWithClient } from '@/lib/disclosure/authorizationAct';
 import { establishDisclosureBoundary, mayCrossBoundary } from '@/lib/disclosure/disclosureBoundary';
 import { confirmDisclosureCrossedWithClient } from '@/lib/disclosure/contextDisclosureReceipt';
+import { resolveStudioPosture, type KeepWitness } from '@/lib/sanctuary/studioPosture';
 import { TurnPosture } from '@/lib/sanctuary/turnPosture';
 import { transaction } from '@/lib/db/postgres';
 import { isExplanationDepth, type ExplanationDepth } from '@/lib/writersStudio/workingStyle';
 import { randomUUID } from 'node:crypto';
+import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
+import { conversationProgram, conversationProgramInstructions } from '@/lib/manuscript/editorialRuntime/workRevisionPause';
+import { currentStage, studioPathById } from '@/lib/writersStudio/studioPaths';
 
 /** How long one authorization opportunity stays claimable. Continuity hygiene — ⛔ never authority. */
 const AUTHORIZATION_TTL_MINUTES = 30;
@@ -219,7 +237,8 @@ export async function GET(
     if (!t || t.manuscriptId !== id) {
       return NextResponse.json({ refusal: 'not_found' }, { status: 404 });
     }
-    return NextResponse.json({ thread: t });
+    /* Package C2: the browser gets each answer's reading receipt, never raw provenance (R20 decisions 1 and 3). */
+    return NextResponse.json({ thread: await withReceipts(t, id, memberId) });
   }
 
   const raw = req.nextUrl.searchParams.get('anchor');
@@ -238,7 +257,7 @@ export async function GET(
  * BEFORE the model is called, so a transport failure loses the answer and never
  * the question.
  */
-export async function POST(
+async function postHandler(
   req: NextRequest, { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -261,6 +280,19 @@ export async function POST(
   }
   const body = raw as Record<string, unknown>;
   const responseStyle = isExplanationDepth(body.responseStyle) ? body.responseStyle : undefined;
+  /* F1 (founder ruling 2026-11-02): a Teach me names its anchor; the teaching
+     shape is server-owned and never rides in the writer's question.
+     ⛔ An unknown anchor is refused, never ignored. */
+  if (!(body.teachingAnchor === undefined || isTeachingAnchor(body.teachingAnchor))) {
+    return NextResponse.json({ refusal: 'malformed', detail: 'teachingAnchor' }, { status: 400 });
+  }
+  const teachingAnchor: TeachingAnchor | undefined = body.teachingAnchor;
+  /* WS-WHOLE-BOOK-CONVERSATION (founder approval 2026-11-10, D1): the carried account's scope is DECLARED by the writer's "About" control.
+     ⛔ Never inferred from the question text: anything but an explicit 'whole_book' is the ordinary chapter scope. */
+  const carryScope: CarryScope = body.carryScope === 'whole_book' ? 'whole_book' : 'here';
+  /* WS-STUDIO-GUIDE-WHOLE-01 (2026-11-12): the conversation says whether its room can carry out MAIA's acting offers, so she is told only
+     about buttons that will appear. It changes what she may OFFER, never what anyone may do: every click is gated where it lands. */
+  const roomActs = body.roomActs === true;
 
   const question = typeof body.question === 'string' ? body.question.trim() : '';
   if (!question) return NextResponse.json({ refusal: 'malformed', detail: 'question' }, { status: 400 });
@@ -312,15 +344,31 @@ export async function POST(
      structure path, unchanged. The two never meet again: a developmental anchor
      never reaches `loadFrozenReading`, and a structure anchor never reaches
      `loadFrozenDevelopmentalReading`. */
+  /* ⭐⭐ SANCTUARY CLOSURE (founder ruling 2026-11-09, "yes"): a turn is kept ONLY when the request DECLARED an ordinary posture.
+     A client with no saved settings declares ordinary (canon: Sanctuary is off by default); a posture that exists but cannot be
+     read is undeclared, and an undeclared posture keeps nothing. The Work lane can answer without keeping (below). The reading-anchored
+     lanes (structure, developmental) are built on kept records, so in Sanctuary or with an undeclared posture they refuse BEFORE any write. */
+  const studioPosture = await resolveStudioPosture(memberId, body as Record<string, unknown>);
+  const postureDeclared = studioPosture.declared;
+  const turnPosture = TurnPosture.resolve({ sanctuary: studioPosture.sanctuary });
+  if (effectiveAnchor.on !== 'work' && (turnPosture.sanctuary || !postureDeclared)) {
+    return NextResponse.json({ refusal: turnPosture.sanctuary ? 'sanctuary_not_kept' : 'posture_undeclared' }, { status: 409 });
+  }
+  bindMaiaMeter(memberId, { sanctuary: turnPosture.sanctuary });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, id); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
+
   if (effectiveAnchor.on === 'observation') {
     return developmentalTurn({
+      keep: studioPosture.witness,
       manuscriptId: id, memberId, anchor: effectiveAnchor, existing, question,
       authorizes, pendingAskRef,
       /* ⭐ ONE identity, minted at the boundary and carried through consent and
          receipt. ⛔ Correlation only — it is never act identity. */
       requestId: randomUUID(),
-      posture: TurnPosture.resolve(body),
+      posture: turnPosture,
       responseStyle,
+      teachingAnchor,
     });
   }
 
@@ -391,8 +439,9 @@ export async function POST(
      layer up from the prompt.
      ══════════════════════════════════════════════════════════════════════════ */
   if (check.anchor.on === 'work') {
-    return workTurn({ manuscriptId: id, memberId, anchor: check.anchor, existing,
-                      question, sectionId: bodySectionId });
+    return workTurn({ keep: studioPosture.witness, manuscriptId: id, memberId, anchor: check.anchor, existing,
+                      question, sectionId: bodySectionId, carryScope, posture: turnPosture, postureKnown: postureDeclared,
+                      responseStyle, teachingAnchor, roomActs });
   }
 
   if (!reading) {
@@ -446,7 +495,7 @@ export async function POST(
     frozenProposalId: frozenIdentity?.proposalId ?? null,
   });
 
-  const liveThreadId = existing ? existing.id : await openThread({
+  const liveThreadId = existing ? existing.id : await openThread({ keep: studioPosture.witness as KeepWitness,
     manuscriptId: id,
     memberId,
     anchor: check.anchor,
@@ -470,7 +519,7 @@ export async function POST(
   const priorTurns = existing?.turns ?? [];
   const retryingHeld = isHeldRetry(priorTurns, question);
   if (!retryingHeld) {
-    await appendTurn({
+    await appendTurn({ keep: studioPosture.witness as KeepWitness,
       threadId: liveThreadId, memberId, speaker: 'author', body: question, staleness,
     });
   }
@@ -501,14 +550,16 @@ export async function POST(
       { status: 502 });
   }
 
-  await appendTurn({
+  await appendTurn({ keep: studioPosture.witness as KeepWitness,
     threadId: liveThreadId, memberId, speaker: 'maia', body: outcome.answer,
     staleness, answerProvenance: outcome.provenance,
   });
 
   const thread = await loadThread(liveThreadId, memberId);
-  return NextResponse.json({ threadId: liveThreadId, thread, staleness });
+  return NextResponse.json({ threadId: liveThreadId, thread: thread && withoutProvenance(thread), staleness });
 }
+
+export const POST = meteredRoute('ask', postHandler);
 
 /**
  * ⭐⭐ ASK-WORK-ANCHOR-01 · B3 — one author turn, one MAIA answer, about the WORK.
@@ -546,14 +597,28 @@ export async function POST(
  * carries no section, and the thread's identity is untouched by where she is.
  */
 async function workTurn(input: {
+  /** Present only when an ordinary posture was declared; the store refuses any write without it. */
+  keep: KeepWitness | null;
   manuscriptId: string;
   memberId: string;
   anchor: AskAnchor;
   existing: Awaited<ReturnType<typeof loadThread>>;
   question: string;
   sectionId: string | null;
+  posture: TurnPosture;
+  /** True only when the caller explicitly stated its Sanctuary posture. Unstated ⇒ the standing read fails closed. */
+  postureKnown: boolean;
+  /** WS-CRAFT-CONVENTIONS-01 · G-3: the writer's working style and a pressed Teach me. */
+  responseStyle?: ExplanationDepth;
+  teachingAnchor?: TeachingAnchor;
+  /** WS-WHOLE-BOOK-CONVERSATION: the writer's declared scope for her carried account. */
+  carryScope?: CarryScope;
+  /** The conversation's room can carry out MAIA's acting offers (the Develop stage). */
+  roomActs?: boolean;
 }): Promise<NextResponse> {
-  const { manuscriptId, memberId, anchor, existing, question, sectionId } = input;
+  const { manuscriptId, memberId, anchor, existing, question, sectionId, posture, postureKnown, responseStyle, teachingAnchor } = input;
+  const carryScope: CarryScope = input.carryScope ?? 'here';
+  const keep = input.keep as KeepWitness;
 
   /* ⛔ NO FABRICATED BASELINE, the same law the structure lane holds: a thread
      that cannot establish its BEFORE does not open. */
@@ -592,7 +657,15 @@ async function workTurn(input: {
     return NextResponse.json({ refusal: built.reason }, { status: 422 });
   }
 
-  const liveThreadId = existing ? existing.id : await openThread({
+  /* ⭐ SANCTUARY STORES NOTHING (founder ruling 2026-11-09, "do what is best", applying the Sanctuary invariant: "No content retention —
+     nothing from a Sanctuary session can be saved"). In Sanctuary the Work conversation is useful in the moment: no thread is created,
+     neither the question nor the answer is written, and no read happens beyond the passage the writer is at. Earlier ordinary turns of an
+     existing conversation may still inform her (reading is not storing; founder ruling 2026-11-09, "Yes, in the moment": the passage the
+     writer is at, earlier ordinary turns and the writer's declared notes may be seen in the moment, never kept). The writer's manuscript,
+     edits, plans and decisions are untouched by this. ⛔ An UNDECLARED posture keeps nothing (founder ruling 2026-11-09): a client with no
+     saved settings declares ordinary, so only a posture that exists but cannot be read lands here. */
+  const storing = postureKnown && !posture.sanctuary;
+  const liveThreadId = existing ? existing.id : !storing ? '' : await openThread({ keep,
     manuscriptId, memberId, anchor,
     /* ⛔ NULL, AND LAWFULLY SO. The column is nullable precisely for "a thread on
        a Work with no reading". */
@@ -603,31 +676,188 @@ async function workTurn(input: {
 
   const priorTurns = existing?.turns ?? [];
   const retryingHeld = isHeldRetry(priorTurns, question);
-  if (!retryingHeld) {
-    await appendTurn({
+  if (!retryingHeld && storing) {
+    await appendTurn({ keep,
       threadId: liveThreadId, memberId, speaker: 'author', body: question, staleness,
     });
   }
 
-  const outcome = await askMaia(
-    { kind: 'work', anchor, facts: built.facts, staleness },
-    historyFor(priorTurns.map((t) => ({ speaker: t.speaker, body: t.body })), question),
-    question,
+  /* ⭐⭐ WS-WORK-CONTINUITY · B — THE STANDING READING SCOPE.
+     The member declared, once and revocably, that MAIA may read this Work. It is
+     re-read from the events AT EVERY ASK, so revocation bites mid-thread and after
+     recovery. ⛔ Suspended in Sanctuary. ⛔ No grant ⇒ nothing below runs and the
+     conversation is exactly what it was. ⛔ Accountability stays per crossing: one
+     receipt per section, minted BEFORE any saved text is loaded; any refusal means
+     nothing beyond the current passage crosses (the conversation itself continues). */
+  let standingRead: StandingRead | undefined;
+  let supplied: Awaited<ReturnType<typeof loadSuppliedSections>> = [];
+  const mintedDisclosureIds: string[] = [];
+  const grant = (posture.sanctuary || !postureKnown) ? null : await loadActiveGrant(memberId, built.facts.work.id);
+  if (grant && built.facts.manuscript) {
+    const sizes = await loadSectionSizes(manuscriptId, memberId);
+    /* WS-STEP4 A: the writer's declared "About" scope governs which saved sections are read, within the server-held grant. */
+    const picked = selectSections({
+      level: grant.level, scope: carryScope, question, locusId: sectionId,
+      sections: built.facts.sections, sizes,
+    });
+    /* Bound the number of receipts minted per Ask; the rest is reported as not supplied. */
+    const sel = {
+      ids: picked.ids.slice(0, MAX_READ_SECTIONS),
+      overBudget: [...picked.overBudget, ...picked.ids.slice(MAX_READ_SECTIONS)],
+    };
+    const requestId = randomUUID();
+    let allMinted = sel.ids.length > 0;
+    for (const sid of sel.ids) {
+      const b = await establishDisclosureBoundary({
+        requestId, posture, memberId, sessionId: liveThreadId,
+        disclosure: {
+          disclosureId: randomUUID(),
+          boundary: 'writers_studio.work_conversation->maia_cognition',
+          sourceClass: 'work',
+          participationBasis: 'standing_authorization',
+          sourceRef: manuscriptId,
+          scopeKind: 'section',
+          sectionRef: sid,
+          gesture: 'standing_read_scope',
+          scopeEventId: grant.id,
+        },
+      });
+      if (!mayCrossBoundary(b)) { allMinted = false; break; }
+      mintedDisclosureIds.push(b.disclosureId);
+    }
+    /* Revocation can land between the first read of the grant and now: re-read AFTER minting and BEFORE any text loads. */
+    if (allMinted && (await loadActiveGrant(memberId, built.facts.work.id))?.id !== grant.id) allMinted = false;
+    if (allMinted) {
+      supplied = await loadSuppliedSections(manuscriptId, memberId, sel.ids);
+      const earlier = existing ? await loadEarlierDigests(liveThreadId, memberId) : new Map<string, string>();
+      const moved = new Set(movedSince(earlier, new Map(supplied.map((x) => [x.id, x.digest]))));
+      const labelOf = (id: string) => built.facts.sections.find((x) => x.id === id)?.heading ?? null;
+      standingRead = {
+        level: grant.level,
+        sections: supplied.map((x) => ({ id: x.id, label: x.label, body: x.body, movedSinceEarlier: moved.has(x.id) })),
+        notSupplied: sel.overBudget.map((id) => ({ id, label: labelOf(id) })),
+      };
+    }
+  }
+
+  /* ⭐ WS-DECISION-CONTINUITY — what the writer has settled, in their own words, via the ONE shared read. Sanctuary or an unstated
+     posture reads nothing. Rides the existing declared-context channel so MAIA treats it as the writer's, never as a fact about the text. */
+  const decisionsText = (posture.sanctuary || !postureKnown) ? '' : await decisionContextForWork(memberId, built.facts.work.id, manuscriptId);
+  const factsWithDecisions = decisionsText
+    ? { ...built.facts, writerUnderstanding: [built.facts.writerUnderstanding, decisionsText].filter(Boolean).join('\n\n') }
+    : built.facts;
+  const workHistory = historyFor(priorTurns.map((t) => ({ speaker: t.speaker, body: t.body })), question);
+  /* ⭐ A helper's book (DECLARED by the writer, never inferred) gets ONE gentle note about case stories, once ever, never in Sanctuary. */
+  const practiceOffer = (!posture.sanctuary && postureKnown
+    && (await livingWorkKind(memberId, built.facts.work.id)) === 'practitioner'
+    && !(await anonymiseOfferAlreadyMade(memberId, manuscriptId)))
+    ? ANONYMISE_OFFER_INSTRUCTION : undefined;
+  /* ⭐ G6 · her own completed readings (founder ruling 2026-11-09): latest per lens, for the chapters in play, labelled by revision and by
+     whether each chapter changed since. Carried on the commission's consent; never chapter text; nothing in Sanctuary or an unstated posture. */
+  const carriedReadings = (posture.sanctuary || !postureKnown || !built.facts.manuscript) ? { readings: [], relevant: 0, searchFull: false }
+    : await loadCarriedReadings(manuscriptId, memberId, chaptersInPlay(question, sectionId, built.facts.sections), built.facts.sections,
+        (readingIds) => dismissedObservationKeys(memberId, readingIds), { scope: carryScope });
+  /* Walk finding (2026-11-09): when the passage the writer is at changed between turns, nothing told her, so she concluded her own
+     earlier quotation had been wrong. Compare with the digest recorded the last time she was given this passage in this conversation. */
+  const locusMovedSinceEarlier = Boolean(existing && built.facts.locus
+    && await (async () => { const was = (await loadEarlierLocusDigests(liveThreadId, memberId)).get(built.facts.locus!.sectionId);
+      return was !== undefined && was !== digestOf(built.facts.locus!.body); })());
+  /* Case study F3 (founder 2026-11-16): the Work's own rules reach this conversation exactly as they reach the editorial turn —
+     "MAIA asks, never rewrites" (fail-closed) and the Studio program's posture, read server-side for THIS Work and any of the
+     writer's Works holding this manuscript. In Sanctuary too: a writer's limit on rewriting does not lapse in Sanctuary. */
+  const programInstructions = conversationProgramInstructions(
+    await conversationProgram(memberId, built.facts.work.id, built.facts.manuscript?.id ?? manuscriptId),
+    (id) => studioPathById(id)?.studioPosture ?? null,
+    (programId, stageId) => { const p = studioPathById(programId); return p ? currentStage(p, stageId).posture ?? null : null; },
   );
+  const workCtx = { kind: 'work' as const, anchor, facts: factsWithDecisions, staleness, standingRead, practiceOffer, carriedReadings, locusMovedSinceEarlier,
+    /* Walk 2026-11-09: in Sanctuary she suggested granting reading permission. She is now told she is in Sanctuary (and what it refuses). */
+    sanctuary: posture.sanctuary === true,
+    /* WS-CRAFT-CONVENTIONS-01 · G-3: the writer's working style and a pressed Teach me reach the Work conversation, as they do the observation dialogue. */
+    ...(responseStyle ? { responseStyle } : {}),
+    ...(teachingAnchor ? { teachingAnchor } : {}),
+    ...(input.roomActs ? { roomActs: true } : {}),
+    ...(programInstructions.length > 0 ? { programInstructions } : {}) };
+  let outcome = await askMaia(workCtx, workHistory, question);
+  /* ⭐ A2 · MECHANICAL QUOTE FIDELITY. A quotation must occur in text she was actually given this turn or in the
+     conversation's own words. Regenerate ONCE with a correction; if still ungrounded, a plain "I can't point to that
+     wording" answer replaces it. ⛔ Checks that a quote EXISTS, not that her claim about it is true. */
+  if (outcome.ok) {
+    /* Exactly what she was handed (system prompt + messages) — complete by construction. */
+    /* Her earlier ACCOUNT never grounds a quotation of the writing: it is cut out of what she was handed before checking. */
+    /* Grounding = what she was handed MINUS her earlier account and MINUS her own earlier answers: a phrase she said before is not
+       the writer's text, so repeating it can never pass as a verified quotation of the manuscript. */
+    const seenForQuotes = withoutCarriedReadings(outcome.seenForQuotes ?? outcome.seen ?? '');
+    const sources = [seenForQuotes, question, ...workHistory.filter((h) => h.speaker === 'author').map((h) => h.body), factsWithDecisions.writerUnderstanding];
+    const first = checkQuoteFidelity(outcome.answer, sources);
+    if (!first.ok) {
+      const again = await askMaia(workCtx, workHistory, question,
+        { correction: CORRECTION_NOTE.replace('QUOTES', first.ungrounded.map((q) => `"${q}"`).join(' ; ')) });
+      /* ⛔ judged against the ORIGINAL sources only: the correction note itself quotes the invented line and must never ground it */
+      outcome = again.ok && checkQuoteFidelity(again.answer, sources).ok
+        ? again
+        : { ...outcome, answer: NO_TEXT_ANSWER };
+    }
+  }
+  if (outcome.ok) {
+    /* The crossing happened when the reader was called; confirm it. A failed call
+       leaves the receipts `attempted`, which is the truthful state. */
+    for (const d of mintedDisclosureIds) {
+      /* A failed confirmation leaves the receipt `attempted` ("a crossing may have occurred"), which is truthful; it is
+         surfaced loudly, never swallowed. */
+      try { if (!(await confirmDisclosureCrossed(d))) console.error('[WORK-READ] receipt left attempted', { n: mintedDisclosureIds.length }); }
+      catch { console.error('[WORK-READ] receipt confirmation threw'); }
+    }
+  }
   if (!outcome.ok) {
     /* The question is already recorded. A failed answer is reported as a
        failure, never rendered as one of hers. */
-    return NextResponse.json({ threadId: liveThreadId, refusal: outcome.refusal, staleness },
+    return NextResponse.json({ threadId: liveThreadId || null, refusal: outcome.refusal, staleness },
       { status: 502 });
   }
 
-  await appendTurn({
+  if (!storing) {
+    /* Sanctuary: her answer is returned for this moment only and is not kept anywhere. The client shows it without a thread. */
+    return NextResponse.json({
+      threadId: existing ? existing.id : null,
+      thread: existing ? await withReceipts(await loadThread(existing.id, memberId), manuscriptId, memberId) : null,
+      sanctuary: { notKept: true, question, answer: outcome.answer },
+      staleness, read: [],
+    });
+  }
+
+  const maiaIndex = await appendTurn({ keep,
     threadId: liveThreadId, memberId, speaker: 'maia', body: outcome.answer,
-    staleness, answerProvenance: outcome.provenance,
+    /* ⭐ PROVENANCE IS PART OF THE ANSWER. What she was supplied and which readings she was given are saved in THIS row, atomically
+       with her words, and the row is immutable (ask_turns refuses UPDATE). If the row is not saved, neither is the answer: there is
+       no separate best-effort write that can fail silently after the answer exists. */
+    staleness, answerProvenance: {
+      ...outcome.provenance,
+      ...(carriedReadings.readings.length > 0 ? { carriedReadings: carriedReadings.readings.map((r) => ({ readingId: r.id, revisionNumber: r.revisionNumber,
+        ...(carryScope === 'whole_book' ? { observationsGiven: r.observations.length, observationsTotal: r.observationsTotal } : {}) })) } : {}),
+      /* Finding 6: what her whole-book account LEFT OUT for size is part of what this answer was made from. */
+      ...(carryScope === 'whole_book' && 'dropped' in carriedReadings && carriedReadings.dropped && carriedReadings.dropped.length > 0
+        ? { carryDropped: carriedReadings.dropped } : {}),
+      /* WB7 · the writer's declared scope is part of what this answer was made from. */
+      ...(carryScope === 'whole_book' ? { carryScope } : {}),
+      ...(supplied.length > 0 ? { suppliedSections: supplied.map((x) => ({ sectionId: x.id, digest: x.digest })) } : {}),
+      /* Package C3: what was supplied AND what was left out for length, always present (an empty list records "none"). Ids and
+         body digests only; inside this immutable row, so it lives and is deleted exactly with the answer. */
+      readRecord: readRecordOf(supplied, standingRead ? standingRead.notSupplied.map((n) => n.id) : []),
+      /* The passage the writer is at, as she was given it this turn (digest only), so a later turn can tell her it changed. */
+      ...(built.facts.locus ? { locus: { sectionId: built.facts.locus.sectionId, digest: digestOf(built.facts.locus.body) } } : {}),
+    },
   });
 
-  const thread = await loadThread(liveThreadId, memberId);
-  return NextResponse.json({ threadId: liveThreadId, thread, staleness });
+  const thread = await withReceipts(await loadThread(liveThreadId, memberId), manuscriptId, memberId);
+  /* ⭐ L8 · what she actually read stays visible: ids + headings only, never text.
+     WS-F2: named for the WRITER as the manuscript list names it (an unheaded section is "Section N", never "an untitled section").
+     The model's own labels above are untouched. */
+  const read = supplied.map((x) => ({
+    sectionId: x.id,
+    label: writerSectionLabel(built.facts.sections.find((s) => s.id === x.id)) ?? x.label,
+  }));
+  return NextResponse.json({ threadId: liveThreadId, thread, staleness, read, ...(carryScope === 'whole_book' ? { carryScope } : {}) });
 }
 
 /**
@@ -651,6 +881,8 @@ async function workTurn(input: {
  * observation as current.
  */
 async function developmentalTurn(input: {
+  /** Present only when an ordinary posture was declared; the store refuses any write without it. */
+  keep: KeepWitness | null;
   manuscriptId: string;
   memberId: string;
   anchor: Extract<AskAnchor, { on: 'observation' }>;
@@ -663,11 +895,13 @@ async function developmentalTurn(input: {
   requestId: string;
   posture: TurnPosture;
   responseStyle?: ExplanationDepth;
+  teachingAnchor?: TeachingAnchor;
 }) {
   const {
     manuscriptId, memberId, anchor, existing, question,
-    authorizes, pendingAskRef, requestId, posture, responseStyle,
+    authorizes, pendingAskRef, requestId, posture, responseStyle, teachingAnchor,
   } = input;
+  const keep = input.keep as KeepWitness;
 
   const reading = await loadFrozenDevelopmentalReading(manuscriptId, anchor.readingId, memberId);
   const check = checkObservationAnchor(anchor, reading);
@@ -722,7 +956,7 @@ async function developmentalTurn(input: {
     canonicalNow === null ? { state: 'unmeasured' }
       : canonicalAtOpen === canonicalNow ? { state: 'unchanged' } : { state: 'changed' });
 
-  const liveThreadId = existing ? existing.id : await openThread({
+  const liveThreadId = existing ? existing.id : await openThread({ keep,
     manuscriptId,
     memberId,
     anchor: check.anchor,
@@ -752,7 +986,7 @@ async function developmentalTurn(input: {
      ⛔ It decides nothing constitutional: prose never gates authority here. */
   const priorTurns = existing?.turns ?? [];
   if (!isHeldRetry(priorTurns, question)) {
-    await appendTurn({
+    await appendTurn({ keep,
       threadId: liveThreadId, memberId, speaker: 'author', body: question, staleness,
     });
   }
@@ -762,7 +996,8 @@ async function developmentalTurn(input: {
   /* ── ACT 1 · no body required. The existing path, and it NEVER loads prose. */
   if (!bodyReq.required && !pendingAskRef) {
     return answerFrom(ctxWithoutBody, {
-      liveThreadId, memberId, staleness, history, question, crossed: [], responseStyle,
+      keep,
+      liveThreadId, memberId, staleness, history, question, crossed: [], responseStyle, teachingAnchor,
     });
   }
 
@@ -825,7 +1060,8 @@ async function developmentalTurn(input: {
        `interrupted` requires a FRESH member act and is never resumable here. */
     const st = claim.state;
     if (st.kind === 'completed') {
-      const thread = await loadThread(liveThreadId, memberId);
+      const loaded = await loadThread(liveThreadId, memberId);
+      const thread = loaded && withoutProvenance(loaded);
       return NextResponse.json({
         result: 'ALREADY_COMPLETED',
         threadId: liveThreadId, thread, staleness,
@@ -907,7 +1143,8 @@ async function developmentalTurn(input: {
   }
 
   return answerFrom(ctx, {
-    liveThreadId, memberId, staleness, history, question, crossed, pendingAskRef, responseStyle,
+    keep,
+    liveThreadId, memberId, staleness, history, question, crossed, pendingAskRef, responseStyle, teachingAnchor,
   });
 }
 
@@ -953,13 +1190,17 @@ async function answerFrom(
   ctx: ReturnType<typeof assembleDevelopmentalContext>,
   o: {
     liveThreadId: string; memberId: string; staleness: ReturnType<typeof developmentalStaleness>;
+    /** The ordinary-posture witness this developmental turn was admitted with; the store refuses without it. */
+    keep: KeepWitness;
     history: { speaker: 'author' | 'maia'; body: string }[]; question: string;
     crossed: readonly string[]; pendingAskRef?: string;
     responseStyle?: ExplanationDepth;
+    teachingAnchor?: TeachingAnchor;
   },
 ) {
   const outcome = await askMaiaDevelopmental(ctx, o.history, o.question, {
     responseStyle: o.responseStyle,
+    teachingAnchor: o.teachingAnchor,
   });
 
   if (!outcome.ok) {
@@ -972,7 +1213,7 @@ async function answerFrom(
 
   try {
     await transaction(async (client) => {
-      const turnIndex = await appendTurnWithClient(client, {
+      const turnIndex = await appendTurnWithClient(client, { keep: o.keep,
         threadId: o.liveThreadId, memberId: o.memberId, speaker: 'maia', body: outcome.answer,
         staleness: o.staleness, answerProvenance: outcome.provenance,
       });
@@ -1007,7 +1248,8 @@ async function answerFrom(
     }, { status: 500 });
   }
 
-  const thread = await loadThread(o.liveThreadId, o.memberId);
+  const loaded = await loadThread(o.liveThreadId, o.memberId);
+  const thread = loaded && withoutProvenance(loaded);
   return NextResponse.json({
     threadId: o.liveThreadId,
     thread,

@@ -15,28 +15,35 @@ import type { StudioAct } from './studioHistory';
 
 export type StudioHistoryPhase = 'loading' | 'ready' | 'unauthorized' | 'error';
 
-export function useStudioHistory() {
+/** `limit` is the route's existing query parameter (default 60, max 300); omitted, the request is unchanged. */
+export function useStudioHistory(limit?: number) {
   const [phase, setPhase] = useState<StudioHistoryPhase>('loading');
   const [acts, setActs] = useState<StudioAct[]>([]);
 
-  const load = useCallback(async () => {
+  /** Resolves true only when the list was read (see useLivingWorks.load). */
+  const load = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await apiFetch('/api/sovereign/studio/history', { method: 'GET' });
+      const res = await apiFetch(
+        limit ? `/api/sovereign/studio/history?limit=${limit}` : '/api/sovereign/studio/history',
+        { method: 'GET' },
+      );
       if (res.status === 401) {
         setPhase('unauthorized');
-        return;
+        return false;
       }
       if (!res.ok) {
         setPhase('error');
-        return;
+        return false;
       }
       const data = await res.json();
       setActs(Array.isArray(data.acts) ? data.acts : []);
       setPhase('ready');
+      return true;
     } catch {
       setPhase('error');
+      return false;
     }
-  }, []);
+  }, [limit]);
 
   useEffect(() => {
     load();

@@ -15,7 +15,7 @@ import {
   Sun,
   Layers
 } from 'lucide-react';
-import { apiUrl } from '@/lib/http/apiBase';
+import { apiFetch } from '@/lib/http/apiBase';
 
 // Domain icons mapping
 const DOMAIN_ICONS: Record<string, typeof Eye> = {
@@ -82,7 +82,10 @@ export default function PracticePanel({
   useEffect(() => {
     const fetchWorlds = async () => {
       try {
-        const res = await fetch(apiUrl('/api/practice/worlds/list'));
+        // apiFetch for every call here: the whole /api/practice/ prefix is authenticated (access matrix) and
+        // insights/generate is owner-only; a bare fetch carries no x-session-token on a native / Safari
+        // cross-origin WebView (the Capacitor cookie trap in CLAUDE.md).
+        const res = await apiFetch('/api/practice/worlds/list');
         const data = await res.json();
         if (data.success) {
           setWorlds(data.worlds);
@@ -112,7 +115,7 @@ export default function PracticePanel({
 
     const fetchInsights = async () => {
       try {
-        const res = await fetch(apiUrl(`/api/practice/insights/generate?sessionId=${sessionId}`));
+        const res = await apiFetch(`/api/practice/insights/generate?sessionId=${sessionId}`);
         const data = await res.json();
         if (data.success) {
           setInsights(data.insights || []);
@@ -132,7 +135,7 @@ export default function PracticePanel({
     setError(null);
 
     try {
-      const res = await fetch(apiUrl('/api/practice/insights/generate'), {
+      const res = await apiFetch('/api/practice/insights/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

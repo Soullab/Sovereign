@@ -8,10 +8,11 @@ export const dynamic = 'force-dynamic';
  * GET  — the member's declared works. Member-scoped by credential.
  * POST — the member declares that a work exists. Optionally names it.
  *
- * THE ONE THING THIS ROUTE IS FOR: a Living Work comes into existence ONLY
- * here, and only because a member said so. There is no other creation path in
- * the codebase — not on signup, not on import, not on first save, not as a
- * side effect of any other act (`CREATION_REQUIRES_A_MEMBER_ACT`).
+ * THE ONE THING THIS ROUTE IS FOR: a standalone member declaration of a
+ * Living Work. Writer import can also declare one when its final confirmation
+ * explicitly requests `createWork: true`; that declaration, the manuscript and
+ * its expression are committed together. Signup, ordinary import and first
+ * save still cannot silently create a Work (`CREATION_REQUIRES_A_MEMBER_ACT`).
  *
  * WHAT IT REFUSES, and why each refusal is structural rather than intended:
  *
@@ -29,9 +30,12 @@ export const dynamic = 'force-dynamic';
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/lib/db/postgres';
+import { query, transaction } from '@/lib/db/postgres';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { refuseTitle } from '@/lib/livingWork/domain';
+import {
+  FREE_WORK_LIMIT_CODE, FREE_WORK_LIMIT_MESSAGE, freeWorkLimitEnabled, isWriterProForWorks, mayStartWorkInTx,
+} from '@/lib/writersStudio/workLimit';
 import { cabinStore, cabinMemberFromRequest, setCabinSessionCookie } from '@/lib/cabin/request';
 
 const MAX_TITLE_CHARS = 300;
@@ -43,6 +47,9 @@ interface WorkRow {
   form: string | null;
   stage: string | null;
   manuscript_state: string | null;
+  maia_revisions_paused?: boolean;
+  studio_path?: string | null;
+  studio_stage?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -68,6 +75,11 @@ const shape = (r: WorkRow) => ({
   form: r.form,
   stage: r.stage,
   manuscriptState: r.manuscript_state,
+  /* The writer's own "MAIA asks, never rewrites" for this Work. */
+  maiaRevisionsPaused: r.maia_revisions_paused === true,
+  /* The Studio program this Work belongs to, if any (member-declared at the path door's Begin). */
+  studioPath: r.studio_path ?? null,
+  studioStage: r.studio_stage ?? null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -113,7 +125,7 @@ export async function GET(request: NextRequest) {
     if (!memberId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const rows = await query<WorkRow>(
-      `SELECT id, title, purpose, form, stage, manuscript_state, created_at, updated_at
+      `SELECT id, title, purpose, form, stage, manuscript_state, maia_revisions_paused, studio_path, studio_stage, created_at, updated_at
          FROM living_works
         WHERE member_id = $1
         ORDER BY updated_at DESC`,
@@ -264,12 +276,30 @@ export async function POST(request: NextRequest) {
       title = body.title;
     }
 
-    const created = await query<WorkRow>(
-      `INSERT INTO living_works (member_id, title)
+    const INSERT_WORK = `INSERT INTO living_works (member_id, title)
        VALUES ($1, $2)
-       RETURNING id, title, purpose, form, stage, created_at, updated_at`,
-      [memberId, title]
-    );
+       RETURNING id, title, purpose, form, stage, created_at, updated_at`;
+
+    // Free new-Work limit (founder rulings 2026-11-02 / 2026-11-13; lib/writersStudio/workLimit.ts). Off = as before.
+    if (freeWorkLimitEnabled()) {
+      let isPro: boolean;
+      try {
+        isPro = await isWriterProForWorks(memberId);
+      } catch {
+        return NextResponse.json({ error: 'Could not check your plan just now. Please try again.' }, { status: 503 });
+      }
+      const outcome = await transaction(async (tx) => {
+        const decision = await mayStartWorkInTx(tx, memberId, isPro);
+        if (!decision.allowed) return null;
+        return (await tx.query<WorkRow>(INSERT_WORK, [memberId, title])).rows[0];
+      });
+      if (!outcome) {
+        return NextResponse.json({ error: FREE_WORK_LIMIT_MESSAGE, code: FREE_WORK_LIMIT_CODE }, { status: 403 });
+      }
+      return NextResponse.json({ work: shape(outcome) }, { status: 201 });
+    }
+
+    const created = await query<WorkRow>(INSERT_WORK, [memberId, title]);
     return NextResponse.json({ work: shape(created.rows[0]) }, { status: 201 });
   } catch (error) {
     console.error('[living-works] declare failed', error);

@@ -11,7 +11,22 @@ const config = {
   // on several branches (see .gitignore). An absolute path makes that impossible.
   cacheDirectory: path.join(os.tmpdir(), 'maia-jest-cache'),
   roots: ['<rootDir>'],
-  testMatch: ['**/__tests__/**/*.test.ts', '**/?(*.)+(spec|test).ts'],
+  // The .tsx suites below are named here on purpose: a blanket .tsx pattern would pull in every component test in the
+  // repo, none of which this config was set up for. Naming them keeps `npm test` honest about suites that otherwise never ran.
+  testMatch: [
+    '**/__tests__/**/*.test.ts',
+    '**/?(*.)+(spec|test).ts',
+    '**/app/dev/writers-studio-pc3-live/__tests__/developAddToWork.test.tsx',
+    '**/app/dev/writers-studio-pc3-live/__tests__/historyPage.test.tsx',
+    '**/app/astrology/pro-preview/__tests__/systemsWorkState.test.tsx',
+    '**/app/astrology/pro-preview/__tests__/panelMemory.test.tsx',
+    '**/app/astrology/pro-preview/__tests__/soulPortraitPanel.test.tsx',
+    '**/app/astrology/pro-preview/__tests__/fourPillarsTimeline.test.tsx',
+    '**/app/writers-studio/__tests__/observationMarkerDialogueInView.interaction.test.tsx',
+    '**/app/writers-studio/__tests__/writeViewDeadEnds.interaction.test.tsx',
+    '**/app/writers-studio/__tests__/jarvisA2RevalidationActualControllerR1.test.ts',
+    '**/app/writers-studio/__tests__/writeViewDeadEndSweep.interaction.test.tsx',
+  ],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
   },

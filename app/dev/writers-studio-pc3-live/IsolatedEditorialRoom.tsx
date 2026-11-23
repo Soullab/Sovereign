@@ -12,6 +12,7 @@ import {
   type CSSProperties,
 } from 'react';
 import { passageContext } from '@/lib/writersStudio/editorialApproaches';
+import { readSavedStudioReadingSize, setStudioReadingSize, subscribeStudioReadingSize, type StudioReadingSize } from '@/lib/writersStudio/readingSizePreference';
 import { appearanceVars } from '@/app/writers-studio/full-redesign/tokens';
 import type { Appearance } from '@/app/writers-studio/full-redesign/types';
 import {
@@ -44,7 +45,24 @@ type Props = {
   mayProposeImmediately: boolean;
   onMayProposeImmediately: (value: boolean) => void;
   onClose: () => void;
+  /** Present only while a conversation is open for this passage. */
+  onStartFresh?: () => void;
+  /** Conversation-first step 5b (from Craftsman's Table): move to the next paragraph. */
+  onNextPassage?: () => void;
+  nextPassageLabel?: string | null;
+  /** Ask MAIA which passage to work on next (sends only the writer's words). */
+  onAskWhereNext?: () => void;
+  /** Pause MAIA's revisions for this passage: she keeps talking, offers no new wording. */
+  revisionsPaused?: boolean;
+  onPauseRevisions?: (paused: boolean) => void;
+  /** The writer's own Work-wide "MAIA asks, never rewrites" (server-enforced). */
+  workRevisionsPaused?: boolean;
+  onPauseWorkRevisions?: (paused: boolean) => void;
+  workPauseSaving?: boolean;
+  workPauseError?: string | null;
   children: ReactNode;
+  /** Conversation Stage: one wide conversation; the panel pins the passage itself. */
+  stage?: boolean;
 };
 
 const MIN_LEFT = 34;
@@ -52,9 +70,16 @@ const MAX_LEFT = 68;
 const clamp = (value: number) => Math.max(MIN_LEFT, Math.min(MAX_LEFT, value));
 
 const SESSION_PREF_KEY = 'writers-studio:p4r1:focus-view';
+const EDIT_STRENGTH_LABEL: Record<EditorialLatitude, string> = {
+  1: 'Light',
+  2: 'Careful',
+  3: 'Moderate',
+  4: 'Substantial',
+  5: 'Heavy',
+};
 
 type FocusLayout = 'balanced' | 'passage' | 'maia' | 'stacked' | 'custom';
-type ReadingSize = 'large' | 'larger' | 'largest';
+type ReadingSize = StudioReadingSize;
 type LineSpacing = 'open' | 'more-open';
 
 type SessionFocusPrefs = {
@@ -133,7 +158,18 @@ export default function IsolatedEditorialRoom({
   mayProposeImmediately,
   onMayProposeImmediately,
   onClose,
+  onStartFresh,
+  onNextPassage,
+  nextPassageLabel,
+  onAskWhereNext,
+  revisionsPaused,
+  onPauseRevisions,
+  workRevisionsPaused,
+  onPauseWorkRevisions,
+  workPauseSaving,
+  workPauseError,
   children,
+  stage = false,
 }: Props) {
   const [leftPercent, setLeftPercent] = useState(DEFAULT_PREFS.leftPercent);
   const [layout, setLayout] = useState<FocusLayout>(DEFAULT_PREFS.layout);
@@ -153,23 +189,52 @@ export default function IsolatedEditorialRoom({
     [sectionBody, currentText],
   );
 
+  /* The More menu is a <details>: close it on Escape or a press outside it, so it
+     never sits over the conversation (live walk, 2026-11-13). */
+  const moreRef = useRef<HTMLDetailsElement | null>(null);
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const closeMore = () => {
+      const more = moreRef.current;
+      if (!more?.open) return;
+      more.querySelectorAll('details[open]').forEach((d) => d.removeAttribute('open'));
+      more.open = false;
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const more = moreRef.current;
+      if (more?.open && event.target instanceof Node && !more.contains(event.target)) closeMore();
+    };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') closeMore(); };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const saved = parseSessionPrefs(window.sessionStorage.getItem(SESSION_PREF_KEY));
+    const sharedReadingSize = readSavedStudioReadingSize();
     if (saved) {
       setLayout(saved.layout);
       setLeftPercent(saved.leftPercent);
-      setReadingSize(saved.readingSize);
+      setReadingSize(sharedReadingSize ?? saved.readingSize);
       setLineSpacing(saved.lineSpacing);
       setShowDirections(saved.showDirections);
       setShowWorkingDraft(saved.showWorkingDraft);
       setShowCraftDepth(saved.showCraftDepth);
+    } else if (sharedReadingSize) {
+      setReadingSize(sharedReadingSize);
     }
     const working = readWorkingStyle();
     setWorkingPace(working.pace);
     setExplanationDepth(working.explanation);
     setPrefsLoaded(true);
   }, []);
+
+  useEffect(() => subscribeStudioReadingSize(setReadingSize), []);
 
   useEffect(() => {
     if (!prefsLoaded || typeof window === 'undefined') return;
@@ -255,7 +320,7 @@ export default function IsolatedEditorialRoom({
   const resetView = useCallback(() => {
     setLayout('balanced');
     setLeftPercent(50);
-    setReadingSize('large');
+    // Resetting this room must not erase the writer's Studio-wide reading size.
     setLineSpacing('open');
     setShowDirections(true);
     setShowWorkingDraft(true);
@@ -268,6 +333,7 @@ export default function IsolatedEditorialRoom({
       style={appearanceVars(appearance) as CSSProperties}
       data-appearance={appearance}
       data-isolated-editorial
+      data-stage={stage ? 'true' : undefined}
       data-layout={layout}
       data-reading-size={readingSize}
       data-line-spacing={lineSpacing}
@@ -280,17 +346,22 @@ export default function IsolatedEditorialRoom({
     >
       <header className="p4r1-isolated-topbar">
         <div>
-          <span className="p4r1-eyebrow">Passage focus</span>
+          <span className="p4r1-eyebrow">{stage ? 'Talking with MAIA' : 'Passage focus'}</span>
           <strong>{title}</strong>
         </div>
         <div className="p4r1-isolated-controls">
+          {stage ? null : (
           <span className="p4r1-isolated-balance">
             {layout === 'custom' ? 'Custom · ' : ''}{Math.round(leftPercent)} / {100 - Math.round(leftPercent)}
           </span>
+          )}
+          {stage ? null : (
           <span className="p4r1-isolated-latitude-status" title={LATITUDE_BANDS[editingLatitude].description}>
-            Revision · {LATITUDE_BANDS[editingLatitude].label}
+            Edit · {EDIT_STRENGTH_LABEL[editingLatitude]}
           </span>
+          )}
 
+          {stage ? null : (
           <details className="p4r1-isolated-menu">
             <summary>Layout</summary>
             <div className="p4r1-isolated-menu-card">
@@ -312,7 +383,11 @@ export default function IsolatedEditorialRoom({
               ))}
             </div>
           </details>
+          )}
 
+          {(() => {
+            const menus = (
+              <>
           <details className="p4r1-isolated-menu">
             <summary>Tools</summary>
             <div className="p4r1-isolated-menu-card p4r1-isolated-tool-list">
@@ -340,8 +415,8 @@ export default function IsolatedEditorialRoom({
                   <span>How MAIA works with your words</span>
                 </div>
                 <label className="p4r1-latitude-label" htmlFor="p4r1-editing-latitude">
-                  <span>Revision latitude</span>
-                  <b>{LATITUDE_BANDS[editingLatitude].label}</b>
+                  <span>Edit strength</span>
+                  <b>{EDIT_STRENGTH_LABEL[editingLatitude]}</b>
                 </label>
                 <input
                   id="p4r1-editing-latitude"
@@ -352,14 +427,14 @@ export default function IsolatedEditorialRoom({
                   step={1}
                   value={editingLatitude}
                   disabled={busy}
-                  aria-valuetext={LATITUDE_BANDS[editingLatitude].label}
+                  aria-valuetext={EDIT_STRENGTH_LABEL[editingLatitude]}
                   onChange={(event) => onEditingLatitude(Number(event.target.value) as EditorialLatitude)}
                 />
                 <div className="p4r1-latitude-scale" aria-hidden="true">
-                  {EDITORIAL_LATITUDES.map((value) => <span key={value}>{LATITUDE_BANDS[value].label}</span>)}
+                  {EDITORIAL_LATITUDES.map((value) => <span key={value}>{EDIT_STRENGTH_LABEL[value]}</span>)}
                 </div>
                 <p className="p4r1-latitude-description">{LATITUDE_BANDS[editingLatitude].description}</p>
-                <p className="p4r1-latitude-law">This controls how far a proposed revision may move from your wording. Nothing is applied without you.</p>
+                <p className="p4r1-latitude-law">Light stays close to your wording. Heavy allows a larger recast. Your voice remains the reference, and nothing is applied without you.</p>
 
                 <div className="p4r1-working-axis">
                   <label className="p4r1-latitude-label" htmlFor="p4r1-working-pace">
@@ -418,6 +493,32 @@ export default function IsolatedEditorialRoom({
                   />
                   <span><b>Allow paragraph-removal proposals</b><small>Separate permission; never implied by the slider.</small></span>
                 </label>
+                {onPauseWorkRevisions ? (
+                  <label className="p4r1-working-style-check" data-pause-work-revisions>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(workRevisionsPaused)}
+                      disabled={busy || workPauseSaving}
+                      onChange={(event) => onPauseWorkRevisions(event.target.checked)}
+                    />
+                    <span>
+                      <b>MAIA asks, never rewrites</b>
+                      <small>For this whole Work: MAIA reflects and asks questions but never offers new wording. Every sentence stays yours. Good for a college essay.</small>
+                      {workPauseError ? <small role="alert">{workPauseError}</small> : null}
+                    </span>
+                  </label>
+                ) : null}
+                {onPauseRevisions ? (
+                  <label className="p4r1-working-style-check" data-pause-revisions>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(revisionsPaused)}
+                      disabled={busy}
+                      onChange={(event) => onPauseRevisions(event.target.checked)}
+                    />
+                    <span><b>Pause MAIA’s revisions</b><small>For this passage: MAIA keeps talking but offers no new wording until you resume.</small></span>
+                  </label>
+                ) : null}
                 {editingLatitude === 1 ? (
                   <label className="p4r1-working-style-check">
                     <input
@@ -444,7 +545,10 @@ export default function IsolatedEditorialRoom({
                       name="isolated-reading-size"
                       value={id}
                       checked={readingSize === id}
-                      onChange={() => setReadingSize(id)}
+                      onChange={() => {
+                        setReadingSize(id);
+                        setStudioReadingSize(id);
+                      }}
                     />
                     <span>{label}</span>
                   </label>
@@ -477,10 +581,48 @@ export default function IsolatedEditorialRoom({
             </div>
           </details>
 
-          <button type="button" disabled={busy} onClick={onClose}>Return to manuscript</button>
+          {onNextPassage || onAskWhereNext ? (
+            <details className="p4r1-isolated-menu" data-next-passage-menu>
+              <summary>Next passage</summary>
+              <div className="p4r1-isolated-menu-card">
+                {onNextPassage ? (
+                  <button type="button" disabled={busy} onClick={onNextPassage}>
+                    <b>Go to the next passage</b>
+                    <span>{nextPassageLabel ?? 'The next paragraph'}. Nothing here is saved or applied by moving.</span>
+                  </button>
+                ) : null}
+                {onAskWhereNext ? (
+                  <button type="button" disabled={busy} onClick={onAskWhereNext}>
+                    <b>Ask MAIA where next</b>
+                    <span>She suggests; you choose where to work.</span>
+                  </button>
+                ) : null}
+              </div>
+            </details>
+          ) : null}
+          {onStartFresh ? (
+            <button type="button" disabled={busy} onClick={onStartFresh} title="The earlier conversation stays saved">
+              Start a new conversation
+            </button>
+          ) : null}
+              </>
+            );
+            /* Design pass D4 (2026-11-05): during a conversation the top bar is quiet —
+               "Back to the page" plus one "More" menu for everything else. */
+            return stage ? (
+              <details ref={moreRef} className="p4r1-isolated-menu p4r1-isolated-more" data-stage-more>
+                <summary aria-label="More options">More ⋯</summary>
+                <div className="p4r1-isolated-menu-card p4r1-isolated-more-card">{menus}</div>
+              </details>
+            ) : menus;
+          })()}
+          <button type="button" disabled={busy} onClick={onClose} data-stage-back>{stage ? 'Back to the page' : 'Return to manuscript'}</button>
         </div>
       </header>
 
+      {stage ? (
+        <div className="p4r1-isolated-stage" data-isolated-stage>{children}</div>
+      ) : (
       <div
         ref={shellRef}
         className="p4r1-isolated-split"
@@ -520,6 +662,7 @@ export default function IsolatedEditorialRoom({
           </div>
         </aside>
       </div>
+      )}
     </section>
   );
 }

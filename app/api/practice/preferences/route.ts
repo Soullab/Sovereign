@@ -5,6 +5,8 @@
  * - Which insight types to generate
  * - Their modality vocabulary
  * - MAIA's voice depth (light/balanced/deep)
+ *
+ * The practitioner is the SESSION member. A `practitionerId` in the query or body is ignored.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -13,6 +15,7 @@ import {
   upsertInsightPreferences,
   getModalityVocabulary
 } from '@/lib/practice/PracticeStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,16 +25,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ stub: true });
   }
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
     const { searchParams } = new URL(req.url);
-    const practitionerId = searchParams.get('practitionerId');
     const includeVocabulary = searchParams.get('includeVocabulary') === 'true';
-
-    if (!practitionerId) {
-      return NextResponse.json(
-        { success: false, error: 'practitionerId required' },
-        { status: 400 }
-      );
-    }
 
     const preferences = await getInsightPreferences(practitionerId);
 
@@ -68,20 +66,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
+    const practitionerId = actor.memberId;
     const {
-      practitionerId,
       enabledInsights,
       modalityVocabulary,
       insightDepth
-    } = body;
-
-    if (!practitionerId) {
-      return NextResponse.json(
-        { success: false, error: 'practitionerId required' },
-        { status: 400 }
-      );
-    }
+    } = await req.json();
 
     // Validate insightDepth if provided
     if (insightDepth && !['light', 'balanced', 'deep'].includes(insightDepth)) {

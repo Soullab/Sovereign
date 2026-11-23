@@ -13,6 +13,7 @@ import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { BetaBanner } from "@/components/BetaBanner";
 import BugReportButton from "@/components/bugs/BugReportButton";
 import { MaiaPresence } from "@/components/maia/presence/MaiaPresence";
+import { AuthenticatedListeningBoundary } from "@/components/listening/AuthenticatedListeningBoundary";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -128,6 +129,9 @@ export default function RootLayout({
 
             function unlockAudio() {
               if (window.__maiaAudioUnlocked) return;
+              // Session Room admits media only after runtime + transport admission.
+              // Never touch audio there; keep listening so leaving the room still unlocks.
+              if (/^\\/(open|studio)\\/session-room(\\/|$)/.test(window.location.pathname)) return;
               console.log('🔓 [GLOBAL] Attempting iOS/PWA audio unlock...');
 
               // METHOD 1: Create and play Audio element SYNCHRONOUSLY
@@ -185,13 +189,6 @@ export default function RootLayout({
                 console.warn('⚠️ [GLOBAL] AudioContext error:', e);
               }
 
-              // Show confirmation
-              var toast = document.createElement('div');
-              toast.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#10b981;color:white;padding:12px 24px;border-radius:8px;z-index:99999;font-size:14px;';
-              toast.textContent = '🔊 Audio enabled';
-              document.body.appendChild(toast);
-              setTimeout(function(){ toast.remove(); }, 2000);
-
               // Remove listeners after first attempt
               document.removeEventListener('click', unlockAudio, true);
               document.removeEventListener('touchstart', unlockAudio, true);
@@ -224,9 +221,14 @@ export default function RootLayout({
                       Renders a quiet handle + conversation sheet on governed
                       member rooms only; children pass through untouched
                       everywhere else. See components/maia/presence/MaiaPresence.tsx */}
-                  <MaiaPresence>
-                    {children}
-                  </MaiaPresence>
+                  <AuthenticatedListeningBoundary
+                    enabled={process.env.SOULLAB_LISTEN_REVIEW_ENABLED === "1"}
+                    runtimeMode={process.env.MAIA_CABIN_MODE === "offline" ? "offline" : "online"}
+                  >
+                    <MaiaPresence>
+                      {children}
+                    </MaiaPresence>
+                  </AuthenticatedListeningBoundary>
                 </MobileRouteGuard>
               </FeatureTooltipProvider>
             </AethericConsciousnessProvider>

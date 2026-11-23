@@ -1,23 +1,30 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import SessionPostureChoice from '@/app/writers-studio/canvas/SessionPostureChoice';
+import { keepRefusalCopy } from '@/lib/writersStudio/keepPosture';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { STUDIO_PLACE_HASH, type StudioPlace } from '@/lib/writersStudio/studioActions';
+import { GUIDED_STARTERS, OBSERVATION_STARTERS, placeStarter, type ObservationStarter } from '@/lib/writersStudio/developStarters';
 import Link from 'next/link';
+import { teachingQuestion } from '@/lib/writersStudio/teachingTurn';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Shell, ChevronDown } from '@/app/writers-studio/full-redesign/Shell';
 import { STATE_GEOMETRY } from '@/app/writers-studio/full-redesign/tokens';
 import { IMAGES } from '@/app/writers-studio/full-redesign/fixtures';
 import ObservationDialogue from '@/app/writers-studio/develop/ObservationDialogue';
 import WorkConversation from '@/app/writers-studio/canvas/WorkConversation';
+import { requestConversationDeparture } from '@/lib/writersStudio/conversationDeparture';
 import type { LivingWork } from '@/app/writers-studio/useLivingWorks';
 import type { DevelopmentalLens } from '@/lib/manuscript/developmentalReader/contract';
 import type { ReadingView } from '@/lib/writersStudio/developPresentation';
 import type { ReadingSummary } from '@/lib/writersStudio/developClient';
 import type { LiveThemesPayload, LiveGovernedTheme, LiveThemeCandidate } from '@/lib/writersStudio/themes/liveTypes';
-import type { RebuildSection } from '@/lib/writersStudio/rebuild/model';
+import { chapterSpanFor, isConfirmedChapterRoot, type RebuildSection } from '@/lib/writersStudio/rebuild/model';
 import type { DevelopPreparation } from '@/lib/writersStudio/developPreparationClient';
 import type { WholeManuscriptAttentionMap, AttentionItem } from '@/lib/writersStudio/studio/attentionMap';
 import type { WriterUnderstanding, WriterUnderstandingDraft } from '@/lib/writersStudio/writerUnderstanding';
 import type { IntellectualLineageOrientation } from '@/lib/writersStudio/intellectualLineageOrientation';
+import { requestStructureReading } from '@/lib/writersStudio/reviewClient';
 import type {
   ChapterLineageCandidate,
   ChapterLineageScan,
@@ -25,12 +32,29 @@ import type {
 import type { DevelopmentalOrientation } from '@/lib/writersStudio/developmentalOrientation';
 import { observeTextExtent } from '@/lib/writersStudio/workMaturity';
 import { nextMoveOptions, type WriterNextMove } from '@/lib/writersStudio/writerNextMoves';
+import { readStudioPresentation, subscribeStudioPresentation, writeStudioPresentation, STUDIO_DEPTHS, STUDIO_DEPTH_LABEL, type StudioDepth } from '@/lib/writersStudio/presentationRequests';
 import { lineageProcessForState } from '@/lib/writersStudio/intellectualLineageProcess';
 import {
   sourceVerificationOptions,
   verificationStanding,
 } from '@/lib/writersStudio/sourceVerification';
 import P4R1WriterUnderstanding from './P4R1WriterUnderstanding';
+import { DevelopAddToWork } from './DevelopAddToWork';
+import { FOCUSED_INTENTS, guidedIntents } from './developStarterSets';
+import { PlaceStubNotice } from './PlaceStubNotice';
+import { findLongerSibling } from './stubSibling';
+import { CoverageLine } from './CoverageLine';
+import { DevelopStage, DevelopHoldings, DevelopCompanion, ChapterReadingPane, StageReadingCard, StageReadingInvitation, chapterWordCount, type StageReading, type StageEditorialPass } from './DevelopStage';
+import type { StudioAct } from '@/app/writers-studio/canvas/WorkConversation';
+import { setReadScope, getReadScope } from '@/lib/writersStudio/readScopeClient';
+import { settleDecisionNote } from '@/lib/writersStudio/decisionClient';
+import { encodePassageHandoff, PASSAGE_HANDOFF_EVENT, PASSAGE_HANDOFF_KEY } from '@/lib/writersStudio/passageHandoff';
+import { HANDOFF_REFUSAL_COPY, PLAN_HANDOFF_KEY, PLAN_HANDOFF_EVENT } from '@/lib/writersStudio/developmentPlan';
+import { startersFor, type WorkKind } from '@/lib/writersStudio/workKindShared';
+import { getWorkKindClient } from '@/lib/writersStudio/workKindClient';
+import { fetchPlan, makePlanClient, editPlanClient, type PlanView, deletePlanClient } from '@/lib/writersStudio/planClient';
+import { readCurrentSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
+import { whatNextInDevelop, WHAT_NEXT_LABEL, WHAT_NEXT_ASK_LABEL, WHAT_NEXT_CLOSE_LABEL } from '@/lib/writersStudio/whatNext';
 import type { Appearance } from '@/app/writers-studio/full-redesign/types';
 import {
   DEFAULT_WORKING_STYLE,
@@ -58,6 +82,8 @@ export const DEVELOP_FIELDS = [
 export type DevelopField = (typeof DEVELOP_FIELDS)[number];
 
 export const DEVELOP_INTENTS = [
+  'exploring',
+  'maia-thinks',
   'feels-off',
   'shape',
   'thread',
@@ -140,6 +166,13 @@ function friendlyObservation(phenomenonLabel: string | null | undefined) {
   };
 }
 
+/** The scope in a writer's words, for "Read … now". */
+function scopeName(scope: DevelopScopeChoice): string {
+  if (scope.kind === 'whole') return 'the whole Work';
+  if (scope.kind === 'range') return `sections ${scope.fromIndex + 1}–${scope.toIndex + 1}`;
+  return scope.label;
+}
+
 export type DevelopScopeChoice =
   | { kind: 'whole' }
   | { kind: 'section'; sectionId: string; label: string }
@@ -149,6 +182,12 @@ export type DevelopScopeChoice =
 export interface P4R1DevelopViewProps {
   manuscriptId: string;
   work: LivingWork | null;
+  workContextKind: 'unknown' | 'none' | 'work' | 'ambiguous';
+  allWorks: readonly LivingWork[];
+  declaring: boolean;
+  declareError: string | null;
+  onAddToWork: (workId: string) => void;
+  onMakeWork: (title: string) => void;
   workTitle: string;
   appearance: Appearance;
   field: DevelopField;
@@ -167,11 +206,31 @@ export interface P4R1DevelopViewProps {
   preparing: boolean;
   commissioning: boolean;
   commissionError: string | null;
+  commissionNeedsCheckpoint: boolean;
   attentionMap: WholeManuscriptAttentionMap | null;
   attentionBusy: boolean;
   attentionError: string | null;
   attentionProgress: string | null;
   selectedAttentionItemId: string | null;
+  chapterReview: WholeManuscriptAttentionMap | null;
+  chapterReviewBusy: boolean;
+  chapterNeedsCheckpoint: boolean;
+  chapterReviewError: string | null;
+  chapterReviewProgress: string | null;
+  chapterScorecard: WholeManuscriptAttentionMap | null;
+  previousChapterScorecard: WholeManuscriptAttentionMap | null;
+  previousChapterScoreRevision: number | null;
+  chapterScoreBusy: boolean;
+  chapterScoreError: string | null;
+  chapterMinimalPath: WholeManuscriptAttentionMap | null;
+  chapterMinimalPathBusy: boolean;
+  chapterMinimalPathError: string | null;
+  chapterBookFit: WholeManuscriptAttentionMap | null;
+  chapterBookFitBusy: boolean;
+  chapterBookFitError: string | null;
+  chapterMovement: WholeManuscriptAttentionMap | null;
+  chapterMovementBusy: boolean;
+  chapterMovementError: string | null;
   writerUnderstanding: WriterUnderstanding | null;
   writerUnderstandingBusy: boolean;
   writerUnderstandingError: string | null;
@@ -194,14 +253,23 @@ export interface P4R1DevelopViewProps {
   themeError: string | null;
   onField: (field: DevelopField) => void;
   onIntent: (intent: DevelopIntentKey, field: Exclude<DevelopField, 'overview'>) => void;
-  onMode: (mode: 'home' | 'write' | 'develop' | 'review') => void;
+  onMode: (mode: 'home' | 'write' | 'develop' | 'review' | 'publish' | 'listen') => void;
   onSection: (sectionId: string) => void;
   onReading: (readingId: string) => void;
   onScope: (scope: DevelopScopeChoice) => void;
   onCommission: () => void;
+  onCheckpointAndCommission: () => void;
+  onReadChapter: () => void;
+  onCheckpointAndReadChapter: () => void;
+  /** G4: the writer clicked MAIA's "Read this chapter" offer in the conversation. */
+  onCommissionChapterReading?: (lens: import('@/lib/manuscript/developmentalReader/contract').DevelopmentalLens) => Promise<{ ok: true; label: string } | { ok: false; message: string }>;
+  onReadChapterInBook: () => void;
+  onReadChapterMovement: () => void;
+  onScoreChapter: () => void;
+  onMinimalPathChapter: () => void;
   onCommissionAttentionMap: () => void;
   onShowAttentionItem: (itemId: string, sectionId: string) => void;
-  onWorkWithAttentionItem: (itemId: string, sectionId: string) => void;
+  onWorkWithAttentionItem: (itemId: string, sectionId: string, source: 'chapter-review' | 'minimal-path' | 'attention-map') => void;
   onDiscussAttentionItem: (item: AttentionItem) => void;
   onSaveWriterUnderstanding: (draft: WriterUnderstandingDraft) => void;
   onReflectDevelopmentalProcess: () => void;
@@ -241,15 +309,28 @@ function ManuscriptRail({ sections, currentSectionId, onSection }: {
   onSection: (id: string) => void;
 }) {
   const current = sections.find((section) => section.draftSectionId === currentSectionId) ?? null;
+  /* EA walk 2026-11-11: a headed section with NO confirmed level (e.g. "My Morning Ritual" inside Chapter 4) vanished from this rail
+     while Write's rail listed it and the chapter span included it. It is listed now, under the chapter it falls in, marked
+     data-depth-unconfirmed: shown as part of its chapter, never claimed to be a level-2 heading. */
+  /* EA live walk 2026-11-12: in Elemental Alchemy, Chapters 1-4 keep their sub-sections at level 3 ("My Morning Ritual", "The Story
+     of the Four Yogis"), which this rail also left out. A level-3 or unconfirmed heading is listed when it sits INSIDE a confirmed
+     chapter (the nearest level-1 heading before it is a Chapter), so table-of-contents lines in the front matter are not duplicated. */
+  const insideChapter = (section: RebuildSection): boolean => {
+    if (section.headingDepth !== null && section.headingDepth !== 3) return false;
+    const before = sections.filter((s) => s.position < section.position && s.headingDepth === 1);
+    return isConfirmedChapterRoot(before[before.length - 1]);
+  };
   const structural = sections
-    .filter((section) => section.heading?.trim() && (section.headingDepth === 1 || section.headingDepth === 2))
+    .filter((section) => section.heading?.trim() && (section.headingDepth === 1 || section.headingDepth === 2 || insideChapter(section)))
     .filter((section, index, all) => {
       if (index === 0) return true;
       return all[index - 1]?.heading?.trim().toLowerCase() !== section.heading?.trim().toLowerCase();
     });
-  const railSections = structural.length > 0
-    ? structural
-    : sections.filter((section) => section.heading?.trim());
+  // A new Work starts with an editable section that has no heading.
+  // Keep it addressable without inventing a chapter title or changing its text.
+  const railSections = sections.filter((section) => structural.length > 0
+    ? structural.includes(section) || (!section.heading?.trim() && section.editable)
+    : Boolean(section.heading?.trim()) || section.editable);
 
   let activeRailId: string | null = currentSectionId;
   if (current && !railSections.some((section) => section.draftSectionId === currentSectionId)) {
@@ -266,14 +347,15 @@ function ManuscriptRail({ sections, currentSectionId, onSection }: {
           <li
             key={section.draftSectionId}
             className={section.draftSectionId === activeRailId ? 'fr-current' : undefined}
-            data-depth={section.headingDepth ?? undefined}
+            data-depth={section.headingDepth ?? (section.heading?.trim() && insideChapter(section) ? '2' : undefined)}
+            data-depth-unconfirmed={section.headingDepth === null && section.heading?.trim() && insideChapter(section) ? 'true' : undefined}
           >
             <button
               type="button"
               onClick={() => onSection(section.draftSectionId)}
               aria-current={section.draftSectionId === activeRailId ? 'true' : undefined}
             >
-              <b>{section.heading?.trim()}</b>
+              <b>{section.heading?.trim() || `Section ${section.position + 1}`}</b>
             </button>
           </li>
         ))}
@@ -324,25 +406,53 @@ function openingEpigraph(section: RebuildSection): string | null {
   return /^[“"‘']/.test(opening) ? opening : null;
 }
 
-function ChapterShape({ sections, scope }: {
+function ChapterShape({ manuscriptId, sections, scope }: {
+  manuscriptId: string;
   sections: readonly RebuildSection[];
   scope: Extract<DevelopScopeChoice, { kind: 'chapter' }>;
 }) {
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const from = sections.findIndex((section) => section.draftSectionId === scope.fromSectionId);
   const to = sections.findIndex((section) => section.draftSectionId === scope.toSectionId);
   if (from < 0 || to < from) return null;
+
   const chapter = sections.slice(from, to + 1);
   const root = chapter[0] ?? null;
   const epigraph = root ? openingEpigraph(root) : null;
-  const outline = chapter.filter((section) => Boolean(section.heading?.trim()));
+  const chapterWords = chapter.reduce((sum, section) => sum + sectionWordCount(section), 0);
+
+  // Only an explicit heading depth is structural evidence. Generic ALL-CAPS
+  // cuts are useful ingestion coordinates, but they are not authored hierarchy.
+  const explicit = chapter
+    .map((section, index) => ({ section, index }))
+    .filter(({ section }) => Boolean(section.heading?.trim()) && section.headingDepth !== null)
+    .filter(({ section }) => section.draftSectionId !== root?.draftSectionId);
+
+  const detectedOnly = chapter
+    .filter((section) => Boolean(section.heading?.trim()) && section.headingDepth === null);
+
+  const wordsInExplicitSpan = (index: number, depth: number): number => {
+    let end = chapter.length;
+    for (let i = index + 1; i < chapter.length; i += 1) {
+      const nextDepth = chapter[i]?.headingDepth;
+      if (nextDepth !== null && nextDepth !== undefined && nextDepth <= depth) {
+        end = i;
+        break;
+      }
+    }
+    return chapter.slice(index, end)
+      .reduce((sum, section) => sum + sectionWordCount(section), 0);
+  };
 
   return (
     <section className="fr-card p4r1-chapter-shape" aria-label="Chapter shape from the manuscript">
       <span className="p4r1-eyebrow">The chapter as it is</span>
       <h3>{scope.label}</h3>
       <p>
-        This is not a MAIA reading. It is the chapter’s own headings, order, opening material, and word counts —
-        a simple map of what is already on the page.
+        {chapterWords.toLocaleString()} words in this chapter span. Writer’s Studio separates structure the
+        manuscript explicitly preserved from headings the import merely detected, so an ingestion cut is never
+        presented as an authored section.
       </p>
       {epigraph ? (
         <blockquote className="p4r1-chapter-epigraph">
@@ -350,14 +460,74 @@ function ChapterShape({ sections, scope }: {
           <p>{epigraph}</p>
         </blockquote>
       ) : null}
-      <ol className="p4r1-chapter-outline">
-        {outline.map((section) => (
-          <li key={section.draftSectionId} data-depth={section.headingDepth ?? undefined}>
-            <span>{section.heading?.trim()}</span>
-            <small>{sectionWordCount(section).toLocaleString()} words</small>
-          </li>
-        ))}
-      </ol>
+
+      {explicit.length > 0 ? (
+        <>
+          <span className="p4r1-eyebrow">Explicit structure preserved by the manuscript</span>
+          <ol className="p4r1-chapter-outline">
+            {explicit.map(({ section, index }) => (
+              <li key={section.draftSectionId} data-depth={section.headingDepth ?? undefined}>
+                <span>{section.heading?.trim()}</span>
+                <small>
+                  {wordsInExplicitSpan(index, section.headingDepth ?? 3).toLocaleString()} words
+                </small>
+              </li>
+            ))}
+          </ol>
+        </>
+      ) : (
+        <p>
+          No subchapter hierarchy survived this import with enough evidence to call it authored structure.
+          MAIA should not infer one from storage boundaries.
+        </p>
+      )}
+
+      {detectedOnly.length > 0 ? (
+        <div className="p4r1-structure-recovery" data-structure-recovery>
+          <b>Some of this chapter’s hierarchy was lost in import.</b>
+          <p>
+            Writer’s Studio can see the headings, but some of their levels were lost in import.
+            MAIA can suggest the chapter’s shape. You can correct it before anything changes.
+          </p>
+          <button
+            type="button"
+            disabled={recovering}
+            onClick={async () => {
+              if (recovering) return;
+              setRecovering(true);
+              setRecoveryError(null);
+              const result = await requestStructureReading(manuscriptId);
+              setRecovering(false);
+              if (!result.ok) {
+                setRecoveryError('MAIA could not prepare a structure proposal just now. Nothing changed.');
+                return;
+              }
+              window.location.assign(result.reviewPath);
+            }}
+          >
+            {recovering ? 'Reading the manuscript…' : 'Restore chapter structure'}
+          </button>
+          {recoveryError ? <p role="status">{recoveryError}</p> : null}
+        </div>
+      ) : null}
+
+      {detectedOnly.length > 0 ? (
+        <details className="p4r1-chapter-detected">
+          <summary>Import details</summary>
+          <p>
+            {detectedOnly.length} headings were detected whose level was not preserved. They remain visible
+            without being treated as chapters or numbered sections.
+          </p>
+          <ol className="p4r1-chapter-outline">
+            {detectedOnly.map((section) => (
+              <li key={section.draftSectionId}>
+                <span>{section.heading?.trim()}</span>
+                <small>level unconfirmed</small>
+              </li>
+            ))}
+          </ol>
+        </details>
+      ) : null}
     </section>
   );
 }
@@ -392,11 +562,11 @@ function ScopeChooser({ scope, sections, sectionScope, chapterScope, onScope }: 
             const n = Number(e.target.value);
             onScope({ kind: 'range', fromIndex: n, toIndex: Math.max(n, to) });
           }}>
-            {sections.map((s, i) => <option key={s.draftSectionId} value={i}>{s.heading ?? `Section ${i + 1}`}</option>)}
+            {sections.map((s, i) => <option key={s.draftSectionId} value={i}>{s.heading?.trim() || `Section ${s.position + 1}`}</option>)}
           </select>
           <span>to</span>
           <select value={to} onChange={(e) => onScope({ kind: 'range', fromIndex: from, toIndex: Number(e.target.value) })}>
-            {sections.map((s, i) => <option key={s.draftSectionId} value={i} disabled={i < from}>{s.heading ?? `Section ${i + 1}`}</option>)}
+            {sections.map((s, i) => <option key={s.draftSectionId} value={i} disabled={i < from}>{s.heading?.trim() || `Section ${s.position + 1}`}</option>)}
           </select>
         </div>
       ) : null}
@@ -458,47 +628,23 @@ function ReadingField({
   const sectionId = targets[observation.key];
   const workSectionId = workTargets[observation.key];
 
+  /* Design pass (founder go-ahead 2026-11-05): MAIA's own observation comes first, in her
+     voice; one next step leads into the conversation; the rest waits under More. */
+  const friendly = friendlyObservation(observation.phenomenonLabel);
+  const hasMore = observations.length > 1;
   return (
     <div className="p4r1-reading-field">
-      <div className="p4r1-reading-meta">
-        <span>{reading.coverage.sentence}</span>
-        <span>Read {new Date(reading.frozenAt).toLocaleDateString()}</span>
-        <span>{reading.stateLabel}</span>
-      </div>
-
-      <section className="p4r1-discovery">
+      <section className="p4r1-discovery" data-develop-observation={observation.key}>
         <div className="p4r1-discovery-top">
-          <div>
-            <span className="p4r1-eyebrow">One thing MAIA noticed</span>
-            <span className="p4r1-discovery-count">
-              {selectedIndex + 1} of {observations.length}
-            </span>
-          </div>
-          <span className="p4r1-discovery-kind">
-            {observation.phenomenonLabel ?? LABEL[field]}
-          </span>
+          <span className="p4r1-discovery-kind" data-develop-observation-kind>{friendly.title}</span>
+          {hasMore ? (
+            <span className="p4r1-discovery-count">{selectedIndex + 1} of {observations.length}</span>
+          ) : null}
         </div>
 
-        {(() => {
-          const friendly = friendlyObservation(observation.phenomenonLabel);
-          return (
-            <div className="p4r1-discovery-human">
-              <h4>{friendly.title}</h4>
-              <p>{friendly.lead}</p>
-              <details>
-                <summary>See the saved reading in full</summary>
-                <blockquote>{observation.observation}</blockquote>
-              </details>
-            </div>
-          );
-        })()}
-
-        <div className="p4r1-discovery-plain">
-          <b>You do not have to decide what this means alone</b>
-          <p>
-            MAIA can put the reading into ordinary language, show you the exact places she was responding to,
-            and stay with the question while you decide whether anything here matters for your Work.
-          </p>
+        <div className="p4r1-discovery-said" data-develop-observation-said>
+          <span className="p4r1-eyebrow">MAIA</span>
+          <p>{observation.observation}</p>
         </div>
 
         <div className="p4r1-discovery-actions">
@@ -506,64 +652,64 @@ function ReadingField({
             <button
               type="button"
               className="p4r1-discovery-primary"
+              data-develop-talk-passage
               onClick={() => onWorkWithObservation(reading.id, observation.key, workSectionId)}
             >
-              Stay with this in Write
+              Talk about this passage
             </button>
-          ) : null}
+          ) : (
+            <button type="button" className="p4r1-discovery-primary" onClick={() => onTalkObservation(observation.key)}>
+              Talk with MAIA about this
+            </button>
+          )}
           {sectionId ? (
-            <button
-              type="button"
-              onClick={() => onGoToObservation(reading.id, observation.key, sectionId)}
-            >
+            <button type="button" onClick={() => onGoToObservation(reading.id, observation.key, sectionId)}>
               Show me in the manuscript
             </button>
           ) : null}
-          <button type="button" onClick={() => onTalkObservation(observation.key)}>
-            Talk with MAIA
-          </button>
-          <button type="button" onClick={() => onTeachObservation(observation.key)}>
-            Help me understand
-          </button>
-          <button type="button" onClick={() => onDeepObservation(observation.key)}>
-            Go deeper
-          </button>
-        </div>
-
-        {observations.length > 1 ? (
-          <div className="p4r1-discovery-nav">
+          {hasMore && selectedIndex < observations.length - 1 ? (
             <button
               type="button"
-              disabled={selectedIndex === 0}
-              onClick={() => onSelectObservation(observations[Math.max(0, selectedIndex - 1)]!.key)}
-            >
-              Previous
-            </button>
-            <button
-              type="button"
-              disabled={selectedIndex >= observations.length - 1}
-              onClick={() => onSelectObservation(observations[Math.min(observations.length - 1, selectedIndex + 1)]!.key)}
+              data-develop-see-another
+              onClick={() => onSelectObservation(observations[selectedIndex + 1]!.key)}
             >
               See another
             </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
 
-        <details className="p4r1-discovery-detail">
-          <summary>See the evidence and limits</summary>
+        <details className="p4r1-discovery-detail" data-develop-observation-more>
+          <summary>More</summary>
           <div>
+            <div className="p4r1-discovery-more-actions">
+              {workSectionId ? (
+                <button type="button" onClick={() => onTalkObservation(observation.key)}>Talk about it here</button>
+              ) : null}
+              <button type="button" onClick={() => onTeachObservation(observation.key)}>Help me understand</button>
+              <button type="button" onClick={() => onDeepObservation(observation.key)}>Go deeper</button>
+              {hasMore && selectedIndex > 0 ? (
+                <button type="button" onClick={() => onSelectObservation(observations[selectedIndex - 1]!.key)}>Previous</button>
+              ) : null}
+            </div>
             <h5>What this rests on</h5>
             {observation.evidence.map((evidence) => <p key={evidence}>{evidence}</p>)}
             <h5>What this does not establish</h5>
             {observation.limits.map((limit) => (
               <p key={limit.name}><b>{limit.name}</b> — {limit.meaning}</p>
             ))}
+            <p className="p4r1-reading-meta">
+              {reading.coverage.sentence} · Read {new Date(reading.frozenAt).toLocaleDateString()} · {reading.stateLabel}
+            </p>
           </div>
         </details>
       </section>
     </div>
   );
 }
+
+
+/** Said when "Add your theme" is pressed with the box empty. */
+export const THEME_NEEDS_NAME_COPY = 'Type a theme in the box first, in your own words, then press “Add your theme”.';
 
 function ThemeField({ payload, busy, error, onMutation, onTalkCandidate }: {
   payload: LiveThemesPayload | null | undefined;
@@ -573,6 +719,10 @@ function ThemeField({ payload, busy, error, onMutation, onTalkCandidate }: {
   onTalkCandidate: (candidate: LiveThemeCandidate) => void;
 }) {
   const [draft, setDraft] = useState('');
+  /* Guided beta session 2026-11-19, F4: pressing "Add your theme" with the box empty did nothing visible (the button was
+     disabled without a reason). Now the press answers: it puts the cursor in the box and says what to do. */
+  const [needsName, setNeedsName] = useState(false);
+  const themeInputRef = useRef<HTMLInputElement>(null);
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null);
   const [pace, setPace] = useState<WorkingPace>(DEFAULT_WORKING_STYLE.pace);
   const [explanationDepth, setExplanationDepth] = useState<ExplanationDepth>(DEFAULT_WORKING_STYLE.explanation);
@@ -701,14 +851,19 @@ function ThemeField({ payload, busy, error, onMutation, onTalkCandidate }: {
       {error ? <p className="p4r1-error" role="status">{error}</p> : null}
 
       <div className="p4r1-theme-declare">
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Name a theme you want to hold…" />
-        <button type="button" disabled={busy || !draft.trim()} onClick={() => {
+        <input ref={themeInputRef} value={draft} onChange={(e) => { setDraft(e.target.value); if (e.target.value.trim()) setNeedsName(false); }}
+          placeholder="Name a theme you want to hold…" aria-describedby="p4r1-theme-declare-hint" />
+        <button type="button" disabled={busy} onClick={() => {
           const label = draft.trim();
-          if (!label) return;
+          if (!label) { setNeedsName(true); themeInputRef.current?.focus(); return; }
+          setNeedsName(false);
           onMutation({ action: 'declare', label });
           setDraft('');
         }}>Add your theme</button>
       </div>
+      <p id="p4r1-theme-declare-hint" className="p4r1-theme-declare-hint" role="status" data-theme-needs-name={needsName ? 'true' : undefined}>
+        {needsName ? THEME_NEEDS_NAME_COPY : ''}
+      </p>
 
       {payload.themes.length === 0 ? (
         <p className="p4r1-empty">No governed themes yet. You can name one yourself or commission a Themes reading.</p>
@@ -853,6 +1008,22 @@ const INTENT_STARTERS: ReadonlyArray<{
   reflection: string;
   proposal: string;
 }> = [
+  {
+    key: 'exploring',
+    label: 'Just exploring',
+    detail: 'No goal yet. Wander through this chapter with MAIA and see what stands out.',
+    field: 'development',
+    reflection: 'You do not need a reason or a question to begin.',
+    proposal: 'We can simply explore. Tell me what you notice, or ask what stands out to me, and I will stay with the writing rather than steer it.',
+  },
+  {
+    key: 'maia-thinks',
+    label: 'What does MAIA think?',
+    detail: 'Ask for her honest read of this chapter: what she notices and what may be worth a closer look.',
+    field: 'development',
+    reflection: 'You would like to hear how this reads to someone paying close attention.',
+    proposal: 'I can start with what I have already read about this part of the Work and show you one concrete place it comes from. It is a reading for you to react to, not a verdict.',
+  },
   {
     key: 'feels-off',
     label: 'Something feels off',
@@ -1375,6 +1546,10 @@ function ChapterLineagePanel({
                                   <Link
                                     key={option.id}
                                     href={sourceIntakeHref}
+                                    onClick={(event) => {
+                                      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                                      if (!requestConversationDeparture()) event.preventDefault();
+                                    }}
                                     className="p4r1-source-verification-link"
                                   >
                                     <b>{option.label}</b>
@@ -1417,6 +1592,305 @@ function ChapterLineagePanel({
           </ul>
         </div>
       ) : null}
+      {error ? <p className="p4r1-error" role="status">{error}</p> : null}
+    </section>
+  );
+}
+
+function ChapterReviewPanel({
+  map,
+  busy,
+  needsCheckpoint,
+  progress,
+  error,
+  onRead,
+  onCheckpointAndRead,
+  onField,
+  onWrite,
+  onEdit,
+  scorecard,
+  previousScorecard,
+  previousScoreRevision,
+  scoreBusy,
+  scoreError,
+  minimalPath,
+  minimalPathBusy,
+  minimalPathError,
+  bookFit,
+  bookFitBusy,
+  bookFitError,
+  movement,
+  movementBusy,
+  movementError,
+  onBookFit,
+  onMovement,
+  onScore,
+  onMinimalPath,
+}: {
+  map: WholeManuscriptAttentionMap | null;
+  busy: boolean;
+  needsCheckpoint: boolean;
+  progress: string | null;
+  error: string | null;
+  onRead: () => void;
+  onCheckpointAndRead: () => void;
+  onField: (field: DevelopField) => void;
+  onWrite: () => void;
+  onEdit: (itemId: string, sectionId: string, source: 'chapter-review' | 'minimal-path') => void;
+  scorecard: WholeManuscriptAttentionMap | null;
+  previousScorecard: WholeManuscriptAttentionMap | null;
+  previousScoreRevision: number | null;
+  scoreBusy: boolean;
+  scoreError: string | null;
+  minimalPath: WholeManuscriptAttentionMap | null;
+  minimalPathBusy: boolean;
+  minimalPathError: string | null;
+  bookFit: WholeManuscriptAttentionMap | null;
+  bookFitBusy: boolean;
+  bookFitError: string | null;
+  movement: WholeManuscriptAttentionMap | null;
+  movementBusy: boolean;
+  movementError: string | null;
+  onBookFit: () => void;
+  onMovement: () => void;
+  onScore: () => void;
+  onMinimalPath: () => void;
+}) {
+  if (!map) {
+    return (
+      <section className="fr-card p4r1-chapter-review" data-chapter-review="empty">
+        <span className="p4r1-eyebrow">Start here</span>
+        <h3>Let MAIA read this chapter.</h3>
+        <p>
+          She’ll tell you what she thinks the chapter is doing, what is already working,
+          and where she would focus next. No jargon. Nothing changes.
+        </p>
+        {needsCheckpoint ? (
+          <div className="p4r1-chapter-read-snapshot">
+            <p>
+              This chapter has changed since the last reading snapshot. Save the current draft so
+              MAIA reads exactly what is on the page now. Your words will not change.
+            </p>
+            <button
+              type="button"
+              className="p4r1-commission"
+              disabled={busy}
+              onClick={onCheckpointAndRead}
+            >
+              {busy ? (progress ?? 'Saving the current draft…') : 'Save current draft & read'}
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="p4r1-commission" disabled={busy} onClick={onRead}>
+            {busy ? (progress ?? 'MAIA is reading the chapter…') : 'Read this chapter'}
+          </button>
+        )}
+        {error ? <p className="p4r1-error" role="status">{error}</p> : null}
+      </section>
+    );
+  }
+
+  const byBand = (band: string) => map.items.find((item) => item.band === band) ?? null;
+  const strength = byBand('begin-here');
+  const grasp = byBand('next');
+  const friction = byBand('later');
+  const start = byBand('watch');
+
+  return (
+    <section className="fr-card p4r1-chapter-review" data-chapter-review="ready">
+      <span className="p4r1-eyebrow">MAIA read the chapter</span>
+      {strength ? (
+        <div className="p4r1-chapter-review-lead">
+          <h3>{strength.label}</h3>
+          <p>{strength.notice}</p>
+          <small>{strength.whyItMatters}</small>
+        </div>
+      ) : null}
+
+      {grasp ? (
+        <div className="p4r1-chapter-review-point">
+          <b>What I think this chapter is doing</b>
+          <p>{grasp.notice}</p>
+        </div>
+      ) : null}
+
+      {friction ? (
+        <div className="p4r1-chapter-review-point">
+          <b>What may need attention</b>
+          <p>{friction.notice}</p>
+        </div>
+      ) : null}
+
+      {start ? (
+        <div className="p4r1-chapter-review-point">
+          <b>Where I’d start</b>
+          <p>{start.notice}</p>
+        </div>
+      ) : null}
+
+      <div className="p4r1-chapter-review-actions">
+        <button type="button" disabled={bookFitBusy} onClick={onBookFit}>
+          {bookFitBusy ? 'Reading the book around this chapter…' : 'How does this chapter fit the book?'}
+        </button>
+        <button type="button" disabled={movementBusy} onClick={onMovement}>
+          {movementBusy ? 'Looking at the chapter’s movement…' : 'Show me the chapter’s movement'}
+        </button>
+        <button type="button" disabled={minimalPathBusy} onClick={onMinimalPath}>
+          {minimalPathBusy ? 'Finding the highest-leverage changes…' : 'Show me what to strengthen'}
+        </button>
+        {start?.sectionIds[0] ? (
+          <button
+            type="button"
+            className="p4r1-chapter-review-primary"
+            onClick={() => onEdit(start.id, start.sectionIds[0]!, 'chapter-review')}
+          >
+            Show me an edited version
+          </button>
+        ) : (
+          <button type="button" className="p4r1-chapter-review-primary" onClick={onWrite}>Work on the writing</button>
+        )}
+        {!scorecard ? (
+          <button type="button" disabled={scoreBusy} onClick={onScore}>
+            {scoreBusy ? 'Building scorecard…' : 'Chapter scorecard'}
+          </button>
+        ) : null}
+        {scorecard ? (
+          <button type="button" disabled={minimalPathBusy} onClick={onMinimalPath}>
+            {minimalPathBusy ? 'Finding the smallest high-leverage changes…' : 'Minimal path to 5/5'}
+          </button>
+        ) : null}
+      </div>
+
+      {bookFitError ? <p className="p4r1-error" role="status">{bookFitError}</p> : null}
+      {bookFit ? (
+        <section className="p4r1-chapter-expansion" data-chapter-book-fit>
+          <span className="p4r1-eyebrow">In the book</span>
+          {bookFit.items.map((item) => (
+            <div key={item.id}>
+              <b>{item.label}</b>
+              <p>{item.notice}</p>
+            </div>
+          ))}
+          <details><summary>Why MAIA thinks this</summary>{bookFit.items.map((item) => <p key={item.id}>{item.whyItMatters}</p>)}</details>
+        </section>
+      ) : null}
+
+      {movementError ? <p className="p4r1-error" role="status">{movementError}</p> : null}
+      {movement ? (
+        <section className="p4r1-chapter-expansion" data-chapter-movement>
+          <span className="p4r1-eyebrow">Inside the chapter</span>
+          {movement.items.map((item) => (
+            <div key={item.id}>
+              <b>{item.label}</b>
+              <p>{item.notice}</p>
+            </div>
+          ))}
+          <details><summary>Why MAIA thinks this</summary>{movement.items.map((item) => <p key={item.id}>{item.whyItMatters}</p>)}</details>
+        </section>
+      ) : null}
+
+      {scoreError ? <p className="p4r1-error" role="status">{scoreError}</p> : null}
+      {scorecard ? (() => {
+        const dimensions = ['Clarity', 'Coherence', 'Reader orientation', 'Voice', 'Momentum'];
+        const scored = scorecard.items.filter((item) => dimensions.includes(item.label));
+        const extras = scorecard.items.filter((item) => !dimensions.includes(item.label));
+        return (
+          <div className="p4r1-chapter-scorecard" data-chapter-scorecard>
+            <div className="p4r1-chapter-scorecard-head">
+              <b>Chapter scorecard</b>
+              <span>Optional craft guide · not a grade · fixed to this chapter revision</span>
+            </div>
+            {scored.map((item) => {
+              const score = item.notice.match(/^([1-5]\/5)\b/)?.[1] ?? '—';
+              return (
+                <details key={item.id}>
+                  <summary>
+                    <b>{item.label}</b>
+                    <span>{score}</span>
+                  </summary>
+                  <p>{item.notice}</p>
+                  <small>{item.whyItMatters}</small>
+                </details>
+              );
+            })}
+            {extras.length > 0 ? (
+              <details className="p4r1-chapter-scorecard-extra">
+                <summary>Other thing MAIA noticed</summary>
+                {extras.map((item) => (
+                  <div key={item.id}>
+                    <b>{item.label}</b>
+                    <p>{item.notice}</p>
+                    <small>{item.whyItMatters}</small>
+                  </div>
+                ))}
+              </details>
+            ) : null}
+            {previousScorecard ? (
+              <section className="p4r1-score-comparison" data-chapter-score-comparison>
+                <div>
+                  <b>Since the previous saved chapter revision</b>
+                  <span>This is a craft comparison, not a grade{previousScoreRevision !== null ? ` · previous revision ${previousScoreRevision}` : ''}.</span>
+                </div>
+                {dimensions.map((dimension) => {
+                  const currentItem = scorecard.items.find((item) => item.label === dimension);
+                  const previousItem = previousScorecard.items.find((item) => item.label === dimension);
+                  const currentScore = Number(currentItem?.notice.match(/^([1-5])\/5\b/)?.[1] ?? NaN);
+                  const previousScore = Number(previousItem?.notice.match(/^([1-5])\/5\b/)?.[1] ?? NaN);
+                  if (!Number.isFinite(currentScore) || !Number.isFinite(previousScore)) return null;
+                  const movement = currentScore > previousScore
+                    ? 'Moved upward on this rubric.'
+                    : currentScore < previousScore
+                      ? 'Worth another look; the revision may have traded something here.'
+                      : 'Held steady.';
+                  return (
+                    <article key={dimension}>
+                      <b>{dimension}</b>
+                      <span>{previousScore}/5 → {currentScore}/5</span>
+                      <small>{movement}</small>
+                    </article>
+                  );
+                })}
+              </section>
+            ) : null}
+          </div>
+        );
+      })() : null}
+
+      {minimalPathError ? <p className="p4r1-error" role="status">{minimalPathError}</p> : null}
+      {minimalPath ? (
+        <section className="p4r1-chapter-expansion p4r1-minimal-path" data-chapter-minimal-path>
+          <span className="p4r1-eyebrow">Minimal path to 5/5</span>
+          <h4>Start with the few changes that do the most work.</h4>
+          <p>Light and moderate edits first. Major rewriting only if a smaller move cannot solve the problem.</p>
+          {minimalPath.items.map((item) => (
+            <article key={item.id}>
+              <b>{item.label}</b>
+              <p>{item.notice}</p>
+              <small>{item.whyItMatters}</small>
+              {item.sectionIds[0] ? (
+                <button
+                  type="button"
+                  className="p4r1-minimal-path-action"
+                  onClick={() => onEdit(item.id, item.sectionIds[0]!, 'minimal-path')}
+                >
+                  Work on this →
+                </button>
+              ) : null}
+            </article>
+          ))}
+        </section>
+      ) : null}
+
+      <details className="p4r1-chapter-review-details">
+        <summary>Why MAIA thinks this</summary>
+        {map.items.map((item) => (
+          <div key={item.id}>
+            <b>{item.label}</b>
+            <p>{item.whyItMatters}</p>
+          </div>
+        ))}
+      </details>
+
       {error ? <p className="p4r1-error" role="status">{error}</p> : null}
     </section>
   );
@@ -1601,7 +2075,37 @@ function AttentionMapPanel({
   );
 }
 
+/** The depth an observation button asks for, carried as responseStyle rather than as words (Q2). */
+function starterStyle(prompt: string) {
+  const key = (Object.keys(OBSERVATION_STARTERS) as ObservationStarter[])
+    .find((k) => OBSERVATION_STARTERS[k].words === prompt);
+  return key ? OBSERVATION_STARTERS[key].responseStyle : undefined;
+}
+
+/**
+ * Design 1B: scroll to a Develop control, opening "More ways to explore" for the
+ * editorial pass. It never presses anything. Panels may load after a change of
+ * field, so it looks a few times and then gives up quietly. Returns a cancel.
+ */
+function revealStudioPlace(target: string): () => void {
+  let tries = 0;
+  const timer = window.setInterval(() => {
+    tries += 1;
+    if (target === 'editorial-pass') {
+      const more = document.querySelector<HTMLDetailsElement>('details.p4r1-develop-more');
+      if (more) more.open = true;
+    }
+    const el = document.querySelector(target === 'editorial-pass' ? '[data-editorial-pass]' : '[data-chapter-review]');
+    if (el || tries >= 20) {
+      window.clearInterval(timer);
+      el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    }
+  }, 250);
+  return () => window.clearInterval(timer);
+}
+
 export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
+  const [whatNextOpen, setWhatNextOpen] = useState(false);
   const livePathname = usePathname() ?? '/dev/writers-studio-p4r1';
   const liveSearchParams = useSearchParams();
   const liveSearch = liveSearchParams?.toString() ?? '';
@@ -1613,9 +2117,213 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
   );
   const [talking, setTalking] = useState(false);
   const [dialoguePrompt, setDialoguePrompt] = useState('');
-  const [workTalking, setWorkTalking] = useState(true);
-  const [attentionConversationDraft, setAttentionConversationDraft] = useState('');
+
+  /* Design 1B: arriving from a control MAIA offered (#read-this-chapter or
+     #editorial-pass). Only scrolls to the control; it never presses anything. */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const target = window.location.hash.slice(1);
+    if (target !== 'read-this-chapter' && target !== 'editorial-pass') return;
+    return revealStudioPlace(target);
+  }, []);
+  /* Design 1B inside Develop: MAIA's button in this room's Work conversation.
+     Back to Overview, then reveal the control; the conversation stays open. */
+  const stopReveal = useRef<(() => void) | null>(null);
+  useEffect(() => () => stopReveal.current?.(), []);
+  const { onField } = props;
+  const onStudioPlace = useCallback((place: StudioPlace) => {
+    onField('overview');
+    stopReveal.current?.();
+    stopReveal.current = revealStudioPlace(STUDIO_PLACE_HASH[place]);
+  }, [onField]);
+  // No speculative Work-level MAIA request just because the room opened.
+  // A member's Talk gesture creates the conversation, not navigation.
+  const workConversationScope = JSON.stringify([props.work?.id ?? null, props.manuscriptId]);
+  const [workConversationState, setWorkConversationState] = useState(() => ({
+    scope: workConversationScope, open: false, starter: '',
+  }));
+  // Scope is checked during render: a new Work must never receive even one
+  // frame of the previous Work's starter or open conversation state.
+  const workTalking = workConversationState.scope === workConversationScope && workConversationState.open;
+  const attentionConversationDraft = workConversationState.scope === workConversationScope ? workConversationState.starter : '';
+  const setWorkTalking = (open: boolean) => setWorkConversationState(previous => ({
+    scope: workConversationScope, open,
+    starter: previous.scope === workConversationScope ? previous.starter : '',
+  }));
+  const setAttentionConversationDraft = (starter: string) => setWorkConversationState(previous => ({
+    scope: workConversationScope,
+    open: previous.scope === workConversationScope && previous.open, starter,
+  }));
+  useEffect(() => {
+    setWorkConversationState(previous => previous.scope === workConversationScope
+      ? previous : { scope: workConversationScope, open: false, starter: '' });
+  }, [workConversationScope]);
+  /* what MAIA was handed for the last answer on the Develop stage (ids + headings only); null until the first answer */
+  /* the kind the WRITER declared (null = not declared, undefined = could not be read); never inferred */
+  const [workKind, setWorkKind] = useState<WorkKind | null | undefined>(null);
+  const stageWorkId = props.work?.id ?? null;
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_WS_DEVELOP_STAGE !== '1' || !stageWorkId) return;
+    let live = true;
+    void getWorkKindClient(stageWorkId).then((k) => { if (live) setWorkKind(k); });
+    return () => { live = false; };
+  }, [stageWorkId]);
+  /* the writer's plan for this manuscript: loaded on return, made only by the writer's gesture */
+  const [planView, setPlanView] = useState<PlanView | null>(null);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planNote, setPlanNote] = useState<string | null>(null);
+  /* the session posture could not be read: offer the writer's own choice in place (SessionPostureChoice), never a guess */
+  const [planNeedsPosture, setPlanNeedsPosture] = useState(false);
+  const stageManuscriptId = props.manuscriptId;
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_WS_DEVELOP_STAGE !== '1' || !stageManuscriptId) return;
+    let live = true;
+    void fetchPlan(stageManuscriptId).then((v) => { if (live && v) setPlanView(v); });
+    return () => { live = false; };
+  }, [stageManuscriptId]);
+  const makePlan = async (ask: string): Promise<boolean> => {
+    const posture = readCurrentSanctuaryPosture();
+    if (!posture.resolved || posture.sanctuary) {
+      setPlanNote(posture.resolved ? 'Sanctuary is on, so MAIA is not reading your work and cannot make a plan.' : 'No plan was made yet: choose how MAIA holds this session, then press Make a plan again.');
+      setPlanNeedsPosture(!posture.resolved);
+      return false;
+    }
+    setPlanBusy(true); setPlanNote(null);
+    const r = await makePlanClient(stageManuscriptId, ask);
+    setPlanBusy(false);
+    if (r.ok) { setPlanView(r.view); setLastRead(r.read); if (r.dropped > 0) setPlanNote(`${r.dropped} suggested step${r.dropped === 1 ? ' was' : 's were'} left out because ${r.dropped === 1 ? 'it' : 'they'} did not point at wording actually in your chapter.`); return true; }
+    setPlanNote(keepRefusalCopy(r.refusal) ?? (r.refusal === 'permission_required' ? 'A plan across chapters needs your permission for MAIA to read your saved work. Choose “Let MAIA read my saved work” under More → What MAIA can read, or ask MAIA, then try again.' : r.detail ?? 'MAIA could not make a plan just now. Nothing was changed.'));
+    return false;
+  };
+  /* Design 1B amendment 2 · the writer clicked one of MAIA's acting offers in the stage conversation. Only that click lands here. */
+  const studioAct = async (act: StudioAct): Promise<{ ok: true; text: string } | { ok: false; message: string }> => {
+    // Navigation inside Develop: nothing is written, so it is not a Sanctuary question.
+    if (act.id === 'show') { setStageOpenAt({ place: act.place, n: Date.now() }); return { ok: true, text: 'Opened under More.' }; }
+    if (act.id === 'go-chapter') {
+      const sec = props.sections.find((x) => x.draftSectionId === act.sectionId);
+      if (!sec) return { ok: false, message: 'That chapter is not in this Work. Nothing was changed.' };
+      selectManuscriptLocus(sec.draftSectionId);
+      return { ok: true, text: `You are at ${sec.heading?.trim() || 'that chapter'}.` };
+    }
+    const posture = readCurrentSanctuaryPosture();
+    if (!posture.resolved || posture.sanctuary) return { ok: false, message: 'Sanctuary is on, so that is not done here. Nothing was changed.' };
+    if (!props.work || !stageManuscriptId) return { ok: false, message: 'This Work is not ready for that yet. Nothing was changed.' };
+    if (act.id === 'grant-reading') {
+      const r = await setReadScope(stageManuscriptId, { action: 'grant', level: act.level });
+      if (r && 'refused' in r) return { ok: false, message: keepRefusalCopy(r.refused) ?? 'That permission could not be given just now. Nothing was changed.' };
+      if (!r) return { ok: false, message: 'That permission could not be given just now. Nothing was changed.' };
+      return { ok: true, text: `MAIA may now read your saved ${r.level === 'work' ? 'work' : 'chapter'} while you talk. Ask her again. You can stop it any time under More → What MAIA can read.` };
+    }
+    if (act.id === 'make-plan') {
+      return (await makePlan(act.ask))
+        ? { ok: true, text: 'Your plan is ready under More. Nothing in your writing changed.' }
+        : { ok: false, message: 'No plan was made. Under More you can see why.' };
+    }
+    if (act.id === 'note-settled') {
+      const r = await settleDecisionNote(props.work.id, act.words, { room: 'develop' });
+      return r.ok ? { ok: true, text: 'Noted, in your words. You can see or withdraw it under More → What you have settled.' }
+        : { ok: false, message: keepRefusalCopy(r.refusal) ?? 'That could not be noted just now. Nothing was recorded.' };
+    }
+    // open-desk: navigation only. The exact words go to Write, which holds them only if they occur once in the saved chapter.
+    const sid = stageSection?.draftSectionId ?? props.currentSectionId;
+    if (act.words && sid) {
+      try { window.sessionStorage.setItem(PASSAGE_HANDOFF_KEY(stageManuscriptId), encodePassageHandoff({ sectionId: sid, text: act.words })); } catch { /* Write then opens the chapter only */ }
+      try { window.dispatchEvent(new Event(PASSAGE_HANDOFF_EVENT)); } catch { /* a fresh mount reads the key */ }
+    }
+    navigateMode('write');
+    return { ok: true, text: act.words ? 'Opening the passage desk in Write.' : 'Opening the chapter in Write; select the passage you want to work on.' };
+  };
+  const editPlan = async (edits: import('@/lib/writersStudio/developmentPlan').StepEdit[]) => {
+    const id = planView?.plan?.id; if (!id) return;
+    const plan = await editPlanClient(stageManuscriptId, id, edits);
+    if (plan) setPlanView((v) => (v ? { ...v, plan } : v)); else setPlanNote('That could not be saved just now. Your plan is as it was.');
+  };
+  const deletePlan = async () => {
+    const id = planView?.plan?.id; if (!id || !stageManuscriptId) return;
+    if (await deletePlanClient(stageManuscriptId, id)) { setPlanView({ plan: null, staleStepIds: [], unverifiedStepIds: [], events: {}, verdict: true, decisionsChanged: false }); setPlanNote('The plan and its earlier versions are deleted. Your manuscript was not touched.'); }
+    else setPlanNote('The plan could not be deleted just now. Nothing was changed.');
+  };
+  /** A plan step -> the passage desk. Leaves an id for Write and goes there. Changes nothing itself: no status, no manuscript. */
+  const workOnStep = (stepId: string) => {
+    if (!stageManuscriptId) return;
+    // Say a known refusal HERE, beside the step, instead of sending the writer somewhere to find nothing. Write re-checks authoritatively.
+    if (planView && !planView.verdict) { setPlanNote(HANDOFF_REFUSAL_COPY.no_verdict.replace(' The chapter is open; select the passage you mean.', '')); return; }
+    if (planView?.staleStepIds.includes(stepId)) { setPlanNote(HANDOFF_REFUSAL_COPY.changed.replace(' The chapter is open; check it, then', ' Check the chapter, then')); return; }
+    if (planView?.decisionsChanged === true) { setPlanNote(HANDOFF_REFUSAL_COPY.decisions_changed); return; }
+    if (planView?.unverifiedStepIds.includes(stepId)) { setPlanNote(HANDOFF_REFUSAL_COPY.unverified.replace(' The chapter is open; check it, then', ' Check the chapter, then')); return; }
+    setPlanNote(null);
+    try { window.sessionStorage.setItem(PLAN_HANDOFF_KEY(stageManuscriptId), stepId); } catch { /* without it Write opens the chapter only */ }
+    // ⛔ No status change here: only a hand-off Write actually completes may mark the step 'working'.
+    try { window.dispatchEvent(new Event(PLAN_HANDOFF_EVENT)); } catch { /* fresh mount reads the key */ }
+    navigateMode('write');
+  };
+  const [lastRead, setLastRead] = useState<readonly { sectionId: string; label: string | null }[] | null>(null);
+  const [stageOpenAt, setStageOpenAt] = useState<{ place: string; n: number } | null>(null);
   const [railSelectionId, setRailSelectionId] = useState<string | null>(null);
+  const [stubDismissedFor, setStubDismissedFor] = useState<string | null>(null);
+
+  const navigateMode: P4R1DevelopViewProps['onMode'] = (mode) => {
+    if (requestConversationDeparture()) props.onMode(mode);
+  };
+  const openReading: P4R1DevelopViewProps['onReading'] = (readingId) => {
+    if (!requestConversationDeparture()) return;
+    setWorkTalking(false);
+    props.onReading(readingId);
+  };
+  const prepareWriting = () => {
+    if (props.preparing || !requestConversationDeparture()) return;
+    setWorkTalking(false);
+    setAttentionConversationDraft('');
+    props.onPrepare();
+  };
+
+  // Founder-accepted R6: Focused by default; Guided and Full only on request.
+  // This changes the density of UI, not reader authority or available evidence.
+  const [developView, setDevelopView] = useState<StudioDepth>('focused');
+  // Density spec §10 R2-R3: one setting per writer (and per Work while a temporary choice
+  // is in effect), read by both Develop render paths.
+  const densityWorkId = props.work?.id ?? null;
+  useEffect(() => {
+    setDevelopView(readStudioPresentation({ workId: densityWorkId }).depth);
+    return subscribeStudioPresentation(next => setDevelopView(next.depth), { workId: densityWorkId });
+  }, [densityWorkId]);
+  /* EA acceptance walk 2026-11-11: with the stage on, "More ways to explore" changed only the depth preference, which the stage never
+     consulted — so the writer stayed on the stage and the Develop map (lens tabs, editorial pass) was unreachable. Leaving the stage is its
+     own explicit choice: it is NOT inferred from the depth preference, so a writer whose preference is already "Full" still opens on the work. */
+  const [leftStage, setLeftStage] = useState(false);
+  const [stagePlaced, setStagePlaced] = useState<{ text: string; n: number }>({ text: '', n: 0 });
+  /* MAIA reads the opened chapter by herself — under the writer's standing read permission only (see stageReading below). */
+  const autoReadAsked = useRef<Set<string>>(new Set());
+  const latestReview = useRef({ review: props.chapterReview, busy: props.chapterReviewBusy, error: props.chapterReviewError });
+  latestReview.current = { review: props.chapterReview, busy: props.chapterReviewBusy, error: props.chapterReviewError };
+  const stageOn = process.env.NEXT_PUBLIC_WS_DEVELOP_STAGE === '1' && props.field === 'overview' && !leftStage
+    && Boolean(props.work) && !props.preparing && props.sections.length > 0;
+  const autoReadKey = props.chapterScope ? `${props.manuscriptId}:${props.chapterScope.fromSectionId}` : null;
+  const { onReadChapter } = props;
+  useEffect(() => {
+    /* Off unless NEXT_PUBLIC_WS_AUTO_READ=1: an automatic reading is a paid model job, so it waits for a cost ceiling and owner
+       review (review of #2215, 2026-11-11). Until then she reads when the writer asks. */
+    if (process.env.NEXT_PUBLIC_WS_AUTO_READ !== '1') return;
+    if (!stageOn || !autoReadKey || autoReadAsked.current.has(autoReadKey)) return;
+    if (props.chapterReview || props.chapterReviewBusy || props.chapterReviewError) return;
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      void getReadScope(props.manuscriptId).then((scope) => {
+        if (cancelled || !scope) return;                       // no standing permission (or it could not be read): she waits to be asked
+        const posture = readCurrentSanctuaryPosture();
+        if (!posture.resolved || posture.sanctuary) return;    // never in Sanctuary, never when Sanctuary cannot be read
+        const now = latestReview.current;
+        if (now.review || now.busy || now.error || autoReadAsked.current.has(autoReadKey)) return; // a saved reading of this draft is reused
+        autoReadAsked.current.add(autoReadKey);
+        onReadChapter();
+      });
+    }, 600);
+    return () => { cancelled = true; window.clearTimeout(t); };
+  }, [stageOn, autoReadKey, props.manuscriptId, props.chapterReview, props.chapterReviewBusy, props.chapterReviewError, onReadChapter]);
+  const chooseDevelopView = (next: StudioDepth) => {
+    setDevelopView(next);
+    writeStudioPresentation({ depth: next });
+  };
 
   useEffect(() => {
     setSelectedObservationKey(props.reading?.observations[0]?.key ?? null);
@@ -1627,13 +2335,23 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
     (observation) => observation.key === selectedObservationKey,
   ) ?? null;
 
+  const newReadingRef = useRef<HTMLDetailsElement | null>(null);
   const selectedRailSection = props.sections.find(
     (section) => section.draftSectionId === railSelectionId,
   ) ?? null;
-  const selectedRailLabel = selectedRailSection?.heading?.trim() || 'Selected place';
+  const selectedRailLabel = selectedRailSection
+    ? selectedRailSection.heading?.trim() || `Section ${selectedRailSection.position + 1}`
+    : 'Selected place';
 
   const selectManuscriptLocus = (sectionId: string) => {
-    setRailSelectionId(sectionId);
+    if (!requestConversationDeparture()) return;
+    const chapter = chapterSpanFor(props.sections, sectionId);
+    const selectsChapterRoot = chapter?.root.draftSectionId === sectionId;
+
+    /* A chapter root is already a complete Develop subject. Let the canonical
+       ChapterReviewPanel own it so completed analysis is not covered by the
+       generic relational locus overlay. Subsections still use that overlay. */
+    setRailSelectionId(selectsChapterRoot ? null : sectionId);
     setTalking(false);
     setDialoguePrompt('');
     setAttentionConversationDraft('');
@@ -1665,6 +2383,10 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
     [props.sections],
   );
   const declaredState = props.work?.manuscriptState ?? null;
+  // No Work declares this writing: the author is offered the way out wherever she is in Develop, not only beside the
+  // focused starter. The focused view carries it beside its own Talk button; every other view carries it in the MAIA pane.
+  const needsWork = !props.work && props.workContextKind === 'none';
+  const focusedAttachShown = needsWork && props.field === 'overview' && developView !== 'full';
   const selectedMovement = props.developmentalOrientation?.movements.find(
     (movement) => movement.id === props.selectedDevelopmentalMovementId,
   ) ?? null;
@@ -1690,6 +2412,8 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
       : 'No manuscript prose is present yet';
 
   const beginWholeConversation = (prompt: string) => {
+    if (props.preparing) return;
+    if (workTalking && prompt !== attentionConversationDraft && !requestConversationDeparture()) return;
     setAttentionConversationDraft(prompt);
     setTalking(false);
     setWorkTalking(true);
@@ -1698,18 +2422,14 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
   const handleGuidedMove = (move: WriterNextMove) => {
     switch (move) {
       case 'whole-work-conversation':
-        beginWholeConversation([
-          'I want to begin with the whole Work before we move into details.',
-          'Help me see the book as a book: its overall movement, what is alive, what may be unresolved, and what developmental process seems to be happening.',
-          'Stay at the whole-Work scale until I choose to go closer.',
-        ].join('\n'));
+        beginWholeConversation(GUIDED_STARTERS['whole-work-conversation']);
         return;
       case 'see-attention-map':
         document.querySelector('.p4r1-attention-map')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
       case 'explore-part-or-chapter':
       case 'begin-writing':
-        props.onMode('write');
+        navigateMode('write');
         return;
       case 'trace-source-or-lineage':
         document.querySelector('[data-lineage-panel]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1722,35 +2442,28 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
         props.onField('development');
         return;
       case 'map-written-and-planned':
-        beginWholeConversation([
-          'Help me map what is actually written, what is still planned, and what remains open.',
-          'Keep those states visibly distinct. Do not treat planned material as manuscript evidence.',
-        ].join('\n'));
+        beginWholeConversation(GUIDED_STARTERS['map-written-and-planned']);
         return;
       case 'clarify-central-question':
-        beginWholeConversation('Help me stay with the central question of this Work before we decide structure or prose.');
+        beginWholeConversation(GUIDED_STARTERS['clarify-central-question']);
         return;
       case 'sketch-possible-structure':
-        beginWholeConversation([
-          'Help me explore possible shapes for this Work.',
-          'Treat every structure as a possibility, not as something already authored or decided.',
-        ].join('\n'));
+        beginWholeConversation(GUIDED_STARTERS['sketch-possible-structure']);
         return;
       case 'stay-at-this-scale':
-        beginWholeConversation('I want to stay at the current scale and keep thinking before we move closer.');
+        beginWholeConversation(GUIDED_STARTERS['stay-at-this-scale']);
         return;
       case 'descend-one-scale':
-        props.onMode('write');
+        navigateMode('write');
         return;
       case 'something-else':
-        setAttentionConversationDraft('');
-        setTalking(false);
-        setWorkTalking(true);
+        beginWholeConversation('');
         return;
     }
   };
 
   const discussAttentionItem = (item: AttentionItem) => {
+    if (!requestConversationDeparture()) return;
     const lenses = [...new Set(item.evidence.map((evidence) => evidence.lens))];
     setAttentionConversationDraft([
       'I want to talk through this whole-manuscript Attention Map observation:',
@@ -1765,7 +2478,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
       '',
       `This synthesis rests on ${item.evidence.length} frozen observation${item.evidence.length === 1 ? '' : 's'} across: ${lenses.join(', ')}.`,
       '',
-      'Help me think this through. Start by distinguishing what the evidence establishes from what remains interpretive. Do not suggest edits unless I ask.',
+      'Help me think this through: what the evidence establishes, and what remains interpretive.',
     ].join('\n'));
     props.onDiscussAttentionItem(item);
     setTalking(false);
@@ -1773,7 +2486,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
   };
 
   const discussLineageCandidate = (candidate: ChapterLineageCandidate) => {
-    if (!props.chapterLineage) return;
+    if (!props.chapterLineage || !requestConversationDeparture()) return;
     const bibliography = new Map(
       props.chapterLineage.bibliographyEntries.map((entry) => [entry.key, entry.raw] as const),
     );
@@ -1796,42 +2509,179 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
         selectedMovement.questionForWriter,
       ] : []),
       '',
-      'Help me distinguish what the manuscript establishes, what the bibliography only suggests, and what would require source verification. Do not insert citations or rewrite prose unless I explicitly ask.',
+      'Help me distinguish what the manuscript establishes, what the bibliography only suggests, and what would need source verification.',
     ].join('\n'));
     props.onSelectLineageCandidate(props.chapterLineage.chapterRootId, candidate.id);
     setTalking(false);
     setWorkTalking(true);
   };
 
-  const title = props.field === 'overview' ? 'See more of your Work' : LABEL[props.field];
+  const hasExplicitPlace = Boolean(
+    (railSelectionId && selectedRailSection)
+      || props.scope.kind === 'section'
+      || props.scope.kind === 'chapter',
+  );
+  const contextLabel = railSelectionId && selectedRailSection
+    ? selectedRailLabel
+    : props.scope.kind === 'section' || props.scope.kind === 'chapter'
+      ? props.scope.label
+      : props.workTitle || 'your Work';
+  // Asked, never assumed: a short section sharing its name with a much longer one is probably that chapter's notes.
+  const stubSibling = hasExplicitPlace && railSelectionId ? findLongerSibling(props.sections, railSelectionId) : null;
+  // Equally warm invitations first; the problem-framed starters wait one step further in (developStarterSets.ts).
+  const focusedQuestions: readonly DevelopIntentKey[] = FOCUSED_INTENTS;
+  const guidedQuestions: readonly DevelopIntentKey[] = guidedIntents(hasExplicitPlace);
+  const title = props.field === 'overview'
+    ? developView === 'full' ? 'See more of your Work' : 'Explore your Work'
+    : LABEL[props.field];
   const subtitle = props.field === 'overview'
-    ? 'What are you trying to understand?'
+    ? developView === 'full' ? 'What are you trying to understand?' : `With ${contextLabel}, one thing at a time.`
     : QUESTION[props.field];
 
   const center = (
     <div className="fr-dev">
+      {leftStage && process.env.NEXT_PUBLIC_WS_DEVELOP_STAGE === '1' ? (
+        <button type="button" className="p4r1-develop-back" data-develop-back-to-stage="true" onClick={() => setLeftStage(false)}>
+          ← Back to the reading
+        </button>
+      ) : null}
       <div className="fr-dev-head">
         <DevelopMark />
         <h1>{title}</h1>
         <p>{subtitle}</p>
       </div>
 
-      <div className="fr-tabs p4r1-develop-fields-nav" role="tablist" aria-label="Ways to explore the Work">
-        {DEVELOP_FIELDS.map((field) => (
-          <button
-            key={field}
-            type="button"
-            role="tab"
-            aria-selected={props.field === field}
-            onClick={() => props.onField(field)}
-          >
-            {NAV_LABEL[field]}
+      <div className="p4r1-develop-density-control">
+        <label htmlFor="p4r1-develop-depth">View</label>
+        <select
+          id="p4r1-develop-depth"
+          aria-label="How much of Develop to show"
+          value={developView}
+          onChange={(event) => chooseDevelopView(event.target.value as StudioDepth)}
+        >
+          {STUDIO_DEPTHS.map(d => <option key={d} value={d}>{STUDIO_DEPTH_LABEL[d]}</option>)}
+        </select>
+        <button type="button" className="p4r1-develop-prefs-link"
+          aria-label="Open writing preferences"
+          onClick={(event) => {
+            const preferences = event.currentTarget.closest('.fr-shell')
+              ?.querySelector<HTMLDetailsElement>('[data-writer-preferences]');
+            if (!preferences) return;
+            preferences.open = true;
+            preferences.querySelector<HTMLInputElement>('#writer-presentation-request')?.focus();
+          }}>
+          Preferences
+        </button>
+        {props.field !== 'overview' && developView !== 'full' ? (
+          <button type="button" className="p4r1-develop-back" onClick={() => props.onField('overview')}>
+            Back to your questions
           </button>
-        ))}
+        ) : null}
       </div>
 
+      {developView === 'full' ? (
+        <div className="fr-tabs p4r1-develop-fields-nav" role="tablist" aria-label="Ways to explore the Work">
+          {DEVELOP_FIELDS.map((field) => (
+            <button
+              key={field}
+              type="button"
+              role="tab"
+              aria-selected={props.field === field}
+              onClick={() => props.onField(field)}
+            >
+              {NAV_LABEL[field]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {props.field === 'overview' ? (
-        railSelectionId && selectedRailSection ? (
+        developView !== 'full' ? (
+          <section className="p4r1-develop-focused" data-develop-progressive-view={developView}>
+            <span className="p4r1-eyebrow">
+              {hasExplicitPlace ? 'This place in your manuscript' : 'Begin with your own question'}
+            </span>
+            <h2>{hasExplicitPlace
+              ? `Stay with ${contextLabel}`
+              : 'What would you like to explore?'}
+            </h2>
+            <p>
+              {hasExplicitPlace
+                ? 'We can stay with these pages. No need to choose an editorial method first.'
+                : 'You can start with a feeling or a question. You do not need to know the writing terminology.'}
+            </p>
+            {stubSibling && stubDismissedFor !== stubSibling.selected.id ? (
+              <PlaceStubNotice
+                found={stubSibling}
+                onOpenLonger={() => selectManuscriptLocus(stubSibling.longer.id)}
+                onStay={() => setStubDismissedFor(stubSibling.selected.id)}
+              />
+            ) : null}
+            <div className="p4r1-develop-one-action">
+              <button
+                type="button"
+                className="p4r1-talk p4r1-develop-primary"
+                onClick={() => beginWholeConversation(placeStarter(hasExplicitPlace ? contextLabel : null))}
+                disabled={!props.work}
+              >
+                Talk with MAIA about this
+              </button>
+              {needsWork ? (
+                <DevelopAddToWork
+                  works={props.allWorks}
+                  busy={props.declaring}
+                  error={props.declareError}
+                  onAddToWork={props.onAddToWork}
+                  onMakeWork={props.onMakeWork}
+                />
+              ) : !props.work ? <p>A Work connection for this manuscript could not be confirmed. Your writing remains available in Write.</p> : null}
+            </div>
+            <div className="p4r1-develop-three-questions" aria-label="Three ways to begin">
+              {focusedQuestions.map((key) => {
+                const starter = INTENT_STARTERS.find((item) => item.key === key);
+                return starter ? (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => { if (!requestConversationDeparture()) return; setWorkTalking(false); props.onIntent(starter.key, starter.field); }}
+                  >
+                    <b>{starter.label}</b>
+                    <span>{starter.detail}</span>
+                  </button>
+                ) : null;
+              })}
+            </div>
+            {hasExplicitPlace ? (
+              <button type="button" className="p4r1-develop-secondary"
+                onClick={() => navigateMode('write')}>Open this chapter in Write</button>
+            ) : null}
+            {developView === 'guided' ? (
+              <details className="p4r1-develop-guided-additions">
+                <summary>Other ways to explore, if useful</summary>
+                <div className="p4r1-develop-three-questions">
+                  {guidedQuestions.map((key) => {
+                    const starter = INTENT_STARTERS.find((item) => item.key === key);
+                    return starter ? (
+                      <button key={key} type="button"
+                        onClick={() => { if (!requestConversationDeparture()) return; setWorkTalking(false); props.onIntent(starter.key, starter.field); }}>
+                        <b>{starter.label}</b>
+                        <span>{starter.detail}</span>
+                      </button>
+                    ) : null;
+                  })}
+                </div>
+                {props.summaries.length > 0 ? (
+                  <p>Your saved readings are still here in the All tools view. Nothing has been discarded.</p>
+                ) : null}
+              </details>
+            ) : null}
+            <button type="button" className="p4r1-develop-secondary"
+              onClick={() => chooseDevelopView(developView === 'focused' ? 'guided' : 'full')}>
+              {developView === 'focused' ? 'Show more ways to explore' : 'Show the whole Develop map'}
+            </button>
+            <p className="p4r1-develop-trust">Nothing is read or changed until you choose it.</p>
+          </section>
+        ) : railSelectionId && selectedRailSection ? (
           <div className="p4r1-locus-arrival" data-develop-locus={selectedRailSection.draftSectionId}>
             <section className="fr-card p4r1-locus-primary">
               <span className="p4r1-eyebrow">
@@ -1846,15 +2696,11 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                 <button
                   type="button"
                   className="p4r1-talk"
-                  onClick={() => beginWholeConversation([
-                    `I selected “${selectedRailLabel}” in Develop.`,
-                    'Stay with this exact chapter or section.',
-                    'Help me understand what it is doing, what may be alive or unresolved here, and ask me one useful question before suggesting changes.',
-                  ].join('\n\n'))}
+                  onClick={() => beginWholeConversation(placeStarter(selectedRailLabel))}
                 >
                   Talk with MAIA
                 </button>
-                <button type="button" onClick={() => props.onMode('write')}>Open in Write</button>
+                <button type="button" onClick={() => navigateMode('write')}>Open in Write</button>
               </div>
             </section>
 
@@ -1891,6 +2737,40 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
           </div>
         ) : (
         <div className="p4r1-intent-arrival">
+          <ChapterReviewPanel
+            map={props.chapterReview}
+            busy={props.chapterReviewBusy}
+            needsCheckpoint={props.chapterNeedsCheckpoint}
+            progress={props.chapterReviewProgress}
+            error={props.chapterReviewError}
+            onRead={props.onReadChapter}
+            onCheckpointAndRead={props.onCheckpointAndReadChapter}
+            onField={props.onField}
+            onWrite={() => props.onMode('write')}
+            onEdit={props.onWorkWithAttentionItem}
+            scorecard={props.chapterScorecard}
+            previousScorecard={props.previousChapterScorecard}
+            previousScoreRevision={props.previousChapterScoreRevision}
+            scoreBusy={props.chapterScoreBusy}
+            scoreError={props.chapterScoreError}
+            minimalPath={props.chapterMinimalPath}
+            minimalPathBusy={props.chapterMinimalPathBusy}
+            minimalPathError={props.chapterMinimalPathError}
+            bookFit={props.chapterBookFit}
+            bookFitBusy={props.chapterBookFitBusy}
+            bookFitError={props.chapterBookFitError}
+            movement={props.chapterMovement}
+            movementBusy={props.chapterMovementBusy}
+            movementError={props.chapterMovementError}
+            onBookFit={props.onReadChapterInBook}
+            onMovement={props.onReadChapterMovement}
+            onScore={props.onScoreChapter}
+            onMinimalPath={props.onMinimalPathChapter}
+          />
+
+          <details className="p4r1-develop-more">
+            <summary>More ways to explore</summary>
+            <div className="p4r1-develop-more-body">
           <AttentionMapPanel
             map={props.attentionMap}
             busy={props.attentionBusy}
@@ -1898,8 +2778,8 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
             error={props.attentionError}
             selectedItemId={props.selectedAttentionItemId}
             onCommission={props.onCommissionAttentionMap}
-            onShow={props.onShowAttentionItem}
-            onWork={props.onWorkWithAttentionItem}
+            onShow={(...args) => { if (requestConversationDeparture()) props.onShowAttentionItem(...args); }}
+            onWork={(itemId, sectionId) => { if (requestConversationDeparture()) props.onWorkWithAttentionItem(itemId, sectionId, 'attention-map'); }}
             onDiscuss={discussAttentionItem}
           />
 
@@ -1985,7 +2865,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                                   '',
                                   `Question to hold: ${movement.questionForWriter}`,
                                   '',
-                                  'Help me think about this at the whole-Work scale. Do not move into chapters or edits until I choose to.',
+                                  'Help me think about this at the whole-Work scale.',
                                 ].join('\n'))}
                               >
                                 Talk this through
@@ -2071,6 +2951,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                   type="button"
                   className="p4r1-intent-card"
                   onClick={() => {
+                    if (!requestConversationDeparture()) return;
                     setWorkTalking(true);
                     props.onIntent(starter.key, starter.field);
                   }}
@@ -2123,7 +3004,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
             } : null}
             selectedCandidateId={props.selectedLineageCandidateId}
             sourceIntakeHref={sourceIntakeHref}
-            onShowCandidate={props.onShowLineageCandidate}
+            onShowCandidate={(...args) => { if (requestConversationDeparture()) props.onShowLineageCandidate(...args); }}
             onDiscussCandidate={discussLineageCandidate}
           />
 
@@ -2145,9 +3026,11 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
               field="overview"
               summaries={props.summaries}
               loading={props.summariesLoading}
-              onReading={props.onReading}
+              onReading={openReading}
             />
           </section>
+            </div>
+          </details>
         </div>
         )
       ) : (
@@ -2165,20 +3048,43 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                 <button
                   type="button"
                   className="p4r1-intent-next"
-                  onClick={() => props.onReading(latestForField(activeField, props.summaries)!.id)}
+                  onClick={() => openReading(latestForField(activeField, props.summaries)!.id)}
                 >
                   Show me what you already noticed
                 </button>
               ) : !props.summariesLoading ? (
-                <p className="p4r1-intent-no-read">
-                  I don’t have a saved reading for this question yet. You can choose exactly what I may read below.
-                </p>
+                /* Design pass (founder go-ahead 2026-11-05): MAIA asks once, with the button.
+                   Saving a changed draft stays the writer's own press (see the controller). */
+                <div className="p4r1-intent-ask" data-develop-read-ask>
+                  {props.commissionNeedsCheckpoint ? (
+                    <>
+                      <p>You’ve changed this since I last saw it. Shall I save what’s on the page and read that? Your words won’t change.</p>
+                      <button type="button" className="p4r1-intent-next" data-develop-save-and-read
+                        disabled={props.commissioning} onClick={props.onCheckpointAndCommission}>
+                        {props.commissioning ? 'MAIA is reading…' : 'Save and read'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p>I haven’t read {scopeName(props.scope)} yet. Shall I read it now? Your writing won’t change.</p>
+                      <button type="button" className="p4r1-intent-next" data-develop-read-now
+                        disabled={props.commissioning || props.prep?.kind !== 'ready'} onClick={props.onCommission}>
+                        {props.commissioning ? 'MAIA is reading…' : `Read ${scopeName(props.scope)} now`}
+                      </button>
+                    </>
+                  )}
+                  <button type="button" className="p4r1-intent-other" data-develop-choose-scope
+                    onClick={() => { const d = newReadingRef.current; if (d) { d.open = true; d.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } }}>
+                    Choose what she reads
+                  </button>
+                  {props.commissionError ? <p className="p4r1-error" role="status">{props.commissionError}</p> : null}
+                </div>
               ) : null}
             </section>
           ) : null}
 
           {activeField === 'structure' && props.scope.kind === 'chapter' ? (
-            <ChapterShape sections={props.sections} scope={props.scope} />
+            <ChapterShape manuscriptId={props.manuscriptId} sections={props.sections} scope={props.scope} />
           ) : null}
 
           {railSelectionId && selectedRailSection && activeField ? (
@@ -2190,11 +3096,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                 Choosing it did not trigger a new reading. If you want MAIA to read it for {LABEL[activeField].toLowerCase()}, ask directly here.
               </p>
               <div className="p4r1-selected-place-actions">
-                <button type="button" onClick={() => beginWholeConversation([
-                  `I’m in “${selectedRailLabel}”.`,
-                  `I’m looking at it through ${LABEL[activeField].toLowerCase()}, but I want to begin conversationally.`,
-                  'Help me understand what I am seeing before you turn it into an analysis. Ask me one useful question first.',
-                ].join('\n\n'))}>Talk with MAIA first</button>
+                <button type="button" onClick={() => beginWholeConversation(placeStarter(selectedRailLabel))}>Talk with MAIA first</button>
                 <button
                   type="button"
                   className="p4r1-commission"
@@ -2205,7 +3107,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                     ? 'MAIA is reading…'
                     : `Read this ${props.scope.kind === 'chapter' ? 'chapter' : 'section'} for ${LABEL[activeField]}`}
                 </button>
-                <button type="button" onClick={() => props.onMode('write')}>Open the text</button>
+                <button type="button" onClick={() => navigateMode('write')}>Open the text</button>
               </div>
               <p className="fr-also">You can change the lens at any time. Nothing is edited by reading.</p>
             </section>
@@ -2215,7 +3117,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
             prep={props.prep}
             error={props.prepError}
             preparing={props.preparing}
-            onPrepare={props.onPrepare}
+            onPrepare={prepareWriting}
           />
 
           {props.field === 'themes' ? (
@@ -2225,6 +3127,8 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
               error={props.themeError}
               onMutation={props.onThemeMutation}
               onTalkCandidate={(candidate) => {
+                if (!requestConversationDeparture()) return;
+                setWorkTalking(false);
                 setSelectedObservationKey(candidate.observationKey);
                 setDialoguePrompt('');
                 setTalking(true);
@@ -2242,48 +3146,55 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
               field={props.field}
               selectedObservationKey={selectedObservationKey}
               onSelectObservation={(key) => {
+                if (!requestConversationDeparture()) return;
+                setWorkTalking(false);
                 setSelectedObservationKey(key);
                 setTalking(false);
               }}
               onTalkObservation={(key) => {
+                if (!requestConversationDeparture()) return;
+                setWorkTalking(false);
                 setSelectedObservationKey(key);
                 setDialoguePrompt('');
                 setTalking(true);
               }}
               onTeachObservation={(key) => {
+                if (!requestConversationDeparture()) return;
+                setWorkTalking(false);
                 setSelectedObservationKey(key);
-                setDialoguePrompt('Teach me the one writing or craft idea most at work in this observation. Explain it in plain language first and show me in my own words. Do not suggest replacement wording unless I ask.');
+                setDialoguePrompt(teachingQuestion('observation'));
                 setTalking(true);
               }}
               onDeepObservation={(key) => {
+                if (!requestConversationDeparture()) return;
+                setWorkTalking(false);
                 setSelectedObservationKey(key);
-                setDialoguePrompt('Go deeper on this observation. Use the full editorial vocabulary, evidence, provenance, tradeoffs, and uncertainty. Keep the claim exactly within what the evidence supports. Do not propose replacement wording unless I ask.');
+                setDialoguePrompt(OBSERVATION_STARTERS.deeper.words);
                 setTalking(true);
               }}
-              onGoToObservation={props.onGoToObservation}
-              onWorkWithObservation={props.onWorkWithObservation}
+              onGoToObservation={(...args) => { if (requestConversationDeparture()) props.onGoToObservation(...args); }}
+              onWorkWithObservation={(...args) => { if (requestConversationDeparture()) props.onWorkWithObservation(...args); }}
               targets={props.observationTargets}
               workTargets={props.observationWorkTargets}
             />
-          ) : activeField ? (
+          ) : activeField && !(activeIntent && !props.summariesLoading && !latestForField(activeField, props.summaries)) ? (
+            /* When MAIA is already asking to read (above), a second "not read yet" card is noise. */
             <FieldContinue
               field={activeField}
               summaries={props.summaries}
               loading={props.summariesLoading}
-              onReading={props.onReading}
+              onReading={openReading}
             />
           ) : null}
 
-          <details className="p4r1-new-reading">
+          <details className="p4r1-new-reading" ref={newReadingRef}>
             <summary>
-              {activeField && latestForField(activeField, props.summaries)
-                ? 'Read somewhere else'
-                : `Read this Work for ${activeField ? LABEL[activeField] : 'this question'}`}
+              {/* Design pass 2026-11-05: MAIA's own question above is the way in; this is the
+                  quieter "somewhere else" for a different scope. */}
+              Read somewhere else
             </summary>
             <div className="p4r1-new-reading-body">
-              <p>
-                Choose what MAIA may read. Opening this field never reads more of your Work.
-              </p>
+              <p>Choose what MAIA reads.</p>
               <div className="p4r1-develop-command">
                 <ScopeChooser
                   scope={props.scope}
@@ -2303,6 +3214,19 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
                     : `Read for ${activeField ? LABEL[activeField] : 'this question'}`}
                 </button>
               </div>
+              {props.commissionNeedsCheckpoint ? (
+                <div className="p4r1-chapter-read-snapshot" role="status">
+                  <p>You’ve changed this since I last saw it. Shall I save what’s on the page and read that? Your words won’t change.</p>
+                  <button
+                    type="button"
+                    className="p4r1-commission"
+                    disabled={props.commissioning}
+                    onClick={props.onCheckpointAndCommission}
+                  >
+                    {props.commissioning ? 'MAIA is reading…' : 'Save and read'}
+                  </button>
+                </div>
+              ) : null}
               {props.commissionError ? <p className="p4r1-error" role="status">{props.commissionError}</p> : null}
             </div>
           </details>
@@ -2311,7 +3235,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
             field={props.field}
             summaries={props.summaries}
             loading={props.summariesLoading}
-            onReading={props.onReading}
+            onReading={openReading}
           />
         </>
       )}
@@ -2327,15 +3251,36 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
           <span>
             {selectedObservation
               ? 'With this observation'
-              : railSelectionId && selectedRailSection
-                ? `In relation to ${selectedRailLabel}`
+              : hasExplicitPlace
+                ? `With ${contextLabel}`
                 : 'In relation to your Work'}
           </span>
         </div>
         <span className="fr-dots" aria-hidden="true">•••</span>
       </div>
       <div className="fr-mbody p4r1-develop-maia">
-        {selectedObservation && props.reading && talking ? (
+        {needsWork && !focusedAttachShown ? (
+          <DevelopAddToWork
+            works={props.allWorks}
+            busy={props.declaring}
+            error={props.declareError}
+            onAddToWork={props.onAddToWork}
+            onMakeWork={props.onMakeWork}
+          />
+        ) : null}
+        {props.preparing ? (
+          <section className="p4r1-develop-maia-quiet" role="status" aria-live="polite">
+            <h3>Preparing your writing for Develop…</h3>
+            <p>You can begin another conversation when preparation finishes.</p>
+          </section>
+        ) : props.field === 'overview' && developView !== 'full' && !selectedObservation && !workTalking ? (
+          <section className="p4r1-develop-maia-quiet" data-develop-maia-context>
+            <span className="p4r1-eyebrow">Here with you</span>
+            <h3>{contextLabel}</h3>
+            <p>Tell me what you notice or wonder about. We can talk before choosing an editorial method.</p>
+            <p className="fr-also">Use the invitation beside your Work whenever you're ready. Nothing new is read or edited automatically.</p>
+          </section>
+        ) : !workTalking && selectedObservation && props.reading && talking ? (
           <>
             <div className="p4r1-observation-conversation-anchor">
               <span className="p4r1-eyebrow">We’re talking about</span>
@@ -2358,38 +3303,38 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
               readingId={props.reading.id}
               observationKey={selectedObservation.key}
               about={selectedObservation.observation}
+              showAbout={false}
               superseded={selectedObservation.state === 'superseded'}
               initialQuestion={dialoguePrompt}
               autoSendInitialQuestion={Boolean(dialoguePrompt)}
+              initialResponseStyle={starterStyle(dialoguePrompt)}
+              {...(dialoguePrompt === teachingQuestion('observation') ? { teachingAnchor: 'observation' as const } : {})}
               onClose={() => {
                 setTalking(false);
                 setDialoguePrompt('');
               }}
             />
           </>
-        ) : selectedObservation && props.reading ? (
+        ) : !workTalking && selectedObservation && props.reading ? (
           <div className="p4r1-observation-maia-ready">
             <span className="p4r1-eyebrow">I’m here with this</span>
-            <h3>{friendlyObservation(selectedObservation.phenomenonLabel).title}</h3>
-            <p>{friendlyObservation(selectedObservation.phenomenonLabel).lead}</p>
+            {/* Design pass 2026-11-05: her observation is in the middle already; here she
+                simply offers to talk, once. */}
+            <p>Shall we talk about what I noticed? Pick a way in, or say it in your own words.</p>
             <div className="p4r1-observation-ready-actions">
               <button type="button" onClick={() => {
-                setDialoguePrompt('Put this observation into ordinary language for me. Start with what you actually noticed in my writing, why it may matter here, and one question that would help me decide what I think. No technical editorial vocabulary unless I ask for it.');
+                setDialoguePrompt(OBSERVATION_STARTERS.plain.words);
                 setTalking(true);
               }}>Explain it plainly</button>
               <button type="button" onClick={() => {
-                setDialoguePrompt('Stay with this observation with me. Do not turn it into a verdict or a repair task. Help me understand what you saw and ask me what I make of it.');
+                setDialoguePrompt(OBSERVATION_STARTERS.talk.words);
                 setTalking(true);
               }}>Talk with me about it</button>
               <button type="button" onClick={() => {
-                setDialoguePrompt('Teach me the one craft idea most relevant to this observation. Begin in plain language, show it in my own writing, and keep the technical term optional.');
+                setDialoguePrompt(teachingQuestion('observation'));
                 setTalking(true);
               }}>Teach me what is happening</button>
             </div>
-            <details>
-              <summary>See the saved reading and evidence</summary>
-              <p>{selectedObservation.observation}</p>
-            </details>
           </div>
         ) : props.work && workTalking ? (
           <div className="p4r1-work-conversation">
@@ -2403,6 +3348,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
               manuscriptId={props.manuscriptId}
               sectionId={props.currentSectionId}
               initialDraft={attentionConversationDraft}
+              onStudioPlace={onStudioPlace}
               onClose={() => {
                 setAttentionConversationDraft('');
                 setWorkTalking(false);
@@ -2423,11 +3369,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
               <button
                 type="button"
                 className="p4r1-talk"
-                onClick={() => beginWholeConversation([
-                  `I selected “${selectedRailLabel}” in Develop.`,
-                  'Stay with this exact place. Help me understand what it is doing before we analyze or change anything.',
-                  'Begin by asking me what I am noticing or wondering here.',
-                ].join('\n\n'))}
+                onClick={() => beginWholeConversation(placeStarter(selectedRailLabel))}
               >
                 Talk with MAIA
               </button>
@@ -2436,7 +3378,7 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
               <button type="button" onClick={() => props.onField('themes')}>Notice what returns</button>
               <button type="button" onClick={() => props.onField('continuity')}>See what carries through</button>
               <button type="button" onClick={() => props.onField('reader')}>Meet it as a reader</button>
-              <button type="button" onClick={() => props.onMode('write')}>Open the text</button>
+              <button type="button" onClick={() => navigateMode('write')}>Open the text</button>
             </div>
             <p className="fr-also">I do not read anything new until you ask me to.</p>
           </div>
@@ -2445,7 +3387,10 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
             <div className="fr-say">
               <p>
                 {props.field === 'overview'
-                  ? 'Select a chapter or section at left and I’ll orient to it immediately, or tell me what you are trying to understand about the whole Work.'
+                  ? (railSelectionId && selectedRailSection) || props.scope.kind === 'section' || props.scope.kind === 'chapter'
+                    // A place is already chosen; don't ask the writer to choose one.
+                    ? `We can stay with ${contextLabel}, or you can tell me what you are trying to understand about the whole Work.`
+                    : 'Select a chapter or section at left and I’ll orient to it immediately, or tell me what you are trying to understand about the whole Work.'
                   : `We can stay with your question about ${LABEL[props.field].toLowerCase()} and use what I have already read before asking for anything new.`}
               </p>
             </div>
@@ -2462,17 +3407,190 @@ export default function P4R1DevelopView(props: P4R1DevelopViewProps) {
     </div>
   );
 
+  /* ⭐ THE DEVELOP STAGE. The whole chapter is the centre; MAIA's conversation sits beside it in the right column, with what she read
+     always visible; everything else is behind the stage's one "More" control (design: docs/research/writers-studio/MENTOR_PRESENCE_UX_RESEARCH_2026-11-09.md). Used for the plain overview with a Work declared. Observations, the Full view, themes and the
+     other fields keep their existing rooms. */
+  /* Behind a flag until the draft-protection guards are re-expressed for the stage and the founder has accepted it (design doc §6, M1). */
+  /* Founder walk 2026-11-09: "I want to see my work. I want it to be center, not 50 buttons and options." A remembered "Full" depth
+     silently hid the whole stage, so the stage no longer depends on it: Develop opens on the work itself; lens tools stay one choice away. */
+  const useStage = process.env.NEXT_PUBLIC_WS_DEVELOP_STAGE === '1' && props.field === 'overview' && !selectedObservation
+    && Boolean(props.work) && !props.preparing && !needsWork && props.sections.length > 0 && !leftStage;
+  const stageSection = props.sections.find((x) => x.draftSectionId === props.currentSectionId) ?? props.sections[0];
+  const stageLabel = stageSection?.heading?.trim() || 'this chapter';
+  /* What comes AFTER this chapter (EA walk 2026-11-11: "How does Chapter 4 lead into My Morning Ritual?" named the chapter's own
+     sub-section). With a chapter span, the next section after its end; otherwise the next section. */
+  const stageNextIndex = props.chapterScope
+    ? props.sections.findIndex((x) => x.draftSectionId === props.chapterScope!.toSectionId) + 1
+    : props.sections.findIndex((x) => x.draftSectionId === stageSection?.draftSectionId) + 1;
+  const stageNext = stageNextIndex > 0 ? props.sections[stageNextIndex] : undefined;
+  const stageStarters = startersFor(workKind ?? null, props.chapterScope?.label ?? stageLabel, stageNext ? (stageNext.heading?.trim() || 'what comes next') : null);
+  /* Founder 2026-11-11: "MAIA should automatically read manuscripts that are opened. Why be forced to ask her to read something we sent her
+     already." She reads the chapter the writer is on by herself ONLY under the writer's own standing permission (the read scope the writer
+     granted: "MAIA may read your saved work"), never in Sanctuary or when that setting cannot be read, once per chapter per visit, and a
+     saved reading of the same draft is reused rather than read again. The writer's place, focus, selection and conversation are untouched. */
+  /* One conversation on the stage, never re-created: starters and selected words are placed into its composer (P0 direction 2026-11-11). */
+  const placeInStageConversation = (words: string) => setStagePlaced((p) => ({ text: words, n: p.n + 1 }));
+  const stageChapterLabel = props.chapterScope?.label ?? stageLabel;
+  const stageChapterWords = chapterWordCount(props.sections, props.chapterScope?.fromSectionId ?? null, props.chapterScope?.toSectionId ?? null);
+  const stageReading: StageReading = {
+    status: props.chapterReviewBusy ? 'reading' : props.chapterReview ? 'ready' : (props.chapterReviewError || props.chapterNeedsCheckpoint) ? 'error' : 'idle',
+    progress: props.chapterReviewProgress,
+    error: props.chapterNeedsCheckpoint
+      ? 'Your latest changes need saving as a checkpoint before MAIA can read this chapter. Choose “Read this chapter with MAIA” to save it and read.'
+      : props.chapterReviewError,
+    chapterLabel: stageChapterLabel,
+    chapterWords: stageChapterWords,
+    items: props.chapterReview?.items ?? [],
+  };
+  const stagePass: StageEditorialPass = {
+    status: props.attentionBusy ? 'running' : props.attentionMap ? 'ready' : props.attentionError ? 'error' : 'none',
+    progress: props.attentionProgress,
+    error: props.attentionError,
+  };
+  const stageCenter = useStage && props.work ? (
+    <DevelopStage
+      workTitle={props.workTitle || null}
+      sections={props.sections}
+      currentId={stageSection?.draftSectionId ?? null}
+      chapterRange={props.chapterScope ? { fromSectionId: props.chapterScope.fromSectionId, toSectionId: props.chapterScope.toSectionId } : null}
+      onSelect={selectManuscriptLocus}
+      starters={stageStarters}
+      onStarter={placeInStageConversation}
+      onOpenWrite={() => navigateMode('write')}
+      onMoreWays={() => { setLeftStage(true); chooseDevelopView('full'); }}
+      lastRead={lastRead}
+      plan={planView}
+      planBusy={planBusy}
+      planNote={planNote}
+      planPostureChoice={planNeedsPosture ? <SessionPostureChoice compact onChosen={() => { setPlanNeedsPosture(false); setPlanNote(null); }} /> : null}
+      onMakePlan={makePlan}
+      onEditPlan={editPlan}
+      onWorkOnStep={workOnStep}
+      onDeletePlan={deletePlan}
+      onAskAbout={(words) => placeInStageConversation(`About “${words}”: `)}
+      openAt={stageOpenAt}
+      view={developView}
+      onView={chooseDevelopView}
+      ways={DEVELOP_FIELDS.filter((f) => f !== 'overview').map((f) => ({ key: f, label: NAV_LABEL[f] }))}
+      onWay={(key) => props.onField(key as DevelopField)}
+      editorialPass={stagePass}
+      onEditorialPass={props.onCommissionAttentionMap}
+      onOpenEditorialPass={() => { setLeftStage(true); revealStudioPlace('editorial-pass'); }}
+      reading={stageReading}
+      onReadChapter={props.chapterNeedsCheckpoint ? props.onCheckpointAndReadChapter : props.onReadChapter}
+      holdings={<DevelopHoldings manuscriptId={props.manuscriptId} workId={props.work.id} kind={workKind} onKind={setWorkKind} />}
+    />
+  ) : null;
+  /* ONE SURFACE (relational architecture step 3; founder P0 direction 2026-11-11: "a lens page that removes the manuscript does not
+     satisfy the manuscript-centred requirement"). With the stage on, a lens (arc, voice, structure …) opens BESIDE the chapter: the
+     chapter stays in the centre, and the lens's reading sits in MAIA's column above her conversation. Themes keeps its own room. */
+  const lensBeside = process.env.NEXT_PUBLIC_WS_DEVELOP_STAGE === '1' && props.field !== 'overview' && props.field !== 'themes'
+    && Boolean(props.work) && !props.preparing && !needsWork && props.sections.length > 0;
+  const lensChapter = lensBeside && stageSection ? (
+    <ChapterReadingPane
+      section={stageSection}
+      sections={props.sections}
+      chapterRange={props.chapterScope ? { fromSectionId: props.chapterScope.fromSectionId, toSectionId: props.chapterScope.toSectionId } : null}
+      lensLabel={NAV_LABEL[props.field]}
+      onBackToReading={() => props.onField('overview')}
+    />
+  ) : null;
+  const lensColumn = lensBeside ? (
+    <div data-lens-beside={props.field} style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div data-lens-reading="true" style={{ flex: '1 1 55%', minHeight: 0, overflowY: 'auto' }}>{center}</div>
+      <div style={{ flex: '1 1 45%', minHeight: 0, display: 'flex', flexDirection: 'column', borderTop: '1px solid color-mix(in srgb, currentColor 14%, transparent)' }}>{maia}</div>
+    </div>
+  ) : null;
+  /* MAIA beside the work, not beneath it: the writer never scrolls away from the words to speak with her. */
+  const stageCompanion = useStage && props.work ? (
+    <div className="fr-maia-inner">
+      <div className="fr-maia-head">
+        <div className="fr-orb" aria-hidden="true" />
+        <div className="fr-maia-name"><h2>MAIA</h2><span>Editorial companion</span></div>
+      </div>
+      <div className="fr-mbody" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {/* "What do I do next?" (persona walk 2026-11-19): asked by the writer, answered from what is on screen. Posture is read at
+            the moment of asking and fails closed. Nothing is read, sent or kept; "Ask MAIA more" only places a question, unsent. */}
+        <div data-develop-what-next="true" style={{ flex: '0 0 auto', marginBottom: 10 }}>
+          <button type="button" className="p4r1-talk" aria-expanded={whatNextOpen} data-develop-what-next-button="true"
+            onClick={() => setWhatNextOpen((open) => !open)} style={{ width: '100%', fontSize: 15, fontWeight: 600 }}>
+            {WHAT_NEXT_LABEL}
+          </button>
+          {whatNextOpen ? (() => {
+            const posture = readCurrentSanctuaryPosture();
+            const answer = whatNextInDevelop({
+              chapterLabel: stageChapterLabel || null,
+              reading: stageReading.status,
+              noticed: stageReading.items.length,
+              pass: stagePass.status,
+              posture: !posture.resolved ? 'unresolved' : posture.sanctuary ? 'sanctuary' : 'ordinary',
+            });
+            return (
+              <div role="status" data-develop-what-next-answer="true" style={{ marginTop: 10, fontSize: 15, lineHeight: 1.5 }}>
+                {answer.say.map((line) => <p key={line} style={{ margin: '0 0 8px' }}>{line}</p>)}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <button type="button" className="p4r1-talk" data-develop-what-next-ask="true"
+                    onClick={() => { setWhatNextOpen(false); placeInStageConversation(answer.ask); }}>
+                    {WHAT_NEXT_ASK_LABEL}
+                  </button>
+                  <button type="button" className="p4r1-talk" data-develop-what-next-close="true" onClick={() => setWhatNextOpen(false)}>
+                    {WHAT_NEXT_CLOSE_LABEL}
+                  </button>
+                </div>
+              </div>
+            );
+          })() : null}
+        </div>
+        <DevelopCompanion
+          lastRead={lastRead}
+          coverage={<CoverageLine manuscriptId={props.manuscriptId}
+            refreshKey={`${props.chapterReview?.commissionedAt ?? ''}:${props.attentionMap?.commissionedAt ?? ''}`}
+            labelOf={(id) => { const sec = props.sections.find((x) => x.draftSectionId === id); return sec ? (sec.heading?.trim() || `Section ${sec.position + 1}`) : 'a section'; }} />}
+          reading={stageReading.status === 'ready' ? (
+            <StageReadingCard key={stageReading.chapterLabel} reading={stageReading}
+              onWorkTowardRevision={() => makePlan(`Help me work toward a revision of ${stageChapterLabel}, starting from what you noticed when you read it.`)} />
+          ) : (
+            <StageReadingInvitation key={`${stageReading.status}:${stageReading.chapterLabel}`} reading={stageReading}
+              needsCheckpoint={props.chapterNeedsCheckpoint}
+              onRead={props.onReadChapter} onCheckpointAndRead={props.onCheckpointAndReadChapter} />
+          )}
+          conversation={(
+            <WorkConversation
+              key="develop-stage-conversation"
+              placeDraft={stagePlaced}
+              work={props.work}
+              manuscriptId={props.manuscriptId}
+              sectionId={props.currentSectionId}
+              initialDraft={attentionConversationDraft}
+              onStudioPlace={onStudioPlace}
+              hideHoldings
+              quiet
+              onRead={setLastRead}
+              onReadChapter={props.onCommissionChapterReading}
+              onStudioAct={studioAct}
+              chapterLabel={(id) => { const sec = props.sections.find((x) => x.draftSectionId === id); return sec ? (sec.heading?.trim() || `Section ${sec.position + 1}`) : null; }}
+              onClose={() => setAttentionConversationDraft('')}
+            />
+          )}
+        />
+      </div>
+    </div>
+  ) : null;
+
   return (
     <Shell
       mode="develop"
       appearance={props.appearance}
-      geometry={props.field === 'themes' ? STATE_GEOMETRY['develop-themes'] : STATE_GEOMETRY['develop-manuscript']}
+      geometry={useStage
+        ? { ...STATE_GEOMETRY['develop-manuscript'], maiaWidth: 440, maiaFloor: 320, bottom: 52 }   /* founder 2026-11-09: chapters on the left again, in the collapsible rail */   /* a strip below the panels for Report a bug / Beta journey, so they cover nothing (founder 2026-11-09) */
+        : lensBeside ? { ...STATE_GEOMETRY['develop-manuscript'], maiaWidth: 520, maiaFloor: 360, bottom: 52 }
+        : props.field === 'themes' ? STATE_GEOMETRY['develop-themes'] : STATE_GEOMETRY['develop-manuscript']}
       workTitle={props.workTitle || undefined}
       memberInitial=""
       onSelectMode={props.onMode}
       manuscript={<ManuscriptRail sections={props.sections} currentSectionId={props.currentSectionId} onSection={selectManuscriptLocus} />}
-      work={center}
-      maia={maia}
+      work={stageCenter ?? lensChapter ?? center}
+      maia={stageCompanion ?? lensColumn ?? maia}
     />
   );
 }

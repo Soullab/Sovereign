@@ -4,16 +4,26 @@
  *
  * Creates a new supervision session for audio capture and analysis.
  * All data stored in local PostgreSQL - HIPAA compliant.
+ *
+ * The practitioner is the SESSION member, always: every session this route creates is owned by them,
+ * and a `practitionerId` in the body is ignored (PRACTITIONER-SESSION-OWNERSHIP-01). A request with no
+ * session is refused rather than creating an unowned row.
+ *
+ * The old "Active session already exists" 409 is gone with the body identity it hung from: it only ran
+ * when the client sent a practitionerId, which no client in this repository did (the recorders never
+ * sent one), so it never fired for them. Extending it to every practitioner would be a NEW lockout (a
+ * session left open by a crashed tab would block recording, and no surface can stop it), which this
+ * change does not make.
  */
 
 export const dynamic = 'force-dynamic';
 export const revalidate = false;
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createSession, getActiveSession } from '@/lib/supervision/SupervisionStore';
+import { createSession } from '@/lib/supervision/SupervisionStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
 
 interface StartSessionRequest {
-  practitionerId?: string;
   caseId?: string;
   sessionType?: 'individual' | 'group' | 'peer' | 'consultation' | 'team_meeting' | 'reading' | 'scribe' | 'live_scribe';
   title?: string;
@@ -22,23 +32,13 @@ interface StartSessionRequest {
 
 export async function POST(request: NextRequest) {
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
     const body: StartSessionRequest = await request.json();
 
-    // Check for existing active session
-    if (body.practitionerId) {
-      const activeSession = await getActiveSession(body.practitionerId);
-      if (activeSession) {
-        return NextResponse.json({
-          success: false,
-          error: 'Active session already exists',
-          activeSessionId: activeSession.id
-        }, { status: 409 });
-      }
-    }
-
-    // Create new session
+    // Create new session, owned by the session member
     const session = await createSession({
-      practitionerId: body.practitionerId,
+      practitionerId: actor.memberId,
       caseId: body.caseId,
       sessionType: body.sessionType || 'consultation',
       title: body.title,

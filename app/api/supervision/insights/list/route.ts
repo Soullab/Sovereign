@@ -4,6 +4,9 @@
  *
  * Retrieves AI-generated insights for a supervision session.
  * All analysis performed by local LLM - HIPAA compliant.
+ *
+ * Owner-only (PRACTITIONER-SESSION-OWNERSHIP-01): another practitioner's session, an unowned legacy
+ * session and an absent id answer the same 404.
  */
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +14,8 @@ export const revalidate = false;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getInsights, getSession, SupervisionInsight } from '@/lib/supervision/SupervisionStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 export async function GET(request: NextRequest) {
   // Static export: return stub response during pre-rendering
@@ -18,6 +23,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, insights: {}, totalInsights: 0 });
   }
   try {
+    const actor = await requireSessionMember(request);
+    if ('error' in actor) return actor.error;
     const searchParams = request.nextUrl.searchParams;
     const sessionId = searchParams.get('sessionId');
     const insightType = searchParams.get('type') as SupervisionInsight['insight_type'] | null;
@@ -28,6 +35,9 @@ export async function GET(request: NextRequest) {
         error: 'sessionId query parameter is required'
       }, { status: 400 });
     }
+
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     // Verify session exists
     const session = await getSession(sessionId);

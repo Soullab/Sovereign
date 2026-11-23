@@ -15,8 +15,10 @@ describe('P4R1 guided depth actions', () => {
     expect(develop).toContain('Help me understand');
     expect(develop).toContain('Go deeper');
     expect(develop).toContain('autoSendInitialQuestion={Boolean(dialoguePrompt)}');
-    expect(develop).toContain("setDialoguePrompt('Teach me the one writing or craft idea");
-    expect(develop).toContain("setDialoguePrompt('Go deeper on this observation");
+    expect(develop).toContain("setDialoguePrompt(teachingQuestion('observation'))");
+    /* Q2 (2026-11-05): the button's words only; depth travels as responseStyle. */
+    expect(develop).toContain('setDialoguePrompt(OBSERVATION_STARTERS.deeper.words)');
+    expect(develop).toContain('initialResponseStyle={starterStyle(dialoguePrompt)}');
   });
 
   it('uses the same one-click guided depth acts from a manuscript observation marker', () => {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
@@ -15,6 +16,7 @@ import { mintAct, claimAct, recordCompletionWithClient } from '@/lib/disclosure/
 import { establishDisclosureBoundary, mayCrossBoundary } from '@/lib/disclosure/disclosureBoundary';
 import { confirmDisclosureCrossedWithClient } from '@/lib/disclosure/contextDisclosureReceipt';
 import { TurnPosture } from '@/lib/sanctuary/turnPosture';
+import { KeepWitness } from '@/lib/sanctuary/studioPosture';
 import { transaction } from '@/lib/db/postgres';
 import { runReviewDiscuss, REVIEW_DISCUSS_READER_VERSION } from '@/lib/manuscript/ask/reviewDiscussReader';
 import { preflightRelationshipForManuscript } from '@/lib/writers-studio/relationshipCarriage';
@@ -22,6 +24,7 @@ import {
   appendReviewDiscussEpisodeWithClient, prepareRelationshipForAppendWithClient,
   RelationshipCustodyRefused,
 } from '@/lib/writers-studio/relationshipCustody';
+import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
 
 export const dynamic = 'force-dynamic';
 const MAX_QUESTION = 4000;
@@ -30,7 +33,7 @@ const ACT_TTL_MINUTES = 30;
 const hash = (value: unknown): string =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
-export async function POST(
+async function postHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -83,7 +86,12 @@ export async function POST(
   if (body.sanctuary) {
     return NextResponse.json({ refusal: 'sanctuary_unavailable' }, { status: 409 });
   }
+  bindMaiaMeter(memberId, { sanctuary: false });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, manuscriptId); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
   const posture = TurnPosture.resolve({ sanctuary: body.sanctuary });
+  /* Sanctuary closure: the store refuses any write without this; `body.sanctuary` is the checked, explicit `false` above. */
+  const keep = KeepWitness.fromDeclaration(body.sanctuary) as KeepWitness;
 
   if (relationshipId !== null) {
     const relationship = await preflightRelationshipForManuscript({
@@ -124,7 +132,7 @@ export async function POST(
   const now = await loadLiveWork(manuscriptId, memberId);
   const requestId = randomUUID();
 
-  const threadId = await openThread({
+  const threadId = await openThread({ keep,
     manuscriptId,
     memberId,
     anchor: check.anchor,
@@ -153,7 +161,7 @@ export async function POST(
     { state: 'unmeasured' },
   );
 
-  await appendTurn({
+  await appendTurn({ keep,
     threadId,
     memberId,
     speaker: 'author',
@@ -306,7 +314,7 @@ export async function POST(
         ? await prepareRelationshipForAppendWithClient(client, { memberId, relationshipId })
         : null;
 
-      const index = await appendTurnWithClient(client, {
+      const index = await appendTurnWithClient(client, { keep,
         threadId,
         memberId,
         speaker: 'maia',
@@ -352,3 +360,5 @@ export async function POST(
     provenance: answerProvenance,
   });
 }
+
+export const POST = meteredRoute('review_discuss', postHandler);

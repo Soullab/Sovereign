@@ -360,8 +360,8 @@ export const WRITING_SPACE = {
 } as const;
 
 export const HOME_COPY = {
-  beginWelcome: 'Welcome, writer. You are home.',
-  begin: 'Begin a new work',
+  beginWelcome: 'What are you beginning?',
+  begin: 'Start writing',
   importWriting: 'Import writing',
   bringSources: 'Bring notes & sources',
   trust: 'Your original is always preserved.',
@@ -387,7 +387,7 @@ export const HOME_COPY = {
 /** Remove vs delete — exact copy of the live Studio's two acts (lib/writersStudio/deleteWork.ts), never blurred. */
 export const REMOVE_OR_DELETE = {
   remove: { action: 'Remove Work', hint: 'Keeps your writing in Your Writings.' },
-  delete: { action: 'Delete Work and writing', hint: 'Permanently deletes this Work and its writing.' },
+  delete: { action: 'Delete Work and writing', hint: 'Deletes this Work and its writing. This cannot be undone.' },
 } as const;
 
 // ── Imagery (cropped from the founder originals; see header) ────────────────

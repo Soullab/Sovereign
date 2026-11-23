@@ -1,9 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { freeWorkLimitFrom, workLimitMessageOr } from '@/lib/writersStudio/workLimitShared';
+import { readingProgressText } from '@/lib/writersStudio/readingProgress';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAtmosphere } from '@/app/writers-studio/atmosphere/StudioAtmosphere';
 import { apiFetch } from '@/lib/http/apiBase';
+import ContinuousDraftWayIn from '@/app/writers-studio/ContinuousDraftWayIn';
 import { useLivingWorks } from '@/app/writers-studio/useLivingWorks';
 import { currentWork } from '@/app/writers-studio/workContext';
 import { resolveSituatedWorkContext, studioHomeReturnSearch } from '@/app/writers-studio/situatedWork';
@@ -11,6 +14,7 @@ import { useHouseStudioH1WorkClaim } from '@/app/writers-studio/useHouseStudioH1
 import { h1AdmissionNeeded, resolveH1Arrival } from '@/app/writers-studio/h1Arrival';
 import { chapterSpanFor, type RebuildSection } from '@/lib/writersStudio/rebuild/model';
 import { SECTION_PARAM } from '@/lib/writersStudio/placeInWork';
+import { readDevelopPlace, resolveDevelopSection, writeDevelopPlace } from '@/lib/writersStudio/developPlace';
 import {
   fetchReading,
   fetchReadingSummaries,
@@ -25,14 +29,15 @@ import {
   preparationCopy,
   type DevelopPreparation,
 } from '@/lib/writersStudio/developPreparationClient';
-import { beginDraft } from '@/app/press/manuscript/workingDraftClient';
+import { beginDraft, checkpointServerDraft, newIdempotencyKey } from '@/app/press/manuscript/workingDraftClient';
 import { fetchLiveThemes, mutateTheme } from '@/lib/writersStudio/themes/client';
 import type { LiveThemesPayload, ThemeMutation } from '@/lib/writersStudio/themes/liveTypes';
 import type { DevelopmentalLens } from '@/lib/manuscript/developmentalReader/contract';
 import type { ReadingScope } from '@/lib/manuscript/developmentalReading/scope';
 import { sectionIdsOf } from '@/lib/manuscript/development/evidenceRef';
 import { loadCanvasInsight } from '@/lib/writersStudio/insightCanvas';
-import { runWholeManuscriptReview } from '@/lib/writersStudio/studio/wholeManuscriptReview';
+import { runEditorialPass, savePass } from '@/lib/writersStudio/studio/editorialPassRunner';
+import { fetchLetter, keptPassFor } from '@/lib/writersStudio/letter/letterClient';
 import { requestAttentionMap } from '@/lib/writersStudio/attentionMapClient';
 import type { AttentionItem, WholeManuscriptAttentionMap } from '@/lib/writersStudio/studio/attentionMap';
 import {
@@ -55,6 +60,7 @@ import {
 } from '@/lib/writersStudio/intellectualLineageChapter';
 import { requestDevelopmentalOrientation } from '@/lib/writersStudio/developmentalOrientationClient';
 import type { DevelopmentalOrientation } from '@/lib/writersStudio/developmentalOrientation';
+import StudioSignedOut from './StudioSignedOut';
 import P4R1DevelopView, {
   DEVELOP_FIELDS,
   type DevelopField,
@@ -94,7 +100,7 @@ function summaryLens(summary: ReadingSummary): DevelopField | null {
 }
 
 function sectionLabel(section: RebuildSection | undefined, index = 0): string {
-  return section?.heading?.trim() || `Section ${index + 1}`;
+  return section?.heading?.trim() || `Section ${(section?.position ?? index) + 1}`;
 }
 
 export default function P4R1DevelopController() {
@@ -119,7 +125,10 @@ export default function P4R1DevelopController() {
   const [phase, setPhase] = useState<Phase>('loading');
   const [context, setContext] = useState<ContextReady | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const { phase: worksPhase, works } = useLivingWorks();
+  const [wayInId, setWayInId] = useState<string | null>(null);
+  const { phase: worksPhase, works, reload: reloadWorks } = useLivingWorks();
+  const [declaring, setDeclaring] = useState(false);
+  const [declareError, setDeclareError] = useState<string | null>(null);
 
   const [summaries, setSummaries] = useState<ReadingSummary[]>([]);
   const [summariesLoading, setSummariesLoading] = useState(true);
@@ -135,11 +144,40 @@ export default function P4R1DevelopController() {
   const [scope, setScope] = useState<DevelopScopeChoice>({ kind: 'whole' });
   const [commissioning, setCommissioning] = useState(false);
   const [commissionError, setCommissionError] = useState<string | null>(null);
+  const [commissionNeedsCheckpoint, setCommissionNeedsCheckpoint] = useState(false);
 
   const [attentionMap, setAttentionMap] = useState<WholeManuscriptAttentionMap | null>(null);
   const [attentionBusy, setAttentionBusy] = useState(false);
   const [attentionError, setAttentionError] = useState<string | null>(null);
   const [attentionProgress, setAttentionProgress] = useState<string | null>(null);
+
+  const [chapterReview, setChapterReview] = useState<WholeManuscriptAttentionMap | null>(null);
+  const [chapterReviewBusy, setChapterReviewBusy] = useState(false);
+  const [chapterReadPending, setChapterReadPending] = useState(false);
+  const [chapterNeedsCheckpoint, setChapterNeedsCheckpoint] = useState(false);
+  const [chapterReviewError, setChapterReviewError] = useState<string | null>(null);
+  const [chapterReviewProgress, setChapterReviewProgress] = useState<string | null>(null);
+  /* Nov 8: a reading can take minutes. Show the stage AND the elapsed time, so slow never looks like stuck. */
+  const readStage = useRef<string | null>(null);
+  const readStartedAt = useRef<number>(0);
+  const setReadProgress = useCallback((stage: string | null) => {
+    readStage.current = stage;
+    setChapterReviewProgress(stage ? readingProgressText(stage, Date.now() - readStartedAt.current) : null);
+  }, []);
+  const [chapterScorecard, setChapterScorecard] = useState<WholeManuscriptAttentionMap | null>(null);
+  const [previousChapterScorecard, setPreviousChapterScorecard] = useState<WholeManuscriptAttentionMap | null>(null);
+  const [previousChapterScoreRevision, setPreviousChapterScoreRevision] = useState<number | null>(null);
+  const [chapterScoreBusy, setChapterScoreBusy] = useState(false);
+  const [chapterScoreError, setChapterScoreError] = useState<string | null>(null);
+  const [chapterMinimalPath, setChapterMinimalPath] = useState<WholeManuscriptAttentionMap | null>(null);
+  const [chapterMinimalPathBusy, setChapterMinimalPathBusy] = useState(false);
+  const [chapterMinimalPathError, setChapterMinimalPathError] = useState<string | null>(null);
+  const [chapterBookFit, setChapterBookFit] = useState<WholeManuscriptAttentionMap | null>(null);
+  const [chapterBookFitBusy, setChapterBookFitBusy] = useState(false);
+  const [chapterBookFitError, setChapterBookFitError] = useState<string | null>(null);
+  const [chapterMovement, setChapterMovement] = useState<WholeManuscriptAttentionMap | null>(null);
+  const [chapterMovementBusy, setChapterMovementBusy] = useState(false);
+  const [chapterMovementError, setChapterMovementError] = useState<string | null>(null);
 
   const [writerUnderstanding, setWriterUnderstanding] = useState<WriterUnderstanding | null>(null);
   const [writerUnderstandingBusy, setWriterUnderstandingBusy] = useState(false);
@@ -168,6 +206,7 @@ export default function P4R1DevelopController() {
     }
     setPhase('loading');
     setMessage(null);
+    setWayInId(null);
     try {
       const response = await apiFetch(
         '/api/writers-studio/rebuild/context?manuscriptId=' + encodeURIComponent(manuscriptId),
@@ -181,6 +220,7 @@ export default function P4R1DevelopController() {
       if (body.state !== 'section_aware') {
         setPhase('error');
         setMessage('This manuscript is not section-addressable yet. Develop will not guess at its structure.');
+        setWayInId(manuscriptId);
         return;
       }
       setContext(body);
@@ -264,13 +304,21 @@ export default function P4R1DevelopController() {
     return () => { cancelled = true; };
   }, [manuscriptId, selectedReadingId]);
 
-  const currentSectionId = useMemo(() => {
-    if (!context?.sections.length) return null;
-    if (requestedSectionId && context.sections.some((section) => section.draftSectionId === requestedSectionId)) {
-      return requestedSectionId;
+  // Founder P0 item 4 (2026-11-11): reopening Develop returns the writer to the chapter they last
+  // chose, per writer and per manuscript, in this browser only. The address still wins.
+  const [rememberedSectionId, setRememberedSectionId] = useState<string | null>(null);
+  useEffect(() => { setRememberedSectionId(readDevelopPlace(manuscriptId)); }, [manuscriptId]);
+  const currentSectionId = useMemo(
+    () => resolveDevelopSection(context?.sections ?? [], requestedSectionId, rememberedSectionId),
+    [context, requestedSectionId, rememberedSectionId],
+  );
+  // Remember only a chapter the writer actually chose (it is in the address), so the first-chapter
+  // fallback can never overwrite the remembered place before it is read.
+  useEffect(() => {
+    if (requestedSectionId && context?.sections.some((s) => s.draftSectionId === requestedSectionId)) {
+      writeDevelopPlace(manuscriptId, requestedSectionId);
     }
-    return context.sections[0]?.draftSectionId ?? null;
-  }, [context, requestedSectionId]);
+  }, [manuscriptId, requestedSectionId, context]);
 
   const currentSection = useMemo(
     () => context?.sections.find((section) => section.draftSectionId === currentSectionId) ?? null,
@@ -281,6 +329,112 @@ export default function P4R1DevelopController() {
     () => context && currentSectionId ? chapterSpanFor(context.sections, currentSectionId) : null,
     [context, currentSectionId],
   );
+  const currentChapterRootId = currentChapter?.root.draftSectionId ?? null;
+  const currentChapterFirstSectionId = currentChapter?.sections[0]?.draftSectionId ?? null;
+  const previousChapterRootRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const previous = previousChapterRootRef.current;
+    previousChapterRootRef.current = currentChapterRootId;
+    if (!previous || previous === currentChapterRootId) return;
+
+    /* A chapter is a distinct developmental subject. Never let one chapter's
+       presentation-only expansions or error state masquerade as another's. */
+    setChapterReview(null);
+    setChapterReviewError(null);
+    setChapterReviewProgress(null);
+    setChapterNeedsCheckpoint(false);
+    setChapterReadPending(false);
+    setChapterBookFit(null);
+    setChapterBookFitError(null);
+    setChapterMovement(null);
+    setChapterMovementError(null);
+  }, [currentChapterRootId]);
+
+  useEffect(() => {
+    if (!context || !currentChapterFirstSectionId || typeof window === 'undefined') {
+      setChapterReview(null);
+      return;
+    }
+    const key = `writers-studio:chapter-review:v1:${context.manuscriptId}:${currentChapterFirstSectionId}`;
+    try {
+      const raw = window.localStorage.getItem(key) ?? window.sessionStorage.getItem(key);
+      if (!raw) {
+        setChapterReview(null);
+        return;
+      }
+      const cached = JSON.parse(raw) as { draftRevision?: number; map?: WholeManuscriptAttentionMap };
+      if (
+        context.draftRevision !== null
+        && cached.draftRevision === context.draftRevision
+        && cached.map?.manuscriptId === context.manuscriptId
+      ) {
+        setChapterReview(cached.map);
+        setChapterReviewError(null);
+        setChapterReviewProgress(null);
+        window.localStorage.setItem(key, raw);
+      } else {
+        setChapterReview(null);
+      }
+    } catch {
+      window.localStorage.removeItem(key);
+      window.sessionStorage.removeItem(key);
+      setChapterReview(null);
+    }
+  }, [context?.manuscriptId, context?.draftRevision, currentChapterFirstSectionId]);
+
+  useEffect(() => {
+    if (!context || !currentChapterRootId || typeof window === 'undefined') {
+      setChapterScorecard(null);
+      setPreviousChapterScorecard(null);
+      setPreviousChapterScoreRevision(null);
+      setChapterMinimalPath(null);
+      return;
+    }
+
+    const currentKey = `writers-studio:chapter-scorecard:v1:${context.manuscriptId}:${currentChapterRootId}`;
+    const previousKey = `writers-studio:chapter-scorecard-previous:v1:${context.manuscriptId}:${currentChapterRootId}`;
+    const minimalKey = `writers-studio:chapter-minimal-path:v2:${context.manuscriptId}:${currentChapterRootId}`;
+
+    const parseSnapshot = (raw: string | null) => {
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw) as { draftRevision?: number; map?: WholeManuscriptAttentionMap };
+        return Number.isInteger(parsed.draftRevision)
+          && parsed.map?.manuscriptId === context.manuscriptId
+          ? { draftRevision: parsed.draftRevision as number, map: parsed.map }
+          : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const current = parseSnapshot(window.sessionStorage.getItem(currentKey));
+    const previous = parseSnapshot(window.sessionStorage.getItem(previousKey));
+
+    if (current && context.draftRevision !== null && current.draftRevision === context.draftRevision) {
+      setChapterScorecard(current.map);
+      setPreviousChapterScorecard(previous?.map ?? null);
+      setPreviousChapterScoreRevision(previous?.draftRevision ?? null);
+    } else {
+      if (current && (context.draftRevision === null || current.draftRevision !== context.draftRevision)) {
+        window.sessionStorage.setItem(previousKey, JSON.stringify(current));
+        setPreviousChapterScorecard(current.map);
+        setPreviousChapterScoreRevision(current.draftRevision);
+      } else {
+        setPreviousChapterScorecard(previous?.map ?? null);
+        setPreviousChapterScoreRevision(previous?.draftRevision ?? null);
+      }
+      setChapterScorecard(null);
+    }
+
+    const minimal = parseSnapshot(window.sessionStorage.getItem(minimalKey));
+    setChapterMinimalPath(
+      minimal && context.draftRevision !== null && minimal.draftRevision === context.draftRevision
+        ? minimal.map
+        : null,
+    );
+  }, [context?.manuscriptId, context?.draftRevision, currentChapterRootId]);
 
   useEffect(() => {
     if (!context || !currentSection) return;
@@ -297,7 +451,7 @@ export default function P4R1DevelopController() {
       return {
         kind: 'section',
         sectionId: currentSection.draftSectionId,
-        label: currentSection.heading?.trim() || 'Current section',
+        label: sectionLabel(currentSection),
       };
     });
   }, [context?.manuscriptId, currentSectionId]);
@@ -316,7 +470,7 @@ export default function P4R1DevelopController() {
       setScope({
         kind: 'section',
         sectionId: currentSection.draftSectionId,
-        label: currentSection.heading?.trim() || 'Current section',
+        label: sectionLabel(currentSection),
       });
     }
   }, [context?.manuscriptId]);
@@ -326,6 +480,55 @@ export default function P4R1DevelopController() {
     worksPhase, works, context?.manuscriptId ?? manuscriptId, carriedWorkId,
   );
   const work = currentWork(workContext);
+
+  // The author's own declaration that this writing belongs to a Work (the same routes the Studio Home uses). The Studio
+  // never infers it; after it lands the Works are re-read, the context resolves to that Work, and Talk becomes available.
+  const declareManuscript = useCallback(async (workId: string) => {
+    // `id`, not `manuscriptId`: a local of that name would shadow the page's own and read itself before it exists.
+    const id = context?.manuscriptId ?? manuscriptId;
+    if (!id) throw new Error('declare:no-manuscript');
+    const response = await apiFetch('/api/sovereign/living-works/' + workId + '/expressions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ expressionType: 'manuscript', expressionId: id }),
+    });
+    if (!response.ok) throw new Error('declare:' + response.status);
+  }, [context?.manuscriptId, manuscriptId]);
+
+  const addToWork = useCallback(async (workId: string) => {
+    setDeclareError(null);
+    setDeclaring(true);
+    try {
+      await declareManuscript(workId);
+      await reloadWorks();
+    } catch {
+      setDeclareError('We couldn’t add this writing to that Work. Nothing was changed. Please try again.');
+    } finally {
+      setDeclaring(false);
+    }
+  }, [declareManuscript, reloadWorks]);
+
+  const makeWork = useCallback(async (title: string) => {
+    setDeclareError(null);
+    setDeclaring(true);
+    try {
+      const created = await apiFetch('/api/sovereign/living-works', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (!created.ok) throw (await freeWorkLimitFrom(created)) ?? new Error('create:' + created.status);
+      const body = await created.json().catch(() => ({})) as { id?: string; work?: { id?: string }; livingWork?: { id?: string } };
+      const workId = body.id ?? body.work?.id ?? body.livingWork?.id;
+      if (!workId) throw new Error('create:id');
+      await declareManuscript(workId);
+      await reloadWorks();
+    } catch (e) {
+      setDeclareError(workLimitMessageOr(e, 'We couldn’t make that Work. Please try again; if a Work with that name appears, use “Add to a Work”.'));
+    } finally {
+      setDeclaring(false);
+    }
+  }, [declareManuscript, reloadWorks]);
   const workTitle = work?.title ?? context?.title ?? 'This Work';
 
   useEffect(() => {
@@ -565,7 +768,7 @@ export default function P4R1DevelopController() {
     });
   }, [updateQuery]);
 
-  const onMode = useCallback((mode: 'home' | 'write' | 'develop' | 'review') => {
+  const onMode = useCallback((mode: 'home' | 'write' | 'develop' | 'review' | 'publish' | 'listen') => {
     if (mode === 'home') {
       const query = studioHomeReturnSearch(params?.toString() ?? '');
       router.push(`${pathname}${query ? `?${query}` : ''}`);
@@ -605,12 +808,25 @@ export default function P4R1DevelopController() {
       setScope({
         kind: 'section',
         sectionId,
-        label: selected.heading?.trim() || 'Current section',
+        label: sectionLabel(selected),
       });
     }
 
     updateQuery((query) => {
+      query.set('mode', 'develop');
       query.set(SECTION_PARAM, sectionId);
+
+      /* Selecting a new manuscript place is a new Develop subject. Return to
+         its Overview rather than inheriting another chapter's lens/read/thread. */
+      query.delete('developField');
+      query.delete('developIntent');
+      query.delete('r');
+      query.delete('attentionItem');
+      query.delete('insightReading');
+      query.delete('insightObservation');
+      query.delete('insightAction');
+      query.delete('editorialThread');
+      query.delete('relationship');
     });
   }, [context, updateQuery]);
 
@@ -691,6 +907,7 @@ export default function P4R1DevelopController() {
     }
     setCommissioning(true);
     setCommissionError(null);
+    setCommissionNeedsCheckpoint(false);
     try {
       const result = await requestDevelopmentalReading(
         manuscriptId,
@@ -698,6 +915,12 @@ export default function P4R1DevelopController() {
         chosen,
       );
       if (!result.ok) {
+        // Same law as the chapter read: MAIA reads a saved draft, never a moving one.
+        // Saving it is the writer's act, so offer it rather than doing it silently.
+        if (result.stage === 'capture' && result.refusal === 'revision_not_current') {
+          setCommissionNeedsCheckpoint(true);
+          return;
+        }
         setCommissionError(
           result.refusal === 'ceiling_exceeded'
             ? 'That scope is larger than MAIA reads in one sitting. Choose a smaller range.'
@@ -725,6 +948,34 @@ export default function P4R1DevelopController() {
     loadThemes,
     updateQuery,
   ]);
+
+  const checkpointAndCommission = useCallback(async () => {
+    if (!context || commissioning) return;
+    setCommissioning(true);
+    setCommissionError(null);
+    const result = await checkpointServerDraft(apiFetch, context.manuscriptId, {
+      baseRevisionId: context.version,
+      idempotencyKey: newIdempotencyKey(),
+    });
+    if (result.kind !== 'ok' || result.revisionCount === null) {
+      setCommissioning(false);
+      setCommissionError(
+        result.kind === 'conflict'
+          ? 'The draft moved while MAIA was preparing to read it. Reload, then try again.'
+          : 'The current draft could not be saved for reading just now. Your writing is unchanged.',
+      );
+      return;
+    }
+    const revisionNumber = result.revisionCount;
+    setContext((previous) => previous ? {
+      ...previous,
+      version: result.revisionId ?? previous.version,
+      draftRevision: revisionNumber,
+    } : previous);
+    setCommissionNeedsCheckpoint(false);
+    setCommissioning(false);
+    await commission();
+  }, [context, commissioning, commission]);
 
   const onThemeMutation = useCallback(async (mutation: ThemeMutation) => {
     if (!manuscriptId || themeBusy) return;
@@ -857,22 +1108,370 @@ export default function P4R1DevelopController() {
 
   useEffect(() => {
     if (!context || typeof window === 'undefined') return;
-    const key = `writers-studio:editorial-pass:v1:${context.manuscriptId}`;
-    const raw = window.sessionStorage.getItem(key);
-    if (!raw) return;
-    try {
-      const cached = JSON.parse(raw) as { draftRevision?: number; map?: WholeManuscriptAttentionMap };
-      if (
-        context.draftRevision !== null
-        && cached.draftRevision === context.draftRevision
-        && cached.map?.manuscriptId === context.manuscriptId
-      ) {
-        setAttentionMap(cached.map);
+    let cancelled = false;
+    const workManuscript = context.manuscriptId;
+    const revision = context.draftRevision;
+    const fromThisTab = () => {
+      const key = `writers-studio:editorial-pass:v1:${workManuscript}`;
+      const raw = window.sessionStorage.getItem(key);
+      if (!raw) return;
+      try {
+        const cached = JSON.parse(raw) as { draftRevision?: number; map?: WholeManuscriptAttentionMap };
+        if (revision !== null && cached.draftRevision === revision && cached.map?.manuscriptId === workManuscript) setAttentionMap(cached.map);
+      } catch {
+        window.sessionStorage.removeItem(key);
       }
-    } catch {
-      window.sessionStorage.removeItem(key);
-    }
+    };
+    /* The letter MAIA kept for this Work is the pass for this draft, on any device and after any visit (relational architecture step 2).
+       Founder walk 2026-11-12: Develop looked only in this tab's sessionStorage, so the kept 24-place letter was not there, the lens read
+       "Whole book · editorial pass" instead of "ready", and one click began a new paid reading of the whole book. */
+    void fetchLetter(workManuscript).then((out) => {
+      if (cancelled) return;
+      const kept = keptPassFor(out?.letter ?? null, workManuscript, revision);
+      if (kept) setAttentionMap(kept);
+      else fromThisTab();
+    });
+    return () => { cancelled = true; };
   }, [context?.manuscriptId, context?.draftRevision]);
+
+  useEffect(() => {
+    if (!chapterReviewBusy) return;
+    const t = window.setInterval(() => {
+      if (readStage.current) setChapterReviewProgress(readingProgressText(readStage.current, Date.now() - readStartedAt.current));
+    }, 5000);
+    return () => window.clearInterval(t);
+  }, [chapterReviewBusy]);
+
+  const performChapterRead = useCallback(async (revisionNumber: number) => {
+    if (!context || !currentChapter?.sections.length || chapterReviewBusy) return;
+    const chapterIds = currentChapter.sections.map((section) => section.draftSectionId);
+    const chapterScope: ReadingScope = {
+      kind: 'range',
+      fromSectionId: chapterIds[0]!,
+      toSectionId: chapterIds[chapterIds.length - 1]!,
+    };
+
+    readStartedAt.current = Date.now();
+    setChapterReviewBusy(true);
+    setChapterNeedsCheckpoint(false);
+    setChapterReviewError(null);
+    setReadProgress('MAIA is reading the chapter…');
+    try {
+      let overviewReadingId: string | null = null;
+      for (const summary of summaries) {
+        if (summary.commissionedLens !== 'overview') continue;
+        const fetched = await fetchReading(context.manuscriptId, summary.id);
+        if (!fetched.ok) continue;
+        if (fetched.payload.reading.readState.revisionNumber !== revisionNumber) continue;
+        const frozenScope = fetched.payload.reading.scope.bodyScope;
+        if (frozenScope.length !== chapterIds.length
+          || frozenScope.some((id, index) => id !== chapterIds[index])) continue;
+        overviewReadingId = summary.id;
+        break;
+      }
+
+      if (!overviewReadingId) {
+        const commissioned = await requestDevelopmentalReading(
+          context.manuscriptId,
+          'overview',
+          chapterScope,
+        );
+        await loadSummaries();
+
+        if (!commissioned.ok) {
+          if (commissioned.stage === 'capture' && commissioned.refusal === 'revision_not_current') {
+            setChapterNeedsCheckpoint(true);
+            setReadProgress(null);
+            return;
+          }
+          setChapterReviewError('MAIA could not finish the chapter reading. Nothing in your writing changed.');
+          setReadProgress(null);
+          return;
+        }
+        overviewReadingId = commissioned.readingId;
+      }
+
+      setReadProgress('MAIA has finished reading. Gathering her impressions…');
+      const synthesized = await requestAttentionMap(
+        context.manuscriptId,
+        [overviewReadingId],
+        [
+          'Respond directly to the writer as a perceptive, encouraging editor who has just read this chapter closely. Use "you" and "your"; never refer to them as "the author".',
+          'Be conversational, light, clear, and specific. The first thing the writer sees must build trust by naming one earned strength in the chapter — something genuinely working and worth protecting. Avoid generic praise.',
+          'Keep each item compact: label no more than 8 words, notice no more than 2 short sentences, whyItMatters no more than 2 short sentences. Put examples and quotations in evidence, not in the main response unless one very short phrase is essential.',
+          'Name friction as something worth looking at together, not as an indictment. Avoid adversarial phrasing such as "fails", "denies", "undermines", or "contradicts" unless the textual evidence truly requires that exact claim.',
+          'Return exactly four evidenced items, using the attention bands in this order:',
+          'begin-here: What is working — begin positively and specifically. Show that you understood the writing before you analyze it.',
+          'next: What I think this chapter is doing — a concise grasp of its movement and purpose.',
+          'later: What may need attention — the most useful friction or opportunity, without jargon or grading.',
+          'watch: Where I would start — one clear, manageable next editorial focus.',
+          'Use chapter scale unless a smaller scale is necessary to ground the point. Do not rewrite the prose. Do not use technical editorial vocabulary unless unavoidable.',
+        ].join('\n'),
+      );
+      if (!synthesized.ok) {
+        setChapterReviewError('MAIA read the chapter but could not gather her impressions just now. The reading is saved and your writing is unchanged.');
+        return;
+      }
+      setChapterReview(synthesized.map);
+      setReadProgress(null);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(
+          `writers-studio:chapter-review:v1:${context.manuscriptId}:${chapterIds[0]}`,
+          JSON.stringify({ draftRevision: revisionNumber, map: synthesized.map }),
+        );
+      }
+    } finally {
+      setChapterReviewBusy(false);
+    }
+  }, [context, currentChapter, chapterReviewBusy, loadSummaries, summaries]);
+
+  const readCurrentChapter = useCallback(async () => {
+    if (!context || !currentChapter?.sections.length || chapterReviewBusy) return;
+    if (prep?.kind !== 'ready') {
+      const copy = prep ? preparationCopy(prep) : null;
+      if (!copy?.act) {
+        setChapterReviewError('MAIA cannot establish a safe chapter reading yet. Nothing has changed.');
+        return;
+      }
+      setChapterReadPending(true);
+      setChapterReviewProgress('Preparing the chapter for MAIA…');
+      await prepare();
+      return;
+    }
+    if (context.draftRevision === null) {
+      setChapterNeedsCheckpoint(true);
+      setChapterReviewError(null);
+      return;
+    }
+    await performChapterRead(context.draftRevision);
+  }, [context, currentChapter, chapterReviewBusy, prep, prepare, performChapterRead]);
+
+  const checkpointCurrentChapterAndRead = useCallback(async () => {
+    if (!context || chapterReviewBusy) return;
+    setChapterReviewBusy(true);
+    setChapterReviewError(null);
+    setChapterReviewProgress('Saving the current draft for this reading…');
+    const result = await checkpointServerDraft(apiFetch, context.manuscriptId, {
+      baseRevisionId: context.version,
+      idempotencyKey: newIdempotencyKey(),
+    });
+    if (result.kind !== 'ok' || result.revisionCount === null) {
+      setChapterReviewBusy(false);
+      setChapterReviewProgress(null);
+      setChapterReviewError(
+        result.kind === 'conflict'
+          ? 'The draft moved while MAIA was preparing to read it. Reload the chapter, then try again.'
+          : 'The current draft could not be saved for reading just now. Your writing is unchanged.',
+      );
+      return;
+    }
+    const revisionNumber = result.revisionCount;
+    setContext((previous) => previous ? {
+      ...previous,
+      version: result.revisionId ?? previous.version,
+      draftRevision: revisionNumber,
+    } : previous);
+    setChapterNeedsCheckpoint(false);
+    setChapterReviewBusy(false);
+    await performChapterRead(revisionNumber);
+  }, [context, chapterReviewBusy, performChapterRead]);
+
+  /* ⭐ G4 — MAIA offered "Read this chapter" in the conversation and the WRITER clicked it. Read the chapter the writer is in, through the
+     lens she named; save a draft revision first if the reading needs one (as "Save current draft & read" does). Nothing in the writing changes. */
+  const commissionChapterReading = useCallback(async (lens: DevelopmentalLens): Promise<{ ok: true; label: string } | { ok: false; message: string }> => {
+    if (!context || !currentChapter?.sections.length) return { ok: false, message: 'Open a chapter first, then ask MAIA to read it. Nothing was changed.' };
+    const ids = currentChapter.sections.map((section) => section.draftSectionId);
+    const scope: ReadingScope = { kind: 'range', fromSectionId: ids[0]!, toSectionId: ids[ids.length - 1]! };
+    const label = currentChapter.root.heading?.trim() || 'this chapter';
+    let result = await requestDevelopmentalReading(context.manuscriptId, lens, scope);
+    if (!result.ok && result.stage === 'capture' && (result.refusal === 'revision_not_current' || result.refusal === 'no_revision')) {
+      const saved = await checkpointServerDraft(apiFetch, context.manuscriptId, { baseRevisionId: context.version, idempotencyKey: newIdempotencyKey() });
+      if (saved.kind !== 'ok' || saved.revisionCount === null) {
+        return { ok: false, message: saved.kind === 'conflict'
+          ? 'The draft moved while MAIA was preparing to read it. Reload the chapter, then try again. Nothing was changed.'
+          : 'Your current draft could not be saved for reading just now. Your writing is unchanged.' };
+      }
+      setContext((previous) => previous ? { ...previous, version: saved.revisionId ?? previous.version, draftRevision: saved.revisionCount } : previous);
+      result = await requestDevelopmentalReading(context.manuscriptId, lens, scope);
+    }
+    await loadSummaries();
+    return result.ok ? { ok: true, label } : { ok: false, message: 'MAIA could not finish that reading just now. Nothing in your writing changed.' };
+  }, [context, currentChapter, loadSummaries]);
+
+  const readChapterInBook = useCallback(async () => {
+    if (!context || !chapterReview || chapterBookFitBusy || context.draftRevision === null) return;
+    setChapterBookFitBusy(true);
+    setChapterBookFitError(null);
+    try {
+      const wholeSectionIds = context.sections.map((section) => section.draftSectionId);
+      let wholeReadingId: string | null = null;
+      for (const summary of summaries.filter((candidate) => candidate.commissionedLens === 'overview')) {
+        const frozen = await fetchReading(context.manuscriptId, summary.id);
+        if (!frozen.ok) continue;
+        const reading = frozen.payload.reading;
+        if (reading.readState.revisionNumber !== context.draftRevision) continue;
+        if (
+          reading.scope.bodyScope.length !== wholeSectionIds.length
+          || !reading.scope.bodyScope.every((id, index) => id === wholeSectionIds[index])
+        ) continue;
+        wholeReadingId = reading.id;
+        break;
+      }
+
+      if (!wholeReadingId) {
+        const whole = await requestDevelopmentalReading(
+          context.manuscriptId,
+          'overview',
+          { kind: 'whole' },
+        );
+        if (!whole.ok) {
+          setChapterBookFitError(
+            whole.refusal === 'revision_not_current'
+              ? 'The book changed since its last reading snapshot. Save the current draft, then ask again.'
+              : 'MAIA could not read enough of the book to place this chapter confidently. Nothing in the manuscript changed.',
+          );
+          return;
+        }
+        wholeReadingId = whole.readingId;
+        await loadSummaries();
+      }
+
+      const out = await requestAttentionMap(
+        context.manuscriptId,
+        [wholeReadingId],
+        [
+          'The writer has asked how the currently reviewed chapter fits into the whole book.',
+          'Respond as a perceptive book editor. Be concise, conversational, specific, and encouraging before naming friction.',
+          'Use exactly four evidenced items, in this order:',
+          'begin-here: What this chapter contributes to the whole book — name its distinctive job and what it makes possible.',
+          'next: Why this placement works — identify the strongest evidence that the reader is prepared for it here.',
+          'later: What the placement asks of the chapter — name any burden, repetition, missing bridge, or integration problem created by what comes before or after.',
+          'watch: What I would protect or change first — one practical macro-level recommendation, not a rewrite.',
+          'Distinguish chapter evidence from whole-book evidence. Do not pretend a placement is wrong merely because another placement is imaginable.',
+        ].join('\n'),
+      );
+      if (!out.ok) {
+        setChapterBookFitError('MAIA read the book context but could not gather the placement reflection just now. Nothing changed.');
+        return;
+      }
+      setChapterBookFit(out.map);
+    } finally {
+      setChapterBookFitBusy(false);
+    }
+  }, [context, chapterReview, chapterBookFitBusy, summaries, loadSummaries]);
+
+  const readChapterMovement = useCallback(async () => {
+    if (!context || !chapterReview || chapterMovementBusy) return;
+    setChapterMovementBusy(true);
+    setChapterMovementError(null);
+    try {
+      const out = await requestAttentionMap(
+        context.manuscriptId,
+        chapterReview.readingIds,
+        [
+          'Stay inside this chapter and describe its movement as an editor helping the writer strengthen what is already here.',
+          'Be conversational and specific. Begin with what is alive and working before naming imbalance.',
+          'Use exactly four evidenced items, in this order:',
+          'begin-here: The chapter\'s strongest movement — where experience, idea, story, or image carries the reader naturally.',
+          'next: The chapter\'s current shape — describe the sequence and proportions in ordinary language.',
+          'later: Where energy or clarity thins — identify repetition, density, abstraction, transition, or imbalance without grading the writing.',
+          'watch: The smallest structural move with the most leverage — one thing to strengthen, compress, move, bridge, or let breathe before touching sentences.',
+          'Pay particular attention to the relation among lived material, examples or story, conceptual explanation, formal architecture, lineage, and integration. Do not rewrite prose.',
+        ].join('\n'),
+      );
+      if (!out.ok) {
+        setChapterMovementError('MAIA could not gather the chapter movement reflection just now. The chapter review is unchanged.');
+        return;
+      }
+      setChapterMovement(out.map);
+    } finally {
+      setChapterMovementBusy(false);
+    }
+  }, [context, chapterReview, chapterMovementBusy]);
+
+  const scoreCurrentChapter = useCallback(async () => {
+    if (!context || !chapterReview || chapterScoreBusy) return;
+    setChapterScoreBusy(true);
+    setChapterScoreError(null);
+    try {
+      const out = await requestAttentionMap(
+        context.manuscriptId,
+        chapterReview.readingIds,
+        [
+          'Create an optional writer-facing chapter scorecard from these same frozen chapter readings. Do not reread the manuscript.',
+          'Use exactly five evidenced items: Clarity, Coherence, Reader orientation, Voice, and Momentum.',
+          'For each item, put the score at the start of notice in the form "N/5 — ..." where N is an integer 1 through 5.',
+          'Explain the score in plain language and use whyItMatters to say the smallest concrete change that could improve it by one level.',
+          'Treat this as a transparent craft rubric, not a verdict on the writer or the value of the work. Do not score book-level placement because this reading is chapter-bounded.',
+        ].join('\n'),
+      );
+      if (!out.ok) {
+        setChapterScoreError('MAIA could not prepare the scorecard just now. The chapter review is unchanged.');
+        return;
+      }
+      setChapterScorecard(out.map);
+      if (typeof window !== 'undefined' && context.draftRevision !== null && currentChapterRootId) {
+        window.sessionStorage.setItem(
+          `writers-studio:chapter-scorecard:v1:${context.manuscriptId}:${currentChapterRootId}`,
+          JSON.stringify({ draftRevision: context.draftRevision, map: out.map }),
+        );
+      }
+    } finally {
+      setChapterScoreBusy(false);
+    }
+  }, [context, chapterReview, chapterScoreBusy, currentChapterRootId]);
+
+  const minimalPathCurrentChapter = useCallback(async () => {
+    if (!context || !chapterReview || chapterMinimalPathBusy) return;
+    setChapterMinimalPathBusy(true);
+    setChapterMinimalPathError(null);
+    try {
+      const scoreSnapshot = chapterScorecard
+        ? chapterScorecard.items.map((item) => `${item.label}: ${item.notice}`).join('\n')
+        : 'No scorecard requested. Work directly from the frozen chapter reading.';
+      const out = await requestAttentionMap(
+        context.manuscriptId,
+        chapterReview.readingIds,
+        [
+          chapterScorecard
+            ? 'Create a writer-facing Minimal path to 5/5 from these same frozen chapter readings and the current optional scorecard. Do not reread the manuscript.'
+            : 'Create a writer-facing minimal strengthening path from these same frozen chapter readings. Do not reread the manuscript and do not invent a scorecard.',
+          chapterScorecard
+            ? 'The goal is not to guarantee perfect scores. Identify the smallest set of high-leverage changes most likely to materially improve the weaker dimensions while protecting what already works.'
+            : 'Identify the smallest set of high-leverage changes most likely to materially improve the chapter while protecting what already works.',
+          'Prefer light and moderate edits: compression, clarification, transition, reader signposting, local reordering, or removing unnecessary repetition. A major rewrite is exceptional and must not be proposed while smaller interventions could plausibly solve the issue.',
+          'Return exactly four evidenced items, ordered by leverage, using begin-here, next, later, watch.',
+          'Begin each notice with [Light], [Moderate], or [Heavy]. Use [Heavy] only when the evidence shows a smaller move is insufficient.',
+          'For each item, describe one concrete editorial move without writing replacement prose.',
+          chapterScorecard
+            ? 'In whyItMatters, name which current scorecard dimensions the move is likely to help and what must be protected.'
+            : 'In whyItMatters, explain the concrete reader or chapter-level benefit and what must be protected. Do not mention a scorecard or scoring dimensions because none was requested.',
+          'If the chapter appears improvable without a major rewrite, make the watch item explicitly say so.',
+          chapterScorecard ? 'Current scorecard:' : 'Scorecard status:',
+          scoreSnapshot,
+        ].join('\n'),
+      );
+      if (!out.ok) {
+        setChapterMinimalPathError('MAIA could not prepare the minimal path just now. The scorecard and chapter are unchanged.');
+        return;
+      }
+      setChapterMinimalPath(out.map);
+      if (typeof window !== 'undefined' && context.draftRevision !== null && currentChapterRootId) {
+        window.sessionStorage.setItem(
+          `writers-studio:chapter-minimal-path:v2:${context.manuscriptId}:${currentChapterRootId}`,
+          JSON.stringify({ draftRevision: context.draftRevision, map: out.map }),
+        );
+      }
+    } finally {
+      setChapterMinimalPathBusy(false);
+    }
+  }, [context, chapterReview, chapterScorecard, chapterMinimalPathBusy, currentChapterRootId]);
+
+  useEffect(() => {
+    if (!chapterReadPending || prep?.kind !== 'ready' || chapterReviewBusy) return;
+    setChapterReadPending(false);
+    void readCurrentChapter();
+  }, [chapterReadPending, prep?.kind, chapterReviewBusy, readCurrentChapter]);
 
   const commissionAttentionMap = useCallback(async () => {
     if (!context || attentionBusy) return;
@@ -888,32 +1487,22 @@ export default function P4R1DevelopController() {
     setAttentionError(null);
     setAttentionProgress('MAIA is reading through the manuscript for edit opportunities…');
     try {
-      const bundle = await runWholeManuscriptReview(
-        context.manuscriptId,
-        (done, total, lens) => setAttentionProgress(
-          done >= total ? 'Eight readings complete. Preparing edit suggestions…'
-            : `Reading ${done + 1} of ${total}: ${lens}…`,
-        ),
-        {
-          revisionNumber: context.draftRevision,
-          sectionIds: context.sections.map((section) => section.draftSectionId),
-        },
-      );
+      /* One runner for every room (lib/writersStudio/studio/editorialPassRunner.ts): completeness is the review's own rule, the
+         overview reading stays out of the synthesis set, and one refused lens is tried once more. */
+      const outcome = await runEditorialPass({
+        manuscriptId: context.manuscriptId,
+        revisionNumber: context.draftRevision,
+        sectionIds: context.sections.map((section) => section.draftSectionId),
+        onProgress: setAttentionProgress,
+        keepAsLetter: true,
+      });
       await loadSummaries();
-      if (bundle.failures.length > 0 || bundle.remaining.length > 0 || bundle.readingIds.length !== 8) {
-        setAttentionError('MAIA did not finish reading the whole manuscript, so the editorial pass is incomplete. The readings she completed are still available.');
+      if (!outcome.ok) {
+        setAttentionError(outcome.message);
         return;
       }
-      setAttentionProgress('Preparing the editorial pass…');
-      const synthesized = await requestAttentionMap(
-        context.manuscriptId,
-        bundle.readingIds,
-        'Make an editorial pass through this whole manuscript from macro to micro. Identify the evidenced places where a concrete editorial move may help: clarification, compression, expansion, transition, reordering, repetition, voice, pacing, or another text-level change supported by the frozen readings. Do not rewrite the prose yet. Order the opportunities from Begin here through Next, Later, and Watch. For each item, say plainly what may be worth editing and why, while preserving the author’s intention, voice, subject, and intentional ambiguity. Ground every item in the frozen observations.',
-      );
-      if (!synthesized.ok) {
-        setAttentionError('MAIA finished the readings, but could not prepare the editorial pass just now. The readings remain available and nothing in the manuscript changed.');
-        return;
-      }
+      const synthesized = outcome;
+      savePass(context.manuscriptId, { draftRevision: context.draftRevision, map: outcome.map });
       setAttentionMap(synthesized.map);
       if (typeof window !== 'undefined') {
         const key = `writers-studio:editorial-pass:v1:${context.manuscriptId}`;
@@ -951,14 +1540,87 @@ export default function P4R1DevelopController() {
     });
   }, [updateQuery]);
 
-  const workWithAttentionItem = useCallback(async (itemId: string, sectionId: string) => {
-    const item = attentionMap?.items.find((candidate) => candidate.id === itemId);
+  const workWithAttentionItem = useCallback(async (
+    itemId: string,
+    sectionId: string,
+    source: 'chapter-review' | 'minimal-path' | 'attention-map',
+  ) => {
+    const sourceMap = source === 'minimal-path'
+      ? chapterMinimalPath
+      : source === 'chapter-review'
+        ? chapterReview
+        : attentionMap;
+    const item = sourceMap?.items.find((candidate) => candidate.id === itemId);
     if (!item || !context) return;
+
+    /* A synthesis can be structurally evidence-bound yet cite the wrong frozen
+       observation for a semantically specific refinement. Before crossing into
+       Write, compare the claim against every frozen observation in the same
+       reading and prefer a clearly stronger textual match. The frozen reading
+       remains the authority; no new model call is used to repair the citation. */
+    const claimTokens = new Set(
+      [item.label, item.notice, item.whyItMatters]
+        .join(' ')
+        .toLowerCase()
+        .match(/[a-z][a-z-]{3,}/g)
+        ?.filter((token) => ![
+          'this','that','with','from','into','than','then','they','them','their',
+          'what','when','where','which','while','would','could','should','about',
+          'chapter','scorecard','dimensions','reader','reading','work','protect',
+          'light','moderate','heavy','edit','edits','improve','improving',
+        ].includes(token)) ?? [],
+    );
+    const normalizeToken = (token: string) => token
+      .replace(/(ing|ed|es|s)$/u, '')
+      .slice(0, 12);
+    const normalizedClaimTokens = [...claimTokens].map(normalizeToken).filter((token) => token.length >= 4);
+    const overlapScore = (text: string) => {
+      const normalizedText = (text.toLowerCase().match(/[a-z][a-z-]{3,}/g) ?? [])
+        .map(normalizeToken);
+      let score = 0;
+      for (const token of normalizedClaimTokens) {
+        if (normalizedText.some((candidate) => candidate === token || candidate.startsWith(token) || token.startsWith(candidate))) {
+          score += 1;
+        }
+      }
+      return score;
+    };
+
+    const evidenceCandidates = [...item.evidence];
+    for (const readingId of [...new Set(item.evidence.map((evidence) => evidence.readingId))]) {
+      const frozen = await fetchReading(context.manuscriptId, readingId);
+      if (!frozen.ok) continue;
+      const ranked = frozen.payload.reading.observations
+        .map((observation) => ({ observation, score: overlapScore(observation.observation) }))
+        .sort((a, b) => b.score - a.score);
+      const best = ranked[0];
+      const citedKeys = new Set(
+        item.evidence.filter((evidence) => evidence.readingId === readingId)
+          .map((evidence) => evidence.observationKey),
+      );
+      const citedScore = ranked
+        .filter(({ observation }) => citedKeys.has(observation.key))
+        .reduce((max, candidate) => Math.max(max, candidate.score), 0);
+      if (best && best.score >= 2 && best.score > citedScore && !citedKeys.has(best.observation.key)) {
+        const recoveredSectionIds: string[] = Array.from(
+          new Set<string>(best.observation.evidenceRefs.flatMap((ref) => [...sectionIdsOf(ref)])),
+        );
+        if (recoveredSectionIds.length > 0) {
+          evidenceCandidates.unshift({
+            readingId,
+            observationKey: best.observation.key,
+            sectionIds: recoveredSectionIds,
+            lens: best.observation.lens,
+            observation: best.observation.observation,
+          });
+        }
+      }
+    }
 
     /* C11R2 — use the same verifier that Write/Focus uses. A model-visible
        passage ref is not sufficient: it must still resolve CURRENT, VERIFIED,
        EDITABLE and BODY-ADDRESSABLE against the present manuscript. */
-    for (const evidence of item.evidence) {
+    for (const evidence of evidenceCandidates) {
       const insight = await loadCanvasInsight(
         context.manuscriptId,
         evidence.readingId,
@@ -967,24 +1629,60 @@ export default function P4R1DevelopController() {
       const passage = insight?.passages.find(
         (candidate) => candidate.verified && candidate.editable && candidate.range,
       );
-      if (!passage?.range) continue;
+      if (passage?.range) {
+        updateQuery((query) => {
+          query.set('mode', 'write');
+          query.set(SECTION_PARAM, passage.sectionId);
+          query.set('developField', 'overview');
+          query.set('attentionItem', itemId);
+          query.set('insightReading', evidence.readingId);
+          query.set('insightObservation', evidence.observationKey);
+          query.set('insightAction', source === 'chapter-review' ? 'try-revision' : 'focus');
+        });
+        return;
+      }
 
-      updateQuery((query) => {
-        query.set('mode', 'write');
-        query.set(SECTION_PARAM, passage.sectionId);
-        query.set('developField', 'overview');
-        query.set('attentionItem', itemId);
-        query.set('insightReading', evidence.readingId);
-        query.set('insightObservation', evidence.observationKey);
-        query.set('insightAction', 'focus');
-      });
+      /* If the richer canvas resolver cannot establish an editable range, recover
+         from the frozen reading itself before falling back to synthesized sectionIds.
+         This keeps a Work-on-this handoff tied to the observation MAIA actually
+         cited instead of whichever generic section happened to sort first. */
+      const frozen = await fetchReading(context.manuscriptId, evidence.readingId);
+      if (frozen.ok) {
+        const observation = frozen.payload.reading.observations.find(
+          (candidate) => candidate.key === evidence.observationKey,
+        );
+        const citedSection = observation?.evidenceRefs
+          .flatMap((ref) => sectionIdsOf(ref))
+          .find(Boolean);
+        if (citedSection) {
+          updateQuery((query) => {
+            query.set('mode', 'write');
+            query.set(SECTION_PARAM, citedSection);
+            query.set('developField', 'overview');
+            query.set('attentionItem', itemId);
+            query.set('insightReading', evidence.readingId);
+            query.set('insightObservation', evidence.observationKey);
+            query.delete('insightAction');
+          });
+          return;
+        }
+      }
+    }
+
+    /* An action labelled "Show me an edited version" may not silently degrade
+       into a generic section handoff. Without one exact editable passage there
+       is no lawful automatic revision target. */
+    if (source === 'chapter-review') {
+      setChapterReviewError(
+        'This observation does not identify one exact editable passage yet. Choose the wording you want to revise, or open the passage in Write first.',
+      );
       return;
     }
 
-    /* No cited observation can lawfully become an editable locus. Orient to an
-       evidenced section and leave passage selection to the writer. */
+    /* Other Work-on-this actions may still orient to an evidenced section and
+       leave exact passage choice to the writer. */
     openAttentionSection(itemId, sectionId);
-  }, [attentionMap, context, openAttentionSection, updateQuery]);
+  }, [attentionMap, chapterReview, chapterMinimalPath, context, openAttentionSection, updateQuery]);
 
   const sectionScope = useMemo<Extract<DevelopScopeChoice, { kind: 'section' }> | null>(() => {
     if (!currentSection) return null;
@@ -1005,13 +1703,14 @@ export default function P4R1DevelopController() {
     };
   }, [currentChapter]);
 
+  if (phase === 'unauthorized') return <StudioSignedOut what="Develop" />;
   if (phase !== 'ready' || !context) {
     return (
       <main className="fr-root" data-p4r1-develop-phase={phase}>
         <div style={{ padding: 32 }}>
           {phase === 'loading' ? 'Opening Develop…' : null}
-          {phase === 'unauthorized' ? 'Sign in to open Develop.' : null}
-          {phase === 'error' ? (message ?? 'Develop could not be opened.') : null}
+          {phase === 'error' && wayInId ? <ContinuousDraftWayIn manuscriptId={wayInId} room="Develop" /> : null}
+          {phase === 'error' && !wayInId ? (message ?? 'Develop could not be opened.') : null}
         </div>
       </main>
     );
@@ -1021,6 +1720,12 @@ export default function P4R1DevelopController() {
     <P4R1DevelopView
       manuscriptId={context.manuscriptId}
       work={work}
+      workContextKind={workContext.kind}
+      allWorks={works}
+      declaring={declaring}
+      declareError={declareError}
+      onAddToWork={(id) => void addToWork(id)}
+      onMakeWork={(title) => void makeWork(title)}
       workTitle={workTitle}
       appearance={appearance}
       field={field}
@@ -1039,11 +1744,31 @@ export default function P4R1DevelopController() {
       preparing={preparing}
       commissioning={commissioning}
       commissionError={commissionError}
+      commissionNeedsCheckpoint={commissionNeedsCheckpoint}
       attentionMap={attentionMap}
       attentionBusy={attentionBusy}
       attentionError={attentionError}
       attentionProgress={attentionProgress}
       selectedAttentionItemId={selectedAttentionItemId}
+      chapterReview={chapterReview}
+      chapterReviewBusy={chapterReviewBusy}
+      chapterNeedsCheckpoint={chapterNeedsCheckpoint}
+      chapterReviewError={chapterReviewError}
+      chapterReviewProgress={chapterReviewProgress}
+      chapterScorecard={chapterScorecard}
+      previousChapterScorecard={previousChapterScorecard}
+      previousChapterScoreRevision={previousChapterScoreRevision}
+      chapterScoreBusy={chapterScoreBusy}
+      chapterScoreError={chapterScoreError}
+      chapterMinimalPath={chapterMinimalPath}
+      chapterMinimalPathBusy={chapterMinimalPathBusy}
+      chapterMinimalPathError={chapterMinimalPathError}
+      chapterBookFit={chapterBookFit}
+      chapterBookFitBusy={chapterBookFitBusy}
+      chapterBookFitError={chapterBookFitError}
+      chapterMovement={chapterMovement}
+      chapterMovementBusy={chapterMovementBusy}
+      chapterMovementError={chapterMovementError}
       writerUnderstanding={writerUnderstanding}
       writerUnderstandingBusy={writerUnderstandingBusy}
       writerUnderstandingError={writerUnderstandingError}
@@ -1071,6 +1796,14 @@ export default function P4R1DevelopController() {
       onReading={onReading}
       onScope={setScope}
       onCommission={() => void commission()}
+      onCheckpointAndCommission={() => void checkpointAndCommission()}
+      onReadChapter={() => void readCurrentChapter()}
+      onCheckpointAndReadChapter={() => void checkpointCurrentChapterAndRead()}
+      onCommissionChapterReading={commissionChapterReading}
+      onReadChapterInBook={() => void readChapterInBook()}
+      onReadChapterMovement={() => void readChapterMovement()}
+      onScoreChapter={() => void scoreCurrentChapter()}
+      onMinimalPathChapter={() => void minimalPathCurrentChapter()}
       onCommissionAttentionMap={() => void commissionAttentionMap()}
       onShowAttentionItem={openAttentionSection}
       onWorkWithAttentionItem={workWithAttentionItem}

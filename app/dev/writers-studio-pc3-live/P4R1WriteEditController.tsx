@@ -1,9 +1,18 @@
 'use client';
 
+import { FREE_WORK_LIMIT_CODE, FREE_WORK_LIMIT_MESSAGE } from '@/lib/writersStudio/workLimitShared';
+import { revealHeldPassage } from '@/lib/writersStudio/revealHeldPassage';
+import type { TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
+import type { TurnShape } from '@/lib/writersStudio/conversationTurn';
+import type { PassageAct } from '@/lib/writersStudio/passageActs';
+import type { ArrivalOriginRef } from '@/lib/writersStudio/arrivalOrigin';
+import { reholdClearsConversation } from '@/lib/writersStudio/heldPassageContinuity';
+import { studioPlaceHref, type StudioPlace } from '@/lib/writersStudio/studioActions';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAtmosphere } from '@/app/writers-studio/atmosphere/StudioAtmosphere';
 import { apiFetch } from '@/lib/http/apiBase';
+import ContinuousDraftWayIn, { writeForwardFor } from '@/app/writers-studio/ContinuousDraftWayIn';
 import { readCurrentSanctuaryPosture, type CurrentPostureRead } from '@/lib/sanctuary/currentClientPosture';
 import { useLivingWorks } from '@/app/writers-studio/useLivingWorks';
 import { currentWork } from '@/app/writers-studio/workContext';
@@ -11,12 +20,17 @@ import { resolveSituatedWorkContext, studioHomeReturnSearch } from '@/app/writer
 import { useHouseStudioH1WorkClaim } from '@/app/writers-studio/useHouseStudioH1WorkClaim';
 import { h1AdmissionNeeded, resolveH1Arrival } from '@/app/writers-studio/h1Arrival';
 import {
+  canvasWithEditorialThread,
+  canvasWithoutEditorialThread,
   canvasWithRelationship,
   canvasWithoutRelationship,
+  CANVAS_EDITORIAL_THREAD_PARAM,
   editorialThreadIdFrom,
   relationshipIdFrom,
 } from '@/app/writers-studio/canvasIdentity';
 import RebuildWritingBoundary from '@/app/writers-studio/rebuild/RebuildWritingBoundary';
+import KeepNotePrompt from './KeepNotePrompt';
+import { QUOTE_NOT_IN_TEXT_DETAIL, QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL } from '@/lib/manuscript/editorialRuntime/editorialQuoteGate';
 import type { SectionWriting } from '@/lib/writersStudio/useSectionWriting';
 import { chapterSpanFor, type RebuildSection } from '@/lib/writersStudio/rebuild/model';
 import { locationForSection, replacePlaceAddress, resolveInitialSection, SECTION_PARAM } from '@/lib/writersStudio/placeInWork';
@@ -24,8 +38,8 @@ import {
   adoptBoundEditorialVersion,
   discoverEditorialRelationships,
   exactVersion,
-  locateUniquePassage,
   openBoundEditorialPassage,
+  openEditorialConversation,
   openBoundEditorialThread,
   readBoundEditorialThread,
   sendBoundEditorialTurn,
@@ -34,7 +48,7 @@ import {
   type RebuildEditorialThread,
 } from '@/lib/writersStudio/rebuild/editorialCollaboration';
 import { useEditingLatitude } from '@/app/writers-studio/insight/EditingLatitude';
-import { DEFAULT_EDITORIAL_DEPTH, editorialDirective, type EditorialDepth } from '@/lib/writersStudio/editorialDepth';
+import { DEFAULT_EDITORIAL_DEPTH, type EditorialDepth } from '@/lib/writersStudio/editorialDepth';
 import type { ProposalPolicy } from '@/lib/manuscript/editorialScope/sequence';
 import {
   LATITUDE_BANDS,
@@ -49,11 +63,15 @@ import {
   type InsightPassage,
 } from '@/lib/writersStudio/insightCanvas';
 import type { MemberRevisionDraft } from '@/app/writers-studio/insight/RevisionDesk';
+import type { CraftWorkingSaveDraft } from '@/lib/writersStudio/craftSaveContractR1';
+import { confirmsExactMemberSaveReadback } from '@/lib/writersStudio/rebuild/memberSaveReadbackR1';
+import { mayPublishEditorialResponse } from '@/lib/writersStudio/rebuild/editorialResponseScopeR1';
 import {
   createA2Relationship,
   listA2Relationships,
   readA2Relationship,
   readEligibleCarrySources,
+  resolveEditorialReturnBinding,
   type A2RelationshipSummary,
   type EligibleCarrySource,
 } from '@/lib/writersStudio/rebuild/relationshipOrchestration';
@@ -64,13 +82,24 @@ import {
   readRelationshipReturnClient,
   writeRelationshipReturnClient,
 } from '@/lib/writersStudio/rebuild/returnStateClient';
-import { P4R1Pc3WriteEditView, type Pc3HeldPassage } from './P4R1Pc3WriteEditView';
+import { editPlanClient, fetchPlan, linkStepClient } from '@/lib/writersStudio/planClient';
+
+/** SHA-256 hex in the browser, matching the server's digest of the same projected text. */
+async function sha256Hex(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+import { decideHandoff, HANDOFF_REFUSAL_COPY, PLAN_HANDOFF_KEY, PLAN_HANDOFF_EVENT } from '@/lib/writersStudio/developmentPlan';
+import { decidePassageHandoff, decodePassageHandoff, PASSAGE_HANDOFF_EVENT, PASSAGE_HANDOFF_KEY, PASSAGE_HANDOFF_REFUSAL_COPY } from '@/lib/writersStudio/passageHandoff';
+import { P4R1Pc3WriteEditView, UNDO_RESTORED_MESSAGES, type Pc3HeldPassage } from './P4R1Pc3WriteEditView';
+import StudioSignedOut from './StudioSignedOut';
 
 interface ContextReady {
   state: 'section_aware';
   manuscriptId: string;
   title: string | null;
   version: number;
+  draftRevision?: number | null;
   updatedAt: string;
   sections: RebuildSection[];
 }
@@ -87,6 +116,21 @@ type SelectedCarrySource = EligibleCarrySource & {
   readonly relationshipId: string;
   readonly receiverThreadId: string;
 };
+
+type EditorialReturnCandidate = {
+  readonly scope: string;
+  readonly relationshipId: string;
+  readonly threadId: string;
+  readonly sectionId: string;
+};
+
+const UNVERIFIED_URL_THREAD = 'This saved manuscript conversation has not been verified for the current Living Work. Nothing was opened, sent, saved or applied.';
+
+/** Search params can lag the Studio's own address rewrites; read the live one. */
+function addressStillNames(threadId: string): boolean {
+  if (typeof window === 'undefined') return true;
+  return new URLSearchParams(window.location.search).get(CANVAS_EDITORIAL_THREAD_PARAM) === threadId;
+}
 
 export default function FlagshipWriteEditController() {
   const params = useSearchParams();
@@ -116,8 +160,12 @@ export default function FlagshipWriteEditController() {
 
   const [phase, setPhase] = useState<Phase>('loading');
   const [message, setMessage] = useState<string | null>(null);
+  /* The manuscript the section-aware room refused for want of sections: the member is shown a way in, never a wall. */
+  const [wayInId, setWayInId] = useState<string | null>(null);
   const [context, setContext] = useState<ContextReady | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
+  /* WS-DECISION-CONTINUITY: after "Keep mine", offer (never assume) to note the decision. */
+  const [keepNoteFor, setKeepNoteFor] = useState<{ sectionId: string; label: string | null } | null>(null);
   const [selectedPassage, setSelectedPassage] = useState<Pc3HeldPassage | null>(null);
   const writingRef = useRef<SectionWriting | null>(null);
   const { phase: worksPhase, works, reload: reloadWorks } = useLivingWorks();
@@ -126,31 +174,69 @@ export default function FlagshipWriteEditController() {
   const { workId: carriedWorkId } = resolveH1Arrival(params, h1);
 
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  /* A plan hand-off that has chosen the chapter to show. Restoring the writer's last place must not override it. */
+  const planHandoffPlace = useRef<string | null>(null);
   const [workspaceInsight, setWorkspaceInsight] = useState<{ readingId: string; key: string } | null>(null);
   const [arrivalInsight, setArrivalInsight] = useState<CanvasInsight | null>(null);
   const [editorialThread, setEditorialThread] = useState<RebuildEditorialThread | null>(null);
+  /* Conversation Stage: after Use this the passage's words are new, so the next
+     question opens a new conversation (the server reasons on a frozen locus).
+     The conversation that holds the still-undoable edit is kept here, so the
+     new one can be shown without losing Undo, and is never pulled back over it. */
+  const [heldApplicationThread, setHeldApplicationThread] = useState<RebuildEditorialThread | null>(null);
+  const editorialThreadRef = useRef<RebuildEditorialThread | null>(null);
+  editorialThreadRef.current = editorialThread;
+  // A manuscript may be used by multiple Living Works. A manuscript-owned
+  // server thread alone does not authorize reusing Work A's relational dialog
+  // in Work B. This is a provisional fail-closed presentation/gesture fence,
+  // not a product decision that all manuscript history is Work-local.
+  const [editorialLivingWorkId, setEditorialLivingWorkId] = useState<string | null>(null);
   const [relationshipChoices, setRelationshipChoices] = useState<readonly RebuildEditorialRelationship[]>([]);
+  /** Several of this Work's conversations on the passage: the writer chooses (2026-11-05). */
+  const [conversationChoices, setConversationChoices] = useState<readonly RebuildEditorialThread[]>([]);
+  /** While the writer is asked which conversation, the request that asked waits here for
+   *  their answer, in flight, with every check from its original gesture intact. */
+  type ConversationAnswer = { kind: 'thread'; thread: RebuildEditorialThread } | { kind: 'new' } | { kind: 'cancel' };
+  const choiceResolverRef = useRef<((answer: ConversationAnswer) => void) | null>(null);
+  const cancelConversationChoice = () => { choiceResolverRef.current?.({ kind: 'cancel' }); choiceResolverRef.current = null; };
+  // Leaving Write (another room, or unmount) cancels a waiting question; nothing is sent.
+  useEffect(() => () => { choiceResolverRef.current?.({ kind: 'cancel' }); choiceResolverRef.current = null; }, []);
+  useEffect(() => { if (!workspaceOpen) cancelConversationChoice(); }, [workspaceOpen]);
   const [a2Relationship, setA2Relationship] = useState<A2RelationshipSummary | null>(null);
   const [a2RelationshipChoices, setA2RelationshipChoices] = useState<readonly A2RelationshipSummary[]>([]);
   const [a2RelationshipPhase, setA2RelationshipPhase] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
   const [a2RelationshipBusy, setA2RelationshipBusy] = useState(false);
   const [a2RelationshipMessage, setA2RelationshipMessage] = useState<string | null>(null);
+  const [editorialReturnCandidate, setEditorialReturnCandidate] = useState<EditorialReturnCandidate | null>(null);
+  const editorialReturnPreparationRef = useRef<string | null>(null);
+  // One-shot [sectionId, passage] for which the writer asked to start fresh.
+  const freshConversationRef = useRef<string | null>(null);
+  // A refusal notice is only safe to show under its originating Work scope,
+  // even when no active A2 relationship remains in presentation state.
+  const a2MessageScopeRef = useRef<string | null>(null);
   const carryChooserGen = useRef(0);
   const [carryChooser, setCarryChooser] = useState<CarryChooserState>({ kind: 'closed' });
   const [selectedCarrySource, setSelectedCarrySource] = useState<SelectedCarrySource | null>(null);
   const [carryPostureAvailable, setCarryPostureAvailable] = useState(false);
   const a2RelationshipIdRef = useRef<string | null>(null);
+  // If a previously current A2 relationship cannot be reconfirmed, retain
+  // its history but suspend current-use authority for this exact Living Work.
+  // A client flag never proves revocation or grants server permission.
+  const a2SuspendedScopeRef = useRef<string | null>(null);
   const editorialThreadIdRef = useRef<string | null>(null);
   a2RelationshipIdRef.current = a2Relationship?.id ?? null;
   editorialThreadIdRef.current = editorialThread?.threadId ?? null;
   const [editorialDraft, setEditorialDraft] = useState('');
   const [editorialDepth, setEditorialDepth] = useState<EditorialDepth>(DEFAULT_EDITORIAL_DEPTH);
   const [suggestedVersionId, setSuggestedVersionId] = useState<string | null>(null);
+  // Step 3: the writer's just-sent words, shown at once while MAIA answers.
+  const [pendingEditorialText, setPendingEditorialText] = useState<string | null>(null);
   const [appliedVersionId, setAppliedVersionId] = useState<string | null>(null);
   const [editorialBusy, setEditorialBusy] = useState(false);
   const [adoptionBusy, setAdoptionBusy] = useState(false);
   const [memberVersionBusy, setMemberVersionBusy] = useState(false);
   const [editorialFailure, setEditorialFailure] = useState<string | null>(null);
+  const [editorialNotice, setEditorialNotice] = useState<string | null>(null);
   const [adoptionOutcome, setAdoptionOutcome] = useState<AdoptionWireOutcome | null>(null);
   const [undoMessage, setUndoMessage] = useState<string | null>(null);
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
@@ -203,15 +289,18 @@ export default function FlagshipWriteEditController() {
   } = useEditingLatitude(context?.manuscriptId ?? '');
 
   const focusInsightConsumed = useRef<string | null>(null);
+  const autoProposalKey = useRef<string | null>(null);
   const workspaceReturn = useRef<{
     focusId: string | null;
     selectedPassage: Pc3HeldPassage | null;
     thread: RebuildEditorialThread | null;
     versionId: string | null;
+    livingWorkScope: string | null;
   } | null>(null);
   const load = useCallback(async () => {
     setPhase('loading');
     setMessage(null);
+    setWayInId(null);
     try {
       let manuscriptId = requested;
       if (!manuscriptId) {
@@ -260,6 +349,12 @@ export default function FlagshipWriteEditController() {
       if (body.state !== 'section_aware') {
         setPhase('error');
         setMessage('This manuscript is not section-addressable yet. The Studio will not guess at its structure.');
+        setWayInId(manuscriptId);
+        /* A continuous draft goes straight to the Canvas, which opens it whole.
+           replace(), so Back does not return to this refusal and bounce again.
+           The way-in above stays rendered in case navigation does not happen. */
+        const forward = writeForwardFor(body.state, manuscriptId);
+        if (forward && typeof window !== 'undefined') window.location.replace(forward);
         return;
       }
       setContext(body);
@@ -285,6 +380,113 @@ export default function FlagshipWriteEditController() {
     worksPhase, works, context?.manuscriptId ?? null, carriedWorkId,
   );
   const work = currentWork(workContext);
+  // A manuscript may be used in multiple Living Works. Its editorial chain
+  // carries a manuscript ID, NOT the current LivingWork ID. No automatic
+  // cross-Work relational continuity is authorized by matching Source text.
+  const currentLivingWorkScope = workContext.kind === 'work' && work && context
+    ? JSON.stringify([work.id, context.manuscriptId]) : null;
+  const seenLivingWorkScope = useRef<string | null>(null);
+  const workScopeEverEstablished = useRef(false);
+  const workReentryRequired = useRef(false);
+  // Client-only freshness and same-render duplicate guard for A2 metadata.
+  // No Work/member authorization is inferred from these local tickets.
+  const a2AsyncGenerationRef = useRef(0);
+  const a2PendingGestureRef = useRef<{ scope: string; generation: number } | null>(null);
+  const activeA2ScopeRef = useRef(currentLivingWorkScope);
+  activeA2ScopeRef.current = currentLivingWorkScope;
+  const a2StillCurrent = (scope: string | null, generation: number) => Boolean(
+    scope && activeA2ScopeRef.current === scope
+    && a2AsyncGenerationRef.current === generation,
+  );
+  if (currentLivingWorkScope && !workScopeEverEstablished.current) {
+    // Initial asynchronous Work discovery is not a switch between Works.
+    workScopeEverEstablished.current = true;
+    seenLivingWorkScope.current = currentLivingWorkScope;
+  } else if (workScopeEverEstablished.current
+    && seenLivingWorkScope.current !== currentLivingWorkScope) {
+    seenLivingWorkScope.current = currentLivingWorkScope;
+    workReentryRequired.current = true;
+    // Invalidate any former Work's pending relationship read/create before
+    // its callback can alter the new Work's visible state or address.
+    a2AsyncGenerationRef.current += 1;
+    a2PendingGestureRef.current = null;
+  }
+  // The epoch is captured by each rendered author gesture. Even if a writer
+  // later returns A→B→A, an old A callback is not granted new authority.
+  const workGestureEpoch = a2AsyncGenerationRef.current;
+  const currentContextGesture = () => activeA2ScopeRef.current === currentLivingWorkScope
+    && a2AsyncGenerationRef.current === workGestureEpoch;
+  const currentWorkGesture = () => Boolean(currentLivingWorkScope && currentContextGesture());
+  const threadInCurrentLivingWork = Boolean(
+    !workReentryRequired.current
+    && currentLivingWorkScope && work && context && editorialThread
+    && editorialLivingWorkId === work.id
+    && editorialThread.workId === context.manuscriptId,
+  );
+  const scopedEditorialThread = threadInCurrentLivingWork ? editorialThread : null;
+  const scopedA2Relationship = a2Relationship && work && context
+    && a2Relationship.livingWorkId === work.id
+    && a2Relationship.manuscriptId === context.manuscriptId
+    && (!currentLivingWorkScope || a2SuspendedScopeRef.current !== currentLivingWorkScope)
+    && !workReentryRequired.current ? a2Relationship : null;
+  // A same-component Work switch invalidates the old conversation only in
+  // presentation state. The legitimate old Work's saved history is preserved.
+  useEffect(() => {
+    if (!workReentryRequired.current) return;
+    setEditorialThread(null);
+    setHeldApplicationThread(null);
+    setEditorialLivingWorkId(null);
+    setEditorialDraft('');
+    setSelectedPassage(null);
+    setWorkspaceOpen(false);
+    setWorkspaceInsight(null);
+    workspaceReturn.current = null;
+    setSuggestedVersionId(null);
+    setAppliedVersionId(null);
+    setRelationshipChoices([]);
+    setConversationChoices([]);
+    cancelConversationChoice();
+    setA2Relationship(null);
+    setA2RelationshipChoices([]);
+    setA2RelationshipPhase('idle');
+    setA2RelationshipMessage(null);
+    setEditorialReturnCandidate(null);
+    setCarryPostureAvailable(false);
+    setSelectedCarrySource(null);
+    setCarryChooser({ kind: 'closed' });
+    setAdoptionOutcome(null);
+    setUndoMessage(null);
+    setVoiceNotice(null);
+    setEditorialBusy(false);
+    setMemberVersionBusy(false);
+    setAdoptionBusy(false);
+  }, [currentLivingWorkScope]);
+  // Presentation-side operation identity, never a server authorization claim.
+  // Recheck after awaited network acts before publishing any Save receipt.
+  const memberSaveScopeRef = useRef('');
+  const workingSaveAttemptRef = useRef<{ scope: string; fingerprint: string; key: string } | null>(null);
+  memberSaveScopeRef.current = JSON.stringify([
+    context?.manuscriptId ?? null, work?.id ?? null, focusId,
+    scopedEditorialThread?.threadId ?? null, scopedEditorialThread?.locusText ?? null,
+  ]);
+  // A late provider reply is a presentation candidate, not authority to
+  // populate whatever Work is now visible. Selection changes and an explicit
+  // new gesture invalidate outstanding editorial presentation receipts.
+  const editorialActScope = JSON.stringify([
+    context?.manuscriptId ?? null, work?.id ?? null, focusId,
+    selectedPassage?.draftSectionId ?? null, selectedPassage?.start ?? null,
+    selectedPassage?.end ?? null, selectedPassage?.revisionNumber ?? null,
+    selectedPassage?.text ?? null,
+  ]);
+  const editorialActScopeRef = useRef(editorialActScope);
+  editorialActScopeRef.current = editorialActScope;
+  const editorialActGenerationRef = useRef(0);
+  useEffect(() => {
+    editorialActGenerationRef.current += 1;
+    // A previous Work's in-flight request may no longer hold this Work busy.
+    setEditorialBusy(false);
+  }, [editorialActScope]);
+
   const workContextSentence = workContext.kind === 'work'
     ? (work?.purpose ?? 'A Work you declared.')
     : workContext.kind === 'none'
@@ -327,6 +529,7 @@ export default function FlagshipWriteEditController() {
       manuscriptId: context.manuscriptId,
     }).then((saved) => {
       if (cancelled || !saved.ok || !saved.sectionId) return;
+      if (planHandoffPlace.current) return;   // a plan hand-off already chose where the writer is
       if (!context.sections.some((section) => section.draftSectionId === saved.sectionId)) return;
       setFocusId(saved.sectionId);
       writingRef.current?.goToSection(saved.sectionId);
@@ -357,17 +560,37 @@ export default function FlagshipWriteEditController() {
 
     let cancelled = false;
     const scope = { livingWorkId: work.id, manuscriptId: context.manuscriptId };
+    const scopeAtRead = currentLivingWorkScope;
+    const generationAtRead = a2AsyncGenerationRef.current;
+    const fresh = () => !cancelled && a2StillCurrent(scopeAtRead, generationAtRead);
+    if (scopeAtRead && a2SuspendedScopeRef.current === scopeAtRead) {
+      // A later background list/read is not a fresh author decision and must
+      // not resurrect a previously unconfirmed relationship under this Work.
+      // A deliberate new creation/selection with fresh verification may
+      // supersede the suspension; retained custody history is untouched.
+      setA2Relationship(null);
+      a2RelationshipIdRef.current = null;
+      setA2RelationshipChoices([]);
+      setA2RelationshipPhase('ready');
+      a2MessageScopeRef.current = scopeAtRead;
+      setA2RelationshipMessage('The earlier MAIA relationship is not available for current use. Begin a new relationship or explicitly check an authorized one.');
+      return;
+    }
     setA2RelationshipPhase('loading');
     setA2RelationshipMessage(null);
 
     void (async () => {
       const listed = await listA2Relationships(work.id, context.manuscriptId);
-      if (cancelled) return;
+      if (!fresh()) return;
       if (!listed.ok) {
+        // A failed fresh eligibility read cannot leave an old A2 current.
+        a2SuspendedScopeRef.current = scopeAtRead;
+        a2RelationshipIdRef.current = null;
         setA2Relationship(null);
         setA2RelationshipChoices([]);
         setA2RelationshipPhase('unavailable');
-        setA2RelationshipMessage('Your MAIA relationships could not be read just now. Nothing was changed.');
+        a2MessageScopeRef.current = scopeAtRead;
+        setA2RelationshipMessage('Your MAIA relationships could not be read just now. Current relationship use is unconfirmed; earlier history was not deleted.');
         return;
       }
       setA2RelationshipChoices(listed.relationships);
@@ -375,31 +598,45 @@ export default function FlagshipWriteEditController() {
       let targetId = requestedRelationship;
       if (!targetId) {
         const saved = await readRelationshipReturnClient(scope);
-        if (cancelled) return;
+        if (!fresh()) return;
         targetId = saved.ok ? saved.relationshipId : null;
       }
 
       if (!targetId) {
         setA2Relationship(null);
         setA2RelationshipPhase('ready');
+        // "Nothing begun yet" is a settled answer for THIS Work, not an absent
+        // one. Without this the view receives 'idle', never offers Begin with
+        // MAIA, and Suggest an edit refuses with no way forward.
+        a2MessageScopeRef.current = scopeAtRead;
         return;
       }
 
       const addressed = await readA2Relationship(targetId);
-      if (cancelled) return;
+      if (!fresh()) return;
       if (
         !addressed.ok
+        || addressed.relationship.id !== targetId
         || addressed.relationship.livingWorkId !== work.id
         || addressed.relationship.manuscriptId !== context.manuscriptId
       ) {
+        // Neither manuscript similarity nor the current Work can authorize
+        // a substituted or no-longer-confirmed relationship on auto-return.
+        a2SuspendedScopeRef.current = scopeAtRead;
+        a2RelationshipIdRef.current = null;
         setA2Relationship(null);
+        // The specific saved return was refused. Leave fresh author-driven
+        // Begin available without activating this unverified old relationship.
         setA2RelationshipPhase('ready');
-        setA2RelationshipMessage('That MAIA relationship is not available for this Work.');
+        a2MessageScopeRef.current = scopeAtRead;
+        setA2RelationshipMessage('That MAIA relationship is not available for this Work. Earlier history was not deleted. You may begin a new relationship.');
         if (requestedRelationship) replaceA2RelationshipAddress(null);
         else void clearRelationshipReturnClient(scope);
         return;
       }
 
+      a2SuspendedScopeRef.current = null;
+      a2RelationshipIdRef.current = addressed.relationship.id;
       setA2Relationship(addressed.relationship);
       setA2RelationshipPhase('ready');
       if (!requestedRelationship) replaceA2RelationshipAddress(addressed.relationship.id);
@@ -415,50 +652,244 @@ export default function FlagshipWriteEditController() {
     workContext.kind,
   ]);
 
+  useEffect(() => {
+    const threadId = a2Relationship?.latestEditorialThreadId;
+    if (!threadId || !context || !work || workContext.kind !== 'work'
+      || !currentLivingWorkScope || workReentryRequired.current) return;
+
+    const relationshipId = a2Relationship.id;
+    const preparationKey = JSON.stringify([currentLivingWorkScope, relationshipId, threadId]);
+    if (editorialReturnPreparationRef.current === preparationKey) return;
+
+    const scopeAtRead = currentLivingWorkScope;
+    const generationAtRead = a2AsyncGenerationRef.current;
+    let cancelled = false;
+    const stillCurrent = () => !cancelled
+      && activeA2ScopeRef.current === scopeAtRead
+      && a2AsyncGenerationRef.current === generationAtRead
+      && a2RelationshipIdRef.current === relationshipId
+      && !workReentryRequired.current;
+
+    void (async () => {
+      let sectionId = requestedSection && context.sections.some(
+        (section) => section.draftSectionId === requestedSection,
+      ) ? requestedSection : focusId;
+
+      // Durable place is part of the return proof. A URL-named section remains
+      // the writer's explicit instruction; otherwise the server-owned place wins.
+      if (!requestedSection) {
+        const saved = await readPlaceReturnClient({
+          livingWorkId: work.id,
+          manuscriptId: context.manuscriptId,
+        });
+        if (!stillCurrent()) return;
+        if (saved.ok && saved.sectionId && context.sections.some(
+          (section) => section.draftSectionId === saved.sectionId,
+        )) {
+          sectionId = saved.sectionId;
+        }
+      }
+
+      if (!stillCurrent() || !sectionId || !context.sections.some(
+        (section) => section.draftSectionId === sectionId,
+      )) return;
+
+      if (sectionId !== focusId) {
+        setFocusId(sectionId);
+        writingRef.current?.goToSection(sectionId);
+        if (typeof window !== 'undefined') {
+          replacePlaceAddress(
+            locationForSection(window.location.pathname, window.location.search, sectionId),
+          );
+        }
+      }
+      editorialReturnPreparationRef.current = preparationKey;
+      setEditorialReturnCandidate({
+        scope: scopeAtRead,
+        relationshipId,
+        threadId,
+        sectionId,
+      });
+    })();
+
+    return () => { cancelled = true; };
+  }, [
+    a2Relationship?.id,
+    a2Relationship?.latestEditorialThreadId,
+    context,
+    currentLivingWorkScope,
+    focusId,
+    requestedSection,
+    work,
+    workContext.kind,
+  ]);
+
+  // A fresh, server-returned A2 relationship is metadata for THIS Work only.
+  // It does not import any manuscript-global editorial thread or MAIA turn.
+  const admitFreshA2Relationship = (relationship: A2RelationshipSummary) => {
+    if (workReentryRequired.current) {
+      // Clear all former Work context before lifting the presentation fence.
+      setEditorialThread(null);
+      setHeldApplicationThread(null);
+      setEditorialLivingWorkId(null);
+      setEditorialDraft('');
+      setSelectedPassage(null);
+      setWorkspaceOpen(false);
+      setWorkspaceInsight(null);
+      workspaceReturn.current = null;
+      setSuggestedVersionId(null);
+      setAppliedVersionId(null);
+      setRelationshipChoices([]);
+    setConversationChoices([]);
+      setCarryPostureAvailable(false);
+      setSelectedCarrySource(null);
+      carryChooserGen.current += 1;
+      setCarryChooser({ kind: 'closed' });
+      setAdoptionOutcome(null);
+      setUndoMessage(null);
+      setVoiceNotice(null);
+      setEditorialFailure(null);
+      setEditorialNotice(null);
+      setEditorialBusy(false);
+      setMemberVersionBusy(false);
+      setAdoptionBusy(false);
+      workReentryRequired.current = false;
+    }
+    // Only a fresh Work+manuscript-matched protected response can restore
+    // local selection; active revocation still belongs to the server.
+    a2SuspendedScopeRef.current = null;
+    a2RelationshipIdRef.current = relationship.id;
+    setA2Relationship(relationship);
+    setA2RelationshipChoices((choices) =>
+      choices.some((item) => item.id === relationship.id) ? choices : [...choices, relationship]);
+    setA2RelationshipPhase('ready');
+    setA2RelationshipMessage(null);
+  };
+
   const beginA2Relationship = useCallback(async () => {
-    if (!context || !work || workContext.kind !== 'work' || a2RelationshipBusy) return;
+    if (!context || !work || workContext.kind !== 'work' || !currentLivingWorkScope
+      || !currentWorkGesture() || a2RelationshipBusy
+      || a2PendingGestureRef.current?.scope === currentLivingWorkScope) return;
+    const scopeAtGesture = currentLivingWorkScope;
+    const generation = ++a2AsyncGenerationRef.current;
+    a2PendingGestureRef.current = { scope: scopeAtGesture, generation };
+    const current = () => a2StillCurrent(scopeAtGesture, generation)
+      && a2PendingGestureRef.current?.generation === generation;
     setA2RelationshipBusy(true);
     setA2RelationshipMessage(null);
-    const out = await createA2Relationship(work.id, context.manuscriptId);
-    if (!out.ok) {
-      setA2RelationshipMessage('The Studio could not begin that MAIA relationship just now. Nothing else changed.');
-      setA2RelationshipBusy(false);
-      return;
+    try {
+      const out = await createA2Relationship(work.id, context.manuscriptId);
+      if (!current()) return;
+      if (!out.ok || out.relationship.livingWorkId !== work.id
+        || out.relationship.manuscriptId !== context.manuscriptId) {
+        a2MessageScopeRef.current = scopeAtGesture;
+        setA2RelationshipMessage('The Studio could not verify a new MAIA relationship for this Work. Nothing was opened.');
+        return;
+      }
+      // A deliberate current-Work gesture plus matching protected response
+      // may admit A2 metadata, never the prior Work's manuscript dialogue.
+      admitFreshA2Relationship(out.relationship);
+      replaceA2RelationshipAddress(out.relationship.id);
+      void writeRelationshipReturnClient(
+        { livingWorkId: work.id, manuscriptId: context.manuscriptId },
+        out.relationship.id,
+      );
+    } catch {
+      if (current()) {
+        a2MessageScopeRef.current = scopeAtGesture;
+        setA2RelationshipMessage('The MAIA relationship could not be confirmed. Nothing was opened.');
+      }
+    } finally {
+      if (current()) {
+        a2PendingGestureRef.current = null;
+        setA2RelationshipBusy(false);
+      }
     }
-    setA2Relationship(out.relationship);
-    setA2RelationshipChoices((choices) => [...choices, out.relationship]);
-    replaceA2RelationshipAddress(out.relationship.id);
-    void writeRelationshipReturnClient(
-      { livingWorkId: work.id, manuscriptId: context.manuscriptId },
-      out.relationship.id,
-    );
-    setA2RelationshipBusy(false);
-  }, [a2RelationshipBusy, context, replaceA2RelationshipAddress, work, workContext.kind]);
+  }, [a2RelationshipBusy, context, currentLivingWorkScope, replaceA2RelationshipAddress,
+    work, workContext.kind, workGestureEpoch]);
 
   const chooseA2Relationship = useCallback(async (relationshipId: string) => {
-    if (!context || !work || workContext.kind !== 'work' || a2RelationshipBusy) return;
+    if (!context || !work || workContext.kind !== 'work' || !currentLivingWorkScope
+      || !currentWorkGesture() || !relationshipId || a2RelationshipBusy
+      || a2PendingGestureRef.current?.scope === currentLivingWorkScope) return;
+    const scopeAtGesture = currentLivingWorkScope;
+    const generation = ++a2AsyncGenerationRef.current;
+    a2PendingGestureRef.current = { scope: scopeAtGesture, generation };
+    const current = () => a2StillCurrent(scopeAtGesture, generation)
+      && a2PendingGestureRef.current?.generation === generation;
+    const recheckingCurrent = a2RelationshipIdRef.current === relationshipId;
+    // The existing pending-gesture ticket blocks Send/carry during this
+    // fresh check. Preserve the last confirmed B on a misbound *candidate*
+    // reply, but retire B if its own requested ID becomes unavailable.
     setA2RelationshipBusy(true);
     setA2RelationshipMessage(null);
-    const out = await readA2Relationship(relationshipId);
-    if (
-      !out.ok
-      || out.relationship.livingWorkId !== work.id
-      || out.relationship.manuscriptId !== context.manuscriptId
-    ) {
-      setA2RelationshipMessage('That MAIA relationship is not available for this Work.');
-      setA2RelationshipBusy(false);
-      return;
+    try {
+      const out = await readA2Relationship(relationshipId);
+      if (!current()) return;
+      if (!out.ok || out.relationship.id !== relationshipId
+        || out.relationship.livingWorkId !== work.id
+        || out.relationship.manuscriptId !== context.manuscriptId) {
+        // A failed check of *the active ID* retires its current-use selection.
+        // An unrelated/mismatched candidate must never replace a previously
+        // verified active B or be silently written as a return target.
+        if (recheckingCurrent && a2RelationshipIdRef.current === relationshipId
+          && (!out.ok || (out.relationship.id === relationshipId
+            && (out.relationship.livingWorkId !== work.id
+              || out.relationship.manuscriptId !== context.manuscriptId)))) {
+          a2SuspendedScopeRef.current = scopeAtGesture;
+          a2RelationshipIdRef.current = null;
+          setA2Relationship(null);
+          // Keep the verified "Begin new" affordance accessible. A previously
+          // retained ID is still not carried into any MAIA request.
+          setA2RelationshipPhase('ready');
+          setSelectedCarrySource(null);
+          carryChooserGen.current += 1;
+          setCarryChooser({ kind: 'closed' });
+          setCarryPostureAvailable(false);
+        }
+        a2MessageScopeRef.current = scopeAtGesture;
+        setA2RelationshipMessage(!out.ok && out.reason === 'unreadable'
+          ? 'That MAIA relationship is not available for use until its status can be confirmed. Earlier history was not deleted.'
+          : 'That MAIA relationship is not available for this Work.');
+        return;
+      }
+      admitFreshA2Relationship(out.relationship);
+      replaceA2RelationshipAddress(out.relationship.id);
+      void writeRelationshipReturnClient(
+        { livingWorkId: work.id, manuscriptId: context.manuscriptId },
+        out.relationship.id,
+      );
+    } catch {
+      if (current()) {
+        if (recheckingCurrent && a2RelationshipIdRef.current === relationshipId) {
+          a2SuspendedScopeRef.current = scopeAtGesture;
+          a2RelationshipIdRef.current = null;
+          setA2Relationship(null);
+          setA2RelationshipPhase('ready');
+          setSelectedCarrySource(null);
+          carryChooserGen.current += 1;
+          setCarryChooser({ kind: 'closed' });
+          setCarryPostureAvailable(false);
+        }
+        a2MessageScopeRef.current = scopeAtGesture;
+        setA2RelationshipMessage('That MAIA relationship is not available for use until its status can be confirmed. Earlier history was not deleted.');
+      }
+    } finally {
+      if (current()) {
+        a2PendingGestureRef.current = null;
+        setA2RelationshipBusy(false);
+      }
     }
-    setA2Relationship(out.relationship);
-    replaceA2RelationshipAddress(out.relationship.id);
-    void writeRelationshipReturnClient(
-      { livingWorkId: work.id, manuscriptId: context.manuscriptId },
-      out.relationship.id,
-    );
-    setA2RelationshipBusy(false);
-  }, [a2RelationshipBusy, context, replaceA2RelationshipAddress, work, workContext.kind]);
+  }, [a2RelationshipBusy, context, currentLivingWorkScope, replaceA2RelationshipAddress,
+    work, workContext.kind, workGestureEpoch]);
 
   const leaveA2Relationship = useCallback(() => {
+    if (!currentWorkGesture()) return;
+    // A deliberate Leave invalidates outstanding reads and writes of this
+    // relationship even if the corresponding network request later succeeds.
+    a2AsyncGenerationRef.current += 1;
+    a2PendingGestureRef.current = null;
+    setA2RelationshipBusy(false);
     if (context && work && workContext.kind === 'work') {
       void clearRelationshipReturnClient({
         livingWorkId: work.id,
@@ -468,7 +899,8 @@ export default function FlagshipWriteEditController() {
     setA2Relationship(null);
     setA2RelationshipMessage(null);
     replaceA2RelationshipAddress(null);
-  }, [context, replaceA2RelationshipAddress, work, workContext.kind]);
+  }, [context, replaceA2RelationshipAddress, work, workContext.kind,
+    workGestureEpoch]);
 
   useEffect(() => {
     carryChooserGen.current += 1;
@@ -479,8 +911,9 @@ export default function FlagshipWriteEditController() {
   useEffect(() => {
     const allowed = Boolean(
       workspaceOpen
-      && a2Relationship
-      && editorialThread
+      && scopedA2Relationship
+      && scopedEditorialThread
+      && !workReentryRequired.current
       && sessionPosture.resolved
       && !sessionPosture.sanctuary
     );
@@ -489,7 +922,7 @@ export default function FlagshipWriteEditController() {
       carryChooserGen.current += 1;
       setCarryChooser({ kind: 'closed' });
     }
-  }, [workspaceOpen, a2Relationship, editorialThread, sessionPosture]);
+  }, [workspaceOpen, scopedA2Relationship, scopedEditorialThread, sessionPosture]);
 
   const editorialScope = JSON.stringify([
     context?.manuscriptId,
@@ -497,11 +930,11 @@ export default function FlagshipWriteEditController() {
     selectedPassage?.draftSectionId === focusId ? selectedPassage.text : null,
   ]);
 
-  const suggestedVersion = editorialThread
-    ? exactVersion(editorialThread, suggestedVersionId ?? editorialThread.headVersionId)
+  const suggestedVersion = scopedEditorialThread
+    ? exactVersion(scopedEditorialThread, suggestedVersionId ?? scopedEditorialThread.headVersionId)
     : null;
-  const lastMaiaEditorialTurn = editorialThread
-    ? [...editorialThread.turns].reverse().find((turn) => turn.speaker === 'maia') ?? null
+  const lastMaiaEditorialTurn = scopedEditorialThread
+    ? [...scopedEditorialThread.turns].reverse().find((turn) => turn.speaker === 'maia') ?? null
     : null;
 
 
@@ -533,16 +966,33 @@ export default function FlagshipWriteEditController() {
 
   const clearEditorial = useCallback(() => {
     setEditorialThread(null);
+    setConversationChoices([]);
+    cancelConversationChoice();
+    setHeldApplicationThread(null);
+    setEditorialLivingWorkId(null);
+    if (typeof window !== 'undefined') {
+      // A same-address replaceState can trigger App Router reconciliation after
+      // the canvas has already moved to a new section. Use the shared no-op-aware
+      // place publisher so clearing an editorial thread cannot snap the writer
+      // back to a stale section address.
+      replacePlaceAddress(canvasWithoutEditorialThread(
+        window.location.pathname,
+        window.location.search,
+      ));
+    }
     setRelationshipChoices([]);
+    setConversationChoices([]);
     setSuggestedVersionId(null);
     setAppliedVersionId(null);
     setAdoptionOutcome(null);
     setEditorialFailure(null);
+    setEditorialNotice(null);
     setUndoMessage(null);
     setVoiceNotice(null);
   }, []);
 
   const focusWritingSection = useCallback((sectionId: string) => {
+    if (!currentContextGesture()) return;
     if (sectionId !== focusId) {
       clearEditorial();
       setSelectedPassage(null);
@@ -557,11 +1007,31 @@ export default function FlagshipWriteEditController() {
     if (typeof window !== 'undefined') {
       replacePlaceAddress(locationForSection(window.location.pathname, window.location.search, sectionId));
     }
-  }, [focusId, clearEditorial, context, work, workContext.kind]);
+  }, [focusId, clearEditorial, context, work, workContext.kind, workGestureEpoch]);
 
   const holdPassage = useCallback((section: RebuildSection, start: number, end: number, text: string) => {
+    if (!currentContextGesture()) return;
     const revisionNumber = writingRef.current?.currentRevisionId() ?? context?.version ?? 0;
-    if (section.draftSectionId !== focusId) clearEditorial();
+    // A conversation belongs to its own passage, not to the whole section: a
+    // different passage here must not show that conversation's replies.
+    const binding = editorialThread && section.draftSectionId === focusId
+      ? resolveEditorialReturnBinding(editorialThread, writingRef.current?.bodyOf(section.draftSectionId) ?? section.body)
+      : null;
+    // A re-hold of the same passage rewritten by the writer's own apply keeps the
+    // conversation and its Undo; a different passage still clears it.
+    const appliedWording = editorialThread && appliedVersionId
+      ? exactVersion(editorialThread, appliedVersionId)?.wording ?? null
+      : null;
+    if (reholdClearsConversation({
+      sameSection: section.draftSectionId === focusId,
+      hasThread: Boolean(editorialThread),
+      binding,
+      start,
+      end,
+      actInFlight: adoptionBusy || memberVersionBusy,
+      appliedWording,
+      heldText: text,
+    })) clearEditorial();
     setFocusId(section.draftSectionId);
     setSelectedPassage({
       draftSectionId: section.draftSectionId,
@@ -579,113 +1049,395 @@ export default function FlagshipWriteEditController() {
     if (typeof window !== 'undefined') {
       replacePlaceAddress(locationForSection(window.location.pathname, window.location.search, section.draftSectionId));
     }
-  }, [context, focusId, clearEditorial, work, workContext.kind]);
+  }, [context, focusId, clearEditorial, editorialThread, appliedVersionId, adoptionBusy, memberVersionBusy, work, workContext.kind, workGestureEpoch]);
+
+  /* A plan step opened from Develop. Develop leaves only a step id; the words come from the writer's saved plan and are located in the text AS IT IS NOW.
+     Exactly one match is held (the desk then does the rest: propose, Use it, Undo). Anything else opens the chapter and says so. Nothing is written here. */
+  /* The plan step that brought the writer to this passage. Only a pointer: when the desk records an apply on this section,
+     its authorization is offered to the plan, and the SERVER decides whether it belongs to the step. Never marks a step resolved. */
+  const [planStepHere, setPlanStepHere] = useState<{ planId: string; stepId: string; sectionId: string; start: number; end: number; preexisting: string | null } | null>(null);
+  const offeredLinks = useRef(new Set<string>());
+  const [openDeskForHeld, setOpenDeskForHeld] = useState(false);
+  useEffect(() => {
+    if (!openDeskForHeld || !planStepHere) return;
+    if (selectedPassage?.draftSectionId !== planStepHere.sectionId || selectedPassage.start !== planStepHere.start) return;
+    setOpenDeskForHeld(false);
+    openWorkspaceRef.current?.();
+  }, [openDeskForHeld, planStepHere, selectedPassage]);
+  /* Design 1B amendment 2 · open-desk: the passage handed over from the Develop conversation opens the desk once it is actually held. */
+  const [deskForPassage, setDeskForPassage] = useState<{ sectionId: string; start: number } | null>(null);
+  useEffect(() => {
+    if (!deskForPassage) return;
+    if (selectedPassage?.draftSectionId !== deskForPassage.sectionId || selectedPassage.start !== deskForPassage.start) return;
+    setDeskForPassage(null);
+    openWorkspaceRef.current?.();
+  }, [deskForPassage, selectedPassage]);
+  const handoffSeq = useRef(0);
+  useEffect(() => { if (planStepHere && focusId && focusId !== planStepHere.sectionId) setPlanStepHere(null); }, [focusId, planStepHere]);
+  useEffect(() => {
+    const app = editorialThread?.application;
+    if (!planStepHere || !context || !app || app.undone || focusId !== planStepHere.sectionId) return;
+    if (app.authorizationId === planStepHere.preexisting) return;
+    const key = `${planStepHere.planId}:${planStepHere.stepId}:${app.authorizationId}`;
+    if (offeredLinks.current.has(key)) return;
+    offeredLinks.current.add(key);
+    void linkStepClient(context.manuscriptId, planStepHere.planId, planStepHere.stepId, app.authorizationId)
+      .then((r) => { if (r === 'unreachable') offeredLinks.current.delete(key); });   // retried on the next change; a refusal is final
+  }, [editorialThread, planStepHere, context, focusId]);
+
+  // Idempotent by construction: the id is removed as it is read, so a repeated hand-off is a NEW hand-off and a reload is not a second one.
+  // The listener is stable for the manuscript; everything that changes between renders is read through refs, so an unrelated
+  // re-render can never cancel a pending hand-off. Only the writer's LATEST hand-off may act (decideHandoff: superseded).
+  const openWorkspaceRef = useRef<(() => void) | null>(null);
+  // The hand-off's own notice. Not the shared editorialFailure, which Work arrival and thread restoration clear.
+  const [planHandoffNotice, setPlanHandoffNotice] = useState<string | null>(null);   // assigned where openWorkspace is declared, further down
+  const handoffLive = useRef({ context, work, workKind: workContext.kind, holdPassage, focusWritingSection });
+  handoffLive.current = { context, work, workKind: workContext.kind, holdPassage, focusWritingSection };
+  const handoffManuscriptId = context?.manuscriptId ?? null;
+  useEffect(() => {
+    if (!handoffManuscriptId) return;
+    let mounted = true;
+    const consume = () => {
+      const L = handoffLive.current;
+      if (!L.context || L.context.manuscriptId !== handoffManuscriptId || !L.work || L.workKind !== 'work' || workReentryRequired.current) return;
+      let stepId: string | null = null;
+      try { stepId = window.sessionStorage.getItem(PLAN_HANDOFF_KEY(handoffManuscriptId)); } catch { /* none */ }
+      if (!stepId) return;
+      try { window.sessionStorage.removeItem(PLAN_HANDOFF_KEY(handoffManuscriptId)); } catch { /* ignore */ }
+      const mine = ++handoffSeq.current;
+      const sid = stepId;
+      void fetchPlan(handoffManuscriptId).then(async (view) => {
+        if (!mounted) return;
+        const C = handoffLive.current;
+        if (!C.context || C.context.manuscriptId !== handoffManuscriptId) return;
+        const ctx = C.context;
+        // The text THIS editor holds — never a fallback copy. No editor yet means "not ready", not "clean".
+        const bodyHere = (id: string) => writingRef.current?.bodyOf(id);
+        const stepChapter = view?.plan?.steps.find((x) => x.id === sid)?.chapterId;
+        const localDigests = new Map<string, string>();
+        /* The editor already holds each section WITHOUT its stored heading prefix (RebuildSection.body: "exact stored prefix removed"),
+           which is exactly the server's projection (splitStoredSection(...).body). Fingerprint it as it is; splitting it again fails. */
+        if (stepChapter && bodyHere(stepChapter) !== undefined) localDigests.set(stepChapter, await sha256Hex(bodyHere(stepChapter)!));
+        if (!mounted) return;
+        const d = decideHandoff({
+          seq: mine, latestSeq: handoffSeq.current, view, stepId: sid,
+          sectionIds: ctx.sections.map((x) => x.draftSectionId),
+          saveStateOf: (id) => writingRef.current?.statusOf(id),
+          bodyOf: (id) => bodyHere(id) ?? '',
+          localDigestOf: (id) => localDigests.get(id),
+        });
+        if (d.kind === 'superseded') return;
+        if (d.kind === 'refuse') {
+          if (d.focusSectionId) {
+            // The editor follows its OWN active section: move it too, exactly as a rail click does (focus + goToSection).
+            planHandoffPlace.current = d.focusSectionId;
+            C.focusWritingSection(d.focusSectionId);
+            if (writingRef.current && writingRef.current.activeId !== d.focusSectionId) writingRef.current.goToSection(d.focusSectionId);
+          }
+          setPlanHandoffNotice(HANDOFF_REFUSAL_COPY[d.reason]);
+          return;
+        }
+        setPlanHandoffNotice(null);
+        const section = ctx.sections.find((x) => x.draftSectionId === d.sectionId)!;
+        planHandoffPlace.current = d.sectionId;
+        if (writingRef.current && writingRef.current.activeId !== d.sectionId) writingRef.current.goToSection(d.sectionId);
+        C.holdPassage(section, d.start, d.end, d.text);
+        // A change already applied on this thread before the hand-off is not this step's change.
+        setPlanStepHere({ planId: view!.plan!.id, stepId: sid, sectionId: d.sectionId, start: d.start, end: d.end,
+          preexisting: editorialThreadRef.current?.application?.authorizationId ?? null });
+        // The writer asked to WORK ON this passage: the desk opens once the held passage is in state (see the effect below).
+        setOpenDeskForHeld(true);
+        // Only after the passage is actually held may an open step become 'working'; the server applies it only if still open.
+        if (d.markWorking) void editPlanClient(handoffManuscriptId, view!.plan!.id, [{ id: sid, status: 'working', ifStatus: 'open' }]);
+      });
+    };
+    /* Design 1B amendment 2 · `open-desk`: the passage the writer was discussing with MAIA in Develop. Held only if its exact words occur
+       once in a saved chapter here; otherwise the chapter opens and says why. Nothing changes until the writer acts at the desk. */
+    const consumePassage = () => {
+      const L = handoffLive.current;
+      if (!L.context || L.context.manuscriptId !== handoffManuscriptId || !L.work || L.workKind !== 'work' || workReentryRequired.current) return;
+      let raw: string | null = null;
+      try { raw = window.sessionStorage.getItem(PASSAGE_HANDOFF_KEY(handoffManuscriptId)); } catch { /* none */ }
+      const handoff = decodePassageHandoff(raw);
+      if (!raw) return;
+      const ctx = L.context;
+      const d = handoff
+        ? decidePassageHandoff({ handoff, sectionIds: ctx.sections.map((x) => x.draftSectionId),
+            saveStateOf: (id) => writingRef.current?.statusOf(id), bodyOf: (id) => writingRef.current?.bodyOf(id) })
+        : { kind: 'refuse' as const, reason: 'missing' as const };
+      if (d.kind === 'refuse' && d.reason === 'not_ready') return;          // the editor is still opening: keep the key, try on the next signal
+      try { window.sessionStorage.removeItem(PASSAGE_HANDOFF_KEY(handoffManuscriptId)); } catch { /* ignore */ }
+      const focus = d.kind === 'hold' ? d.sectionId : d.focusSectionId;
+      if (focus) {
+        planHandoffPlace.current = focus;
+        L.focusWritingSection(focus);
+        if (writingRef.current && writingRef.current.activeId !== focus) writingRef.current.goToSection(focus);
+      }
+      if (d.kind === 'refuse') { setPlanHandoffNotice(PASSAGE_HANDOFF_REFUSAL_COPY[d.reason]); return; }
+      setPlanHandoffNotice(null);
+      const section = ctx.sections.find((x) => x.draftSectionId === d.sectionId)!;
+      L.holdPassage(section, d.start, d.end, d.text);
+      setDeskForPassage({ sectionId: d.sectionId, start: d.start });
+    };
+    consume();
+    consumePassage();
+    window.addEventListener(PLAN_HANDOFF_EVENT, consume);
+    window.addEventListener(PASSAGE_HANDOFF_EVENT, consumePassage);
+    window.addEventListener(PLAN_HANDOFF_EVENT, consumePassage);
+    return () => { mounted = false; window.removeEventListener(PLAN_HANDOFF_EVENT, consume); window.removeEventListener(PASSAGE_HANDOFF_EVENT, consumePassage); window.removeEventListener(PLAN_HANDOFF_EVENT, consumePassage); };
+  }, [handoffManuscriptId]);
+  // A Work that becomes ready AFTER the id was left (context/work load late) still receives it.
+  useEffect(() => { if (context && work && workContext.kind === 'work') { try { window.dispatchEvent(new Event(PLAN_HANDOFF_EVENT)); } catch { /* ignore */ } } }, [context, work, workContext.kind]);
 
   const bindEditorialThread = useCallback((thread: RebuildEditorialThread): boolean => {
-    if (!focusId || thread.targetSectionId !== focusId) {
-      setEditorialFailure('That revision conversation belongs to a different place in the Work.');
+    // The server-owned thread must belong to the active manuscript as well as
+    // its section. Matching paragraph text and a URL thread ID are insufficient.
+    if (!context || !focusId || !thread.workId || !work
+      || workContext.kind !== 'work' || workReentryRequired.current
+      || !currentWorkGesture()
+      || thread.workId !== context.manuscriptId
+      || thread.targetSectionId !== focusId) {
+      setEditorialFailure('That revision conversation could not be verified against the active Work and section. Nothing was changed.');
       return false;
     }
 
     const live = writingRef.current?.bodyOf(focusId) ?? focusSection?.body ?? '';
-    if (thread.locusText !== live) {
-      const located = locateUniquePassage(live, thread.locusText);
-      if (!located) {
-        setEditorialFailure('This conversation’s passage is no longer uniquely present here. Nothing was changed.');
-        return false;
-      }
+    const returnBinding = resolveEditorialReturnBinding(thread, live);
+    if (!returnBinding) {
+      setEditorialFailure('This conversation’s original or actively applied passage is no longer uniquely present here. Nothing was changed.');
+      return false;
+    }
+    if (returnBinding.text !== live || returnBinding.source === 'active_application') {
       setSelectedPassage({
         draftSectionId: focusId,
-        start: located.start,
-        end: located.end,
-        text: thread.locusText,
+        start: returnBinding.start,
+        end: returnBinding.end,
+        text: returnBinding.text,
         revisionNumber: writingRef.current?.currentRevisionId() ?? context?.version ?? 0,
       });
     }
 
+    // An editor-local tag protects presentation of an explicitly bound thread.
+    // It is NOT server proof that this transcript belongs to LivingWork.id.
+    setEditorialLivingWorkId(work.id);
+    const previous = editorialThreadRef.current;
+    const previousApp = previous?.application;
+    if (previous && previous.threadId !== thread.threadId
+      && previous.targetSectionId === thread.targetSectionId
+      && previousApp && !previousApp.undone && previousApp.canUndo) {
+      setHeldApplicationThread(previous);
+    } else if (thread.application && !thread.application.undone) {
+      setHeldApplicationThread(null);
+    }
     setEditorialThread(thread);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(
+        null,
+        '',
+        canvasWithEditorialThread(
+          window.location.pathname,
+          window.location.search,
+          thread.threadId,
+        ),
+      );
+    }
     setSuggestedVersionId(thread.headVersionId);
     setAppliedVersionId(thread.application && !thread.application.undone ? thread.application.versionId : null);
     setRelationshipChoices([]);
+    setConversationChoices([]);
     setEditorialFailure(null);
     return true;
-  }, [focusId, focusSection, context?.version]);
+  }, [focusId, focusSection, context?.version, context?.manuscriptId, work?.id,
+    workContext.kind, workGestureEpoch]);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!requestedEditorialThread || !focusId) return;
-    if (editorialThread?.threadId === requestedEditorialThread) return;
+    const candidate = editorialReturnCandidate;
+    if (!candidate || !focusId || candidate.sectionId !== focusId
+      || candidate.scope !== currentLivingWorkScope
+      || scopedA2Relationship?.id !== candidate.relationshipId
+      || workReentryRequired.current
+      || scopedEditorialThread?.threadId === candidate.threadId
+      // Already held beside a newer conversation: re-binding it would hide
+      // MAIA's latest answer (production walk, 2026-11-05).
+      || heldApplicationThread?.threadId === candidate.threadId) return;
 
-    void readBoundEditorialThread(requestedEditorialThread, focusId).then((out) => {
-      if (cancelled) return;
-      if (!out.ok || !bindEditorialThread(out.thread)) {
-        setEditorialFailure('The revision conversation named by this link could not be resumed at this place. Nothing was changed.');
+    const scopeAtRead = currentLivingWorkScope;
+    const generationAtRead = a2AsyncGenerationRef.current;
+    let cancelled = false;
+    void readBoundEditorialThread(
+      candidate.threadId,
+      candidate.sectionId,
+      candidate.relationshipId,
+    ).then((out) => {
+      if (cancelled
+        || activeA2ScopeRef.current !== scopeAtRead
+        || a2AsyncGenerationRef.current !== generationAtRead
+        || a2RelationshipIdRef.current !== candidate.relationshipId
+        || workReentryRequired.current) return;
+      setEditorialReturnCandidate(null);
+      if (!out.ok) {
+        if (out.reason !== 'locus_mismatch') {
+          setEditorialFailure('The Studio found saved revision history for this Work but could not verify it for the returned section. Nothing was opened or changed.');
+        }
         return;
       }
-      setWorkspaceOpen(true);
+      // Return exists to keep an applied edit undoable (f0b2a6001). Without
+      // one, reopening the place must not reopen the old conversation.
+      const app = out.thread.application;
+      if (!app || app.undone || !app.canUndo) return;
+      bindEditorialThread(out.thread);
     });
 
     return () => { cancelled = true; };
-  }, [requestedEditorialThread, focusId, editorialThread?.threadId, bindEditorialThread]);
+  }, [
+    bindEditorialThread,
+    currentLivingWorkScope,
+    editorialReturnCandidate,
+    focusId,
+    scopedA2Relationship?.id,
+    scopedEditorialThread?.threadId,
+    heldApplicationThread?.threadId,
+  ]);
 
-  const chooseRelationship = useCallback(async (threadId: string) => {
-    if (!focusId || editorialBusy) return;
-    const out = await readBoundEditorialThread(threadId, focusId);
-    if (!out.ok || !bindEditorialThread(out.thread)) {
-      setEditorialFailure('The saved revision conversation could not be safely resumed.');
+  useEffect(() => {
+    if (!requestedEditorialThread || !focusId || !currentLivingWorkScope) return;
+    // The legacy editorial thread is bound to a manuscript, not a LivingWork.
+    // A URL may name valid history but cannot authorize its relational context
+    // in this Work. Hold until the backend can attest that exact relation.
+    // Once a verified conversation is bound the URL's thread no longer decides
+    // anything: withdraw this notice rather than let it sit over MAIA's reply.
+    // (The address can also lag a bind, so a mismatch then is not a refusal.)
+    // Nor is a thread the live address has already dropped: leaving one
+    // conversation must not flag the next passage as unverified.
+    if (scopedEditorialThread || !addressStillNames(requestedEditorialThread)) {
+      setEditorialFailure((current) => current === UNVERIFIED_URL_THREAD ? null : current);
+      return;
     }
-  }, [focusId, editorialBusy, bindEditorialThread]);
+    setEditorialFailure(UNVERIFIED_URL_THREAD);
+  }, [requestedEditorialThread, focusId, currentLivingWorkScope, scopedEditorialThread?.threadId]);
 
-  const startNewEditorial = useCallback(async (): Promise<RebuildEditorialThread | null> => {
-    if (!focusId || !context) return null;
-    if (!(await settleWriting())) return null;
-    const posture = await readCurrentSanctuaryPosture();
+  const chooseConversation = useCallback((threadId: string) => {
+    const chosen = conversationChoices.find((t) => t.threadId === threadId);
+    if (!chosen || !choiceResolverRef.current) return;
+    choiceResolverRef.current({ kind: 'thread', thread: chosen });
+  }, [conversationChoices]);
+  const startNewFromChoice = useCallback(() => {
+    choiceResolverRef.current?.({ kind: 'new' });
+  }, []);
+
+  const chooseRelationship = useCallback((_threadId: string) => {
+    // Even explicit selection of an older manuscript thread is not an
+    // independently verified LivingWork-specific grant. Do not interpret a
+    // matching paragraph or current A2 relationship as thread ownership.
+    setEditorialFailure('This manuscript conversation cannot be resumed here until its Living Work context is independently verified. No saved history was changed.');
+  }, []);
+
+  const startNewEditorial = useCallback(async (stillCurrent: () => boolean): Promise<RebuildEditorialThread | null> => {
+    if (!focusId || !context || !work || workContext.kind !== 'work'
+      || workReentryRequired.current || !currentWorkGesture() || !stillCurrent()) return null;
+    if (!scopedA2Relationship) {
+      setEditorialFailure('We haven’t started on this Work together yet. Start with me, and I’ll pick this up. I haven’t sent anything.');
+      return null;
+    }
+    if (!(await settleWriting()) || !currentWorkGesture() || !stillCurrent()) return null;
+    const posture = readCurrentSanctuaryPosture();
+    if (!stillCurrent() || !posture.resolved || posture.sanctuary) return null;
     const passage = selectedPassage?.draftSectionId === focusId ? selectedPassage : null;
     const revision = writingRef.current?.currentRevisionId() ?? context.version;
     const opened = passage
-      ? await openBoundEditorialPassage(focusId, { start: passage.start, end: passage.end }, revision, posture)
-      : await openBoundEditorialThread(focusId, posture);
+      ? await openBoundEditorialPassage(focusId, { start: passage.start, end: passage.end }, revision, posture, scopedA2Relationship.id)
+      : await openBoundEditorialThread(focusId, posture, scopedA2Relationship.id);
 
+    const postureAfterOpen = readCurrentSanctuaryPosture();
+    if (!stillCurrent() || !postureAfterOpen.resolved || postureAfterOpen.sanctuary) return null;
     if (!opened.ok) {
       setEditorialFailure(opened.reason === 'sanctuary_unavailable'
         ? 'Editorial revision is unavailable in Sanctuary. Nothing was changed.'
+        : opened.reason === 'relationship_required' || opened.reason === 'origin_unavailable'
+          ? 'Choose and confirm the current MAIA relationship for this Living Work before opening a revision conversation. Nothing was written.'
         : 'The revision relationship could not be opened just now. Nothing was changed.');
       return null;
     }
 
     return bindEditorialThread(opened.thread) ? opened.thread : null;
-  }, [focusId, context, selectedPassage, settleWriting, bindEditorialThread]);
+  }, [focusId, context, work, workContext.kind, selectedPassage, settleWriting,
+    bindEditorialThread, scopedA2Relationship, workGestureEpoch]);
 
-  const resolveEditorialForAct = useCallback(async (): Promise<RebuildEditorialThread | null> => {
-    if (!focusId || !focusSection) return null;
+  const resolveEditorialForAct = useCallback(async (stillCurrent: () => boolean): Promise<RebuildEditorialThread | null> => {
+    if (!focusId || !focusSection || !work || workContext.kind !== 'work'
+      || workReentryRequired.current || !currentWorkGesture() || !stillCurrent()) return null;
     const desired = selectedPassage?.draftSectionId === focusId ? selectedPassage.text : focusSection.body;
 
-    if (editorialThread?.targetSectionId === focusId && editorialThread.locusText === desired) {
-      return editorialThread;
+    // The writer asked for a new conversation here: do not resume one.
+    if (freshConversationRef.current === JSON.stringify([focusId, desired])) {
+      freshConversationRef.current = null;
+      return startNewEditorial(stillCurrent);
     }
 
+    if (scopedEditorialThread?.targetSectionId === focusId
+      && scopedEditorialThread.locusText === desired) {
+      return scopedEditorialThread;
+    }
+    if (editorialThread && !scopedEditorialThread) return null;
+
     const found = await discoverEditorialRelationships(focusId);
+    if (!stillCurrent()) return null;
     if (!found.ok) {
       setEditorialFailure('The Studio could not check your existing revision conversations just now.');
       return null;
     }
 
     const matching = found.relationships.filter((relationship) => relationship.locusText === desired);
-    if (matching.length === 0) return startNewEditorial();
-    if (matching.length === 1) {
-      const out = await readBoundEditorialThread(matching[0]!.threadId, focusId);
-      if (out.ok && bindEditorialThread(out.thread)) return out.thread;
-      setEditorialFailure('The saved revision conversation could not be safely resumed.');
-      return null;
+    setRelationshipChoices([]);
+    setConversationChoices([]);
+    if (matching.length === 0) return startNewEditorial(stillCurrent);
+
+    // Discovery is manuscript-global and carries no Living Work provenance, so
+    // a match is never resumed on its own say-so. The server's origin record
+    // decides: a thread opened under THIS Work's relationship verifies and is
+    // resumed; an older manuscript-global thread does not.
+    if (scopedA2Relationship) {
+      /* Founder ruling 2026-11-05 (chooser): several conversations on one passage are
+         lawful and THE WRITER DECIDES which to continue (relationships.ts: auto-picking
+         "most recent" is itself a defect). Verify every one that belongs to this Work;
+         one → continue it; several → ask, latest first, nothing chosen for the writer. */
+      const verified: RebuildEditorialThread[] = [];
+      for (const candidate of matching) {
+        const out = await readBoundEditorialThread(candidate.threadId, focusId, scopedA2Relationship.id);
+        if (!stillCurrent()) return null;
+        if (out.ok) verified.push(out.thread);
+      }
+      if (verified.length === 1) {
+        return bindEditorialThread(verified[0]!) ? verified[0]! : null;
+      }
+      if (verified.length > 1) {
+        const byLatest = (t: RebuildEditorialThread) => t.turns.at(-1)?.at ?? '';
+        cancelConversationChoice();
+        setConversationChoices([...verified].sort((x, y) => byLatest(y).localeCompare(byLatest(x))));
+        const answer = await new Promise<ConversationAnswer>((resolve) => { choiceResolverRef.current = resolve; });
+        choiceResolverRef.current = null;
+        setConversationChoices([]);
+        if (answer.kind === 'cancel' || !stillCurrent()) return null;
+        if (answer.kind === 'new') return startNewEditorial(stillCurrent);
+        return bindEditorialThread(answer.thread) ? answer.thread : null;
+      }
     }
 
-    setRelationshipChoices(matching);
-    setEditorialFailure(null);
-    return null;
-  }, [focusId, focusSection, selectedPassage, editorialThread, startNewEditorial, bindEditorialThread]);
+    // Founder ruling 2026-11-01: an unverified older conversation must not
+    // block the passage. Open a new conversation in this Living Work beside
+    // it; the older one is neither read, reused nor modified.
+    const opened = await startNewEditorial(stillCurrent);
+    if (opened) {
+      setEditorialNotice('An earlier conversation about this passage exists from before this Work had its own MAIA context. It was left untouched; this is a new conversation.');
+    }
+    return opened;
+  }, [focusId, focusSection, selectedPassage, editorialThread, scopedEditorialThread,
+    scopedA2Relationship, work?.id, workContext.kind, startNewEditorial, bindEditorialThread,
+    workGestureEpoch]);
 
   const openCarryChooser = useCallback(() => {
-    if (!workspaceOpen || !a2Relationship || !editorialThread || editorialBusy) return;
+    if (!workspaceOpen || !scopedA2Relationship || !scopedEditorialThread
+      || editorialBusy || workReentryRequired.current || !currentWorkGesture()) return;
     const posture = readCurrentSanctuaryPosture();
     if (!posture.resolved || posture.sanctuary) {
       setCarryPostureAvailable(false);
@@ -693,13 +1445,16 @@ export default function FlagshipWriteEditController() {
       setCarryChooser({ kind: 'closed' });
       return;
     }
-    const relationshipId = a2Relationship.id;
-    const receiverThreadId = editorialThread.threadId;
+    const relationshipId = scopedA2Relationship.id;
+    const receiverThreadId = scopedEditorialThread.threadId;
+    const scopeAtRequest = editorialActScopeRef.current;
     const generation = ++carryChooserGen.current;
     setCarryChooser({ kind: 'loading', relationshipId, receiverThreadId, generation });
     void readEligibleCarrySources(relationshipId, receiverThreadId).then((out) => {
       if (
         generation !== carryChooserGen.current
+        || workReentryRequired.current
+        || editorialActScopeRef.current !== scopeAtRequest
         || a2RelationshipIdRef.current !== relationshipId
         || editorialThreadIdRef.current !== receiverThreadId
       ) return;
@@ -709,7 +1464,8 @@ export default function FlagshipWriteEditController() {
       }
       setCarryChooser({ kind: 'ready', relationshipId, receiverThreadId, generation, sources: out.sources });
     });
-  }, [workspaceOpen, a2Relationship, editorialThread, editorialBusy]);
+  }, [workspaceOpen, scopedA2Relationship, scopedEditorialThread, editorialBusy,
+    workGestureEpoch]);
 
   const closeCarryChooser = useCallback(() => {
     carryChooserGen.current += 1;
@@ -717,9 +1473,10 @@ export default function FlagshipWriteEditController() {
   }, []);
 
   const selectCarrySource = useCallback((source: EligibleCarrySource) => {
-    if (carryChooser.kind !== 'ready') return;
-    const relationshipId = a2Relationship?.id ?? null;
-    const receiverThreadId = editorialThread?.threadId ?? null;
+    if (carryChooser.kind !== 'ready' || workReentryRequired.current
+      || !currentWorkGesture()) return;
+    const relationshipId = scopedA2Relationship?.id ?? null;
+    const receiverThreadId = scopedEditorialThread?.threadId ?? null;
     if (
       !relationshipId
       || !receiverThreadId
@@ -730,27 +1487,109 @@ export default function FlagshipWriteEditController() {
     setSelectedCarrySource({ ...source, relationshipId, receiverThreadId });
     carryChooserGen.current += 1;
     setCarryChooser({ kind: 'closed' });
-  }, [carryChooser, a2Relationship?.id, editorialThread?.threadId]);
+  }, [carryChooser, scopedA2Relationship?.id, scopedEditorialThread?.threadId,
+    workGestureEpoch]);
 
   const removeCarrySource = useCallback(() => setSelectedCarrySource(null), []);
 
   const sendEditorial = useCallback(async (
     requestText?: string,
-    options?: { proposalPolicy?: ProposalPolicy },
+    options?: { proposalPolicy?: ProposalPolicy; proposalRequested?: boolean; displayText?: string; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageAct; origin?: ArrivalOriginRef },
   ) => {
+    // displayText belongs to the local author-facing Craft presentation only.
+    // It is neither a persistable author-turn field nor server authority.
     const text = (requestText ?? editorialDraft).trim();
-    if (!focusId || !text || editorialBusy) return;
+    if (!text || editorialBusy) return;
+    if (!focusId || !context || !work || !currentWorkGesture()) {
+      // A refusal the writer cannot see reads as a dead button.
+      setEditorialFailure('I can’t see this passage just now. Select it again, or reopen the Work, and ask me again. I haven’t sent anything, and your writing is untouched.');
+      return;
+    }
+    // A current or formerly current A2 that failed a fresh check is not an
+    // invitation to silently fall through to manuscript-global legacy send.
+    if (currentLivingWorkScope && (
+      a2SuspendedScopeRef.current === currentLivingWorkScope
+      || a2PendingGestureRef.current?.scope === currentLivingWorkScope
+    )) {
+      setEditorialFailure('The MAIA relationship is not available for current use or is being checked. Confirm a relationship for this Work before sending; your writing remains here.');
+      return;
+    }
+    // A manuscript may remain the same while the Living Work changes. Never
+    // launch a new request with an earlier Work's MAIA thread or context.
+    if (workReentryRequired.current || (editorialThread && !scopedEditorialThread)) {
+      setEditorialFailure('This is a different Living Work. The earlier MAIA conversation is not shared automatically. Reenter through an authorized Work relationship.');
+      return;
+    }
+
+    // The writing queue is fresher than the parent context during a pending
+    // save. A context-only scope can wrongly treat an older MAIA response as
+    // current after the writer changes the Source without a context reload.
+    const writingAtGesture = writingRef.current;
+    const bodyAtGesture = writingAtGesture?.bodyOf(focusId);
+    const revisionAtGesture = writingAtGesture?.currentRevisionId();
+    const unsettled = (writing: SectionWriting) => writing.hasUnsavedWork()
+      || ['dirty', 'saving', 'conflict', 'error'].includes(writing.statusOf(focusId));
+    if (!writingAtGesture || typeof bodyAtGesture !== 'string'
+      || !Number.isSafeInteger(revisionAtGesture) || Number(revisionAtGesture) < 0
+      || unsettled(writingAtGesture)) {
+      setEditorialFailure('Finish or reconcile your current manuscript writing before MAIA reads this passage. No editorial request was sent.');
+      return;
+    }
+    const heldAtGesture = selectedPassage?.draftSectionId === focusId ? selectedPassage : null;
+    if (heldAtGesture
+      && (heldAtGesture.revisionNumber !== revisionAtGesture
+        || Array.from(bodyAtGesture).slice(heldAtGesture.start, heldAtGesture.end).join('') !== heldAtGesture.text)) {
+      setEditorialFailure('The selected manuscript words or revision changed. Select the current passage before requesting MAIA.');
+      return;
+    }
+    const scopeAtGesture = editorialActScopeRef.current;
+    const generation = ++editorialActGenerationRef.current;
+    // The manuscript may move inside the write queue without a React context
+    // rerender. That invalidates this reply, but the SAME author request must
+    // still retire its own busy indicator. A different Work/new request must not.
+    const sameVisibleRequest = () => editorialActScopeRef.current === scopeAtGesture
+      && editorialActGenerationRef.current === generation;
+    const stillCurrent = () => sameVisibleRequest()
+      && currentWorkGesture()
+      && !(currentLivingWorkScope && (
+        a2SuspendedScopeRef.current === currentLivingWorkScope
+        || a2PendingGestureRef.current?.scope === currentLivingWorkScope
+      ))
+      && writingRef.current !== null
+      && writingRef.current.bodyOf(focusId) === bodyAtGesture
+      && writingRef.current.currentRevisionId() === revisionAtGesture
+      && !unsettled(writingRef.current);
 
     setEditorialBusy(true);
+    setPendingEditorialText(text);
     setEditorialFailure(null);
     setAdoptionOutcome(null);
+    // An Undo note is news only until the writer speaks again.
+    setUndoMessage(null);
     setVoiceNotice(null);
 
     try {
-      const thread = await resolveEditorialForAct();
-      if (!thread) return;
-      const posture = await readCurrentSanctuaryPosture();
-      const exactWords = text + '\n\n' + editorialDirective(editorialDepth);
+      const thread = await resolveEditorialForAct(stillCurrent);
+      if (!thread || !stillCurrent()) return;
+      const desired = selectedPassage?.draftSectionId === focusId
+        ? selectedPassage.text : focusSection?.body ?? '';
+      if (thread.workId !== context.manuscriptId
+        || thread.targetSectionId !== focusId || thread.locusText !== desired) {
+        setEditorialFailure('I couldn’t match our conversation to this exact Work and passage, so I haven’t sent anything. Select the passage again and I’ll pick it up.');
+        return;
+      }
+      const posture = readCurrentSanctuaryPosture();
+      if (!stillCurrent() || !posture.resolved || posture.sanctuary) {
+        if (stillCurrent()) setEditorialFailure('Sanctuary is on, or you haven’t chosen how I should hold this yet, so I haven’t sent anything. Your passage is unchanged.');
+        return;
+      }
+      // The current writer act MUST contain ONLY the authored text. Any
+      // register, pedagogy or model policy is server-owned and never stored as
+      // another sentence apparently spoken by the author in ask_turns.
+      const exactWords = text;
+      // An explicit "suggest an edit" gesture travels as structured proposal
+      // scope (mayProposeImmediately below), never as appended author wording.
+      const proposalRequested = options?.proposalRequested === true;
       const carry = selectedCarrySource
         && a2Relationship
         && selectedCarrySource.relationshipId === a2Relationship.id
@@ -771,15 +1610,34 @@ export default function FlagshipWriteEditController() {
         {
           latitude: editLatitude,
           mayRemoveParagraphs,
-          mayProposeImmediately,
+          mayProposeImmediately: mayProposeImmediately || proposalRequested,
         },
         {
-          ...(options ?? {}),
+          // Keep display-safe writer wording out of the orchestration/API
+          // options. The client has no durable display-text custody contract.
+          ...(options?.proposalPolicy ? { proposalPolicy: options.proposalPolicy } : {}),
+          responseDepth: editorialDepth,
+          ...(options?.teachingAnchor ? { teachingAnchor: options.teachingAnchor } : {}),
+          ...(options?.turnShape ? { turnShape: options.turnShape } : {}),
+          ...(options?.passageAct ? { passageAct: options.passageAct } : {}),
+          ...(options?.origin ? { origin: options.origin } : {}),
           ...(a2Relationship ? { relationshipId: a2Relationship.id } : {}),
           ...(carry ? { carry } : {}),
         },
       );
 
+      // A slow provider may complete after sign-out, focus change, Work switch,
+      // privacy withdrawal, or a live writing-queue edit without context reload.
+      // Never publish an obsolete reply as guidance on the current Source.
+      if (!stillCurrent()) {
+        if (sameVisibleRequest()) setEditorialFailure('MAIA’s earlier reply was withheld because the current Work, relationship, passage or writing could not be reconfirmed. No change was applied.');
+        return;
+      }
+      const currentPosture = readCurrentSanctuaryPosture();
+      if (!currentPosture.resolved || currentPosture.sanctuary) {
+        setEditorialFailure('The session privacy posture changed during MAIA’s response. The old response was not shown.');
+        return;
+      }
       if (!outcome.ok) {
         if (outcome.reason === 'scope_refused') {
           if (outcome.scope?.wholeParagraphsRemoved) {
@@ -790,7 +1648,7 @@ export default function FlagshipWriteEditController() {
             const current = LATITUDE_BANDS[editLatitude].label;
             const needed = LATITUDE_BANDS[outcome.scope.wouldPassAtLatitude].label;
             setEditorialFailure(
-              `This revision goes beyond your current “${current}” latitude. It would fit at “${needed}.” Nothing was changed. You can change Revision latitude in Preferences, then choose Revise from this again.`,
+              `This revision goes beyond your current “${current}” latitude. It would fit at “${needed}.” Nothing was changed. You can change Revision latitude in Preferences, then choose Show revision options again.`,
             );
           } else {
             setEditorialFailure(outcome.voice?.note
@@ -799,24 +1657,49 @@ export default function FlagshipWriteEditController() {
           }
         } else if (outcome.reason === 'sanctuary_unavailable') {
           setEditorialFailure('Editorial revision is unavailable in Sanctuary. Nothing was changed.');
+        } else if (outcome.reason === 'accountability_unresolved') {
+          setEditorialFailure('MAIA may have received the passage, but Soullab could not confirm the disclosure record. The response was withheld. Nothing was applied, and this request will not be retried automatically.');
+        } else if (outcome.detail === 'quote_not_in_text') {
+          // A CODE from the server, never prose: the copy below is this client's own.
+          // On a questions-only Work the stopped quote is wording MAIA should not have offered: say why, kindly.
+          setEditorialFailure(work?.maiaRevisionsPaused === true ? QUOTE_HELD_FOR_QUESTIONS_ONLY_DETAIL : QUOTE_NOT_IN_TEXT_DETAIL);
         } else {
-          setEditorialFailure(outcome.detail
-            ?? 'MAIA could not complete that editorial turn. Nothing was changed.');
+          // Server detail is for developers, never the writer (design pass 2026-11-05: a raw
+          // "unknown field(s) … carry no standing here" reached the screen).
+          if (outcome.detail) console.warn('[editorial/turn] refused:', outcome.detail);
+          setEditorialFailure('MAIA couldn’t answer that just now. Nothing was changed. Please try again.');
         }
         return;
       }
 
+      if (!mayPublishEditorialResponse({
+        scope: scopeAtGesture, generation, threadId: thread.threadId,
+        workId: context.manuscriptId, sectionId: focusId,
+      }, {
+        scope: editorialActScopeRef.current,
+        generation: editorialActGenerationRef.current,
+        posture: currentPosture,
+      }, outcome.thread)) {
+        setEditorialFailure('An earlier MAIA response no longer belongs to the active Work and passage. It was not shown.');
+        return;
+      }
       setEditorialThread(outcome.thread);
       setVoiceNotice(outcome.voice?.note ?? null);
       if (outcome.producedVersionId) setSuggestedVersionId(outcome.producedVersionId);
       if (!requestText) setEditorialDraft('');
     } finally {
-      setEditorialBusy(false);
+      if (sameVisibleRequest()) setEditorialBusy(false);
     }
   }, [
     focusId,
+    context,
+    work,
+    focusSection,
+    selectedPassage,
     editorialDraft,
     editorialBusy,
+    scopedEditorialThread,
+    editorialThread,
     resolveEditorialForAct,
     editorialDepth,
     editLatitude,
@@ -824,33 +1707,172 @@ export default function FlagshipWriteEditController() {
     mayProposeImmediately,
     a2Relationship,
     selectedCarrySource,
+    workGestureEpoch,
   ]);
 
-  const refreshContext = useCallback(async (): Promise<ContextReady | null> => {
+
+  /**
+   * R2 "MAIA opens" (O1(a)). Fired ONLY by the writer's deliberate gesture (entering the
+   * conversation room on a passage), never by selection or mount. Resolves the thread the
+   * way `sendEditorial` does, and asks MAIA to speak first ONLY when the thread has no
+   * turns. One opening per thread: a ref remembers every thread already opened here.
+   */
+  const openedThreadsRef = useRef<Set<string>>(new Set());
+  const openingInFlightRef = useRef(false);
+  const [openingFailure, setOpeningFailure] = useState<string | null>(null);
+  /** Resolves true once a request was sent (its outcome is then on screen), false when the
+   *  opening was not attempted, so the conversation never claims MAIA is reading when nothing
+   *  was sent. */
+  const openWithMaia = useCallback(async (): Promise<boolean> => {
+    const notOpened = (why: string) => {
+      if (process.env.NODE_ENV !== 'production') console.info('[ws-opening] not opened:', why);
+      return false;
+    };
+    if (openingInFlightRef.current || editorialBusy) return notOpened('busy');
+    if (!focusId || !context || !work || !currentWorkGesture() || !scopedA2Relationship) return notOpened('no work or relationship');
+    if (workReentryRequired.current || (editorialThread && !scopedEditorialThread)) return notOpened('thread out of scope');
+    const writing = writingRef.current;
+    const body = writing?.bodyOf(focusId);
+    const revision = writing?.currentRevisionId();
+    if (!writing || typeof body !== 'string' || !Number.isSafeInteger(revision)
+      || writing.hasUnsavedWork()
+      || ['dirty', 'saving', 'conflict', 'error'].includes(writing.statusOf(focusId))) return notOpened('writing not saved');
+    const posture0 = readCurrentSanctuaryPosture();
+    if (!posture0.resolved || posture0.sanctuary) return notOpened('posture');
+
+    const scopeAtGesture = editorialActScopeRef.current;
+    const generation = ++editorialActGenerationRef.current;
+    const sameVisibleRequest = () => editorialActScopeRef.current === scopeAtGesture
+      && editorialActGenerationRef.current === generation;
+    const stillCurrent = () => sameVisibleRequest()
+      && currentWorkGesture()
+      && writingRef.current !== null
+      && writingRef.current.bodyOf(focusId) === body
+      && writingRef.current.currentRevisionId() === revision
+      && !writingRef.current.hasUnsavedWork();
+
+    openingInFlightRef.current = true;
+    setEditorialBusy(true);
+    setOpeningFailure(null);
+    setEditorialFailure(null);
+    try {
+      const thread = await resolveEditorialForAct(stillCurrent);
+      if (!thread || !stillCurrent()) return notOpened('no thread');
+      const desired = selectedPassage?.draftSectionId === focusId
+        ? selectedPassage.text : focusSection?.body ?? '';
+      if (thread.workId !== context.manuscriptId
+        || thread.targetSectionId !== focusId || thread.locusText !== desired) return notOpened('thread is for another passage');
+      // A conversation that already has turns is resumed, never opened a second time.
+      if (thread.turns.length !== 0 || openedThreadsRef.current.has(thread.threadId)) return notOpened('thread already has turns');
+      const posture = readCurrentSanctuaryPosture();
+      if (!stillCurrent() || !posture.resolved || posture.sanctuary) return notOpened('changed before sending');
+      openedThreadsRef.current.add(thread.threadId);
+      const outcome = await openEditorialConversation(
+        thread.threadId, focusId, posture, scopedA2Relationship.id,
+        { scope: { latitude: editLatitude, mayRemoveParagraphs }, responseDepth: editorialDepth },
+      );
+      if (!stillCurrent()) return true;
+      const after = readCurrentSanctuaryPosture();
+      if (!after.resolved || after.sanctuary) return true;
+      if (!outcome.ok) {
+        setOpeningFailure(outcome.reason === 'sanctuary_unavailable'
+          ? 'Sanctuary is on, so I didn’t start this conversation. I haven’t sent anything.'
+          : outcome.reason === 'accountability_unresolved'
+            ? 'MAIA may have received the passage, but Soullab could not confirm the record, so her words were withheld.'
+            : 'MAIA couldn’t start this conversation just now. Nothing was changed.');
+        // Allow an explicit Try again for a failure that wrote nothing.
+        if (outcome.reason !== 'accountability_unresolved') openedThreadsRef.current.delete(thread.threadId);
+        return true;
+      }
+      if (!mayPublishEditorialResponse({
+        scope: scopeAtGesture, generation, threadId: thread.threadId,
+        workId: context.manuscriptId, sectionId: focusId,
+      }, {
+        scope: editorialActScopeRef.current,
+        generation: editorialActGenerationRef.current,
+        posture: after,
+      }, outcome.thread)) return true;
+      setEditorialThread(outcome.thread);
+      return true;
+    } finally {
+      openingInFlightRef.current = false;
+      if (sameVisibleRequest()) setEditorialBusy(false);
+    }
+  }, [focusId, context, work, focusSection, selectedPassage, editorialBusy, editorialThread,
+    scopedEditorialThread, scopedA2Relationship, resolveEditorialForAct, editLatitude,
+    mayRemoveParagraphs, editorialDepth, workGestureEpoch]);
+
+  // An explicit author STOP immediately retires this browser's current
+  // editorial response generation. Existing HTTP work may already have
+  // reached the server, but may not be presented against the current Work
+  // after the stop. It never grants a new thread or changes writing.
+  const stopEditorialForAuthor = useCallback(() => {
+    editorialActGenerationRef.current += 1;
+    setEditorialBusy(false);
+    setSuggestedVersionId(null);
+    // This is a member-chosen boundary, not an editorial service failure.
+    // The companion shows the precise no-remote-cancellation limitation.
+    setEditorialFailure(null);
+  }, []);
+
+  const refreshContext = useCallback(async (publish = true): Promise<ContextReady | null> => {
     if (!context) return null;
+    const manuscriptAtRequest = context.manuscriptId;
+    const scopeAtRequest = editorialActScopeRef.current;
     const response = await apiFetch(
-      '/api/writers-studio/rebuild/context?manuscriptId=' + encodeURIComponent(context.manuscriptId),
+      '/api/writers-studio/rebuild/context?manuscriptId=' + encodeURIComponent(manuscriptAtRequest),
     );
     if (!response.ok) return null;
     const body = await response.json() as ContextPayload;
-    if (body.state !== 'section_aware') return null;
-    setContext(body);
+    if (body.state !== 'section_aware' || body.manuscriptId !== manuscriptAtRequest
+      || editorialActScopeRef.current !== scopeAtRequest) return null;
+    // A delayed old manuscript response never replaces the current Work.
+    // Undo first reconciles its exact clean session before publishing this read.
+    if (publish) setContext(body);
     return body;
   }, [context]);
 
-  const applySuggested = useCallback(async () => {
-    if (!focusId || !editorialThread || !suggestedVersion || adoptionBusy) return;
+  const applyVersionById = useCallback(async (versionId: string) => {
+    if (!focusId || !scopedEditorialThread || !scopedA2Relationship || !versionId || adoptionBusy
+      || workReentryRequired.current || !currentWorkGesture()) return;
+    // Client defense in depth ONLY. The adoption endpoint still needs a
+    // separately authorized server-side current-posture/consent enforcement.
+    const gesturePosture = readCurrentSanctuaryPosture();
+    if (!gesturePosture.resolved || gesturePosture.sanctuary) {
+      setEditorialFailure('Persistent editorial Apply is unavailable in Sanctuary or before Ordinary is chosen. Nothing was submitted for Apply.');
+      return;
+    }
+    const scopeAtGesture = memberSaveScopeRef.current;
     setAdoptionBusy(true);
     setEditorialFailure(null);
     setUndoMessage(null);
 
     try {
       if (!(await settleWriting())) return;
+      // Writing settlement awaits I/O. Never carry an old Ordinary/Work
+      // snapshot across that await into an adoption request.
+      const settledPosture = readCurrentSanctuaryPosture();
+      if (!settledPosture.resolved || settledPosture.sanctuary) {
+        setEditorialFailure('Persistent editorial Apply is unavailable in Sanctuary or before Ordinary is chosen. Nothing was submitted for Apply.');
+        return;
+      }
+      if (memberSaveScopeRef.current !== scopeAtGesture || !currentWorkGesture()) {
+        if (!currentWorkGesture()) return;
+        setEditorialFailure('The active Work or revision changed before Apply. Nothing was submitted for Apply.');
+        return;
+      }
       const result = await adoptBoundEditorialVersion(
-        editorialThread.threadId,
+        scopedEditorialThread.threadId,
         focusId,
-        suggestedVersion.id,
+        versionId,
+        scopedA2Relationship.id,
       );
+      if (memberSaveScopeRef.current !== scopeAtGesture
+        || workReentryRequired.current || !currentWorkGesture()) {
+        // A completed service act does not confer permission to present an old
+        // Work's receipt in a newly selected Living Work.
+        return;
+      }
       if (!result.ok) {
         setEditorialFailure('The Studio could not confirm that revision. Nothing was changed.');
         return;
@@ -858,7 +1880,7 @@ export default function FlagshipWriteEditController() {
 
       setAdoptionOutcome(result.outcome);
       if (result.outcome.kind === 'applied') {
-        setAppliedVersionId(suggestedVersion.id);
+        setAppliedVersionId(versionId);
         const fresh = await refreshContext();
         if (fresh) {
           const section = fresh.sections.find((candidate) => candidate.draftSectionId === focusId);
@@ -868,23 +1890,52 @@ export default function FlagshipWriteEditController() {
         }
       }
 
-      const reread = await readBoundEditorialThread(editorialThread.threadId, focusId);
-      if (reread.ok) setEditorialThread(reread.thread);
+      const reread = await readBoundEditorialThread(scopedEditorialThread.threadId, focusId, scopedA2Relationship.id);
+      if (memberSaveScopeRef.current === scopeAtGesture && !workReentryRequired.current
+        && currentWorkGesture() && reread.ok) setEditorialThread(reread.thread);
     } finally {
       setAdoptionBusy(false);
     }
   }, [
     focusId,
     editorialThread,
-    suggestedVersion,
     adoptionBusy,
+    scopedEditorialThread,
+    scopedA2Relationship,
     settleWriting,
     refreshContext,
+    workGestureEpoch,
   ]);
+  const applySuggested = useCallback(async () => {
+    if (suggestedVersion) await applyVersionById(suggestedVersion.id);
+  }, [suggestedVersion, applyVersionById]);
 
   const undoSuggested = useCallback(async () => {
-    const application = editorialThread?.application;
-    if (!application?.canUndo || adoptionBusy) return;
+    const ownApp = scopedEditorialThread?.application;
+    // The edit may live in the conversation held aside after Use this.
+    const undoThread = ownApp && !ownApp.undone && ownApp.canUndo
+      ? scopedEditorialThread
+      : heldApplicationThread ?? scopedEditorialThread;
+    const application = undoThread?.application;
+    if (!focusId || !application?.canUndo || !scopedA2Relationship || adoptionBusy || workReentryRequired.current
+      || !currentWorkGesture()) return;
+    const scopeAtGesture = memberSaveScopeRef.current;
+    const writingAtGesture = writingRef.current;
+    const observation = writingAtGesture?.observeCleanSection?.(focusId);
+    if (!writingAtGesture || !observation
+      || typeof writingAtGesture.reconcileCleanSection !== 'function') {
+      setUndoMessage('Finish or reconcile your current writing before Undo. Nothing was submitted for Undo.');
+      return;
+    }
+    // This stable callback identifies the mounted queue, including A→B→A
+    // remounts that could otherwise happen to have matching body and revision.
+    const revisionReader = writingAtGesture.currentRevisionId;
+    const sameRequest = () => currentWorkGesture()
+      && memberSaveScopeRef.current === scopeAtGesture
+      && !workReentryRequired.current
+      && writingRef.current?.currentRevisionId === revisionReader;
+    let serverUndone = false;
+    let visibleRestored = false;
 
     setAdoptionBusy(true);
     setUndoMessage(null);
@@ -896,26 +1947,160 @@ export default function FlagshipWriteEditController() {
         body: JSON.stringify({ authorizationId: application.authorizationId }),
       });
       const body = await response.json().catch(() => null);
+      if (!sameRequest()) return;
       if (response.ok && body?.kind === 'undone') {
-        setUndoMessage('That application was undone. The original passage is restored.');
+        serverUndone = true;
+        const fresh = await refreshContext(false);
+        if (!sameRequest()) return;
+        const reconciled = fresh && writingRef.current?.reconcileCleanSection?.({
+          observation,
+          authoritativeRevision: fresh.version,
+          authoritativeSections: fresh.sections.map((section) => ({
+            id: section.draftSectionId, body: section.body, editable: section.editable,
+          })),
+        });
+        if (reconciled && fresh) {
+          visibleRestored = true;
+          setContext(fresh);
+          setSelectedPassage(null);
+          setUndoMessage(UNDO_RESTORED_MESSAGES.complete);
+        } else {
+          setUndoMessage('Undo was saved on the server, but the current writing could not be safely refreshed. Your local writing has been preserved; review it before continuing.');
+        }
         setAppliedVersionId(null);
-        await refreshContext();
       } else {
         setUndoMessage('That application could not be undone just now. Nothing else was changed.');
       }
 
-      if (focusId && editorialThread) {
-        const reread = await readBoundEditorialThread(editorialThread.threadId, focusId);
-        if (reread.ok) setEditorialThread(reread.thread);
+      if (undoThread && undoThread === heldApplicationThread) {
+        // The held conversation's edit is undone; nothing is left to hold.
+        if (serverUndone && sameRequest()) setHeldApplicationThread(null);
+      } else if (scopedEditorialThread) {
+        const reread = await readBoundEditorialThread(scopedEditorialThread.threadId, focusId, scopedA2Relationship.id);
+        if (reread.ok && sameRequest()) setEditorialThread(reread.thread);
       }
+    } catch {
+      if (sameRequest()) setUndoMessage(visibleRestored
+        ? UNDO_RESTORED_MESSAGES.historyPending
+        : serverUndone
+          ? 'Undo was saved on the server, but its current text could not be read. Your local writing has been preserved.'
+          : 'The Studio could not confirm Undo just now. Your current writing has been preserved.');
     } finally {
-      setAdoptionBusy(false);
+      // A same-Work navigation may invalidate publication while this operation
+      // still owns its busy state. The existing Work epoch fences newer Works.
+      if (currentWorkGesture()) setAdoptionBusy(false);
     }
-  }, [editorialThread, adoptionBusy, refreshContext, focusId]);
+  }, [editorialThread, scopedEditorialThread, heldApplicationThread, scopedA2Relationship, adoptionBusy, refreshContext, focusId,
+    workGestureEpoch]);
 
-  const saveMemberRevision = useCallback(async (draft: MemberRevisionDraft): Promise<boolean> => {
-    if (memberVersionBusy || !editorialThread || !focusId) return false;
-    if (draft.threadId !== editorialThread.threadId || draft.sectionId !== focusId) return false;
+  const saveWorkingRevision = useCallback(async (draft: CraftWorkingSaveDraft): Promise<boolean> => {
+    if (memberVersionBusy || !focusId || !context || !work || workContext.kind !== 'work'
+        || !scopedA2Relationship || workReentryRequired.current || !currentWorkGesture()) return false;
+    if (draft.held.draftSectionId !== focusId) return false;
+    const posture = readCurrentSanctuaryPosture();
+    if (!posture.resolved || posture.sanctuary) {
+      setEditorialFailure(posture.resolved
+        ? 'Save is unavailable while Sanctuary is on. Nothing was written.'
+        : 'The current privacy posture could not be confirmed. Nothing was written.');
+      return false;
+    }
+    const scopeAtGesture = memberSaveScopeRef.current;
+    const relationshipId = scopedA2Relationship.id;
+    const fingerprint = JSON.stringify([
+      scopeAtGesture, relationshipId, draft.held.draftSectionId,
+      draft.held.start, draft.held.end, draft.held.revisionNumber,
+      draft.threadId, draft.supersedes, draft.text, draft.kept ?? [],
+    ]);
+    let attempt = workingSaveAttemptRef.current;
+    if (!attempt || attempt.scope !== scopeAtGesture || attempt.fingerprint !== fingerprint) {
+      attempt = { scope: scopeAtGesture, fingerprint, key: globalThis.crypto.randomUUID() };
+      workingSaveAttemptRef.current = attempt;
+    }
+    setMemberVersionBusy(true); setEditorialFailure(null);
+    try {
+      const res = await apiFetch('/api/writers-studio/editorial/save-working', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          idempotencyKey: attempt.key,
+          relationshipId,
+          sectionId: draft.held.draftSectionId,
+          range: { start: draft.held.start, end: draft.held.end },
+          revisionNumber: draft.held.revisionNumber,
+          threadId: draft.threadId,
+          supersedes: draft.supersedes,
+          replacementText: draft.text,
+          sanctuary: posture.sanctuary,
+          kept: draft.kept ?? [],
+        }),
+      });
+      const body = await res.json().catch(() => null);
+      if (memberSaveScopeRef.current !== scopeAtGesture || !currentWorkGesture()
+          || scopedA2Relationship.id !== relationshipId) return false;
+      if (!res.ok) {
+        const reason = typeof body?.error === 'string' ? body.error : 'save_refused';
+        setEditorialFailure(reason === 'settled_choices_not_persisted'
+          ? 'Save cannot yet preserve settled Craft choices separately. Your working text remains here and was not falsely marked saved.'
+          : reason === 'origin_unavailable' || reason === 'relationship_required'
+            ? 'The current Living Work relationship could not be reconfirmed. Nothing was saved.'
+            : 'The working version could not be committed just now. Your text remains here.');
+        return false;
+      }
+      if (typeof body?.threadId !== 'string' || typeof body?.versionId !== 'string'
+          || body?.sectionId !== focusId || body?.supersedes !== draft.supersedes) return false;
+      const readback = await readBoundEditorialThread(body.threadId, focusId, relationshipId);
+      if (!readback.ok || memberSaveScopeRef.current !== scopeAtGesture
+          || !currentWorkGesture() || scopedA2Relationship.id !== relationshipId) return false;
+      const exact = confirmsExactMemberSaveReadback(readback.thread, {
+        threadId: body.threadId,
+        workId: context.manuscriptId,
+        sectionId: focusId,
+        locusText: draft.held.text,
+        versionId: body.versionId,
+        supersedes: draft.supersedes,
+        text: draft.text,
+      });
+      if (!exact) {
+        setEditorialFailure('The server did not read back the exact working version, so Save was not confirmed. Your text remains here.');
+        return false;
+      }
+      setEditorialThread(readback.thread);
+      setEditorialLivingWorkId(work.id);
+      setSuggestedVersionId(body.versionId);
+      setEditorialDraft(draft.text);
+      setAdoptionOutcome(null);
+      setUndoMessage(null);
+      return true;
+    } catch {
+      if (memberSaveScopeRef.current === scopeAtGesture && currentWorkGesture()) {
+        setEditorialFailure('Save could not be confirmed. Your working text remains here; retry will reuse the same save receipt.');
+      }
+      return false;
+    } finally {
+      if (memberSaveScopeRef.current === scopeAtGesture) setMemberVersionBusy(false);
+    }
+  }, [memberVersionBusy, focusId, context, work, workContext.kind, scopedA2Relationship,
+    workGestureEpoch]);
+
+  // Returns the verified new version id, or null. `saveMemberRevision` is the
+  // boolean form the panels already use; "Use this" needs the id to apply it.
+  const saveMemberRevisionForId = useCallback(async (draft: MemberRevisionDraft): Promise<string | null> => {
+    if (memberVersionBusy || !scopedEditorialThread || !scopedA2Relationship || !focusId || !context || !work
+      || workReentryRequired.current || !currentWorkGesture()) return null;
+    if (draft.threadId !== scopedEditorialThread.threadId || draft.sectionId !== focusId
+      || scopedEditorialThread.workId !== context.manuscriptId) {
+      setEditorialFailure('The current Work or revision conversation could not be verified. Your words remain here; nothing was applied.');
+      return null;
+    }
+    // This client-side posture check prevents accidental gestures, but does
+    // NOT repair the older version endpoint's missing server-side posture gate.
+    // Independent Class A review and server enforcement are still required.
+    const atGesture = readCurrentSanctuaryPosture();
+    if (!atGesture.resolved || atGesture.sanctuary) {
+      setEditorialFailure('Persistent editorial Save is unavailable in Sanctuary or before you choose Ordinary. Nothing was saved or applied.');
+      return null;
+    }
+    const scopeAtGesture = memberSaveScopeRef.current;
+    const locusAtGesture = scopedEditorialThread.locusText;
 
     setMemberVersionBusy(true);
     setEditorialFailure(null);
@@ -926,65 +2111,135 @@ export default function FlagshipWriteEditController() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           threadId: draft.threadId,
+          relationshipId: scopedA2Relationship.id,
+          sanctuary: atGesture.sanctuary,
           supersedes: draft.supersedes,
           replacementText: draft.text,
           ...(draft.purpose ? { purpose: draft.purpose } : {}),
         }),
       });
       const body = await response.json().catch(() => null);
-      if (!response.ok || typeof body?.versionId !== 'string') {
+      if (!currentWorkGesture() || workReentryRequired.current) return null;
+      if (!response.ok) {
         setEditorialFailure(response.status === 409
           ? 'This conversation gained another version. Your wording is retained here; nothing was applied.'
-          : 'Your revision could not be saved. Its wording is still held here; nothing was applied.');
-        return false;
+          : 'Your revision could not be confirmed. Your wording is still held here; nothing was applied.');
+        return null;
       }
-
+      // A successful POST acknowledgment is not the readback of the author's
+      // exact version. Never assume a missing or mismatched receipt succeeded.
+      if (typeof body?.versionId !== 'string' || body.supersedes !== draft.supersedes) {
+        setEditorialFailure('The Save acknowledgment could not be verified. Your wording remains here; nothing was applied.');
+        return null;
+      }
+      const reread = await readBoundEditorialThread(draft.threadId, draft.sectionId, scopedA2Relationship.id);
+      if (!reread.ok) {
+        setEditorialFailure('The saved version could not be read back. Your wording remains here; nothing was applied.');
+        return null;
+      }
+      const exact = confirmsExactMemberSaveReadback(reread.thread, {
+        threadId: draft.threadId,
+        workId: context.manuscriptId,
+        sectionId: draft.sectionId,
+        locusText: locusAtGesture,
+        versionId: body.versionId,
+        supersedes: draft.supersedes,
+        text: draft.text,
+      });
+      const stillOrdinary = readCurrentSanctuaryPosture();
+      if (!exact || memberSaveScopeRef.current !== scopeAtGesture
+        || !stillOrdinary.resolved || stillOrdinary.sanctuary
+        || !currentWorkGesture()) {
+        setEditorialFailure('The saved version could not be verified against this Work and session. Your wording remains here; nothing was applied.');
+        return null;
+      }
+      setEditorialThread(reread.thread);
       setSuggestedVersionId(body.versionId);
-      const reread = await readBoundEditorialThread(draft.threadId, draft.sectionId);
-      if (reread.ok) setEditorialThread(reread.thread);
-      return true;
+      return body.versionId as string;
     } catch {
       setEditorialFailure('The save could not be confirmed. Your wording is still held here.');
-      return false;
+      return null;
     } finally {
-      setMemberVersionBusy(false);
+      if (currentWorkGesture()) setMemberVersionBusy(false);
     }
-  }, [memberVersionBusy, editorialThread, focusId]);
+  }, [memberVersionBusy, scopedEditorialThread, scopedA2Relationship, focusId, context, work,
+    workGestureEpoch]);
+  const saveMemberRevision = useCallback(
+    async (draft: MemberRevisionDraft): Promise<boolean> => (await saveMemberRevisionForId(draft)) !== null,
+    [saveMemberRevisionForId],
+  );
+
+  /* Conversation-first Focus step 3 (founder adoption 2026-11-03): "Use this" is one
+     act. It saves MAIA's wording as the writer's own version (the version applied is
+     always the writer's) and applies that exact version, without waiting for a
+     re-render in between. Each half keeps all of its own gates and read-backs. */
+  const useVersionNow = useCallback(async (draft: MemberRevisionDraft): Promise<boolean> => {
+    const savedId = await saveMemberRevisionForId(draft);
+    if (!savedId) return false;
+    await applyVersionById(savedId);
+    return true;
+  }, [saveMemberRevisionForId, applyVersionById]);
   const openWorkspace = useCallback((insight?: { readingId: string; key: string }) => {
+    if (!currentWorkGesture() || workReentryRequired.current) return;
     if (!workspaceOpen) {
       workspaceReturn.current = {
         focusId,
         selectedPassage,
-        thread: editorialThread,
+        thread: scopedEditorialThread,
         versionId: suggestedVersionId,
+        livingWorkScope: currentLivingWorkScope,
       };
     }
     if (insight) setWorkspaceInsight(insight);
     setWorkspaceOpen(true);
-  }, [workspaceOpen, focusId, selectedPassage, editorialThread, suggestedVersionId]);
+  }, [workspaceOpen, focusId, selectedPassage, scopedEditorialThread, suggestedVersionId,
+    currentLivingWorkScope, workGestureEpoch]);
+
+  openWorkspaceRef.current = () => openWorkspace();
 
   const closeWorkspace = useCallback(() => {
-    if (editorialBusy || adoptionBusy || memberVersionBusy) return;
+    const awaitingChoice = conversationChoices.length > 1;
+    if (!currentWorkGesture() || (editorialBusy && !awaitingChoice) || adoptionBusy || memberVersionBusy) return;
+    // Leaving while MAIA asks which conversation cancels that question; nothing is sent.
+    if (awaitingChoice) { cancelConversationChoice(); setConversationChoices([]); }
     setWorkspaceOpen(false);
-  }, [editorialBusy, adoptionBusy, memberVersionBusy]);
+    /* Leaving the room un-names the conversation, or a reload reopens it. */
+    if (typeof window !== 'undefined') {
+      replacePlaceAddress(canvasWithoutEditorialThread(window.location.pathname, window.location.search));
+    }
+    // The guard reads the scope: initial Work discovery sets it without moving
+    // the epoch, so without this dep the first-render closure refused forever.
+  }, [editorialBusy, adoptionBusy, memberVersionBusy, currentLivingWorkScope, workGestureEpoch, conversationChoices.length]);
 
   const returnToStartingPassage = useCallback(() => {
-    if (editorialBusy || adoptionBusy || memberVersionBusy) return;
+    if (!currentWorkGesture() || editorialBusy || adoptionBusy || memberVersionBusy) return;
     const previous = workspaceReturn.current;
+    if (previous?.livingWorkScope !== currentLivingWorkScope
+      || workReentryRequired.current) {
+      workspaceReturn.current = null;
+      setWorkspaceOpen(false);
+    if (typeof window !== 'undefined') {
+      replacePlaceAddress(canvasWithoutEditorialThread(window.location.pathname, window.location.search));
+    }
+      return;
+    }
     if (previous) {
       setFocusId(previous.focusId);
       setSelectedPassage(previous.selectedPassage);
       setEditorialThread(previous.thread);
       setSuggestedVersionId(previous.versionId);
+      // Only return to a history scoped to the very same Living Work.
+      setEditorialLivingWorkId(previous.thread ? work?.id ?? null : null);
       if (previous.focusId && typeof window !== 'undefined') {
         replacePlaceAddress(locationForSection(window.location.pathname, window.location.search, previous.focusId));
       }
     }
     setWorkspaceOpen(false);
-  }, [editorialBusy, adoptionBusy, memberVersionBusy]);
+  }, [editorialBusy, adoptionBusy, memberVersionBusy, currentLivingWorkScope, work?.id,
+    workGestureEpoch]);
 
   const reviseInsightPassage = useCallback((passage: InsightPassage, authorNotes = '') => {
-    if (!context || editorialBusy || adoptionBusy || memberVersionBusy || !passage.verified) return;
+    if (!currentContextGesture() || !context || editorialBusy || adoptionBusy || memberVersionBusy || !passage.verified) return;
     const section = context.sections.find((candidate) => candidate.draftSectionId === passage.sectionId);
     const live = writingRef.current?.bodyOf(passage.sectionId) ?? section?.body;
     if (!section || !section.editable || live !== passage.body) {
@@ -1010,11 +2265,24 @@ export default function FlagshipWriteEditController() {
     memberVersionBusy,
     holdPassage,
     editorialScope,
+    workGestureEpoch,
   ]);
 
   const chooseOwnPassage = useCallback(() => {
+    if (!currentContextGesture()) return;
     setWorkspaceOpen(false);
-  }, []);
+  }, [currentLivingWorkScope, workGestureEpoch]);
+
+  /* The writer sets this passage's conversation aside. It stays saved and
+     untouched; the next act here opens a new one instead of resuming it. */
+  const startFreshConversation = useCallback(() => {
+    if (!currentWorkGesture() || !focusId || !focusSection
+      || editorialBusy || adoptionBusy || memberVersionBusy) return;
+    const desired = selectedPassage?.draftSectionId === focusId ? selectedPassage.text : focusSection.body;
+    freshConversationRef.current = JSON.stringify([focusId, desired]);
+    clearEditorial();
+  }, [focusId, focusSection, selectedPassage, editorialBusy, adoptionBusy, memberVersionBusy,
+    clearEditorial, currentLivingWorkScope, workGestureEpoch]);
 
   useEffect(() => {
     if (!context?.manuscriptId || !incomingReading || !incomingObservation) {
@@ -1042,14 +2310,54 @@ export default function FlagshipWriteEditController() {
 
     /* Orientation may legitimately name a whole section, but automatic editorial
        Focus may not. Only an exact passage range may become the held locus. */
-    if (incomingAction === 'focus' && !passage.range) return;
+    if ((incomingAction === 'focus' || incomingAction === 'try-revision') && !passage.range) return;
 
     const section = context.sections.find((candidate) => candidate.draftSectionId === passage.sectionId);
     if (!section) return;
-    const range = passage.range ?? { start: 0, end: Array.from(passage.body).length };
+    /* Hold the anchored passage (words the observation quotes, found verbatim, in whole paragraphs), not the reader's raw offsets,
+       which drift on long sections (founder walk 2026-11-12: the desk held other words and every edit was refused). */
+    const range = passage.holdRange ?? passage.range ?? { start: 0, end: Array.from(passage.body).length };
     const exact = Array.from(passage.body).slice(range.start, range.end).join('');
+
+    /* A Develop → Write focus handoff is one arrival act. Once the carried
+       evidence has been re-verified against the current draft, hold the exact
+       passage and open Focus in the same turn. Waiting for a later effect to
+       observe the held state created a race where the writer arrived in Write
+       with valid evidence but no editorial room. */
+    if ((incomingAction === 'focus' || incomingAction === 'try-revision') && passage.range) {
+      const key = [
+        incomingAction,
+        arrivalInsight.readingId,
+        arrivalInsight.observation.key,
+        section.draftSectionId,
+        range.start,
+        range.end,
+      ].join(':');
+      if (focusInsightConsumed.current === key) return;
+      focusInsightConsumed.current = key;
+      holdPassage(section, range.start, range.end, exact);
+      openWorkspace({ readingId: arrivalInsight.readingId, key: arrivalInsight.observation.key });
+      return;
+    }
+
+    /* Holding the passage is also one arrival act. holdPassage sets state and
+       records the return place, which gives this effect new dependencies; without
+       this guard "Show me in the manuscript" re-held the passage on every render,
+       an update loop that also wrote the return place thousands of times. */
+    const showKey = [
+      'show',
+      arrivalInsight.readingId,
+      arrivalInsight.observation.key,
+      section.draftSectionId,
+      range.start,
+      range.end,
+    ].join(':');
+    if (focusInsightConsumed.current === showKey) return;
+    focusInsightConsumed.current = showKey;
     holdPassage(section, range.start, range.end, exact);
-  }, [arrivalInsight, context, requestedSection, incomingAction, holdPassage]);
+    /* Bring the held words into view and mark them. Nothing in the text changes; the mark is a CSS highlight. */
+    revealHeldPassage(section.draftSectionId, exact);
+  }, [arrivalInsight, context, requestedSection, incomingAction, holdPassage, openWorkspace]);
 
   useEffect(() => {
     if (incomingAction !== 'focus' || !arrivalInsight || !selectedPassage || workspaceOpen) return;
@@ -1082,6 +2390,65 @@ export default function FlagshipWriteEditController() {
     openWorkspace,
   ]);
 
+  useEffect(() => {
+    if (
+      incomingAction !== 'try-revision'
+      || !arrivalInsight
+      || !workspaceOpen
+      || !selectedPassage
+      || !focusId
+      || editorialBusy
+      || suggestedVersionId
+    ) return;
+    if (
+      workspaceInsight?.readingId !== arrivalInsight.readingId
+      || workspaceInsight.key !== arrivalInsight.observation.key
+      || selectedPassage.draftSectionId !== focusId
+    ) return;
+
+    const passage = arrivalInsight.passages.find((candidate) =>
+      candidate.sectionId === focusId
+      && candidate.verified
+      && candidate.editable
+      && candidate.range,
+    );
+    if (!passage?.range) return;
+    const exact = Array.from(passage.body).slice(passage.range.start, passage.range.end).join('');
+    if (exact !== selectedPassage.text) return;
+
+    const key = [
+      arrivalInsight.readingId,
+      arrivalInsight.observation.key,
+      focusId,
+      passage.range.start,
+      passage.range.end,
+      exact,
+    ].join(':');
+    if (autoProposalKey.current === key) return;
+    autoProposalKey.current = key;
+
+    void sendEditorial([
+      'Offer one possible revision of this selected passage in response to the developmental observation.',
+      'Preserve my voice, style, subject, imagery, cadence, vocabulary, medicine, and intentional ambiguity.',
+      'Use the smallest sufficient intervention. Do not rewrite merely because smoother wording is possible.',
+      'Do not assume the noticed pattern is a defect or that revision is improvement.',
+      'Consider the strongest case for keeping the original unchanged.',
+      'Treat possible reader effects as hypotheses.',
+      'Make clear what changed, why, and what may be lost.',
+      'Nothing is to be applied automatically.',
+    ].join('\n'), { proposalRequested: true });
+  }, [
+    incomingAction,
+    arrivalInsight,
+    workspaceOpen,
+    workspaceInsight,
+    selectedPassage,
+    focusId,
+    editorialBusy,
+    suggestedVersionId,
+    sendEditorial,
+  ]);
+
 
 
   const makeThisAWork = useCallback(async () => {
@@ -1095,7 +2462,7 @@ export default function FlagshipWriteEditController() {
       const created = await create.json().catch(() => null);
       const workId = typeof created?.work?.id === 'string' ? created.work.id : null;
       if (!create.ok || !workId) {
-        setEditorialFailure('The Work could not be created just now. The manuscript has not changed.');
+        setEditorialFailure(created?.code === FREE_WORK_LIMIT_CODE ? FREE_WORK_LIMIT_MESSAGE : 'The Work could not be created just now. The manuscript has not changed.');
         return;
       }
 
@@ -1112,13 +2479,16 @@ export default function FlagshipWriteEditController() {
       setEditorialFailure('The Work could not be created just now. The manuscript has not changed.');
     }
   }, [context, workContext.kind, reloadWorks]);
-  const onMode = useCallback((mode: 'home' | 'write' | 'develop' | 'review') => {
+  const onMode = useCallback((mode: 'home' | 'write' | 'develop' | 'review' | 'publish' | 'listen') => {
     if (mode === 'home') {
       const query = studioHomeReturnSearch(params?.toString() ?? '');
       router.push(`${pathname}${query ? `?${query}` : ''}`);
       return;
     }
-    const next = new URLSearchParams(params?.toString() ?? '');
+    /* EA walk 2026-11-11: Write records the writer's place with history.replaceState, which the framework's search-param snapshot
+       never sees, so building from `params` dropped `s` and Develop opened on the first section. Read the live address instead. */
+    const live = typeof window !== 'undefined' ? window.location.search : (params?.toString() ?? '');
+    const next = new URLSearchParams(live);
     next.set('mode', mode);
     next.delete('insightReading');
     next.delete('insightObservation');
@@ -1136,17 +2506,74 @@ export default function FlagshipWriteEditController() {
     router.push(`${pathname}${query ? `?${query}` : ''}`);
   }, [params, pathname, router]);
 
+  /* Design 1B: MAIA offered a Develop place and the writer clicked it. This only
+     navigates: Develop → Overview for the same Work, scrolled to the control.
+     Nothing is pressed there. */
+  const onStudioPlace = useCallback((place: StudioPlace) => {
+    router.push(studioPlaceHref(pathname, typeof window !== 'undefined' ? window.location.search : (params?.toString() ?? ''), place));
+  }, [params, pathname, router]);
+
+  /* The writer chose "Show me options" on a place in MAIA's letter. Same room, same arrival act Develop uses: the carried observation
+     is re-verified against the current draft, the exact passage is held, and the passage desk opens. Nothing is proposed or changed
+     except by the writer's acts there. */
+  const onOpenPassIssue = useCallback((target: { sectionId: string; readingId: string; observationKey: string }) => {
+    const next = new URLSearchParams(params?.toString() ?? '');
+    next.set(SECTION_PARAM, target.sectionId);
+    next.set(INSIGHT_READING, target.readingId);
+    next.set(INSIGHT_OBSERVATION, target.observationKey);
+    next.set('insightAction', 'try-revision');
+    const query = next.toString();
+    router.push(`${pathname}${query ? `?${query}` : ''}`);
+  }, [params, pathname, router]);
+
+  /* "Show me where" on a place in MAIA's letter: the same arrival as Develop's "show in the manuscript", without the desk. The carried
+     observation is re-verified against the current draft, its words are held, and they are brought into view and marked. */
+  const onShowPassIssue = (target: { sectionId: string; readingId: string; observationKey: string }) => {
+    focusInsightConsumed.current = null;
+    const next = new URLSearchParams(params?.toString() ?? '');
+    next.set(SECTION_PARAM, target.sectionId);
+    next.set(INSIGHT_READING, target.readingId);
+    next.set(INSIGHT_OBSERVATION, target.observationKey);
+    next.delete('insightAction');
+    const query = next.toString();
+    router.push(`${pathname}${query ? `?${query}` : ''}`);
+  };
+
+  /* "Talk about it" on a place in MAIA's letter (founder direction 2026-11-12): the same arrival as Develop's Focus handoff. The carried
+     observation is re-verified, its passage is held and the passage desk opens in the centre. Unlike "Show me options", nothing is
+     asked of MAIA: she waits for the writer's words. */
+  const onTalkPassIssue = (target: { sectionId: string; readingId: string; observationKey: string }) => {
+    focusInsightConsumed.current = null;
+    const next = new URLSearchParams(params?.toString() ?? '');
+    next.set(SECTION_PARAM, target.sectionId);
+    next.set(INSIGHT_READING, target.readingId);
+    next.set(INSIGHT_OBSERVATION, target.observationKey);
+    next.set('insightAction', 'focus');
+    const query = next.toString();
+    router.push(`${pathname}${query ? `?${query}` : ''}`);
+  };
+
+  if (phase === 'unauthorized') return <StudioSignedOut />;
   if (phase !== 'ready' || !context) {
     return (
       <main className="fs-p4-opening">
         {phase === 'loading' ? 'Opening Writer’s Studio…' : null}
-        {phase === 'unauthorized' ? 'Sign in to open your Writer’s Studio.' : null}
-        {phase === 'error' ? (message ?? 'The Studio could not be opened.') : null}
+        {phase === 'error' && wayInId ? <ContinuousDraftWayIn manuscriptId={wayInId} room="Write" /> : null}
+        {phase === 'error' && !wayInId ? (message ?? 'The Studio could not be opened.') : null}
       </main>
     );
   }
 
   return (
+    <>
+    {keepNoteFor && work ? (
+      <KeepNotePrompt
+        workId={work.id}
+        sectionId={keepNoteFor.sectionId}
+        passageLabel={keepNoteFor.label}
+        onDone={() => setKeepNoteFor(null)}
+      />
+    ) : null}
     <RebuildWritingBoundary
       key={`${context.manuscriptId}:p4r1-pc3`}
       manuscriptId={context.manuscriptId}
@@ -1171,76 +2598,115 @@ export default function FlagshipWriteEditController() {
             onFocusSection={focusWritingSection}
             onHoldPassage={holdPassage}
             onMode={onMode}
-            workspaceOpen={workspaceOpen}
-            carriedInsight={arrivalInsight}
+            onStudioPlace={onStudioPlace}
+            onOpenPassIssue={onOpenPassIssue}
+            onShowPassIssue={onShowPassIssue}
+            onTalkPassIssue={onTalkPassIssue}
+            workspaceOpen={workspaceOpen && !workReentryRequired.current}
+            carriedInsight={workReentryRequired.current ? null : arrivalInsight}
             carriedInsightReturnMode={carriedInsightReturnMode}
             attentionReturnItemId={attentionReturnItemId}
             lineageReturnChapterId={lineageReturnChapterId}
             lineageReturnCandidateId={lineageReturnCandidateId}
-            workspaceInsight={workspaceInsight}
-            editorialThread={editorialThread}
-            relationshipChoices={relationshipChoices}
-            maiaRelationship={a2Relationship}
-            maiaRelationshipChoices={a2RelationshipChoices}
-            maiaRelationshipPhase={a2RelationshipPhase}
-            maiaRelationshipBusy={a2RelationshipBusy}
-            maiaRelationshipMessage={a2RelationshipMessage}
-            carrySourceAvailable={carryPostureAvailable && Boolean(a2Relationship) && Boolean(editorialThread)}
-            carryChooser={carryChooser.kind === 'ready'
-              ? { kind: 'ready', sources: carryChooser.sources }
-              : { kind: carryChooser.kind }}
-            selectedCarrySource={selectedCarrySource}
+            workspaceInsight={workReentryRequired.current ? null : workspaceInsight}
+            editorialThread={scopedEditorialThread}
+            earlierEditorialThread={heldApplicationThread}
+            relationshipChoices={!workReentryRequired.current ? relationshipChoices : []}
+            conversationChoices={!workReentryRequired.current ? conversationChoices : []}
+            onChooseConversation={chooseConversation}
+            onStartNewFromChoice={startNewFromChoice}
+            maiaRelationship={scopedA2Relationship}
+            maiaRelationshipChoices={scopedA2Relationship ? a2RelationshipChoices : []}
+            maiaRelationshipPhase={currentLivingWorkScope
+              && (scopedA2Relationship || a2MessageScopeRef.current === currentLivingWorkScope)
+              ? a2RelationshipPhase : 'idle'}
+            maiaRelationshipBusy={Boolean(currentLivingWorkScope) && a2RelationshipBusy}
+            maiaRelationshipMessage={currentLivingWorkScope
+              && a2MessageScopeRef.current === currentLivingWorkScope
+              ? a2RelationshipMessage : null}
+            carrySourceAvailable={carryPostureAvailable
+              && Boolean(scopedA2Relationship) && Boolean(scopedEditorialThread)}
+            carryChooser={scopedA2Relationship && scopedEditorialThread
+              ? carryChooser.kind === 'ready'
+                ? { kind: 'ready', sources: carryChooser.sources }
+                : { kind: carryChooser.kind }
+              : { kind: 'closed' }}
+            selectedCarrySource={scopedA2Relationship && scopedEditorialThread ? selectedCarrySource : null}
             suggestedVersion={suggestedVersion}
-            appliedVersionId={editorialThread?.application && !editorialThread.application.undone
-              ? editorialThread.application.versionId
-              : appliedVersionId}
-            editorialDraft={editorialDraft}
+            appliedVersionId={scopedEditorialThread?.application
+              && !scopedEditorialThread.application.undone
+              ? scopedEditorialThread.application.versionId
+              : scopedEditorialThread ? appliedVersionId : null}
+            editorialDraft={workReentryRequired.current ? '' : editorialDraft}
             editorialDepth={editorialDepth}
             editLatitude={editLatitude}
             mayRemoveParagraphs={mayRemoveParagraphs}
             mayProposeImmediately={mayProposeImmediately}
-            voiceNotice={voiceNotice}
+            voiceNotice={scopedEditorialThread ? voiceNotice : null}
             sessionPosture={sessionPosture}
             onChooseSessionPosture={chooseSessionPosture}
-            editorialBusy={editorialBusy}
-            adoptionBusy={adoptionBusy}
-            memberVersionBusy={memberVersionBusy}
-            editorialFailure={editorialFailure}
-            adoptionOutcome={adoptionOutcome}
-            undoMessage={undoMessage}
+            editorialBusy={editorialBusy && !workReentryRequired.current}
+            adoptionBusy={adoptionBusy && !workReentryRequired.current}
+            memberVersionBusy={memberVersionBusy && !workReentryRequired.current}
+            planHandoffNotice={planHandoffNotice}
+            onDismissPlanHandoffNotice={() => setPlanHandoffNotice(null)}
+            editorialFailure={workReentryRequired.current
+              ? 'This Living Work has its own MAIA context. Earlier manuscript conversations are not shared automatically.'
+              : editorialFailure}
+            editorialNotice={scopedEditorialThread ? editorialNotice : null}
+            adoptionOutcome={scopedEditorialThread ? adoptionOutcome : null}
+            undoMessage={scopedEditorialThread ? undoMessage : null}
             lastMaiaEditorialTurn={lastMaiaEditorialTurn}
+            pendingEditorialText={editorialBusy ? pendingEditorialText : null}
             onOpenWorkspace={openWorkspace}
             onDismissCarriedInsight={() => {
+              if (!currentContextGesture()) return;
               setArrivalInsight(null);
               setWorkspaceInsight(null);
             }}
             onCloseWorkspace={closeWorkspace}
             onReturnToStartingPassage={returnToStartingPassage}
             canReturnToStartingPassage={Boolean(
-              workspaceReturn.current?.focusId
+              !workReentryRequired.current
+              && workspaceReturn.current?.livingWorkScope === currentLivingWorkScope
+              && workspaceReturn.current?.focusId
               && workspaceReturn.current.focusId !== focusId
             )}
-            onDepth={setEditorialDepth}
-            onInstruction={setEditorialDraft}
-            onSendEditorial={(text) => void sendEditorial(text)}
+            onDepth={(value) => { if (currentContextGesture()) setEditorialDepth(value); }}
+            onInstruction={(text) => { if (currentContextGesture()) setEditorialDraft(text); }}
+            onSendEditorial={(text, options) => void sendEditorial(text, options)}
+            onStopEditorial={stopEditorialForAuthor}
+            onOpenWithMaia={openWithMaia}
+            openingFailure={openingFailure}
             onSelectVersion={(id) => {
+              if (!scopedEditorialThread || workReentryRequired.current
+                || !currentWorkGesture()) return;
               setSuggestedVersionId(id);
               setAdoptionOutcome(null);
               setEditorialFailure(null);
             }}
             onApply={() => void applySuggested()}
-            onUndo={editorialThread?.application?.canUndo ? () => void undoSuggested() : undefined}
+            // A no-op guarded callback remains callable for an old mounted
+            // control, but the UI only displays Undo with a current scoped
+            // application. It must never use a stale Work A authorization.
+            onUndo={() => void undoSuggested()}
             onSaveMember={saveMemberRevision}
+            onUseVersion={useVersionNow}
+            onSaveWorking={saveWorkingRevision}
             onKeep={() => {
+              if (!scopedEditorialThread || workReentryRequired.current
+                || !currentWorkGesture()) return;
               setSuggestedVersionId(null);
               setAdoptionOutcome(null);
               setEditorialFailure('Current wording retained. Your saved alternatives remain in the version list.');
+              if (focusId) setKeepNoteFor({ sectionId: focusId, label: focusSection?.heading ?? null });
             }}
             onLatitude={setEditLatitude}
             onMayRemoveParagraphs={setMayRemoveParagraphs}
             onMayProposeImmediately={setMayProposeImmediately}
             onReviseInsight={reviseInsightPassage}
             onChoosePassage={chooseOwnPassage}
+            onStartFreshConversation={startFreshConversation}
             onChooseRelationship={(threadId) => void chooseRelationship(threadId)}
             onBeginMaiaRelationship={() => void beginA2Relationship()}
             onChooseMaiaRelationship={(relationshipId) => void chooseA2Relationship(relationshipId)}
@@ -1253,5 +2719,6 @@ export default function FlagshipWriteEditController() {
         );
       }}
     </RebuildWritingBoundary>
+    </>
   );
 }

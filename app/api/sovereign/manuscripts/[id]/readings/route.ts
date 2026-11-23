@@ -20,7 +20,9 @@
  * into its own table, and only through the commission.
  */
 
+import { resolveStudioPosture } from '@/lib/sanctuary/studioPosture';
 import { NextRequest, NextResponse } from 'next/server';
+import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import {
   isReadingScope,
@@ -33,6 +35,7 @@ import { commissionReading, type CommissionStage } from '@/lib/manuscript/develo
 import { listReadings } from '@/lib/manuscript/developmentalReading/store';
 import { normalizeDetail, recordRefusal } from '@/lib/manuscript/developmentalReading/refusalRecord';
 import { CAUSE_UNKNOWN } from '@/lib/manuscript/developmentalReader/contract';
+import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
 
 export const dynamic = 'force-dynamic';
 
@@ -133,7 +136,7 @@ function statusFor(stage: CommissionStage, refusal: string): number {
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function postHandler(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (process.env.CAPACITOR_BUILD) return NextResponse.json({ error: 'Not available in static build' }, { status: 501 });
   const { id: manuscriptId } = await params;
   const memberId = await getMemberIdFromRequest(req);
@@ -156,12 +159,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
      Absent `scope` means the whole work, which is what every existing caller
      asked for and still gets. */
-  const ALLOWED = new Set(['lens', 'scope']);
+  const ALLOWED = new Set(['lens', 'scope', 'sanctuary']);
   const keys = Object.keys((body as object) ?? {});
   const foreign = keys.filter((k) => !ALLOWED.has(k));
   if (foreign.length > 0) {
     return NextResponse.json({ refusal: 'foreign_field', detail: foreign.join(', ') }, { status: 400 });
   }
+  /* ⭐⭐ SANCTUARY CLOSURE (founder ruling 2026-11-09): a reading is a KEPT record of MAIA reading the writing. It is commissioned only
+     when the request DECLARED an ordinary posture; Sanctuary or an undeclared posture reads nothing and writes nothing. */
+  const posture = await resolveStudioPosture(memberId, body as Record<string, unknown>);
+  if (!posture.keep) {
+    return NextResponse.json(
+      { refusal: posture.sanctuary ? 'sanctuary_not_kept' : 'posture_undeclared', stage: 'capture' },
+      { status: 409 },
+    );
+  }
+  bindMaiaMeter(memberId, { sanctuary: false });
+  /* Founder ruling 2026-11-16 (#1900): on a program that requires it, MAIA does not read or answer without the age attestation. */
+  { const age = await ageGateForManuscript(memberId, manuscriptId); if (!age.ok) { const r = ageGateRefusal(age); return NextResponse.json(r.body, { status: r.status }); } }
 
   const rawScope = (body as { scope?: unknown } | null)?.scope;
   const scope: ReadingScope =
@@ -228,3 +243,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     frozenAt: reading.provenance.frozenAt,
   }, { status: 201 });
 }
+
+export const POST = meteredRoute('readings', postHandler);

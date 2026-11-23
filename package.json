@@ -9,12 +9,12 @@
   "main": "electron/main.js",
   "homepage": "./",
   "scripts": {
-    "dev": "env -u DATABASE_URL next dev -p ${PORT:-3000}",
-    "dev:clean": "rm -rf .next && lsof -ti:${PORT:-3000} | xargs kill -9 2>/dev/null || true; env -u DATABASE_URL next dev -p ${PORT:-3000}",
-    "clean": "rm -rf .next && echo '\u2713 .next cache cleared'",
+    "dev": "next dev -p ${PORT:-3000}",
+    "dev:clean": "rm -rf .next && lsof -ti:${PORT:-3000} | xargs kill -9 2>/dev/null || true; next dev -p ${PORT:-3000}",
+    "clean": "rm -rf .next && echo '✓ .next cache cleared'",
     "dev:voice": "bash start-voice.sh",
     "dev:https": "node server.mjs",
-    "worker": "env -u DATABASE_URL AIN_WORKER=true npx tsx scripts/start-ain-worker.ts",
+    "worker": "AIN_WORKER=true npx tsx scripts/start-ain-worker.ts",
     "comms:worker": "npx tsx scripts/run-comms-analysis-worker.ts",
     "check:imports": "node scripts/check-internal-imports.js",
     "build": "export NODE_OPTIONS=--max-old-space-size=8192; node scripts/verify-aetheric-consciousness.js && node scripts/validate-critical-files.js && node scripts/check-internal-imports.js && next build --webpack",
@@ -94,6 +94,8 @@
     "review:custody:migration-gate": "npx tsx scripts/review-custody-migration-gate.ts",
     "typecheck:review-custody": "tsc -p tsconfig.review-custody.json",
     "verify:review-custody-freeze": "npx tsx scripts/verify-review-custody-freeze.ts",
+    "verify:ws-continuity-freeze": "node scripts/verify-ws-continuity-freeze.mjs",
+    "verify:ws-academy-freeze": "npx tsx scripts/verify-ws-academy-freeze.ts",
     "matrix:jarvis-o5-r1": "node tests/constitutional/jarvis-o5-r1/matrix.mjs",
     "verify:jarvis-o5-r1-freeze": "node scripts/verify-jarvis-o5-r1-freeze.mjs",
     "matrix:jarvis-o5-r2": "node tests/constitutional/jarvis-o5-r2/matrix.mjs",
@@ -123,6 +125,7 @@
     "verify:deploy-provenance": "bash scripts/verify-deploy-provenance.sh",
     "verify:deploy-ancestry": "bash scripts/verify-deploy-ancestry.sh",
     "verify:deploy-tag-rollback-point": "bash scripts/verify-deploy-tag-rollback-point.sh",
+    "verify:deploy-prod-tag-guard": "bash scripts/verify-deploy-prod-tag-guard.sh",
     "verify:deploy-lock": "bash scripts/verify-deploy-lock-record.sh",
     "verify:migrate-fail-closed": "bash scripts/verify-migrate-fail-closed.sh",
     "verify:s3-runbook": "bash scripts/verify-s3-schema-first-runbook.sh",
@@ -151,7 +154,7 @@
     "check:member-id-log:baseline": "npx tsx scripts/guards/member-id-log-gate.ts --update",
     "ci:sovereignty": "npm run check:no-supabase && npm run check:migration-lock-timeout && npm run check:no-vendor-voices && npm run check:voice-provenance && npm run check:no-openai && npm run check:member-id-log && npm run matrix:safety-crisis && npm run test -- lib/tts/__tests__/voiceIdentityContract.test.ts __tests__/voice-crisis-speech-act-01.test.ts --silent",
     "ci:guard": "jest scripts/ci/maia-route-guard.test.ts --testPathPattern='maia-route-guard' --passWithNoTests=false",
-    "preflight": "bash scripts/check-dark-text-opacity.sh && npm run check:no-supabase && npm run check:migration-lock-timeout && npm run check:no-direct-anthropic && npm run check:no-vendor-voices && npm run check:voice-provenance && npm run check:no-openai && npm run check:member-owned-boundary && npm run ci:guard && bash scripts/preflight-compose-config.sh && echo '\u2705 Preflight passed: opacity + supabase + direct-anthropic + vendor voices + voice-provenance + provider-governance + member-owned-boundary + route-guard + docker checks clean'",
+    "preflight": "bash scripts/check-dark-text-opacity.sh && npm run check:no-supabase && npm run check:migration-lock-timeout && npm run check:no-direct-anthropic && npm run check:no-vendor-voices && npm run check:voice-provenance && npm run check:no-openai && npm run check:member-owned-boundary && npm run ci:guard && bash scripts/preflight-compose-config.sh && echo '✅ Preflight passed: opacity + supabase + direct-anthropic + vendor voices + voice-provenance + provider-governance + member-owned-boundary + route-guard + docker checks clean'",
     "biomarkers:report": "npx tsx scripts/report-biomarker-metrics.ts",
     "biomarkers:verify": "npx tsx scripts/test-biomarker-exports.ts --log artifacts/phase4.2d-barrel-verification.log",
     "pwa:build": "npm run build && npm run pwa:generate-icons",
@@ -215,8 +218,10 @@
     "jarvis:report": "node scripts/builder/session.mjs report",
     "jarvis:providers": "node scripts/builder/opencode-provider.mjs list",
     "jarvis:provider:proof": "node scripts/builder/__tests__/opencode-adapter-governance-proof.mjs",
+    "jarvis:jev:proof": "node scripts/builder/__tests__/jarvis-jev-advisory-v1-proof.mjs && node scripts/builder/__tests__/jarvis-jev-advisory-v1-matrix.mjs && node scripts/builder/__tests__/jev-packet-projection-v1-proof.mjs",
     "jarvis:proof": "node scripts/builder/__tests__/session-proof.mjs && node scripts/builder/__tests__/rate-proof.mjs && node scripts/builder/__tests__/incident-scenario-proof.mjs && node scripts/builder/__tests__/work-unit-proof.mjs && node scripts/builder/__tests__/run-check-proof.mjs && node scripts/builder/__tests__/delegate-workspace-convergence-proof.mjs && node scripts/builder/__tests__/session-liveness-authority-proof.mjs && node scripts/builder/__tests__/claude-adapter-governance-proof.mjs && node scripts/builder/__tests__/opencode-adapter-governance-proof.mjs",
     "typecheck:s3-constitutional": "tsc -p tsconfig.s3-constitutional.json",
+    "typecheck:ws-academy": "tsc -p tsconfig.ws-academy.json",
     "typecheck:epistemic-join": "tsc -p tsconfig.epistemic-join.json",
     "test:epistemic-join": "jest lib/ain/epistemic-join",
     "matrix:epistemic-join-i3": "tsx tests/constitutional/epistemic-join/i3-persistence-matrix.ts",
@@ -224,6 +229,7 @@
     "matrix:epistemic-join-i4": "tsx tests/constitutional/epistemic-join/i4-integration-shadow-matrix.ts",
     "witness:epistemic-join-i4-db": "bash scripts/witness/epistemic-join-i4-shadow-db-witness.sh",
     "matrix:s3-constitutional": "tsx tests/constitutional/s3/matrix.ts",
+    "matrix:ws-academy": "tsx tests/constitutional/writers-studio-academy/matrix.ts",
     "matrix:safety-crisis": "tsx tests/constitutional/safety-crisis/matrix.ts",
     "typecheck:h1-cohort-gate": "node scripts/typecheck-h1-cohort-gate.mjs",
     "matrix:h1-cohort-gate": "tsx tests/constitutional/h1-cohort-gate/matrix.ts",
@@ -293,11 +299,13 @@
     "matrix:founder-workspace": "node tests/constitutional/founder-workspace/matrix.mjs && node tests/constitutional/founder-workspace/b2-matrix.mjs && node tests/constitutional/founder-workspace/b3-matrix.mjs && node tests/constitutional/founder-workspace/b4-matrix.mjs",
     "matrix:voice-doorway": "node tests/constitutional/voice-doorway/matrix.mjs",
     "project:programme-state": "node scripts/builder/founder-workspace/project-programme-state.mjs --summary",
-    "observe:instruments": "node scripts/builder/founder-workspace/observe-instruments.mjs"
+    "observe:instruments": "node scripts/builder/founder-workspace/observe-instruments.mjs",
+    "matrix:safety-crisis-continuation": "tsx tests/constitutional/safety-crisis-continuation/matrix.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.3",
     "@aws-crypto/sha256-browser": "^5.2.0",
+    "@aws-sdk/client-kms": "3.1142.0",
     "@aws-sdk/client-s3": "^3.658.1",
     "@aws-sdk/lib-storage": "^3.658.1",
     "@capacitor-community/apple-sign-in": "^7.1.0",
@@ -361,6 +369,7 @@
     "@types/nodemailer": "^8.0.1",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
+    "@xmldom/xmldom": "0.8.15",
     "astronomy-engine": "^2.1.19",
     "autoprefixer": "^10.4.20",
     "bcrypt": "^6.0.0",
@@ -378,11 +387,12 @@
     "jose": "^6.1.3",
     "jsdom": "^25.0.1",
     "jspdf": "^4.2.1",
+    "jszip": "3.10.2",
     "langfuse": "^3.38.6",
     "lucide-react": "^0.451.0",
     "luxon": "^3.7.2",
     "mammoth": "^1.12.0",
-    "next": "16.3.8",
+    "next": "16.4.6",
     "next-themes": "^0.3.0",
     "node-cron": "^4.2.1",
     "nodemailer": "^10.0.2",
@@ -413,7 +423,7 @@
     "typescript": "^5.6.3",
     "uuid": "14.0.2",
     "wait-on": "^8.0.1",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.0.2",
@@ -465,7 +475,7 @@
       "@babel/runtime": "7.28.6"
     },
     "@qdrant/js-client-rest": {
-      "undici": "7.29.1"
+      "undici": "7.30.1"
     }
   }
 }

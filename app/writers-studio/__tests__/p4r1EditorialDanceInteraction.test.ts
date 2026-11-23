@@ -176,6 +176,7 @@ test('creative direction buttons request real proposal turns instead of fabricat
   expect(onSend).toHaveBeenCalledTimes(1);
   expect(onSend.mock.calls[0][0]).toContain('Direction I want to explore: Preserve and deepen');
   expect(onSend.mock.calls[0][0]).toContain('Nothing is to be applied automatically.');
+  expect(onSend.mock.calls[0][1]).toEqual({ proposalPolicy: 'allow', proposalRequested: true });
 });
 
 
@@ -233,7 +234,7 @@ test('near-duplicate stored MAIA versions are not presented as separate creative
 });
 
 
-test('empty editorial room offers examples and ideas as real MAIA acts', () => {
+test('empty editorial room offers three starters as real MAIA acts (step 4)', () => {
   const onSend = jest.fn();
   const onDepth = jest.fn();
   act(() => root.render(React.createElement(EditorialDancePanel, {
@@ -261,19 +262,32 @@ test('empty editorial room offers examples and ideas as real MAIA acts', () => {
   const button = (text: string) =>
     Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes(text))!;
 
-  act(() => button('Show me examples').click());
-  expect(onDepth).toHaveBeenCalledWith('learning');
-  expect(onSend.mock.calls.at(-1)?.[0]).toContain('clearly labeled illustrative examples');
-  expect(onSend.mock.calls.at(-1)?.[0]).toContain('examples, not recommendations');
+  // Step 4 (fewer doors): exactly three starters; examples, ideas and a deeper look are asked for in the box.
+  const starters = Array.from(container.querySelectorAll('.p4r1-dance-start-actions > button')).map((b) => b.querySelector('b')?.textContent);
+  expect(starters).toEqual(['Discuss what’s happening', 'Show edit options', 'Teach me about the writing']);
+  expect(container.textContent).not.toContain('Show me examples');
+  expect(container.textContent).not.toContain('Give me ideas');
+  expect(container.querySelector('textarea[aria-label="What do you want to do with this passage?"]')!.getAttribute('placeholder'))
+    .toContain('examples, ideas, a deeper look, or to teach you more');
 
-  act(() => button('Give me ideas').click());
-  expect(onSend.mock.calls.at(-1)?.[0]).toContain('several ideas for where this exact passage could go');
-  expect(onSend.mock.calls.at(-1)?.[0]).toContain('distinct creative directions');
-  expect(onSend.mock.calls.at(-1)?.[0]).toContain('Do not rank them');
+  act(() => button('Discuss what’s happening').click());
+  expect(onSend.mock.calls.at(-1)?.[1]).toEqual({ proposalPolicy: 'reply_only', passageAct: 'discuss' });
+
+  act(() => button('Teach me about the writing').click());
+  // F1 (founder, 2026-11-02): the writer's turn is the button's words; the
+  // conversational teaching shape is added server-side from the anchor.
+  expect(onSend.mock.calls.at(-1)?.[1]).toEqual({ proposalPolicy: 'reply_only', teachingAnchor: 'passage' });
+  expect(onSend.mock.calls.at(-1)?.[0]).toBe('Teach me about the writing in this passage.');
+  expect(onSend.mock.calls.at(-1)?.[0]).not.toContain('as a conversation rather than a lesson');
+
+  act(() => button('Show edit options').click());
+  expect(onSend.mock.calls.at(-1)?.[1]).toEqual({ proposalPolicy: 'allow', proposalRequested: true, passageAct: 'revise' });
+  expect(onSend.mock.calls.at(-1)?.[0]).toBe('Show me edit options for this passage.');
 });
 
 
 test('empty editorial room requires an explicit live privacy posture before MAIA can act', () => {
+  const postureOnSend = jest.fn();
   const onChooseSessionPosture = jest.fn();
   act(() => root.render(React.createElement(EditorialDancePanel, {
     manuscriptTitle: 'Threshold',
@@ -289,7 +303,7 @@ test('empty editorial room requires an explicit live privacy posture before MAIA
     sessionPosture: { resolved: false, reason: 'no_live_settings' },
     onChooseSessionPosture,
     onSelectVersion: jest.fn(),
-    onSend: jest.fn(),
+    onSend: postureOnSend,
     onSaveMember: jest.fn(async () => true),
     onApply: jest.fn(),
     onUndo: jest.fn(),
@@ -297,10 +311,13 @@ test('empty editorial room requires an explicit live privacy posture before MAIA
     onDepth: jest.fn(),
   } as any)));
 
-  expect(container.textContent).toContain('Choose how this session should hold the exchange.');
+  expect(container.textContent).toContain('How would you like me to hold this conversation?');
   const examples = Array.from(container.querySelectorAll('button'))
-    .find((button) => button.textContent?.includes('Show me examples')) as HTMLButtonElement;
-  expect(examples.disabled).toBe(true);
+    .find((button) => button.textContent?.includes('Discuss what’s happening')) as HTMLButtonElement;
+  // The card answers the click by pointing at the posture; MAIA still cannot act.
+  act(() => examples.click());
+  expect(postureOnSend).not.toHaveBeenCalled();
+  expect(container.querySelector('[data-posture-nudge]')).not.toBeNull();
 
   const ordinary = Array.from(container.querySelectorAll('button'))
     .find((button) => button.textContent === 'Ordinary')!;
@@ -355,9 +372,226 @@ test('a MAIA response without a proposal stays visible and keeps exploration act
   expect(container.querySelector('.p4r1-dance-response')?.textContent)
     .toContain('The passage turns from explanation toward image.');
   expect(container.textContent).toContain('Continue from here');
-  expect(container.textContent).toContain('Show examples');
-  expect(container.textContent).toContain('Give me ideas');
-  expect(container.textContent).toContain('Revise from this');
+  // Step 4: the follow-up row is Show revision options and Teach me more; the rest is said in the box.
+  const row = Array.from(container.querySelectorAll('.p4r1-dance-followup-actions > button')).map((b) => b.textContent);
+  expect(row).toEqual(['Show revision options', 'Teach me more']);
   expect(container.querySelector('.p4r1-dance-start-actions')).toBeNull();
   expect(container.textContent).not.toContain('Apply my version');
+
+  const followup = (text: string) =>
+    Array.from(container.querySelectorAll('button')).find((button) => button.textContent === text)!;
+
+  act(() => followup('Teach me more').click());
+  // It continues the conversation (the 'continue' shape, server-side), and the
+  // writer's turn is only the button's words (F1).
+  expect(onSend.mock.calls.at(-1)?.[1]).toEqual({ proposalPolicy: 'reply_only', teachingAnchor: 'continue' });
+  expect(onSend.mock.calls.at(-1)?.[0]).toBe('Teach me more.');
+
+  act(() => followup('Show revision options').click());
+  expect(onSend.mock.calls.at(-1)?.[1]).toEqual({ proposalPolicy: 'allow', proposalRequested: true, passageAct: 'revise-after-talk' });
+  expect(onSend.mock.calls.at(-1)?.[0]).toBe('Show me revision options, from what we’ve discussed.');
+});
+
+test('a card chosen before the privacy posture is answered points at the posture and sends nothing', () => {
+  const onSend = jest.fn();
+  const onChooseSessionPosture = jest.fn();
+  let props: any = {
+    manuscriptTitle: 'Threshold',
+    currentText: 'Original words.',
+    sectionBody: 'Before.\n\nOriginal words.\n\nAfter.',
+    thread: null,
+    version: null,
+    lastMaiaTurn: null,
+    appliedVersionId: null,
+    busy: false,
+    message: null,
+    undoMessage: null,
+    sessionPosture: { resolved: false, sanctuary: false },
+    onChooseSessionPosture,
+    onSelectVersion: jest.fn(),
+    onSend,
+    onSaveMember: jest.fn(async () => true),
+    onApply: jest.fn(),
+    onKeep: jest.fn(),
+    onDepth: jest.fn(),
+  };
+  const draw = () => act(() => root.render(React.createElement(EditorialDancePanel, props)));
+  draw();
+
+  const card = (title: string) => Array.from(container.querySelectorAll('.p4r1-dance-start-actions button'))
+    .find((b) => b.querySelector('b')?.textContent === title) as HTMLButtonElement;
+
+  expect(card('Discuss what’s happening').disabled).toBe(false);
+  expect(container.querySelector('[data-posture-nudge]')).toBeNull();
+
+  act(() => card('Discuss what’s happening').click());
+  expect(onSend).not.toHaveBeenCalled();
+  expect(onChooseSessionPosture).not.toHaveBeenCalled();
+  expect(container.querySelector('[data-posture-nudge]')?.textContent).toContain('Choose Ordinary or Sanctuary first');
+
+  props = { ...props, sessionPosture: { resolved: true, sanctuary: false } };
+  draw();
+  expect(container.querySelector('[data-posture-nudge]')).toBeNull();
+  // The act the writer asked for continues once the posture is answered.
+  expect(onSend).toHaveBeenCalledTimes(1);
+  expect(onSend.mock.calls[0][0]).toBe('Let’s talk about what’s happening in this passage.');
+  act(() => card('Discuss what’s happening').click());
+  expect(onSend).toHaveBeenCalledTimes(2);
+});
+
+test('in Sanctuary a card still sends nothing and says how to continue', () => {
+  const onSend = jest.fn();
+  const props: any = {
+    manuscriptTitle: 'Threshold', currentText: 'Original words.', sectionBody: 'Original words.',
+    thread: null, version: null, lastMaiaTurn: null, appliedVersionId: null, busy: false,
+    message: null, undoMessage: null, sessionPosture: { resolved: true, sanctuary: true },
+    onChooseSessionPosture: jest.fn(), onSelectVersion: jest.fn(), onSend,
+    onSaveMember: jest.fn(async () => true), onApply: jest.fn(), onKeep: jest.fn(), onDepth: jest.fn(),
+  };
+  act(() => root.render(React.createElement(EditorialDancePanel, props)));
+  const first = container.querySelector('.p4r1-dance-start-actions button') as HTMLButtonElement;
+  act(() => first.click());
+  expect(onSend).not.toHaveBeenCalled();
+  expect(container.querySelector('[data-posture-nudge]')?.textContent).toContain('Switch to Ordinary');
+});
+
+test('without a MAIA relationship for the Work, cards point at beginning one and send nothing', () => {
+  const onSend = jest.fn();
+  const onBegin = jest.fn();
+  let props: any = {
+    manuscriptTitle: 'Threshold', currentText: 'Original words.', sectionBody: 'Original words.',
+    thread: null, version: null, lastMaiaTurn: null, appliedVersionId: null, busy: false,
+    message: null, undoMessage: null, sessionPosture: { resolved: true, sanctuary: false },
+    onChooseSessionPosture: jest.fn(), onSelectVersion: jest.fn(), onSend,
+    onSaveMember: jest.fn(async () => true), onApply: jest.fn(), onKeep: jest.fn(), onDepth: jest.fn(),
+    maiaRelationship: { active: false, busy: false, choices: [], message: null, onBegin, onChoose: jest.fn() },
+  };
+  const draw = () => act(() => root.render(React.createElement(EditorialDancePanel, props)));
+  draw();
+
+  expect(container.querySelector('[data-relationship-gate]')).not.toBeNull();
+  const first = container.querySelector('.p4r1-dance-start-actions button') as HTMLButtonElement;
+  act(() => first.click());
+  expect(onSend).not.toHaveBeenCalled();
+  expect(onBegin).not.toHaveBeenCalled();
+  expect(container.querySelector('[data-relationship-nudge]')?.textContent).toContain('I haven’t sent anything');
+
+  const begin = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Start with MAIA')!;
+  act(() => begin.click());
+  expect(onBegin).toHaveBeenCalledTimes(1);
+
+  props = { ...props, maiaRelationship: { ...props.maiaRelationship, active: true } };
+  draw();
+  expect(container.querySelector('[data-relationship-gate]')).toBeNull();
+  // The act chosen before the relationship began continues by itself, once.
+  expect(onSend).toHaveBeenCalledTimes(1);
+  act(() => (container.querySelector('.p4r1-dance-start-actions button') as HTMLButtonElement).click());
+  expect(onSend).toHaveBeenCalledTimes(2);
+});
+
+describe('an act chosen at a gate continues once the writer has answered (founder, 2026-11-01)', () => {
+  const base = (over: Record<string, unknown> = {}): any => ({
+    manuscriptTitle: 'Threshold', currentText: 'Original words.', sectionBody: 'Original words.',
+    thread: null, version: null, lastMaiaTurn: null, appliedVersionId: null, busy: false,
+    message: null, undoMessage: null, sessionPosture: { resolved: false, sanctuary: false },
+    onChooseSessionPosture: jest.fn(), onSelectVersion: jest.fn(), onSend: jest.fn(),
+    onSaveMember: jest.fn(async () => true), onApply: jest.fn(), onKeep: jest.fn(), onDepth: jest.fn(),
+    maiaRelationship: { active: false, busy: false, choices: [], message: null, onBegin: jest.fn(), onChoose: jest.fn() },
+    ...over,
+  });
+  const card = (title: string) => Array.from(container.querySelectorAll('.p4r1-dance-start-actions button'))
+    .find((b) => b.querySelector('b')?.textContent === title) as HTMLButtonElement;
+  const held = () => container.querySelector('[data-held-act]');
+
+  it('holds Teach me through both gates and sends it exactly once after both are answered', () => {
+    let props = base();
+    const draw = () => act(() => root.render(React.createElement(EditorialDancePanel, props)));
+    draw();
+    act(() => card('Teach me about the writing').click());
+    expect(props.onSend).not.toHaveBeenCalled();
+    expect(held()?.textContent).toContain('I’ll continue with “Teach me about the writing”');
+
+    props = { ...props, sessionPosture: { resolved: true, sanctuary: false } };
+    draw();
+    expect(props.onSend).not.toHaveBeenCalled(); // the relationship gate still holds it
+    expect(props.maiaRelationship.onBegin).not.toHaveBeenCalled();
+    expect(held()).not.toBeNull();
+
+    props = { ...props, maiaRelationship: { ...props.maiaRelationship, active: true } };
+    draw();
+    expect(props.onSend).toHaveBeenCalledTimes(1);
+    expect(props.onSend.mock.calls[0][0]).toContain('Teach me about the writing in this passage');
+    expect(props.onSend.mock.calls[0][1]).toEqual({ proposalPolicy: 'reply_only', teachingAnchor: 'passage' });
+    expect(props.onDepth).toHaveBeenCalledWith('learning');
+    expect(held()).toBeNull();
+
+    draw();
+    expect(props.onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends nothing after “Don’t continue”', () => {
+    let props = base();
+    const draw = () => act(() => root.render(React.createElement(EditorialDancePanel, props)));
+    draw();
+    act(() => card('Teach me about the writing').click());
+    const cancel = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Don’t continue')!;
+    act(() => cancel.click());
+    expect(held()).toBeNull();
+    props = { ...props, sessionPosture: { resolved: true, sanctuary: false }, maiaRelationship: { ...props.maiaRelationship, active: true } };
+    draw();
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
+
+  it('never continues under Sanctuary', () => {
+    let props = base({ maiaRelationship: undefined });
+    const draw = () => act(() => root.render(React.createElement(EditorialDancePanel, props)));
+    draw();
+    act(() => card('Teach me about the writing').click());
+    props = { ...props, sessionPosture: { resolved: true, sanctuary: true } };
+    draw();
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
+
+  it('waits while MAIA is busy, then continues', () => {
+    let props = base({ maiaRelationship: undefined });
+    const draw = () => act(() => root.render(React.createElement(EditorialDancePanel, props)));
+    draw();
+    act(() => card('Teach me about the writing').click());
+    props = { ...props, sessionPosture: { resolved: true, sanctuary: false }, busy: true };
+    draw();
+    expect(props.onSend).not.toHaveBeenCalled();
+    props = { ...props, busy: false };
+    draw();
+    expect(props.onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a request from the Write menu at once when the gates are already answered, and only once', () => {
+    const onRequestedActTaken = jest.fn();
+    let props = base({
+      sessionPosture: { resolved: true, sanctuary: false },
+      maiaRelationship: undefined,
+      requestedAct: { key: 7, label: 'Teach me about this', prompt: 'Teach me about the writing in this exact passage.', depth: 'learning', options: { proposalPolicy: 'reply_only' } },
+      onRequestedActTaken,
+    });
+    const draw = () => act(() => root.render(React.createElement(EditorialDancePanel, props)));
+    draw();
+    expect(props.onSend).toHaveBeenCalledTimes(1);
+    expect(onRequestedActTaken).toHaveBeenCalledTimes(1);
+    draw();
+    expect(props.onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds a request from the Write menu at the gates and continues once they are answered', () => {
+    let props = base({
+      requestedAct: { key: 8, label: 'Teach me about this', prompt: 'Teach me about the writing in this exact passage.', depth: 'learning', options: { proposalPolicy: 'reply_only' } },
+      onRequestedActTaken: jest.fn(),
+    });
+    const draw = () => act(() => root.render(React.createElement(EditorialDancePanel, props)));
+    draw();
+    expect(props.onSend).not.toHaveBeenCalled();
+    expect(held()?.textContent).toContain('“Teach me about this”');
+    props = { ...props, requestedAct: null, sessionPosture: { resolved: true, sanctuary: false }, maiaRelationship: { ...props.maiaRelationship, active: true } };
+    draw();
+    expect(props.onSend).toHaveBeenCalledTimes(1);
+  });
 });

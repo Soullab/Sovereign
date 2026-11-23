@@ -30,8 +30,18 @@ import {
   Zap
 } from 'lucide-react';
 import { apiFetch } from '@/lib/http/apiBase';
+import { castYarrowLine } from '@/lib/divination/iching/casting';
 import { EmbeddedMAIAChat } from '@/components/oracle/EmbeddedMAIAChat';
+import { LivingExplorer } from '@/components/oracle/iching/LivingExplorer';
+import { ConsultationStages } from '@/components/oracle/ConsultationStages';
 import { divinationType } from '@/lib/oracle/divinationTypography';
+
+const CONSULTATION_STAGES = [
+  { id: 'question', label: 'Ask' },
+  { id: 'casting', label: 'Cast' },
+  { id: 'reveal', label: 'Receive' },
+  { id: 'interpretation', label: 'Explore' },
+];
 
 /**
  * Bagua Symbol - Traditional 8-sided I Ching symbol
@@ -157,8 +167,9 @@ function IChingOracleContent() {
       // Simulate yarrow stalk counting (takes time)
       await new Promise(resolve => setTimeout(resolve, 1800));
 
-      // Traditional I Ching values: 6, 7, 8, 9
-      const value = Math.floor(Math.random() * 4) + 6;
+      // Traditional I Ching values 6, 7, 8, 9 with the yarrow-stalk odds
+      // (1/16, 5/16, 7/16, 3/16) — not equal odds.
+      const value = castYarrowLine();
 
       const line: HexagramLine = {
         type: (value === 7 || value === 9) ? 'yang' : 'yin',
@@ -411,6 +422,10 @@ function IChingOracleContent() {
 
             <div className="w-24" /> {/* Spacer for centering */}
           </motion.div>
+
+          <div className="-mt-6 mb-10">
+            <ConsultationStages stages={CONSULTATION_STAGES} current={phase} />
+          </div>
 
           <AnimatePresence mode="wait">
             {/* Question Phase */}
@@ -806,6 +821,13 @@ function IChingOracleContent() {
                         </p>
                       </div>
                     )}
+
+                    {/* Living Explorer — history, metaphysics and commentary for this hexagram */}
+                    <LivingExplorer
+                      hexagramNumber={reading.hexagram.number}
+                      changingLines={reading.hexagram.changingLines}
+                      atlasHref={`/oracle/atlas/iching/${reading.hexagram.number}`}
+                    />
 
                     {/* Embedded MAIA Chat */}
                     <EmbeddedMAIAChat

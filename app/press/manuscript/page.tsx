@@ -1,12 +1,20 @@
 'use client';
 
+import { withKeepPosture, keepRefusalCopy } from '@/lib/writersStudio/keepPosture';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { loadLastTab, saveLastTab } from './returningState';
 import { apiFetch } from '@/lib/http/apiBase';
+import { useWriterReleaseCapabilities } from '@/lib/writersStudio/useWriterReleaseCapabilities';
+import { BOOK_FILES_HELD_COPY, isBookExportHeldRefusal } from '@/lib/writersStudio/heldDoorCopy';
 import { readCurrentSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
 import { buildKeepRequestBody, interpretKeepReply } from './keepRequest';
 import WorkingDraftEditor from './WorkingDraftEditor';
+import {
+  SOURCE_UPLOAD_IDEMPOTENCY_HEADER,
+  sourceUploadAttempt,
+  type SourceUploadAttempt,
+} from '@/lib/writersStudio/sourceUploadAttempt';
 
 /**
  * Mirrors MAX_FILE_BYTES in app/api/sovereign/manuscripts/ingest/route.ts.
@@ -232,6 +240,7 @@ function PressManuscriptRoom() {
      the save act can bind the manuscript to what actually arrived. Null for a
      paste, which has no artifact and must never be given one. */
   const [sourceArrivalId, setSourceArrivalId] = useState<string | null>(null);
+  const uploadAttemptRef = useRef<SourceUploadAttempt | null>(null);
 
   const [sectionCursor, setSectionCursor] = useState(0);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -263,6 +272,14 @@ function PressManuscriptRoom() {
 
   const [rendering, setRendering] = useState<'pdf' | 'epub' | null>(null);
   const [renderError, setRenderError] = useState(false);
+  // Whether to OFFER a PDF/EPUB is the server-owned release capability (the same read the Publish room uses). A 423 that
+  // arrives anyway is also "held": a retry can never lift it, so it is never told as "try again".
+  const releaseCapabilities = useWriterReleaseCapabilities();
+  const [bookFilesHeldByServer, setBookFilesHeldByServer] = useState(false);
+  const bookFileOpen = (format: 'pdf' | 'epub') =>
+    releaseCapabilities.settled && releaseCapabilities.authority.exportsCertified[format] === true && !bookFilesHeldByServer;
+  const bookFilesHeld = bookFilesHeldByServer
+    || (releaseCapabilities.settled && !bookFileOpen('pdf') && !bookFileOpen('epub'));
 
   /**
    * W-2 — a failed load must never look like an empty shelf.
@@ -365,7 +382,20 @@ function PressManuscriptRoom() {
             : { confirmedText: draftText }),
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        // A refusal no retry can fix (the held original is gone, or a Work already holds it): drop the dead reference so the
+        // next press does not resend it, and say so plainly. A retryable refusal keeps the preview and the reference.
+        const refusal = await res.json().catch(() => null) as { code?: unknown; error?: unknown } | null;
+        if (refusal && (refusal.code === 'source_original_unavailable' || refusal.code === 'source_already_attached')) {
+          setSourceArrivalId(null);
+          // Choosing the file again must be a NEW upload, not a replay of the spent identity (see the Import room).
+          if (refusal.code === 'source_original_unavailable') uploadAttemptRef.current = null;
+          setPreview(null); // back to the step where the member chooses or pastes again; the refusal is shown there
+          setWarnings([typeof refusal.error === 'string' ? refusal.error : 'The original is no longer held. Choose the file again to continue.']);
+          return;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
       const data = await res.json();
       setPreview(null);
       setDraftText('');
@@ -397,6 +427,32 @@ function PressManuscriptRoom() {
       ]);
       return;
     }
+    // Sanctuary (D6): an upload saves an encrypted original and a plaintext extraction, so it is a content write.
+    // The posture is read at the moment of the act, never cached, and an unresolved posture is never read as
+    // "ordinary". The server requires this claim and refuses without it, so this caller must send it.
+    const posture = readCurrentSanctuaryPosture();
+    if (!posture.resolved) {
+      setWarnings(['Your Sanctuary setting could not be read on this device, so nothing was sent. Open MAIA here once, then try again.']);
+      return;
+    }
+    if (posture.sanctuary) {
+      setWarnings(['Sanctuary is on. Original files are not saved during Sanctuary. Nothing has been sent.']);
+      return;
+    }
+
+    let uploadAttempt: SourceUploadAttempt;
+    try {
+      uploadAttempt = sourceUploadAttempt(
+        uploadAttemptRef.current,
+        f,
+        () => globalThis.crypto.randomUUID(),
+      );
+      uploadAttemptRef.current = uploadAttempt;
+    } catch {
+      setWarnings(['A secure retry identity could not be created for this file. Nothing was sent.']);
+      return;
+    }
+
     /* WS-01 — every uploaded file takes the same path, including .txt and .md.
      *
      * They used to be read in the browser, so their bytes never reached the
@@ -413,14 +469,18 @@ function PressManuscriptRoom() {
     try {
       const form = new FormData();
       form.append('file', f);
-      const res = await apiFetch('/api/sovereign/manuscripts/ingest', { method: 'POST', body: form });
+      const res = await apiFetch('/api/sovereign/manuscripts/ingest', {
+        method: 'POST',
+        body: form,
+        headers: { [SOURCE_UPLOAD_IDEMPOTENCY_HEADER]: uploadAttempt.idempotencyKey, 'x-maia-sanctuary': 'false' },
+      });
       if (res.status === 401) {
         setUnauthorized(true);
         return;
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setWarnings([data.error || 'We could not read that file. Try a .docx, .pdf, .txt, or .md.']);
+        setWarnings([data.error || 'We could not read that file. Try a .docx, .pdf, .epub, .txt, or .md.']);
         return;
       }
       setDraftText(data.text || '');
@@ -526,11 +586,14 @@ function PressManuscriptRoom() {
     const res = await apiFetch(`/api/sovereign/manuscripts/${active}/collections`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newCollectionName }),
+      body: JSON.stringify(withKeepPosture({ name: newCollectionName })),
     });
     if (res.ok) {
       setNewCollectionName('');
       await loadDetail(active);
+    } else {
+      const refused = keepRefusalCopy(((await res.json().catch(() => ({}))) as { refusal?: string }).refusal);
+      if (refused) setKeepNotice(refused);
     }
   };
 
@@ -539,9 +602,13 @@ function PressManuscriptRoom() {
     const res = await apiFetch(`/api/sovereign/manuscripts/${active}/collections`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ collectionId, keepId, op }),
+      body: JSON.stringify(withKeepPosture({ collectionId, keepId, op })),
     });
     if (res.ok) await loadDetail(active);
+    else {
+      const refused = keepRefusalCopy(((await res.json().catch(() => ({}))) as { refusal?: string }).refusal);
+      if (refused) setKeepNotice(refused);
+    }
   };
 
   const unkeep = async (keepId: string) => {
@@ -589,6 +656,11 @@ function PressManuscriptRoom() {
         body: JSON.stringify({ format }),
       });
       if (!res.ok) {
+        const refusal = await res.json().catch(() => null);
+        if (isBookExportHeldRefusal(res.status, refusal)) {
+          setBookFilesHeldByServer(true);
+          return;
+        }
         setRenderError(true);
         return;
       }
@@ -735,10 +807,10 @@ function PressManuscriptRoom() {
               />
               <div className="flex items-center gap-6">
                 <label className="text-[13px] underline underline-offset-4 opacity-60 cursor-pointer">
-                  {ingesting ? 'reading your file…' : 'or choose a .docx / .pdf / .txt / .md file'}
+                  {ingesting ? 'reading your file…' : 'or choose a .docx / .pdf / .epub / .txt / .md file'}
                   <input
                     type="file"
-                    accept=".txt,.md,.markdown,.docx,.pdf"
+                    accept=".txt,.md,.markdown,.docx,.pdf,.epub"
                     className="hidden"
                     disabled={ingesting}
                     onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
@@ -1227,35 +1299,43 @@ function PressManuscriptRoom() {
 
         {tab === 'book' && (
           <div>
-            <p className="text-[14px] opacity-70 mb-3 leading-relaxed">
-              Your manuscript, set as a book — the whole of it, in your own words,
-              nothing added. Make a copy you can hold or share.
-            </p>
-            <p className="text-[12px] opacity-50 mb-8">
-              {pageEstimate(totalChars)} pages · {sections.length} section
-              {sections.length === 1 ? '' : 's'}. Set in a clean book design; this can take a
-              moment to prepare.
-            </p>
-            <div className="flex flex-wrap gap-4">
-              <button
-                onClick={() => renderBook('pdf')}
-                disabled={rendering !== null || sections.length === 0}
-                className="px-8 py-3 bg-[#C9A227] text-[#1A1513] text-[14px] tracking-wide disabled:opacity-30"
-              >
-                {rendering === 'pdf' ? 'setting your book…' : 'Download PDF'}
-              </button>
-              <button
-                onClick={() => renderBook('epub')}
-                disabled={rendering !== null || sections.length === 0}
-                className="px-8 py-3 border border-[#4A4238] text-[14px] tracking-wide opacity-80 disabled:opacity-30"
-              >
-                {rendering === 'epub' ? 'setting your book…' : 'Download EPUB'}
-              </button>
-            </div>
-            {renderError && (
-              <p className="text-[13px] opacity-70 mt-6">
-                Could not make your book just now. Please try again in a moment.
+            {bookFilesHeld ? (
+              <p data-book-files-held role="status" className="text-[14px] opacity-70 leading-relaxed">
+                {BOOK_FILES_HELD_COPY}
               </p>
+            ) : (
+              <>
+                <p className="text-[14px] opacity-70 mb-3 leading-relaxed">
+                  Your manuscript, set as a book — the whole of it, in your own words,
+                  nothing added. Make a copy you can hold or share.
+                </p>
+                <p className="text-[12px] opacity-50 mb-8">
+                  {pageEstimate(totalChars)} pages · {sections.length} section
+                  {sections.length === 1 ? '' : 's'}. Set in a clean book design; this can take a
+                  moment to prepare.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <button
+                    onClick={() => renderBook('pdf')}
+                    disabled={rendering !== null || sections.length === 0 || !bookFileOpen('pdf')}
+                    className="px-8 py-3 bg-[#C9A227] text-[#1A1513] text-[14px] tracking-wide disabled:opacity-30"
+                  >
+                    {rendering === 'pdf' ? 'setting your book…' : 'Download PDF'}
+                  </button>
+                  <button
+                    onClick={() => renderBook('epub')}
+                    disabled={rendering !== null || sections.length === 0 || !bookFileOpen('epub')}
+                    className="px-8 py-3 border border-[#4A4238] text-[14px] tracking-wide opacity-80 disabled:opacity-30"
+                  >
+                    {rendering === 'epub' ? 'setting your book…' : 'Download EPUB'}
+                  </button>
+                </div>
+                {renderError && (
+                  <p className="text-[13px] opacity-70 mt-6">
+                    Could not make your book just now. Please try again in a moment.
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}

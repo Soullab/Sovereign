@@ -18,7 +18,7 @@ import { Capacitor } from '@capacitor/core';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   User, Shield, Mic, Brain, Users, MessageSquare, Bell, Lock,
-  Link as LinkIcon, Download, Trash2, Check, ChevronRight, Eye, EyeOff,
+  Link as LinkIcon, Download, Trash2, Check, ChevronRight, Eye,
   Mail, Clock, Sparkles, AlertTriangle, ArrowLeft, BookOpen,
   Star, MapPin, Search, ExternalLink, Globe, History
 } from 'lucide-react';
@@ -58,6 +58,13 @@ import { NostrMessagingSection } from '@/components/nostr/NostrMessagingSection'
 import PatternLedger from '@/components/consciousness/PatternLedger';
 import RecurringThemesCard from '@/components/consciousness/RecurringThemesCard';
 import { MemoryConsentSection } from '@/components/settings/MemoryConsentSection';
+import {
+  EXPORT_DATA_DESCRIPTION,
+  DELETE_ACCOUNT_DESCRIPTION,
+  exportFailureMessage,
+  deleteFailureMessage,
+} from '@/lib/account/accountDataCopy';
+import { useAstrologyTester } from '@/lib/hooks/useAstrologyTester';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -174,6 +181,8 @@ const SECTIONS: { id: SettingsSection; label: string; icon: typeof User; practit
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function AccountSettings() {
+  // Free Astrology is testers-only (lib/astrology/testerGate.ts); hide its links from everyone else.
+  const canOpenAstrology = useAstrologyTester();
   const [activeSection, setActiveSection] = useState<SettingsSection | null>(null);
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [memberSettings, setMemberSettings] = useState<MemberSettings | null>(null);
@@ -183,6 +192,10 @@ export function AccountSettings() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [birthSaveError, setBirthSaveError] = useState<string | null>(null);
+  const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
+  // Inline confirmation next to the button that was pressed (the header "Saved"
+  // label is out of view when the member is down at the save button).
+  const [justSaved, setJustSaved] = useState<'profile' | 'birth' | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
   // Practitioner projects state
@@ -190,7 +203,6 @@ export function AccountSettings() {
   const [projectsLoading, setProjectsLoading] = useState(false);
 
   // Password change state
-  const [showPasskey, setShowPasskey] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -201,6 +213,9 @@ export function AccountSettings() {
   // Delete account state
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [deleting, setDeleting] = useState(false);
+  // A refused or failed export / closure is shown, never swallowed.
+  const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
 
   // Settings applied confirmation
   const [settingsApplied, setSettingsApplied] = useState(false);
@@ -445,6 +460,11 @@ export function AccountSettings() {
   // Save Handlers
   // ─────────────────────────────────────────────────────────────────────────
 
+  const flashInlineSaved = useCallback((which: 'profile' | 'birth') => {
+    setJustSaved(which);
+    setTimeout(() => setJustSaved(cur => (cur === which ? null : cur)), 3500);
+  }, []);
+
   const showSaveIndicator = useCallback(() => {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -574,6 +594,8 @@ export function AccountSettings() {
   const saveProfile = useCallback(async () => {
     if (!userId) return;
     setSaving(true);
+    setProfileSaveError(null);
+    setJustSaved(null);
 
     try {
       const res = await apiFetch('/api/members/profile', {
@@ -612,13 +634,18 @@ export function AccountSettings() {
         }
 
         showSaveIndicator();
+        flashInlineSaved('profile');
+      } else {
+        const errBody = await res.json().catch(() => ({}));
+        setProfileSaveError(errBody?.error || `Save failed (${res.status})`);
       }
     } catch (err) {
       console.error('[AccountSettings] Save profile error:', err);
+      setProfileSaveError('Network error — check your connection and try again');
     } finally {
       setSaving(false);
     }
-  }, [userId, editName, editPreferredName, editPronouns, editEmail, editBio, editTimezone, showSaveIndicator]);
+  }, [userId, editName, editPreferredName, editPronouns, editEmail, editBio, editTimezone, showSaveIndicator, flashInlineSaved]);
 
   // Search for birth location
   const searchLocation = useCallback(async (query: string) => {
@@ -659,6 +686,7 @@ export function AccountSettings() {
     if (!userId) return;
     setSaving(true);
     setBirthSaveError(null);
+    setJustSaved(null);
 
     try {
       const birthData = editBirthDate ? {
@@ -679,6 +707,7 @@ export function AccountSettings() {
       });
 
       if (res.ok) {
+        flashInlineSaved('birth');
         setProfile(prev => prev ? { ...prev, birthData } : null);
         const storedUser = localStorage.getItem('beta_user');
         if (storedUser) {
@@ -700,7 +729,7 @@ export function AccountSettings() {
     } finally {
       setSaving(false);
     }
-  }, [userId, editBirthDate, editBirthTime, selectedLocation, showSaveIndicator]);
+  }, [userId, editBirthDate, editBirthTime, selectedLocation, showSaveIndicator, flashInlineSaved]);
 
   // Remove birth data — explicit null PUT, bypasses form state closure
   const removeBirthData = useCallback(async () => {
@@ -797,6 +826,7 @@ export function AccountSettings() {
 
   const exportData = useCallback(async () => {
     if (!userId) return;
+    setExportMessage(null);
 
     try {
       const res = await apiFetch('/api/members/export-data', {
@@ -813,15 +843,19 @@ export function AccountSettings() {
         a.download = `maia-data-export-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
+      } else {
+        setExportMessage(exportFailureMessage(res.status));
       }
     } catch (err) {
       console.error('[AccountSettings] Export error:', err);
+      setExportMessage(exportFailureMessage(null));
     }
   }, [userId]);
 
   const deleteAccount = useCallback(async () => {
     if (!userId || !profile || deleteConfirm !== profile.username) return;
     setDeleting(true);
+    setDeleteMessage(null);
 
     try {
       const res = await apiFetch('/api/members/delete-account', {
@@ -841,9 +875,14 @@ export function AccountSettings() {
         localStorage.removeItem('maia_settings');
         localStorage.removeItem('maia_account_settings');
         window.location.href = '/';
+      } else {
+        // The 409 is the route's designed refusal (nothing changed, what is held); a 500 or 401 is shown too.
+        const refusal = await res.json().catch(() => null);
+        setDeleteMessage(deleteFailureMessage(res.status, refusal));
       }
     } catch (err) {
       console.error('[AccountSettings] Delete error:', err);
+      setDeleteMessage(deleteFailureMessage(null, null));
     } finally {
       setDeleting(false);
     }
@@ -1049,8 +1088,14 @@ export function AccountSettings() {
         className="w-full py-3 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 rounded-xl text-amber-300 font-medium transition-colors disabled:opacity-50"
         whileTap={{ scale: 0.98 }}
       >
-        {saving ? 'Saving...' : 'Save Profile'}
+        {saving ? 'Saving...' : justSaved === 'profile' ? 'Saved ✓' : 'Save Profile'}
       </motion.button>
+      {profileSaveError && (
+        <p role="alert" className="text-red-400 text-sm text-center">{profileSaveError}</p>
+      )}
+      {justSaved === 'profile' && (
+        <p role="status" className="text-green-400 text-sm text-center">Profile saved</p>
+      )}
 
       {/* ── Birth Chart ──────────────────────────────────────────────── */}
       <div className="border-t border-white/10 pt-6 mt-2">
@@ -1174,6 +1219,7 @@ export function AccountSettings() {
             <p className="text-xs text-stone-400">
               MAIA can now reference your natal chart and current transits in conversations.
             </p>
+            {canOpenAstrology && (
             <motion.button
               onClick={() => window.location.href = '/astrology'}
               className="mt-3 text-xs text-amber-400 hover:text-amber-300 transition-colors"
@@ -1181,6 +1227,7 @@ export function AccountSettings() {
             >
               View Full Chart →
             </motion.button>
+            )}
           </div>
         )}
 
@@ -1196,8 +1243,11 @@ export function AccountSettings() {
           className="w-full py-3 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 rounded-xl text-amber-300 font-medium transition-colors disabled:opacity-50"
           whileTap={{ scale: 0.98 }}
         >
-          {saving ? 'Saving...' : 'Save Birth Data'}
+          {saving ? 'Saving...' : justSaved === 'birth' ? 'Saved ✓' : 'Save Birth Data'}
         </motion.button>
+        {justSaved === 'birth' && (
+          <p role="status" className="text-green-400 text-sm text-center">Birth data saved</p>
+        )}
 
         {/* Clear Birth Data */}
         {profile?.birthData?.date && (
@@ -1345,6 +1395,7 @@ export function AccountSettings() {
                   )}
                 </div>
                 <div className="flex gap-3 mt-3">
+                  {canOpenAstrology && (
                   <motion.button
                     onClick={() => window.location.href = '/astrology'}
                     className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
@@ -1352,6 +1403,7 @@ export function AccountSettings() {
                   >
                     View Full Chart →
                   </motion.button>
+                  )}
                 </div>
               </div>
             )}
@@ -1451,8 +1503,11 @@ export function AccountSettings() {
                 className="w-full py-2.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 rounded-xl text-amber-300 text-sm font-medium transition-colors disabled:opacity-50"
                 whileTap={{ scale: 0.98 }}
               >
-                {saving ? 'Saving…' : (hasBirthData ? 'Update Birth Data' : 'Save Birth Data')}
+                {saving ? 'Saving…' : justSaved === 'birth' ? 'Saved ✓' : (hasBirthData ? 'Update Birth Data' : 'Save Birth Data')}
               </motion.button>
+              {justSaved === 'birth' && (
+                <p role="status" className="text-green-400 text-xs text-center">Birth data saved</p>
+              )}
 
               {/* Remove */}
               {hasBirthData && (
@@ -1478,19 +1533,17 @@ export function AccountSettings() {
       {/* Passkey Display */}
       <div>
         <label className="text-sm text-stone-400 mb-2 block">Your Passkey</label>
-        <div className="flex items-center gap-2">
-          <div className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-stone-200 font-mono text-sm">
-            {showPasskey ? profile?.passkey : '••••••••••••••••'}
-          </div>
-          <button
-            onClick={() => setShowPasskey(!showPasskey)}
-            className="p-3 bg-white/5 border border-white/10 rounded-xl text-stone-400 hover:text-stone-200 transition-colors"
-          >
-            {showPasskey ? <EyeOff size={20} /> : <Eye size={20} />}
-          </button>
+        <div
+          className="px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-stone-200 font-mono text-sm"
+          data-testid="account-passkey"
+        >
+          {/* The server returns this already masked, on purpose: the full passkey
+              is never sent to the browser, so there is nothing to reveal. */}
+          {profile?.passkey || '••••••••••••••••'}
         </div>
         <p className="text-xs text-stone-400 mt-2">
-          Your passkey is used to recover your account. Keep it safe.
+          Your passkey is hidden for security and can’t be shown here. You don’t need it to sign in:
+          use your username and password, or ask for a sign-in code by email.
         </p>
       </div>
 
@@ -2705,7 +2758,7 @@ export function AccountSettings() {
           <div className="flex-1">
             <h4 className="text-sm font-medium text-stone-200">Export Your Data</h4>
             <p className="text-xs text-stone-400 mt-1 mb-3">
-              Download all your data including profile, settings, and session history.
+              {EXPORT_DATA_DESCRIPTION}
             </p>
             <motion.button
               onClick={exportData}
@@ -2714,6 +2767,7 @@ export function AccountSettings() {
             >
               Download JSON
             </motion.button>
+            {exportMessage ? <p role="status" className="mt-3 text-xs text-amber-300">{exportMessage}</p> : null}
           </div>
         </div>
       </div>
@@ -2725,7 +2779,7 @@ export function AccountSettings() {
           <div className="flex-1">
             <h4 className="text-sm font-medium text-red-300">Delete Account</h4>
             <p className="text-xs text-stone-400 mt-1 mb-3">
-              Permanently delete your account and all associated data. This cannot be undone.
+              {DELETE_ACCOUNT_DESCRIPTION}
             </p>
             <input
               type="text"
@@ -2742,6 +2796,7 @@ export function AccountSettings() {
             >
               {deleting ? 'Deleting...' : 'Delete My Account'}
             </motion.button>
+            {deleteMessage ? <p role="status" className="mt-3 text-xs text-amber-300">{deleteMessage}</p> : null}
           </div>
         </div>
       </div>

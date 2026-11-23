@@ -39,6 +39,8 @@ import { resolvePriority, type EmailPriority } from './purpose';
 import { openAttempt, settleAttempt, stateForFailure } from './ledger';
 import { memberRef } from '@/lib/privacy/memberRef';
 import { redactEmails } from '@/lib/privacy/redactEmails';
+import { reserveManagedAuthSend } from './senderCapacity';
+import { notifyMailTransportDown } from '@/lib/ops/mailTransportAlert.server';
 
 // ============================================================================
 // VERIFIED SENDERS
@@ -241,12 +243,14 @@ export function classifyProviderError(err: unknown): {
   name?: string;
   message: string;
 } {
-  const e = (err ?? {}) as { name?: unknown; message?: unknown; statusCode?: unknown };
+  const e = (err ?? {}) as { name?: unknown; message?: unknown; statusCode?: unknown; code?: unknown };
   const name = typeof e.name === 'string' ? e.name : undefined;
   const message = typeof e.message === 'string' ? e.message : 'Unknown email provider error';
   const statusCode = typeof e.statusCode === 'number' ? e.statusCode : undefined;
   const haystack = `${name ?? ''} ${message}`.toLowerCase();
   const has = (needle: string) => haystack.includes(needle);
+
+  if (e.code === 'EAUTH') return { kind: 'provider_auth', name, message };
 
   // Quota before throttle: a monthly quota is also served as 429, but the
   // remedy is "top up / wait for the reset", not "retry in a moment".
@@ -378,6 +382,19 @@ function logSend(
     console.error(
       `[MAIA/email] TRANSPORT_DOWN kind=${result.failureKind} providerCode=${result.providerCode ?? 'unnamed'} purpose=${purpose} — email delivery is failing for ALL recipients. Check the provider account.`
     );
+    // Log lines reach no one. Page a human over a non-email path; never awaited,
+    // never allowed to change the send's outcome.
+    // `.catch` is load-bearing: a rejection nobody handles crashes the Node
+    // process, which would turn a paging fault into a full outage.
+    Promise.resolve()
+      .then(() =>
+        notifyMailTransportDown({
+          kind: result.failureKind as string,
+          providerCode: result.providerCode,
+          purpose,
+        }),
+      )
+      .catch(() => {});
   }
 }
 
@@ -417,6 +434,19 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
     return result;
   }
 
+  if (provider.name === 'smtp') {
+    const admission = await reserveManagedAuthSend({
+      purpose: opts.purpose, from, to: opts.to,
+      correlationId: opts.correlationId, idempotencyKey: opts.idempotencyKey,
+    });
+    if (!admission.admitted) {
+      const result = failure(admission.kind, admission.detail, admission.code, ctx);
+      logSend(opts.purpose, from, toLog, domain, result, trace);
+      return result;
+    }
+  }
+
+  let attemptId: string | null = null;
   try {
     // Purpose, lane and correlation travel WITH the message as provider tags,
     // so the vendor's own dashboard segments the same way our logs do and an
@@ -437,7 +467,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
     // evidence rather than nothing. Best-effort by construction: `openAttempt`
     // swallows its own failures and returns null, and nothing below branches on
     // the result. The ledger observes sending; it does not authorize it.
-    const attemptId = await openAttempt({
+    attemptId = await openAttempt({
       purpose: opts.purpose,
       lane: priority,
       provider: provider.name,
@@ -452,6 +482,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
     });
 
     const outcome = await provider.send({
+      purpose: opts.purpose,
       from,
       to: opts.to,
       subject: opts.subject,
@@ -499,6 +530,10 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
   } catch (err) {
     const { name, message } = classifyProviderError(err);
     const result = failure('exception', message, name, ctx);
+    if (provider.name === 'smtp') result.retryable = false;
+    await settleAttempt(attemptId, {
+      state: 'indeterminate', failureClass: 'exception', failureCode: name,
+    });
     logSend(opts.purpose, from, toLog, domain, result, trace);
     return result;
   }

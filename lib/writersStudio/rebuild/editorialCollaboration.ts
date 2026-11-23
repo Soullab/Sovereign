@@ -1,7 +1,14 @@
+import type { TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
+import type { TurnShape } from '@/lib/writersStudio/conversationTurn';
+import type { PassageAct } from '@/lib/writersStudio/passageActs';
+import type { ArrivalOriginRef } from '@/lib/writersStudio/arrivalOrigin';
 import { apiFetch } from '@/lib/http/apiBase';
+import { replyLengthField } from '@/lib/writersStudio/replyLengthPreference';
 import { occurrences } from '@/lib/manuscript/exactText';
 import type { CurrentPostureRead } from '@/lib/sanctuary/currentClientPosture';
 import type { ProposalPolicy } from '@/lib/manuscript/editorialScope/sequence';
+import type { DispatchObservation } from '@/lib/ai/structured/dispatch';
+import type { EditorialDepth } from '@/lib/writersStudio/editorialDepth';
 
 /**
  * SANCTUARY-EDITORIAL-PERSISTENCE-01 / E1 — POSTURE IS CARRIED, NEVER DEFAULTED.
@@ -26,6 +33,8 @@ export interface RebuildEditorialThread {
   application?: { authorizationId: string; versionId: string; resultingVersion: number; undone: boolean; canUndo: boolean } | null;
   threadId: string;
   chainId: string;
+  /** Verified server read includes the owning manuscript Work; older client fixtures may omit it. */
+  workId?: string;
   locusText: string;
   targetSectionId: string | null;
   sectionLabel: string | null;
@@ -35,6 +44,8 @@ export interface RebuildEditorialThread {
     speaker: 'author' | 'maia';
     body: string;
     at: string;
+    /** Server-sent: the option this MAIA turn produced, or null for a reply-only turn. */
+    adjunct?: { kind: string; id: string } | null;
   }[];
   versions: readonly RebuildEditorialVersion[];
   headVersionId: string | null;
@@ -42,7 +53,7 @@ export interface RebuildEditorialThread {
 
 export type BoundThreadOutcome =
   | { ok: true; thread: RebuildEditorialThread }
-  | { ok: false; reason: 'unavailable' | 'unreadable' | 'locus_mismatch' | 'posture_unresolved' | 'sanctuary_unavailable'; detail?: string };
+  | { ok: false; reason: 'unavailable' | 'unreadable' | 'locus_mismatch' | 'posture_unresolved' | 'sanctuary_unavailable' | 'relationship_required' | 'origin_unavailable'; detail?: string };
 export function threadMatchesVisibleSection(
   thread: Pick<RebuildEditorialThread, 'targetSectionId'>,
   visibleDraftSectionId: string,
@@ -53,14 +64,22 @@ export function threadMatchesVisibleSection(
 export async function readBoundEditorialThread(
   threadId: string,
   visibleDraftSectionId: string,
+  relationshipId: string | null,
 ): Promise<BoundThreadOutcome> {
+  if (!relationshipId) return { ok: false, reason: 'relationship_required' };
   try {
     const res = await apiFetch(
-      `/api/writers-studio/editorial/thread?threadId=${encodeURIComponent(threadId)}`,
+      `/api/writers-studio/editorial/thread?threadId=${encodeURIComponent(threadId)}&relationshipId=${encodeURIComponent(relationshipId)}`,
       { method: 'GET' },
     );
-    if (!res.ok) return { ok: false, reason: res.status === 404 ? 'unavailable' : 'unreadable' };
-    const thread = (await res.json()) as RebuildEditorialThread;
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      const reason = body?.error === 'origin_unavailable' ? 'origin_unavailable'
+        : body?.error === 'relationship_required' ? 'relationship_required'
+          : res.status === 404 ? 'unavailable' : 'unreadable';
+      return { ok: false, reason };
+    }
+    const thread = body as RebuildEditorialThread;
     if (!thread?.threadId || !threadMatchesVisibleSection(thread, visibleDraftSectionId)) {
       return {
         ok: false,
@@ -76,23 +95,25 @@ export async function readBoundEditorialThread(
 export async function openBoundEditorialThread(
   visibleDraftSectionId: string,
   posture: CurrentPostureRead,
+  relationshipId: string | null,
 ): Promise<BoundThreadOutcome> {
   if (!posture.resolved) return { ok: false, reason: 'posture_unresolved' };
+  if (!relationshipId) return { ok: false, reason: 'relationship_required' };
   try {
     const res = await apiFetch('/api/writers-studio/editorial/thread', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sectionId: visibleDraftSectionId, sanctuary: posture.sanctuary }),
+      body: JSON.stringify({ sectionId: visibleDraftSectionId, sanctuary: posture.sanctuary, relationshipId }),
     });
-    if (res.status === 409) {
-      const why = await res.json().catch(() => null);
-      if (why?.error === 'sanctuary_unavailable') return { ok: false, reason: 'sanctuary_unavailable' };
-      return { ok: false, reason: 'unreadable' };
-    }
-    if (!res.ok) return { ok: false, reason: res.status === 404 ? 'unavailable' : 'unreadable' };
     const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      if (body?.error === 'sanctuary_unavailable') return { ok: false, reason: 'sanctuary_unavailable' };
+      if (body?.error === 'relationship_required') return { ok: false, reason: 'relationship_required' };
+      if (body?.error === 'origin_unavailable') return { ok: false, reason: 'origin_unavailable' };
+      return { ok: false, reason: res.status === 404 ? 'unavailable' : 'unreadable' };
+    }
     if (!body || typeof body.threadId !== 'string') return { ok: false, reason: 'unreadable' };
-    return readBoundEditorialThread(body.threadId, visibleDraftSectionId);
+    return readBoundEditorialThread(body.threadId, visibleDraftSectionId, relationshipId);
   } catch {
     return { ok: false, reason: 'unavailable' };
   }
@@ -103,28 +124,33 @@ export async function openBoundEditorialPassage(
   range: { start: number; end: number },
   revisionNumber: number,
   posture: CurrentPostureRead,
+  relationshipId: string | null,
 ): Promise<BoundThreadOutcome & { refusal?: string }> {
   if (!posture.resolved) return { ok: false, reason: 'posture_unresolved' };
+  if (!relationshipId) return { ok: false, reason: 'relationship_required', refusal: 'relationship_required' };
   try {
     const res = await apiFetch('/api/writers-studio/rebuild/editorial/thread', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sectionId: visibleDraftSectionId, range, revisionNumber, sanctuary: posture.sanctuary }),
+      body: JSON.stringify({ sectionId: visibleDraftSectionId, range, revisionNumber, sanctuary: posture.sanctuary, relationshipId }),
     });
     const body = await res.json().catch(() => null);
     if (res.status === 409 && body?.error === 'sanctuary_unavailable') {
       return { ok: false, reason: 'sanctuary_unavailable' };
     }
     if (!res.ok) {
+      const reason = body?.error === 'relationship_required' ? 'relationship_required'
+        : body?.error === 'origin_unavailable' ? 'origin_unavailable'
+          : res.status === 404 ? 'unavailable' : 'unreadable';
       return {
         ok: false,
-        reason: res.status === 404 ? 'unavailable' : 'unreadable',
+        reason,
         detail: typeof body?.error === 'string' ? body.error : undefined,
         refusal: typeof body?.error === 'string' ? body.error : undefined,
       };
     }
     if (!body || typeof body.threadId !== 'string') return { ok: false, reason: 'unreadable' };
-    return readBoundEditorialThread(body.threadId, visibleDraftSectionId);
+    return readBoundEditorialThread(body.threadId, visibleDraftSectionId, relationshipId);
   } catch {
     return { ok: false, reason: 'unavailable' };
   }
@@ -143,13 +169,24 @@ export interface EditorialCarrySelection {
 export type EditorialTurnOutcome =
   | {
       ok: true; thread: RebuildEditorialThread; producedVersionId: string | null;
+      /** Exact persisted pair indexes, matched against the owned thread reread. */
+      memberTurnIndex: number;
+      maiaTurnIndex: number;
       /** ⭐ Carried on SUCCESS — noticing in time IS the protection. */
       voice: VoiceNotice | null;
     }
   | {
       ok: false;
+      /** The existing server can commit the member act before MAIA fails.
+       * A field here is a claimed act identity, NOT a durable UI display-text
+       * receipt, cross-Work permission, or successful MAIA delivery. */
+      memberTurnIndex?: number;
+      /** Only the three defined dispatch observations can cross this seam.
+       * 'unknown' must remain genuinely unknown; no retry is implied. */
+      dispatch?: DispatchObservation;
       reason: 'unavailable' | 'unreadable' | 'locus_mismatch' | 'turn_refused' | 'scope_refused'
-        | 'posture_unresolved' | 'sanctuary_unavailable';
+        | 'accountability_unresolved'
+        | 'posture_unresolved' | 'sanctuary_unavailable' | 'relationship_required' | 'origin_unavailable';
       detail?: string;
       voice?: VoiceNotice;
       /** ⭐ Counts only, present on a scope refusal. ⛔ Never the refused wording. */
@@ -182,16 +219,32 @@ export async function sendBoundEditorialTurn(
   options?: {
     /** Exploratory turns may close the outcome vocabulary to reply_only. */
     proposalPolicy?: ProposalPolicy;
+    /** Explicit author-chosen explanation depth; never writer skill or edit authority. */
+    responseDepth?: EditorialDepth;
     /** Selected durable Work-level editorial relationship, when carrying one. */
     relationshipId?: string;
     /** One explicitly selected prior MAIA editorial response from this relationship. */
     carry?: EditorialCarrySelection;
+    /** The teaching button pressed (F1); the server owns the answer's shape. */
+    teachingAnchor?: TeachingAnchor;
+    /** The free Ask box (Design 3C); the server owns the answer's shape. */
+    turnShape?: TurnShape;
+    /** The card pressed (conversation-first Focus, step 1); the server owns its instruction. */
+    passageAct?: PassageAct;
+    /** Where the writer arrived from (F1): identities only; the server loads the observation. */
+    origin?: ArrivalOriginRef;
   } | string,
 ): Promise<EditorialTurnOutcome> {
   if (!posture.resolved) return { ok: false, reason: 'posture_unresolved' };
   const proposalPolicy = typeof options === 'string' ? undefined : options?.proposalPolicy;
+  const responseDepth = typeof options === 'string' ? undefined : options?.responseDepth;
   const relationshipId = typeof options === 'string' ? options : options?.relationshipId;
   const carry = typeof options === 'string' ? undefined : options?.carry;
+  const teachingAnchor = typeof options === 'string' ? undefined : options?.teachingAnchor;
+  const turnShape = typeof options === 'string' ? undefined : options?.turnShape;
+  const passageAct = typeof options === 'string' ? undefined : options?.passageAct;
+  const origin = typeof options === 'string' ? undefined : options?.origin;
+  if (!relationshipId) return { ok: false, reason: 'scope_refused', detail: 'relationship_required' };
   try {
     const res = await apiFetch('/api/writers-studio/editorial/turn', {
       method: 'POST',
@@ -201,11 +254,34 @@ export async function sendBoundEditorialTurn(
         sanctuary: posture.sanctuary,
         ...(scope ? { scope } : {}),
         ...(proposalPolicy ? { proposalPolicy } : {}),
-        ...(relationshipId ? { relationshipId } : {}),
+        ...(responseDepth ? { responseDepth } : {}),
+        relationshipId,
         ...(carry ? { carry } : {}),
+        ...(teachingAnchor ? { teachingAnchor } : {}),
+        ...(turnShape ? { turnShape } : {}),
+        ...(passageAct ? { passageAct } : {}),
+        ...(origin ? { origin } : {}),
+        ...replyLengthField(),
       }),
     });
     const body = await res.json().catch(() => null);
+    // Only carry an act receipt for the EXACT thread named in this request.
+    // No response is proof of current member/Work permission: the protected
+    // server boundary owns that, while the caller rechecks active UI scope.
+    const savedMemberIndex = body?.threadId === threadId
+      && body?.persisted !== false
+      && Number.isSafeInteger(body?.memberTurnIndex)
+      && body.memberTurnIndex >= 0
+      ? body.memberTurnIndex as number : null;
+    const safeDispatch: DispatchObservation | undefined =
+      body?.dispatch === 'response_observed'
+      || body?.dispatch === 'no_response_observed'
+      || body?.dispatch === 'unknown'
+        ? body.dispatch as DispatchObservation : undefined;
+    const priorAct = savedMemberIndex === null ? {} : {
+      memberTurnIndex: savedMemberIndex,
+      ...(safeDispatch ? { dispatch: safeDispatch } : {}),
+    };
     if (!res.ok) {
       /* E1 — Sanctuary is a refusal in the member's terms, never a fault. */
       if (res.status === 409 && body?.error === 'sanctuary_unavailable') {
@@ -218,15 +294,34 @@ export async function sendBoundEditorialTurn(
       if (res.status === 409 && body?.error === 'proposal_policy_reply_only') {
         return {
           ok: false,
+          ...priorAct,
           reason: 'turn_refused',
           detail: typeof body?.detail === 'string'
             ? body.detail
             : 'MAIA stayed in exploration. Nothing was added to the revision options.',
         };
       }
+      if (res.status === 409 && body?.error === 'noop_editorial_adjustment') {
+        return {
+          ok: false,
+          reason: 'turn_refused',
+          detail: typeof body?.detail === 'string'
+            ? body.detail
+            : 'That adjustment repeated the existing proposal unchanged. Nothing new was added.',
+        };
+      }
+      if (res.status === 500 && body?.error === 'disclosure_confirmation_unresolved') {
+        return {
+          ok: false,
+          ...priorAct,
+          reason: 'accountability_unresolved',
+          detail: 'MAIA may have received the passage, but Soullab could not confirm the disclosure record. The response was withheld. Nothing was applied, and this request will not be retried automatically.',
+        };
+      }
       if (res.status === 409 && (body?.scope || body?.voice || body?.error === 'sequence_discussion_first')) {
         return {
           ok: false, reason: 'scope_refused',
+          ...priorAct,
           detail: typeof body?.detail === 'string' ? body.detail : undefined,
           ...(body?.scope ? { scope: body.scope } : {}),
           ...(body?.voice ? { voice: body.voice } : {}),
@@ -234,6 +329,7 @@ export async function sendBoundEditorialTurn(
       }
       return {
         ok: false,
+        ...priorAct,
         reason: res.status === 404 ? 'unavailable' : 'turn_refused',
         detail: typeof body?.error === 'string' ? body.error : undefined,
       };
@@ -243,9 +339,121 @@ export async function sendBoundEditorialTurn(
       ? { note: body.voice.note, unfamiliar: body.voice.unfamiliar ?? [],
           sampleWords: Number(body.voice.sampleWords) || 0 }
       : null;
-    const reread = await readBoundEditorialThread(threadId, visibleDraftSectionId);
+    const reread = await readBoundEditorialThread(threadId, visibleDraftSectionId, relationshipId);
+    if (!reread.ok) {
+      // The server's matching, bounded 200 act index is still evidence that
+      // *some composite member act was recorded*, even when a later GET fails.
+      // This is NOT an authenticated current-Work grant, verified human-only
+      // display copy, or confirmed MAIA reply. Never expose maiaTurnIndex or
+      // automatically retry on an unreadable/possibly already-written act.
+      return { ...reread, ...priorAct };
+    }
+
+    // HTTP 200 and a readable thread do not prove which *particular* author
+    // act and MAIA reply this request produced. Require both server-named
+    // turn indexes and EXACT speaker/body identity from the owned reread.
+    // This comparison does not authorize a new Work or interpret prompt
+    // scaffolding as human-display-safe writer wording.
+    const memberTurnIndex = savedMemberIndex;
+    const maiaTurnIndex = Number.isSafeInteger(body?.maiaTurnIndex)
+      && body.maiaTurnIndex >= 0 ? body.maiaTurnIndex as number : null;
+    const stored = reread.thread.turns;
+    const writerTurns = Array.isArray(stored) && memberTurnIndex !== null
+      ? stored.filter(turn => turn.turnIndex === memberTurnIndex && turn.speaker === 'author')
+      : [];
+    const maiaTurns = Array.isArray(stored) && maiaTurnIndex !== null
+      ? stored.filter(turn => turn.turnIndex === maiaTurnIndex && turn.speaker === 'maia')
+      : [];
+    if (body?.threadId !== threadId
+      || reread.thread.threadId !== threadId
+      || memberTurnIndex === null || maiaTurnIndex === null
+      || maiaTurnIndex <= memberTurnIndex
+      || typeof body?.response !== 'string'
+      || writerTurns.length !== 1 || writerTurns[0]?.body !== text
+      || maiaTurns.length !== 1 || maiaTurns[0]?.body !== body.response) {
+      return {
+        ok: false, reason: 'unreadable',
+        detail: 'The submitted writer act and MAIA reply could not be matched to exact persisted turn identities.',
+      };
+    }
+    return { ok: true, thread: reread.thread, producedVersionId, voice,
+      memberTurnIndex, maiaTurnIndex };
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+}
+
+/**
+ * R2 "MAIA opens" (O1(a)). The writer's deliberate gesture asks MAIA to speak first on a
+ * passage. ⛔ There is NO writer turn: the reply is matched by `maiaTurnIndex` only, and
+ * the reread must show exactly one MAIA turn with that body and NO author turn.
+ */
+export async function openEditorialConversation(
+  threadId: string,
+  visibleDraftSectionId: string,
+  /** The member's CURRENT posture, read at the gesture. Required. */
+  posture: CurrentPostureRead,
+  relationshipId: string,
+  options?: {
+    scope?: { latitude: number; mayRemoveParagraphs: boolean };
+    responseDepth?: EditorialDepth;
+  },
+): Promise<EditorialTurnOutcome> {
+  if (!posture.resolved) return { ok: false, reason: 'posture_unresolved' };
+  if (posture.sanctuary) return { ok: false, reason: 'sanctuary_unavailable' };
+  if (!relationshipId) return { ok: false, reason: 'scope_refused', detail: 'relationship_required' };
+  try {
+    const res = await apiFetch('/api/writers-studio/editorial/turn', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        threadId, opening: true, sanctuary: posture.sanctuary, relationshipId,
+        ...(options?.scope ? { scope: options.scope } : {}),
+        ...(options?.responseDepth ? { responseDepth: options.responseDepth } : {}),
+        ...replyLengthField(),
+      }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      if (res.status === 409 && body?.error === 'sanctuary_unavailable') {
+        return { ok: false, reason: 'sanctuary_unavailable' };
+      }
+      if (res.status === 500 && body?.error === 'disclosure_confirmation_unresolved') {
+        return {
+          ok: false, reason: 'accountability_unresolved',
+          detail: 'MAIA may have received the passage, but Soullab could not confirm the disclosure record. The response was withheld and this will not be retried automatically.',
+        };
+      }
+      return {
+        ok: false,
+        reason: res.status === 404 ? 'unavailable' : 'turn_refused',
+        detail: typeof body?.error === 'string' ? body.error : undefined,
+      };
+    }
+    const maiaTurnIndex = Number.isSafeInteger(body?.maiaTurnIndex) && body.maiaTurnIndex >= 0
+      ? body.maiaTurnIndex as number : null;
+    const reread = await readBoundEditorialThread(threadId, visibleDraftSectionId, relationshipId);
     if (!reread.ok) return reread;
-    return { ok: true, thread: reread.thread, producedVersionId, voice };
+    const stored = reread.thread.turns;
+    const maiaTurns = Array.isArray(stored) && maiaTurnIndex !== null
+      ? stored.filter(turn => turn.turnIndex === maiaTurnIndex && turn.speaker === 'maia')
+      : [];
+    const anyWriterTurn = Array.isArray(stored) && stored.some(turn => turn.speaker === 'author');
+    if (body?.threadId !== threadId
+      || reread.thread.threadId !== threadId
+      || maiaTurnIndex === null
+      || typeof body?.response !== 'string'
+      || anyWriterTurn
+      || maiaTurns.length !== 1 || maiaTurns[0]?.body !== body.response) {
+      return {
+        ok: false, reason: 'unreadable',
+        detail: 'The opening could not be matched to an exact persisted MAIA turn.',
+      };
+    }
+    /* No writer turn exists, so there is no member index. The union keeps its shape
+       with a typed sentinel: -1 means "no writer turn", never a position. */
+    return { ok: true, thread: reread.thread, producedVersionId: null, voice: null,
+      memberTurnIndex: -1, maiaTurnIndex };
   } catch {
     return { ok: false, reason: 'unavailable' };
   }
@@ -263,8 +471,10 @@ export async function adoptBoundEditorialVersion(
   threadId: string,
   visibleDraftSectionId: string,
   versionId: string,
+  relationshipId: string | null,
 ): Promise<{ ok: true; outcome: AdoptionWireOutcome } | { ok: false; reason: string }> {
-  const before = await readBoundEditorialThread(threadId, visibleDraftSectionId);
+  if (!relationshipId) return { ok: false, reason: 'relationship_required' };
+  const before = await readBoundEditorialThread(threadId, visibleDraftSectionId, relationshipId);
   if (!before.ok) return { ok: false, reason: before.reason };
   if (!before.thread.versions.some((v) => v.id === versionId)) {
     return { ok: false, reason: 'version_not_in_bound_thread' };
@@ -291,6 +501,25 @@ export function exactVersion(
 ): RebuildEditorialVersion | null {
   if (!versionId) return null;
   return thread.versions.find((v) => v.id === versionId) ?? null;
+}
+
+/**
+ * The wording that may lawfully anchor a resumed editorial relationship.
+ *
+ * The proposal chain's `locusText` remains immutable custody of the words the
+ * relationship began against. After an explicit Apply, those words may no
+ * longer exist in the live Work. While the server still reports that exact
+ * application as undoable, return may orient to the exact applied version
+ * named by the durable receipt. No other version and no inferred wording may
+ * replace the frozen locus.
+ */
+export function returnLocusText(thread: RebuildEditorialThread): string {
+  const application = thread.application;
+  if (application && !application.undone && application.canUndo) {
+    const applied = exactVersion(thread, application.versionId);
+    if (applied) return applied.wording;
+  }
+  return thread.locusText;
 }
 
 export interface ChangeSpan {
@@ -360,3 +589,6 @@ export function locateUniquePassage(
   const start = [...body.slice(0, unitIndex)].length;
   return { start, end: start + [...expected].length };
 }
+
+/** Exact presentation-to-Source mapping remains an independently testable pure helper. */
+export { locateUniquePresentationPassage } from '../presentationPassageLocator';

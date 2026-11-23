@@ -1,6 +1,7 @@
 import { query } from '@/lib/db/postgres';
 import { UNTITLED_EXPRESSION } from '@/lib/manuscript/untitledExpression';
 import type { MemberBookSection } from './renderMemberBook';
+import { workingDraftBody } from './workingDraftBody';
 
 export type RenderSourceAuthority = 'working_draft' | 'source';
 
@@ -8,6 +9,8 @@ export type MemberRenderSource =
   | {
       ok: true;
       title: string;
+      /** Raw expression title; null means the Work name may label a preview. */
+      manuscriptTitle: string | null;
       author: string | null;
       sections: MemberBookSection[];
       sourceAuthority: RenderSourceAuthority;
@@ -88,7 +91,7 @@ export async function loadMemberRenderSource(
 
       sections = draftRows.rows.map((row) => ({
         heading: row.heading,
-        body: row.body,
+        body: workingDraftBody(row.body, row.heading),
         headingDepth:
           row.heading_depth === 1 || row.heading_depth === 2 || row.heading_depth === 3
             ? row.heading_depth
@@ -132,6 +135,7 @@ export async function loadMemberRenderSource(
     return {
       ok: true,
       title,
+      manuscriptTitle: ms.rows[0]!.title,
       author: who.rows[0]?.name ?? null,
       sections,
       sourceAuthority,

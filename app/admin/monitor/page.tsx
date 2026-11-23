@@ -9,6 +9,9 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { adminFetch, storeAdminPassword } from '@/lib/admin/adminFetch';
+import WritersPilotPanel from './WritersPilotPanel';
+import SoundStudioReviewsPanel from './SoundStudioReviewsPanel';
+import EmailHealthBanner from './EmailHealthBanner';
 
 type BugSource = 'member' | 'claude' | 'system';
 type BugSeverity = 'low' | 'normal' | 'high' | 'critical';
@@ -92,7 +95,7 @@ const SOURCE_LABEL: Record<BugSource, string> = {
 const STATUSES: BugStatus[] = ['new', 'seen', 'in_progress', 'resolved', 'released', 'wont_fix'];
 const SEVERITIES: BugSeverity[] = ['low', 'normal', 'high', 'critical'];
 
-type Tab = 'bugs' | 'feedback' | 'requests' | 'alerts';
+type Tab = 'bugs' | 'pilot' | 'sound' | 'feedback' | 'requests' | 'alerts';
 
 export default function MonitorFieldPage() {
   const [authed, setAuthed] = useState(false);
@@ -238,9 +241,13 @@ export default function MonitorFieldPage() {
           </p>
         </header>
 
+        <EmailHealthBanner />
+
         {/* Tabs */}
         <nav className="flex flex-wrap gap-1 border-b border-maia-ink-40/15">
           <TabButton label="Bugs" active={tab === 'bugs'} onClick={() => setTab('bugs')} badge={counts?.new || undefined} />
+          <TabButton label="Writer’s Studio pilot" active={tab === 'pilot'} onClick={() => setTab('pilot')} />
+          <TabButton label="Sound Studio reviews" active={tab === 'sound'} onClick={() => setTab('sound')} />
           <TabButton label="Feedback" active={tab === 'feedback'} onClick={() => setTab('feedback')} muted />
           <TabButton label="Requests" active={tab === 'requests'} onClick={() => setTab('requests')} muted />
           <TabButton label="System alerts" active={tab === 'alerts'} onClick={() => setTab('alerts')} muted />
@@ -263,6 +270,10 @@ export default function MonitorFieldPage() {
             patchBug={patchBug}
           />
         )}
+
+        {tab === 'pilot' && <WritersPilotPanel />}
+
+        {tab === 'sound' && <SoundStudioReviewsPanel />}
 
         {tab === 'feedback' && (
           <ReservedSlot

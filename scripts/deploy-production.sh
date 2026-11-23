@@ -57,7 +57,11 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 
 run_dependency_security_audit() {
-    local manifest="${MAIA_BUILD_CONTEXT:-$PROJECT_DIR}/package.json"
+    # Audit the TARGET, never the shared checkout: the audit must read the same
+    # lockfile the image is built from (2026-10-31 — it ran from $PROJECT_DIR and
+    # audited a stale checkout's lockfile instead of the immutable snapshot).
+    local audit_dir="${MAIA_BUILD_CONTEXT:-$PROJECT_DIR}"
+    local manifest="$audit_dir/package.json"
     local declared manager fix_hint
     local -a audit_cmd
 
@@ -76,7 +80,9 @@ run_dependency_security_audit() {
     case "$manager" in
         npm)
             command -v npm >/dev/null 2>&1 || { log_error "Declared package manager npm is unavailable — dependency audit cannot run."; return 1; }
-            audit_cmd=(npm audit --omit=dev --audit-level=moderate)
+            # Fails closed at moderate+; honours only live, dated entries in the
+            # snapshot's security/npm-audit-exceptions.json.
+            audit_cmd=(node "$audit_dir/scripts/deploy-audit-gate.mjs" "$audit_dir")
             fix_hint="npm audit fix"
             ;;
         pnpm)
@@ -90,7 +96,7 @@ run_dependency_security_audit() {
             ;;
     esac
 
-    if ! "${audit_cmd[@]}" 2>&1; then
+    if ! (cd "$audit_dir" && "${audit_cmd[@]}") 2>&1; then
         log_error "Dependency audit failed — moderate+ production vulnerabilities detected."
         log_error "Review and remediate deliberately; do not apply fixes blindly."
         log_error "Package-manager hint: $fix_hint"
@@ -166,6 +172,67 @@ collect_pending_production_migrations() {
     printf '%s\n' "$raw" | grep -E '^database/migrations/[^/]+\.sql$' || true
 }
 
+# FOUNDER-BETA-MIGRATION-01: one-time exact-byte exception (not a security verdict).
+# Preserve pending-set recheck, migration fail-stop, old reader, rollback and image stamps.
+founder_college_essay_beta_migration_or_abort() {
+    local target="$1" pending="$2" context="$3"
+    local expected_path="database/migrations/20261113000010_studio_doorway_invitation_studio_access.sql"
+    local expected_hash="1bb1aabd9ee36a34a8028abe658efc4608c6c5088cebe82a090a30022acc9062"
+    local base="352a6e410ac6212601ec642a58c940bdcca9965b"
+    local old="faac1d4824cff4504ea814678e5e8270abc60fa6"
+    local old_image="sha256:a9317ce76e58a34bfa83d80dbc68d4d66020959dafa64bd4c95ba06d017fad97"
+    local rollback_image="sha256:ba28b98a3adc73a4962efac222ffcf8e7d87c7b961ea8da35940387dac9e61db"
+    local name hash live_stamp live_sha state
+
+    if [ "$pending" != "$expected_path" ] ||
+       ! git -C "$PROJECT_DIR" merge-base --is-ancestor "$base" "$target"; then
+        log_error "FOUNDER-BETA: unexpected pending set or source ancestry."
+        return 1
+    fi
+    # No application, invitation-auth, or data-model changes after the frozen candidate.
+    while IFS= read -r name; do
+        case "$name" in
+            scripts/deploy-production.sh|scripts/verify-college-essay-beta-migration-exception.sh) ;;
+            *) log_error "FOUNDER-BETA: changed source not covered: $name"; return 1 ;;
+        esac
+    done < <(git -C "$PROJECT_DIR" diff --name-only "$base" "$target")
+    if [ ! -f "$context/$expected_path" ]; then
+        log_error "FOUNDER-BETA: immutable migration missing."
+        return 1
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        hash="$(sha256sum "$context/$expected_path" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        hash="$(shasum -a 256 "$context/$expected_path" | awk '{print $1}')"
+    else
+        log_error "FOUNDER-BETA: no SHA-256 tool."; return 1
+    fi
+    if [ "$hash" != "$expected_hash" ]; then
+        log_error "FOUNDER-BETA: migration byte hash mismatch."; return 1
+    fi
+    live_stamp="$(docker exec maia-sovereign printenv GIT_COMMIT 2>/dev/null)" || return 1
+    live_sha="$(git -C "$PROJECT_DIR" rev-parse "$live_stamp^{commit}" 2>/dev/null)" || return 1
+    if [ "$live_sha" != "$old" ] ||
+       [ "$(docker inspect maia-sovereign -f '{{.Image}}' 2>/dev/null)" != "$old_image" ] ||
+       [ "$(docker image inspect maia-sovereign:previous -f '{{.Id}}' 2>/dev/null)" != "$rollback_image" ]; then
+        log_error "FOUNDER-BETA: old reader, running image, or rollback image changed."
+        return 1
+    fi
+    state="$(docker exec maia-postgres psql -U soullab -d maia_consciousness -Atqc \
+        "SELECT CASE WHEN to_regclass('public.studio_doorway_invitations') IS NOT NULL \
+         AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='studio_doorway_invitations' AND column_name='issuer_member_id') \
+         AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='studio_doorway_invitations' AND column_name='grants_writers_studio') \
+         THEN 'ready' ELSE 'refuse' END" 2>/dev/null)" || return 1
+    if [ "$state" != "ready" ]; then
+        log_error "FOUNDER-BETA: schema is not the expected pre-migration shape."
+        return 1
+    fi
+    MIGRATION_COMPAT_EXPECTED_OLD_READER="$live_sha"
+    log_warn "FOUNDER-BETA: exact single-migration documentary-review exception admitted."
+    log_warn "FOUNDER-BETA: not independently security-reviewed. All mutation/rollback gates remain."
+    return 0
+}
+
 review_migration_custody_or_abort() {
     local phase="$1"
 
@@ -191,6 +258,19 @@ review_migration_custody_or_abort() {
     MIGRATION_COMPAT_EXPECTED_PENDING="$pending"
     if [ -z "$pending" ]; then
         log_info "REVIEW-CUSTODY: no production-pending migrations; no migration review required."
+        return 0
+    fi
+
+    # Founder-authorized opt-in exception for ONE additive College Essay beta migration.
+    if [ -n "${SOULLAB_BETA_MIGRATION_POLICY:-}" ]; then
+        if [ "$SOULLAB_BETA_MIGRATION_POLICY" != "college-essay-20261113-single-additive" ]; then
+            log_error "FOUNDER-BETA: unknown migration exception; refusing."
+            return 1
+        fi
+        if ! founder_college_essay_beta_migration_or_abort "$target" "$pending" "${MAIA_BUILD_CONTEXT:-$PROJECT_DIR}"; then
+            log_error "FOUNDER-BETA: preflight refused; no schema mutation."
+            return 1
+        fi
         return 0
     fi
 
@@ -730,6 +810,8 @@ cmd_deploy() {
     # (compose reads MAIA_BUILD_CONTEXT for every build `context:`).
     # Build + swap use the SNAPSHOT's compose file (deploy_ctx_compose) — the
     # deployment structure is the authorized commit's (2026-09-03 provenance repair).
+    # :prod guard: the build moves :prod; restore it if we stop before the swap.
+    prod_tag_guard_arm "$GIT_COMMIT"
     deploy_ctx_compose build \
         --build-arg GIT_COMMIT="$GIT_COMMIT" \
         --build-arg APP_VERSION="$APP_VERSION" \
@@ -748,6 +830,8 @@ cmd_deploy() {
     run_migrations_or_abort "Deployment"
 
     # Only a successful pre-swap migration may advance rollback roles or the reader.
+    # From here the candidate is the legitimate :prod.
+    prod_tag_guard_disarm
     tag_images_for_rollback "$GIT_COMMIT"
 
     log_info "Starting containers after successful migrations..."
@@ -761,7 +845,9 @@ cmd_deploy() {
         log_error "Post-swap provenance verification FAILED — the running container does not report the"
         log_error "authorized immutable commit $GIT_COMMIT. Migrations already succeeded pre-swap."
         log_error "The reviewed old reader was compatible with the resulting schema; restore the"
-        log_error "previous reader image if the candidate cannot be made live:"
+        log_error "previous reader image if the candidate cannot be made live (rollback stops the"
+        log_error "candidate and refuses to swap if scripts/rollback-guards/ finds rows the old reader"
+        log_error "cannot read; it prints the repair to run first):"
         log_error "  ./scripts/deploy-production.sh rollback"
         exit 1
     fi
@@ -817,6 +903,8 @@ cmd_update() {
 
     # Build + swap from the immutable snapshot — code AND compose structure
     # (deploy_ctx_compose; 2026-09-03 provenance repair).
+    # :prod guard: the build moves :prod; restore it if we stop before the swap.
+    prod_tag_guard_arm "$GIT_COMMIT"
     deploy_ctx_compose build \
         --build-arg GIT_COMMIT="$GIT_COMMIT" \
         --build-arg APP_VERSION="$APP_VERSION" \
@@ -833,6 +921,8 @@ cmd_update() {
     run_migrations_or_abort "Update"
 
     # Rollback roles advance only after the pre-swap schema transition succeeds.
+    # From here the candidate is the legitimate :prod.
+    prod_tag_guard_disarm
     tag_images_for_rollback "$GIT_COMMIT"
 
     deploy_ctx_compose up -d
@@ -843,7 +933,9 @@ cmd_update() {
         log_error "Post-swap provenance verification FAILED — the running container does not report the"
         log_error "authorized immutable commit $GIT_COMMIT. Migrations already succeeded pre-swap."
         log_error "The reviewed old reader was compatible with the resulting schema; restore the"
-        log_error "previous reader image if the candidate cannot be made live:"
+        log_error "previous reader image if the candidate cannot be made live (rollback stops the"
+        log_error "candidate and refuses to swap if scripts/rollback-guards/ finds rows the old reader"
+        log_error "cannot read; it prints the repair to run first):"
         log_error "  ./scripts/deploy-production.sh rollback"
         exit 1
     fi
@@ -860,15 +952,30 @@ cmd_update() {
 # MIGRATE - Run database migrations only
 # ═══════════════════════════════════════════════════════════════════════════════
 cmd_migrate() {
-    acquire_deploy_lock "deploy-production.sh migrate" "migrations only (no image is built)"
-    log_info "Running database migrations..."
+    local ref="${1:-}"
+    if [ -z "$ref" ]; then
+        log_error "Migration-only production acts require an explicit target SHA."
+        log_error "Usage: ./scripts/deploy-production.sh migrate <SHA>"
+        exit 1
+    fi
+
+    acquire_deploy_lock "deploy-production.sh migrate" "$ref"
+    log_info "Running database migrations for exact target: $ref"
 
     cd "$PROJECT_DIR"
+
+    # ⭐ Migration-only is not a mutable-checkout escape hatch. Materialize the
+    # exact reviewed target so discovery, custody and execution all read the same
+    # immutable bytes as deploy/update.
+    deploy_ctx_assert_and_materialize "$ref" || exit 1
+    deploy_ctx_assert_descends_from_running "deploy-production.sh migrate" || exit 1
 
     # Migration-only production acts are governed by the same bound review.
     review_migration_custody_or_abort "Migration-only run"
 
-    docker compose -f "$COMPOSE_FILE" --profile migrate run --rm migrate
+    # Re-witness the pending set + old reader at the last possible point and run
+    # migrations from the immutable target context. No candidate reader is swapped.
+    run_migrations_or_abort "Migration-only run"
 
     log_success "Migrations complete!"
 }
@@ -968,6 +1075,58 @@ cmd_smoke() {
 # ═══════════════════════════════════════════════════════════════════════════════
 # Two-command rollback: swap image tags, restart container
 # No rebuild required - just swap and go
+
+# Commit an image was built from: the git.commit label, else its baked GIT_COMMIT.
+rollback_image_commit() {
+    local image="$1" sha
+    sha="$(docker image inspect "$image" --format '{{index .Config.Labels "git.commit"}}' 2>/dev/null || true)"
+    if [ -z "$sha" ] || [ "$sha" = "<no value>" ]; then
+        sha="$(docker image inspect "$image" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+            | sed -n 's/^GIT_COMMIT=//p' | head -1)"
+    fi
+    echo "${sha:-unknown}"
+}
+
+# Guard file for a commit: scripts/rollback-guards/<full sha>.sql, matched by prefix
+# (images carry short SHAs). Repair files (*.repair.sql) are never guards.
+rollback_guard_for() {
+    local sha="$1" f stem
+    [ "${#sha}" -ge 7 ] || return 0
+    case "$sha" in *[!0-9a-f]*) return 0 ;; esac
+    for f in "$SCRIPT_DIR"/rollback-guards/*.sql; do
+        [ -e "$f" ] || continue
+        case "$f" in *.repair.sql) continue ;; esac
+        stem="$(basename "$f" .sql)"
+        case "$stem" in "$sha"*) echo "$f"; return 0 ;; esac
+    done
+}
+
+# True when a commit value is a hex SHA long enough to match a guard file.
+rollback_commit_resolvable() {
+    [ "${#1}" -ge 7 ] || return 1
+    case "$1" in *[!0-9a-f]*) return 1 ;; esac
+}
+
+# True when at least one guard (not a repair file) is present.
+rollback_guards_exist() {
+    local f
+    for f in "$SCRIPT_DIR"/rollback-guards/*.sql; do
+        [ -e "$f" ] || continue
+        case "$f" in *.repair.sql) continue ;; esac
+        return 0
+    done
+    return 1
+}
+
+# Runs a guard's read-only count; prints the number of rows the old reader would refuse.
+rollback_guard_count() {
+    local out
+    out="$(docker exec -i maia-postgres psql -U soullab -d maia_consciousness -v ON_ERROR_STOP=1 -At < "$1")" || return 1
+    out="$(printf '%s\n' "$out" | tail -1 | tr -d '[:space:]')"
+    case "$out" in ''|*[!0-9]*) return 1 ;; esac
+    echo "$out"
+}
+
 cmd_rollback() {
     acquire_deploy_lock "deploy-production.sh rollback" "maia-sovereign:previous (image tag swap; no commit is built)"
     log_info "Rolling back to previous deployment..."
@@ -981,12 +1140,59 @@ cmd_rollback() {
         exit 1
     fi
 
-    # Get current and previous commit SHAs from labels
-    CURRENT_SHA=$(docker inspect --format='{{index .Config.Labels "git.commit"}}' maia-sovereign:current 2>/dev/null || echo "unknown")
-    PREVIOUS_SHA=$(docker inspect --format='{{index .Config.Labels "git.commit"}}' maia-sovereign:previous 2>/dev/null || echo "unknown")
+    # Get current and previous commit SHAs (label first, then the GIT_COMMIT baked into the image)
+    CURRENT_SHA=$(rollback_image_commit maia-sovereign:current)
+    PREVIOUS_SHA=$(rollback_image_commit maia-sovereign:previous)
 
     log_info "Current deployment: $CURRENT_SHA"
     log_info "Rolling back to: $PREVIOUS_SHA"
+
+    # Data guard: a newer schema may have admitted rows the previous reader cannot
+    # read. If a guard exists for the commit being restored, stop the current reader
+    # (so it writes no more such rows) and refuse to swap while any remain.
+    # A guard covers only the commit it is named for. Rolling back to any other
+    # commit runs no data check: that rollback needs its own review and guard.
+    local guard_file
+    guard_file="$(rollback_guard_for "$PREVIOUS_SHA")"
+    # Fail closed: if guards exist but the restored image's commit cannot be resolved,
+    # no guard can be matched, so refuse rather than skip the check silently.
+    if [ -z "$guard_file" ] && ! rollback_commit_resolvable "$PREVIOUS_SHA" \
+       && rollback_guards_exist && [ "${ROLLBACK_UNKNOWN_COMMIT_ACK:-}" != "1" ]; then
+        log_error "Rollback refused: cannot resolve the commit of maia-sovereign:previous ('$PREVIOUS_SHA'),"
+        log_error "so no rollback data guard in scripts/rollback-guards/ can be matched to it."
+        log_error "Confirm by hand that the previous reader can read current data, then re-run with"
+        log_error "  ROLLBACK_UNKNOWN_COMMIT_ACK=1 ./scripts/deploy-production.sh rollback"
+        exit 1
+    fi
+    if [ -n "$guard_file" ]; then
+        log_info "Rollback data guard for $PREVIOUS_SHA: $guard_file"
+        log_info "Stopping the current reader before checking stored data..."
+        docker stop maia-sovereign >/dev/null 2>&1 || true
+        if [ "$(docker inspect maia-sovereign --format '{{.State.Running}}' 2>/dev/null || echo false)" = "true" ]; then
+            log_error "Rollback refused: maia-sovereign is still running after docker stop, so it could"
+            log_error "still write rows the previous reader cannot read. No tag has moved."
+            exit 1
+        fi
+        local failing
+        if ! failing="$(rollback_guard_count "$guard_file")"; then
+            log_error "Rollback data guard could not run. Refusing to swap; the current reader is stopped."
+            log_error "To keep the current release instead of rolling back, start it again (no tag has moved):"
+            log_error "  docker start maia-sovereign"
+            exit 1
+        fi
+        if [ "$failing" != "0" ]; then
+            log_error "Rollback refused: $failing stored row(s) would break the reader at $PREVIOUS_SHA."
+            log_error "The current reader is stopped. Repair the rows, then run rollback again:"
+            log_error "  docker exec -i maia-postgres psql -U soullab -d maia_consciousness -v ON_ERROR_STOP=1 < ${guard_file%.sql}.repair.sql"
+            log_error "  ./scripts/deploy-production.sh rollback"
+            log_error "Or, to keep the current release instead (no tag has moved):"
+            log_error "  docker start maia-sovereign"
+            exit 1
+        fi
+        log_success "Rollback data guard: 0 rows the previous reader would refuse."
+    else
+        log_info "No rollback data guard is named for $PREVIOUS_SHA; no stored-data check runs."
+    fi
 
     # Resolve image identities before moving any role tags.
     local current_id previous_id
@@ -1019,6 +1225,14 @@ cmd_rollback() {
     running_git="$(docker exec maia-sovereign printenv GIT_COMMIT 2>/dev/null || true)"
     if docker compose -f "$COMPOSE_FILE" ps | grep -q "healthy" \
        && [ "$running_id" = "$previous_id" ]; then
+        if [ -n "$guard_file" ]; then
+            local after
+            after="$(rollback_guard_count "$guard_file" || echo "error")"
+            if [ "$after" != "0" ]; then
+                log_error "Rollback swapped, but the data guard now reports: $after. Investigate before serving traffic."
+                exit 1
+            fi
+        fi
         log_success "Rollback complete! Now running: ${running_git:-$PREVIOUS_SHA}"
 
         # Move the former reader to :previous so an explicit roll-forward remains possible.
@@ -1122,7 +1336,7 @@ case "${1:-help}" in
         cmd_update
         ;;
     migrate)
-        cmd_migrate
+        cmd_migrate "$2"
         ;;
     logs)
         cmd_logs
@@ -1164,7 +1378,7 @@ case "${1:-help}" in
         echo "  update      - Pull latest code, then build the pulled tip as an immutable snapshot"
         echo "  rollback   - Instant rollback to previous deployment"
         echo "  safe-mode  - Toggle safe mode (on/off/status)"
-        echo "  migrate    - Run database migrations"
+        echo "  migrate <SHA> - Run reviewed database migrations from a NAMED immutable commit"
         echo "  logs       - Tail container logs"
         echo "  status     - Show container status"
         echo "  stop       - Stop all containers"

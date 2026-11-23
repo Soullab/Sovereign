@@ -2,15 +2,22 @@
  * POST /api/practice/worlds/detect
  *
  * Detect which worlds are present in transcript text
+ *
+ * Needs the session. When a `sessionId` is named it must be the caller's own (404 otherwise, identical
+ * to an absent id), whether or not detections are recorded into it (PRACTITIONER-SESSION-OWNERSHIP-01).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { detectWorldsInText, recordSessionWorld } from '@/lib/practice/WorldsStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
     const body = await req.json();
     const { text, enabledWorldIds, sessionId, recordDetections } = body;
 
@@ -19,6 +26,11 @@ export async function POST(req: NextRequest) {
         { success: false, error: 'text required' },
         { status: 400 }
       );
+    }
+
+    if (sessionId) {
+      const owned = await requireOwnedSession(actor.memberId, sessionId);
+      if ('error' in owned) return owned.error;
     }
 
     // Detect worlds in the text

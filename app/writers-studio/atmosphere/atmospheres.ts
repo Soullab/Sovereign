@@ -33,7 +33,8 @@ export const ATMOSPHERE_IDS = ['day', 'evening', 'atelier', 'night-study', 'fore
 export type AtmosphereId = (typeof ATMOSPHERE_IDS)[number];
 
 /** What the Studio looks like when the member has chosen nothing. */
-export const DEFAULT_ATMOSPHERE: AtmosphereId = 'atelier';
+/** Founder ruling 2026-11-15: a writer who hasn't chosen a room opens in Evening (Soullab navy), not Atelier. */
+export const DEFAULT_ATMOSPHERE: AtmosphereId = 'evening';
 
 export function isAtmosphereId(value: unknown): value is AtmosphereId {
   return typeof value === 'string' && (ATMOSPHERE_IDS as readonly string[]).includes(value);

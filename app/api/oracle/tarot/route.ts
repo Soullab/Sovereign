@@ -49,10 +49,11 @@ export async function POST(request: NextRequest) {
         tarotReading = celticCrossReading(query);
         break;
       default:
-        // Try to find the spread by name
+        // Look the spread up by its registry key (e.g. 'elemental'), and pass
+        // that same key on: performReading resolves by key, not display name.
         const spread = getSpread(spreadType);
         if (spread) {
-          tarotReading = performReading(query, spread.name);
+          tarotReading = performReading(query, spreadType);
         } else {
           // Default to three-card
           tarotReading = threeCardReading(query);

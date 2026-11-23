@@ -29,6 +29,12 @@ import { EnhancedVoiceMicButton } from './ui/EnhancedVoiceMicButton';
 import AdaptiveVoiceMicButton from './ui/AdaptiveVoiceMicButton';
 import { detectVoiceCommand, isOnlyModeSwitch, getModeConfirmation, detectMaiaCommands, getMaiaCommandConfirmation } from '@/lib/voice/VoiceCommandDetector';
 import type { MaiaCommand, CommandParseResult } from '@/lib/voice/VoiceCommandDetector';
+import { recognizeMaiaMusicCommand } from '@/lib/listening/maiaMusicCommand';
+import type { MaiaMusicCommand } from '@/lib/listening/maiaMusicCommand';
+import { executeMaiaMusicCommandInExistingTransport, isCurrentListeningInstance } from '@/lib/listening/maiaMusicBridge';
+import { useListeningBoundaryStatus, usePersistentListening } from '@/components/listening/PersistentListeningProvider';
+import { isMaiaSpeechActive } from '@/lib/listening/maiaSpeechFocus';
+import { requestAudioFocus } from '@/lib/listening/audioFocus';
 import {
   matchVoiceCommand,
   applySettingsDelta,
@@ -214,6 +220,11 @@ import { detectCaptureTrigger } from '@/lib/capsules/types';
 import type { CapsuleDTO } from '@/lib/capsules/types';
 import { TransformationalPresence, type PresenceState } from './nlp/TransformationalPresence';
 import { SessionTimer, SESSION_PRESETS } from '@/lib/session/SessionTimer';
+import { canDisplayLocalResumeNotice } from '@/lib/session/resumeNotice';
+import {
+  displayStateForRestoredClosureHint, readClosureHint, requestQualifiedClosure,
+  QUALIFIED_R2_CLOSE_PATH, type ClosureDisplayState,
+} from '@/lib/session/closureReceipt';
 import { SessionTimeAwareness } from '@/components/session/SessionTimeAwareness';
 import { SessionDurationSelector } from '@/components/session/SessionDurationSelector';
 import { ResumeSessionPrompt } from '@/components/session/ResumeSessionPrompt';
@@ -1472,34 +1483,21 @@ export const OracleConversation: React.FC<OracleConversationProps> = ({
     };
   }, []);
 
-  // 🆕 Listen for "New Conversation" action from QuickSettingsSheet
+  // New Conversation must mint a fresh authenticated, member-owned SID
+  // (held RF01 R1-D). Clearing the display under the SAME SID impersonates a
+  // new privacy encounter and can hide older writing while keeping its
+  // history and server authority. Keep this legacy action held until the
+  // independently qualified R1-D source is admitted.
   useEffect(() => {
     const handleNewConversation = () => {
-      console.log('🆕 [New Conversation] Clearing history and resetting to welcome');
-      // Clear messages (UI display)
-      setMessages([]);
-      lastSyncedCountRef.current = 0; // fresh thread — resync from the start
-      // Clear historical messages (API context) - truly fresh start
-      historicalMessagesRef.current = [];
-      // Reset activation state to show welcome screen
-      setHasActivated(false);
-      // Reset session-restored flag so the welcome greeting can show for the new conversation
-      sessionRestoredRef.current = false;
-      // Clear navigation flag so next mount doesn't restore the cleared conversation
-      sessionStorage.removeItem('maia_nav_teardown');
-      // Clear localStorage for current session
-      if (typeof window !== 'undefined' && sessionId) {
-        const storageKey = `maia_conversation_${sessionId}`;
-        localStorage.removeItem(storageKey);
-        console.log(`🆕 [New Conversation] Cleared localStorage: ${storageKey}`);
-      }
+      toast.error(
+        'A new conversation requires a verified member session. Your existing conversation was preserved.',
+        { duration: 7000 },
+      );
     };
-
     window.addEventListener('maia-new-conversation', handleNewConversation);
-    return () => {
-      window.removeEventListener('maia-new-conversation', handleNewConversation);
-    };
-  }, [sessionId]);
+    return () => window.removeEventListener('maia-new-conversation', handleNewConversation);
+  }, []);
 
   // 🧭 THERAPEUTIC FRAMEWORK: Selected in Counsel mode (Jungian, Somatic, CBT, IFS, etc.)
   // Now handled by lib/consciousness/therapeuticFrameworks.ts
@@ -1514,7 +1512,32 @@ export const OracleConversation: React.FC<OracleConversationProps> = ({
   // Ritual state
   const [showOpeningRitual, setShowOpeningRitual] = useState(false);
   const [showClosingRitual, setShowClosingRitual] = useState(false);
+  const [closureUiState, setClosureUiState] = useState<ClosureDisplayState>('ready');
+  const closureRequestStartedRef = useRef(false);
+  const liveClosureSessionIdRef = useRef(sessionId);
+  const liveClosureMemberClaimRef = useRef(userId);
   const [pendingSessionDuration, setPendingSessionDuration] = useState<number | null>(null);
+
+  // Local hints are CONTENT-FREE recovery pointers, not authentication,
+  // closure authority or completed erasure. Never automatically retry a
+  // potentially destructive request after native/WebKit restart.
+  useEffect(() => {
+    liveClosureSessionIdRef.current = sessionId;
+    liveClosureMemberClaimRef.current = userId;
+    closureRequestStartedRef.current = false;
+    setClosureUiState('ready');
+    if (typeof window === 'undefined' || !sessionId || !userId) return;
+    const actorClaim = getValidMemberId();
+    if (!actorClaim || actorClaim !== userId) return;
+    const previous = readClosureHint(window.localStorage, actorClaim, sessionId);
+    if (!previous) return;
+    // Local storage is neither an authenticated server receipt nor an
+    // antirollback witness. Even a cached "erasure_pending" hint must be
+    // presented as UNVERIFIED after app restart until the verified server
+    // reconciles its current session/R20 status.
+    setClosureUiState(displayStateForRestoredClosureHint(previous));
+    setShowClosingRitual(true);
+  }, [sessionId, userId]);
 
   // Soul Prompts & Session Synthesis state
   const [showPromptPicker, setShowPromptPicker] = useState(false);
@@ -1853,6 +1876,10 @@ export const OracleConversation: React.FC<OracleConversationProps> = ({
     setIsActivating(false); // Clear activating state - we now know the truth
     setIsListening(isRecording);
     if (isRecording) {
+      // LISTEN-59 QA candidate: once member-authorized MAIA capture is truly
+      // live, ask the EXISTING audio-focus owner to pause music and Focus.
+      // Do not start a second player, assume media rights or auto-resume sound.
+      if (voiceEnabled) requestAudioFocus('maia-voice');
       console.log('✅ Mic is LIVE - orange dot should be visible');
       // 🎯 Mark as activated when user starts listening - hides welcome screen
       setHasActivated(true);
@@ -1872,7 +1899,7 @@ export const OracleConversation: React.FC<OracleConversationProps> = ({
         pwaVoice.micStopped();
       }
     }
-  }, [isPwaVoice, pwaVoice]);
+  }, [isPwaVoice, pwaVoice, voiceEnabled]);
 
   // ==================== AUDIO LEVEL CALLBACK (THROTTLED) ====================
   // Prevent infinite render loop by throttling setState calls
@@ -5022,6 +5049,30 @@ I'm not sure what I'm feeling yet.`;
     });
   }, [messages, userName]);
 
+  // LISTEN-56: the same private Listening provider is the ONLY music action owner.
+  // Strictly avoid a global browser command bus or a second AudioContext/player.
+  const musicTransport = usePersistentListening();
+  const musicBoundaryStatus = useListeningBoundaryStatus();
+  // LISTEN-56 R3: visible, locally owned command outcome; never MAIA memory or music playback.
+  const [musicCommandFeedback, setMusicCommandFeedback] = useState<string | null>(null);
+  // Command acknowledgments may overlap only for an explicit local Stop.
+  // A newer completion must not release the composer while an older one waits.
+  const pendingCommandAcceptances = useRef(0);
+  const [hasPendingCommandAcceptance, setHasPendingCommandAcceptance] = useState(false);
+  const allowPendingMusicStop = (text: string): boolean => {
+    const decision = recognizeMaiaMusicCommand(text, 'typed-final-user');
+    return decision.status === 'recognized' &&
+      (decision.command.kind === 'music-stop' || decision.command.kind === 'focus-session-stop');
+  };
+  const musicCommandEpoch = useRef(0);
+  const musicMounted = useRef(true);
+  const currentMusicBoundary = useRef({ transport: musicTransport, status: musicBoundaryStatus });
+  currentMusicBoundary.current = { transport: musicTransport, status: musicBoundaryStatus };
+  useEffect(() => {
+    musicMounted.current = true;
+    return () => { musicMounted.current = false; musicCommandEpoch.current += 1; };
+  }, []);
+
   // Handle text messages from chat interface - MUST be defined before handleVoiceTranscript
   const handleTextMessage = useCallback(async (
     text: string,
@@ -5031,9 +5082,21 @@ I'm not sure what I'm feeling yet.`;
       parseResult?: CommandParseResult;
       commandsAlreadyApplied?: boolean;
       confirmationHandled?: boolean;
+      /** Only a fresh physical composer submit or finalized user-voice callback may supply this. */
+      freshMusicIntent?: { command: MaiaMusicCommand; epoch: number; instance: object | null };
     },
   ) => {
     const authoredText = text;
+    const freshMusicIntent = !retryOf ? commandContext?.freshMusicIntent : undefined;
+    const mayStopLocally = !!freshMusicIntent && !attachments?.length && musicMounted.current &&
+      freshMusicIntent.epoch === musicCommandEpoch.current &&
+      isCurrentListeningInstance(freshMusicIntent.instance,
+        currentMusicBoundary.current.transport?.listeningInstance ?? null) &&
+      (freshMusicIntent.command.kind === 'music-stop' ||
+       freshMusicIntent.command.kind === 'focus-session-stop');
+    // Recheck at the handler boundary: stale UI, resend, file and injected turns
+    // cannot bypass the pending-command gate or acquire music-action provenance.
+    if (pendingCommandAcceptances.current > 0 && !mayStopLocally) return;
     console.log('📝 Text message received:', { text: authoredText, isProcessing, isAudioPlaying, isResponding });
 
     // 🎯 Mark as activated when user sends a message - hides welcome screen
@@ -5054,6 +5117,23 @@ I'm not sure what I'm feeling yet.`;
     // turn so it can preserve its existing command acknowledgement behavior.
     const commandResult = commandContext?.parseResult ?? detectMaiaCommands(authoredText);
     const { commands: maiaCommands, onlyCommands } = commandResult;
+
+    // Safety Stop is immediate, even without an available F1 server.  Music
+    // output remains strictly local; it never operates on another member.
+    // A later F1 failure must not reverse an explicit member Stop.
+    let musicStoppedLocally = false;
+    if (mayStopLocally && freshMusicIntent) {
+      const current = currentMusicBoundary.current;
+      const result = executeMaiaMusicCommandInExistingTransport(
+        freshMusicIntent.command,
+        { listeningBoundaryReady: current.status === 'ready',
+          port: current.transport, maiaProtectedSpeechActive: isMaiaSpeechActive() },
+      );
+      musicStoppedLocally = true;
+      setMusicCommandFeedback(result.message);
+      toast(result.message, { duration: 4500 });
+    }
+
     const modeCommand = maiaCommands.find(
       (cmd): cmd is Extract<MaiaCommand, { type: 'mode' }> => cmd.type === 'mode',
     );
@@ -5112,7 +5192,7 @@ I'm not sure what I'm feeling yet.`;
     }
 
     // Text input is a deliberate user action - FORCE state reset if stuck
-    if (isProcessing || isResponding || isAudioPlaying) {
+    if (pendingCommandAcceptances.current === 0 && (isProcessing || isResponding || isAudioPlaying)) {
       console.log('⚠️ States were stuck - forcing reset for text input', {
         isProcessing,
         isResponding,
@@ -5233,10 +5313,17 @@ I'm not sure what I'm feeling yet.`;
     // TII-03 — a pure interface command is still a member-authored turn.
     // Preserve it in the transcript and, on the live sovereign route, ask F1 to
     // accept it durably without invoking O8, F2, or ordinary cognition.
-    if (onlyCommands) {
+    if (onlyCommands || freshMusicIntent) {
       if (apiEndpoint === '/api/sovereign/app/maia/list') {
         const commandSanctuary = effectiveSanctuary;
+        const commandPresentationEpoch = musicCommandEpoch.current;
+        const canPresentCommandError = () => musicMounted.current &&
+          commandPresentationEpoch === musicCommandEpoch.current &&
+          (!freshMusicIntent || isCurrentListeningInstance(freshMusicIntent.instance,
+            currentMusicBoundary.current.transport?.listeningInstance ?? null));
 
+        pendingCommandAcceptances.current += 1;
+        setHasPendingCommandAcceptance(true);
         setIsProcessing(true);
         try {
           const commandAcceptance = await apiFetch(apiEndpoint, {
@@ -5263,19 +5350,63 @@ I'm not sure what I'm feeling yet.`;
               targetMessageId,
               commandAcceptance.status === 401 ? 'auth' : 'server',
             ));
-            setInputSubmitError(
-              'The command changed locally, but the turn was not durably accepted. You can resend.',
+            if (canPresentCommandError()) {
+              setInputSubmitError(
+                'The command changed locally, but the turn was not durably accepted. You can resend.',
+              );
+            }
+            // A failed older request must not replace a current local Stop or newer outcome.
+            if (freshMusicIntent && !musicStoppedLocally && musicMounted.current &&
+                freshMusicIntent.epoch === musicCommandEpoch.current &&
+                isCurrentListeningInstance(freshMusicIntent.instance,
+                  currentMusicBoundary.current.transport?.listeningInstance ?? null)) {
+              setMusicCommandFeedback('MAIA could not verify this music command. Nothing started.');
+            }
+          } else if (freshMusicIntent && !musicStoppedLocally &&
+              musicMounted.current &&
+              freshMusicIntent.epoch === musicCommandEpoch.current) {
+            // The F1-accepted utterance belongs to the original verified
+            // Listening provider. Never dispatch to a NEW member's provider.
+            const current = currentMusicBoundary.current;
+            if (!isCurrentListeningInstance(freshMusicIntent.instance,
+                current.transport?.listeningInstance ?? null)) {
+              setMusicCommandFeedback('The private Listening session changed. No music action was taken.');
+              toast('The private Listening session changed. No music action was taken.', {duration: 5000});
+              return;
+            }
+            // F1 acceptance is NOT a playable-media grant. All eight works deny.
+            const result = executeMaiaMusicCommandInExistingTransport(
+              freshMusicIntent.command,
+              { listeningBoundaryReady: current.status === 'ready',
+                port: current.transport, maiaProtectedSpeechActive: isMaiaSpeechActive() },
             );
+            setMusicCommandFeedback(result.message);
+            toast(result.message, { duration: 5500 });
+            if (result.code === 'SHOW_LISTENING_CHOICES' && current.status === 'ready')
+              router.push('/listen');
           }
         } catch (commandAcceptanceError) {
           console.error('[TII-03] command-only F1 acceptance failed:', commandAcceptanceError);
           setMessages(prev => markFailed(prev, targetMessageId, 'network'));
-          setInputSubmitError(
-            'The command changed locally, but the turn could not be durably accepted. You can resend.',
-          );
+          if (canPresentCommandError()) {
+            setInputSubmitError(
+              'The command changed locally, but the turn could not be durably accepted. You can resend.',
+            );
+          }
+          // A failed older request must not replace a current local Stop or newer outcome.
+          if (freshMusicIntent && !musicStoppedLocally && musicMounted.current &&
+              freshMusicIntent.epoch === musicCommandEpoch.current &&
+              isCurrentListeningInstance(freshMusicIntent.instance,
+                currentMusicBoundary.current.transport?.listeningInstance ?? null)) {
+            setMusicCommandFeedback('MAIA could not verify this music command. Nothing started.');
+          }
         } finally {
-          setIsProcessing(false);
-          setIsResponding(false);
+          pendingCommandAcceptances.current -= 1;
+          if (pendingCommandAcceptances.current === 0 && musicMounted.current) {
+            setHasPendingCommandAcceptance(false);
+            setIsProcessing(false);
+            setIsResponding(false);
+          }
         }
       } else {
         console.warn(
@@ -5468,10 +5599,15 @@ I'm not sure what I'm feeling yet.`;
 
     try {
       const controller = new AbortController();
+      // Sovereign local fallback can legitimately take longer than a frontier-provider turn.
+      // Keep the client alive long enough for that fallback to finish instead of falsely
+      // marking an in-flight MAIA response as "Not delivered". Server-side provider
+      // failures still surface normally; this only prevents a premature client abort.
+      const textChatTimeoutMs = 180_000;
       const timeoutId = setTimeout(() => {
-        console.error('⏱️ API request timeout after 60s - aborting');
+        console.error(`⏱️ API request timeout after ${textChatTimeoutMs / 1000}s - aborting`);
         controller.abort();
-      }, 60000); // 60 second timeout - allow time for complex responses with teen support checks
+      }, textChatTimeoutMs);
 
       console.log('📤 Sending text message to API:', { cleanedText, userId, sessionId });
 
@@ -6916,6 +7052,22 @@ I'm not sure what I'm feeling yet.`;
       .finally(() => { retryingIdsRef.current.delete(messageId); });
   }, [messages, handleTextMessage]);
 
+  // LISTEN-56: fresh direct text submit (not seeded/injected/retried text).
+  const submitHumanMusicText = (text: string, attachments?: File[]) => {
+    // Do not cancel a current command or clear its outcome for a blocked draft.
+    if (pendingCommandAcceptances.current > 0 &&
+        (attachments?.length || !allowPendingMusicStop(text))) return;
+    setMusicCommandFeedback(null);
+    musicCommandEpoch.current += 1; // cancels any delayed older command
+    const decision = attachments?.length ? { status: 'no-command' as const } :
+      recognizeMaiaMusicCommand(text, 'typed-final-user');
+    const freshMusicIntent = decision.status === 'recognized'
+      ? { command: decision.command, epoch: musicCommandEpoch.current,
+          instance: currentMusicBoundary.current.transport?.listeningInstance ?? null }
+      : undefined;
+    void handleTextMessage(text, attachments, undefined, { freshMusicIntent });
+  };
+
   // ==================== SEED PROMPT PROCESSOR ====================
   // Process pending seed prompt once handleTextMessage is available
   // This runs after handleTextMessage is defined and sends any pending seed
@@ -7550,10 +7702,17 @@ I'm not sure what I'm feeling yet.`;
       // command classification so handleTextMessage neither rewrites nor
       // executes the same command twice.
       console.log('🌀 Routing voice through THE BETWEEN...');
+      const musicDecision = recognizeMaiaMusicCommand(t, 'voice-final-user');
+      if (musicDecision.status === 'recognized') setMusicCommandFeedback(null);
+      musicCommandEpoch.current += 1;
       await handleTextMessage(t, undefined, undefined, {
         parseResult: voiceMaiaResult,
         commandsAlreadyApplied: voiceMaiaResult.disposition === 'EXECUTE',
         confirmationHandled: voiceMaiaResult.disposition === 'EXECUTE',
+        freshMusicIntent: musicDecision.status === 'recognized'
+          ? { command: musicDecision.command, epoch: musicCommandEpoch.current,
+              instance: currentMusicBoundary.current.transport?.listeningInstance ?? null }
+          : undefined,
       });
 
       const duration = Date.now() - voiceStartTime;
@@ -7758,20 +7917,14 @@ I'm not sure what I'm feeling yet.`;
   const handleStartSession = useCallback((durationMinutes: number) => {
     console.log(`⏰ Starting ${durationMinutes}-minute session with temporal container`);
 
-    // 🧹 Clear previous conversation when starting a new session
-    console.log('🧹 Clearing previous conversation for fresh session start');
-    setMessages([]);
-    lastSyncedCountRef.current = 0; // fresh thread — resync from the start
-    historicalMessagesRef.current = []; // Clear API context too
-    sessionRestoredRef.current = false; // Allow greeting to run for fresh session
-    sessionStorage.removeItem('maia_nav_teardown'); // Don't restore on next navigation
-    setHasActivated(false); // Reset to show welcome/greeting
-    // Clear localStorage for previous conversation
-    if (typeof window !== 'undefined' && sessionId) {
-      const storageKey = `maia_conversation_${sessionId}`;
-      localStorage.removeItem(storageKey);
-      console.log(`🧹 Cleared localStorage: ${storageKey}`);
-    }
+    // This is a TIME CONTAINER around the existing conversation, NOT a
+    // verified New Conversation. No new server SID was minted here.
+    // Never discard member-authored words or clear prior history merely
+    // because the member selected a new duration. Genuine encounter
+    // rotation must use the held RF01 R1-D server-confirmed flow.
+    sessionTimer?.stop();
+    autoSaveCleanupRef.current?.();
+    autoSaveCleanupRef.current = null;
 
     const timer = new SessionTimer({
       durationMinutes,
@@ -7816,7 +7969,7 @@ I'm not sure what I'm feeling yet.`;
     autoSaveCleanupRef.current = cleanup;
 
     console.log(`✅ Session timer initialized - MAIA will be temporally aware`);
-  }, [userId, userName, sessionId]);
+  }, [userId, userName, sessionId, sessionTimer]);
 
   const handleExtendSession = useCallback((additionalMinutes: number) => {
     if (sessionTimer) {
@@ -7833,7 +7986,17 @@ I'm not sure what I'm feeling yet.`;
   const handleResumeSession = useCallback(() => {
     if (!savedSessionData) return;
 
-    console.log('💾 Resuming saved session:', savedSessionData.sessionId);
+    const currentMemberClaim = getValidMemberId();
+    if (!currentMemberClaim || currentMemberClaim !== userId ||
+        savedSessionData.userId !== currentMemberClaim ||
+        savedSessionData.sessionId !== sessionId) {
+      setInputSubmitError('This saved timer does not belong to your verified conversation. Nothing was resumed.');
+      return;
+    }
+    // This handler is intentionally NOT exposed as a live Resume action:
+    // ResumeSessionPrompt defaults verifiedResumeAdmission to false. A
+    // future server-owned active-session proof must precede enabling it.
+    console.log('💾 Resuming locally matched session timer');
 
     // Restore timer from saved data
     const timer = SessionTimer.fromSavedData(
@@ -7873,7 +8036,9 @@ I'm not sure what I'm feeling yet.`;
       sessionId,
       lastSavedAt: new Date().toISOString(),
       wasExtended: savedSessionData.wasExtended,
-      totalExtensionMinutes: savedSessionData.totalExtensionMinutes
+      // getDurationMinutes() is already the full resumed duration. Carrying
+      // the old extension again would inflate 50+15 to 80 on the next resume.
+      totalExtensionMinutes: 0
     }));
     autoSaveCleanupRef.current = cleanup;
 
@@ -7881,23 +8046,14 @@ I'm not sure what I'm feeling yet.`;
   }, [savedSessionData, userId, userName, sessionId]);
 
   const handleStartNewSession = useCallback(() => {
-    console.log('🗑️ Clearing saved session and starting fresh');
-    clearSession();
-    setShowResumePrompt(false);
-    setSavedSessionData(null);
-    // 🧹 Clear previous conversation messages
-    setMessages([]);
-    lastSyncedCountRef.current = 0; // fresh thread — resync from the start
-    historicalMessagesRef.current = []; // Clear API context too
-    sessionRestoredRef.current = false; // Allow greeting to run for fresh session
-    sessionStorage.removeItem('maia_nav_teardown'); // Don't restore on next navigation
-    setHasActivated(false);
-    if (typeof window !== 'undefined' && sessionId) {
-      const storageKey = `maia_conversation_${sessionId}`;
-      localStorage.removeItem(storageKey);
-    }
-    // Note: User will click header button to open session selector
-  }, [sessionId]);
+    // Legacy saved-timer "New" has NO verified replacement session ID.
+    // Even if a future caller accidentally invokes this handler, it cannot
+    // discard the current transcript, local timer, or content-free R20 hint.
+    toast.error(
+      'A new conversation requires a verified member session. Your existing writing was preserved.',
+      { duration: 7000 },
+    );
+  }, []);
 
   // 🕯️ Ritual Handlers
   const handleDurationSelected = useCallback((durationMinutes: number) => {
@@ -7925,63 +8081,90 @@ I'm not sure what I'm feeling yet.`;
   }, [pendingSessionDuration]);
 
   const handleClosingRitualComplete = useCallback(() => {
-    setShowClosingRitual(false);
-    console.log('🕯️ Closing ritual complete - session ended');
+    if (closureRequestStartedRef.current) return;
+    closureRequestStartedRef.current = true;
 
-    // Play closing gong
-    const gong = getSessionGong(0.3);
-    gong.playClosingGong().catch(err =>
-      console.warn('Could not play closing gong:', err)
-    );
-
-    // Clean up session
-    clearSession();
-    autoSaveCleanupRef.current?.();
-    autoSaveCleanupRef.current = null;
-    setSessionTimer(null);
-    onSessionActiveChange?.(false); // Notify parent that session ended
-
-    // Finalize session: Sanctuary purge or Continuity summary pipeline
-    // Uses apiFetch for iOS/Capacitor compatibility (x-member-id header)
     const memberId = getValidMemberId();
-    if (memberId && sessionId) {
-      apiFetch('/api/sovereign/session/finalize', {
+    if (!memberId || memberId !== userId || !sessionId ||
+        typeof window === 'undefined') {
+      setClosureUiState('unverified');
+      return;
+    }
+
+    // A build-time enablement is a procedural release gate, NOT proof of a
+    // genuine R2 server or any R20 erasure capability. Defaults to OFF.
+    const enabled = process.env.NEXT_PUBLIC_MAIA_R2_CLOSURE_VERIFIED === 'true';
+    if (!enabled) {
+      setClosureUiState('unavailable');
+      return;
+    }
+    setClosureUiState('requesting');
+
+    void requestQualifiedClosure({
+      enabled,
+      claimedMemberId: memberId,
+      currentMemberClaim: userId,
+      sessionId,
+      expectedPrivacy: isSanctuary ? 'sanctuary' : 'continuity',
+      storage: window.localStorage,
+      send: (payload) => apiFetch(QUALIFIED_R2_CLOSE_PATH, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          memberId,
-          sessionId,
-          isSanctuary,
-          endedAt: new Date().toISOString(),
-        }),
-      }).catch(err =>
-        console.warn('Session finalize failed (non-blocking):', err)
-      );
-    }
-  }, [onSessionActiveChange, sessionId, isSanctuary]);
+        body: JSON.stringify(payload),
+      }),
+    }).then((assessment) => {
+      // A late network reply may not close a DIFFERENT member's conversation.
+      if (liveClosureSessionIdRef.current !== sessionId ||
+          liveClosureMemberClaimRef.current !== memberId ||
+          getValidMemberId() !== memberId) return;
+
+      if (assessment.kind === 'continuity_closed' ||
+          assessment.kind === 'sanctuary_erasure_pending') {
+        // The trusted R2 response has either terminally closed Continuity or
+        // accepted a still-pending Sanctuary deletion obligation. The local
+        // TIMER is obsolete in either case; R20 status is not.
+        autoSaveCleanupRef.current?.();
+        autoSaveCleanupRef.current = null;
+        sessionTimer?.stop();
+        setSessionTimer(null);
+        clearSession();
+        onSessionActiveChange?.(false);
+      }
+      setClosureUiState(assessment.kind);
+    }).catch(() => {
+      if (liveClosureSessionIdRef.current === sessionId &&
+          liveClosureMemberClaimRef.current === memberId &&
+          getValidMemberId() === memberId) {
+        setClosureUiState('unavailable');
+      }
+    });
+  }, [onSessionActiveChange, sessionId, userId, isSanctuary, sessionTimer]);
 
   const handleClosingRitualSkip = useCallback(() => {
     setShowClosingRitual(false);
     console.log('🕯️ Closing ritual skipped');
   }, []);
 
-  // Check for saved session on mount
+  // A browser-stored timer is NOT proof of session ownership. Do not even
+  // offer the unverified resume notice for another member or daily SID.
+  // The separate resume UI also defaults both state-changing actions OFF
+  // until a future authenticated, server-owned admission is integrated.
   useEffect(() => {
     const saved = loadSession();
-    if (saved) {
-      const remainingTime = getSavedSessionTimeRemaining();
-      const phase = getSavedSessionPhase();
-
-      console.log('📂 Found saved session:', {
-        sessionId: saved.sessionId,
-        remainingTime,
-        phase
-      });
-
-      setSavedSessionData(saved);
-      setShowResumePrompt(true);
+    const memberClaim = getValidMemberId();
+    if (!canDisplayLocalResumeNotice({
+      saved,
+      currentMemberClaim: memberClaim,
+      displayedUserId: userId,
+      displayedSessionId: sessionId,
+    })) {
+      setSavedSessionData(null);
+      setShowResumePrompt(false);
+      return;
     }
-  }, []); // Only run on mount
+    setSavedSessionData(saved);
+    setShowResumePrompt(true);
+  }, [sessionId, userId]);
 
   // Clean up timer and auto-save on unmount
   useEffect(() => {
@@ -8084,6 +8267,11 @@ I'm not sure what I'm feeling yet.`;
       style={isContainedPresentation ? { transform: 'translateZ(0)' } : undefined}
     >
       <div className="bg-soul-background absolute inset-0 pointer-events-none" aria-hidden="true" />
+      {musicCommandFeedback && (
+        <div data-listen56-member-feedback="true" role="status" aria-live="polite"
+          className="fixed bottom-48 left-1/2 -translate-x-1/2 z-[110] w-[min(92vw,640px)] rounded-xl border border-amber-300/30 bg-[#0b1720]/95 px-5 py-4 text-center text-sm leading-relaxed text-[#f1e3cd] shadow-xl"
+        >{musicCommandFeedback}</div>
+      )}
       {/* iOS Audio Enable Button - Required for TTS on iOS Safari */}
       {needsIOSAudioPermission && (
         <div className="modal-backdrop fixed inset-0 bg-black/80 backdrop-blur flex items-center justify-center">
@@ -8282,7 +8470,7 @@ I'm not sure what I'm feeling yet.`;
                 greeting={welcomeGreeting.greeting}
                 subtext={welcomeGreeting.subtext}
                 userInitial={(userName || 'K').trim().charAt(0).toUpperCase()}
-                onSend={(text) => handleTextMessage(text)}
+                onSend={(text) => submitHumanMusicText(text)}
                 onActivate={() => {
                   // #736: hasActivated alone cannot exit — the gate above is a
                   // disjunction and ignores it while shouldRenderArrival is
@@ -10360,12 +10548,13 @@ I'm not sure what I'm feeling yet.`;
                     value={draftMessage}
                     onChange={setDraftMessage}
                     externalValue={composerDraft}
-                    disabled={isProcessing}
-                    isProcessing={isProcessing}
+                    disabled={isProcessing && !hasPendingCommandAcceptance}
+                    isProcessing={isProcessing || hasPendingCommandAcceptance}
+                    canSubmitWhileProcessing={hasPendingCommandAcceptance ? allowPendingMusicStop : undefined}
                     enableVoiceInChat={voiceEnabled && enableVoiceInChat}
                     showVoiceInputButton={voiceEnabled}
                     onSubmit={(msg, files) => {
-                      handleTextMessage(msg, files);
+                      submitHumanMusicText(msg, files);
                       setDraftMessage(''); // Clear draft after sending
                     }}
                     onVoiceResponseToggle={voiceEnabled ? () => {
@@ -10397,6 +10586,11 @@ I'm not sure what I'm feeling yet.`;
                     submitError={inputSubmitError}
                     onClearSubmitError={() => setInputSubmitError(null)}
                   />
+                  {hasPendingCommandAcceptance && (
+                    <p className="mt-2 px-3 text-xs text-white/50" role="status">
+                      You can still type “stop the music” or “stop the focus session.”
+                    </p>
+                  )}
                 </div>
               </div>
               )}
@@ -10517,7 +10711,7 @@ I'm not sure what I'm feeling yet.`;
             setIsListening(false);
           }}
           onInterrupt={handleVoiceInterrupt}
-          onTextSubmit={(text) => handleTextMessage(text)}
+          onTextSubmit={(text) => submitHumanMusicText(text)}
           explicitYield={turnTakingPreferences.floorControlMode === 'explicit'}
           onDone={() => voiceMicRef.current?.commitTurn()}
         />
@@ -10996,6 +11190,7 @@ I'm not sure what I'm feeling yet.`;
       {/* 🕯️ Closing Ritual */}
       <SessionRitualClosing
         isOpen={showClosingRitual}
+        closureState={closureUiState}
         isReturningUser={isReturningUser}
         onComplete={handleClosingRitualComplete}
         onSkip={handleClosingRitualSkip}

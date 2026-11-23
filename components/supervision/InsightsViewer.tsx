@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { apiUrl } from '@/lib/http/apiBase';
+import { apiFetch, apiUrl } from '@/lib/http/apiBase';
 
 // Prefer importing the real type if it exists in your repo.
 // If this import path differs, adjust it to wherever your Supervision insight type lives.
@@ -205,10 +205,11 @@ export default function InsightsViewer({
 
       setIsLoading(true);
       try {
-        const res = await fetch(
-          apiUrl(
-            `/api/supervision/insights/list?sessionId=${encodeURIComponent(sessionId)}&afterTs=${afterTsRef.current}`
-          ),
+        // apiFetch: insights/list is owner-only now and a bare fetch carries no x-session-token on a native /
+        // Safari cross-origin WebView. (The EventSource above carries the cookie only; this poll is the
+        // path that works there.)
+        const res = await apiFetch(
+          `/api/supervision/insights/list?sessionId=${encodeURIComponent(sessionId)}&afterTs=${afterTsRef.current}`,
           { method: 'GET' }
         );
 

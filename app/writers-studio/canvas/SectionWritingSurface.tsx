@@ -93,7 +93,8 @@ export interface SectionWritingSurfaceProps {
 const SETTLE_TIMEOUT_MS = 4000;
 const SETTLE_POLL_MS = 50;
 
-function KeepAVersion({
+/** Exported for the College Essay stage card (Draft, Revise): the same gesture, the same server-truth checkpoint. */
+export function KeepAVersion({
   writing, manuscriptId, onCheckpointed,
 }: {
   writing: SectionWriting;
@@ -136,7 +137,7 @@ function KeepAVersion({
       : phase === 'unsettled'
         ? 'Your last edits are still saving. Nothing was kept, so nothing is missing from a version. Try again in a moment.'
         : phase === 'error'
-          ? 'The version could not be kept just now. Your writing is unchanged.'
+          ? 'Version not confirmed. Your writing is here. Check versions before trying again.'
           : phase === 'kept'
             ? 'version kept'
             : null;

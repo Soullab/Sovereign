@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAtmosphere } from '@/app/writers-studio/atmosphere/StudioAtmosphere';
 import { apiFetch } from '@/lib/http/apiBase';
+import ContinuousDraftWayIn from '@/app/writers-studio/ContinuousDraftWayIn';
 import { Shell } from '@/app/writers-studio/full-redesign/Shell';
 import {
   LiveMaiaReview, LiveReviewChapter, LiveReviewRail,
@@ -18,9 +19,12 @@ import { resolveSituatedWorkContext, studioHomeReturnSearch } from '@/app/writer
 import { useHouseStudioH1WorkClaim } from '@/app/writers-studio/useHouseStudioH1WorkClaim';
 import { h1AdmissionNeeded, resolveH1Arrival } from '@/app/writers-studio/h1Arrival';
 import { hostFactsFrom } from '@/app/writers-studio/rebuild/liveReview';
-import { listChapterReviewManifests, loadChapterReviewManifestById, type ChapterReviewManifest } from '@/lib/writersStudio/rebuild/chapterReviewManifest';
-import { rehydrateChapterReview } from '@/lib/writersStudio/rebuild/chapterReview';
-import { mapWholeReview } from '@/lib/writersStudio/studio/wholeReview';
+import { listChapterReviewManifests, loadChapterReviewManifestById, saveChapterReviewManifest, type ChapterReviewManifest } from '@/lib/writersStudio/rebuild/chapterReviewManifest';
+import { rehydrateChapterReview, runChapterReview } from '@/lib/writersStudio/rebuild/chapterReview';
+import { requestDevelopmentalReading } from '@/lib/writersStudio/developClient';
+import { requestAttentionMap } from '@/lib/writersStudio/attentionMapClient';
+import type { WholeManuscriptAttentionMap } from '@/lib/writersStudio/studio/attentionMap';
+import { mapWholeReview, REVIEW_DEVELOPMENTAL_LENSES } from '@/lib/writersStudio/studio/wholeReview';
 import type { DurableObservationTruth } from '@/lib/writersStudio/studio/realReview';
 import { chapterSpanFor, type RebuildSection } from '@/lib/writersStudio/rebuild/model';
 import {
@@ -32,12 +36,17 @@ import { relationshipIdFrom } from '@/app/writers-studio/canvasIdentity';
 import { readA2Relationship, type A2RelationshipSummary } from '@/lib/writersStudio/rebuild/relationshipOrchestration';
 import { readRelationshipReturnClient } from '@/lib/writersStudio/rebuild/returnStateClient';
 import WorkConversation from '@/app/writers-studio/canvas/WorkConversation';
+import { studioPlaceHref, type StudioPlace } from '@/lib/writersStudio/studioActions';
+import { checkpointServerDraft, newIdempotencyKey } from '@/app/press/manuscript/workingDraftClient';
+import P4R1ProofView from './P4R1ProofView';
+import StudioSignedOut from './StudioSignedOut';
 
 interface ContextReady {
   state: 'section_aware';
   manuscriptId: string;
   title: string | null;
   version: number;
+  draftRevision: number | null;
   updatedAt: string;
   sections: RebuildSection[];
 }
@@ -72,13 +81,27 @@ type ReadyReview = {
   const [context, setContext] = useState<ContextReady | null>(null);
   const [review, setReview] = useState<ReadyReview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [wayInId, setWayInId] = useState<string | null>(null);
   const [filter, setFilter] = useState('All');
   const [tab, setTab] = useState('Overview');
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(requestedFindingId);
   const [discussion, setDiscussion] = useState<ReviewDiscussionState | null>(null);
   const [workTalking, setWorkTalking] = useState(false);
+  /* Design 1B: MAIA offered a Develop place and the writer clicked it. Navigation only. */
+  const onStudioPlace = useCallback((place: StudioPlace) => {
+    router.push(studioPlaceHref(pathname, params?.toString() ?? '', place));
+  }, [params, pathname, router]);
   const [availableRuns, setAvailableRuns] = useState<ChapterReviewManifest[]>([]);
   const [availableRootId, setAvailableRootId] = useState<string | null>(null);
+  const [quickReview, setQuickReview] = useState<WholeManuscriptAttentionMap | null>(null);
+  const [quickReviewNone, setQuickReviewNone] = useState(false);
+  const [quickReviewBusy, setQuickReviewBusy] = useState(false);
+  const [quickReviewNeedsCheckpoint, setQuickReviewNeedsCheckpoint] = useState(false);
+  const [quickReviewError, setQuickReviewError] = useState<string | null>(null);
+  const [rereadBusy, setRereadBusy] = useState(false);
+  const [rereadNeedsCheckpoint, setRereadNeedsCheckpoint] = useState(false);
+  const [rereadProgress, setRereadProgress] = useState<string | null>(null);
+  const [rereadError, setRereadError] = useState<string | null>(null);
   const [a2Relationship, setA2Relationship] = useState<A2RelationshipSummary | null>(null);
   const discussGen = useRef(0);
 
@@ -90,6 +113,17 @@ type ReadyReview = {
     : { kind: 'unknown' as const };
   const work = currentWork(workContext);
   const visual = useWorkVisual(work?.id ?? null);
+  const reviewChapter = useMemo(() => {
+    if (!context?.sections.length) return null;
+    const sectionId = requestedSectionId
+      && context.sections.some((section) => section.draftSectionId === requestedSectionId)
+      ? requestedSectionId
+      : availableRootId
+        && context.sections.some((section) => section.draftSectionId === availableRootId)
+        ? availableRootId
+        : context.sections[0]!.draftSectionId;
+    return chapterSpanFor(context.sections, sectionId);
+  }, [context, requestedSectionId, availableRootId]);
 
   useEffect(() => {
     if (!context || workContext.kind !== 'work' || !work) {
@@ -134,6 +168,7 @@ type ReadyReview = {
       setPhase('loading');
       setReview(null);
       setMessage(null);
+      setWayInId(null);
       setDiscussion(null);
       setWorkTalking(false);
       discussGen.current += 1;
@@ -156,6 +191,7 @@ type ReadyReview = {
         if (body.state !== 'section_aware') {
           setPhase('error');
           setMessage('This manuscript is not section-addressable yet. Review will not guess at its structure.');
+          setWayInId(manuscriptId);
           return;
         }
         setContext(body);
@@ -202,7 +238,7 @@ type ReadyReview = {
           manifest: loaded.run,
           payloads: restored.bundle.payloads,
           host,
-          currentRevision: body.version,
+          currentRevision: body.draftRevision ?? -1,
         });
         if (cancelled) return;
         if (mapped.kind !== 'ready') {
@@ -233,6 +269,181 @@ type ReadyReview = {
     return () => { cancelled = true; };
   }, [manuscriptId, reviewRunId, requestedFindingId, requestedSectionId, work?.title, work?.form]);
 
+  const performQuickReread = useCallback(async () => {
+    if (!context || !reviewChapter?.sections.length || quickReviewBusy) return;
+    setQuickReviewBusy(true);
+    setQuickReviewNeedsCheckpoint(false);
+    setQuickReviewError(null);
+    setQuickReviewNone(false);
+    try {
+      const ids = reviewChapter.sections.map((section) => section.draftSectionId);
+      const commissioned = await requestDevelopmentalReading(
+        context.manuscriptId,
+        'overview',
+        { kind: 'range', fromSectionId: ids[0]!, toSectionId: ids[ids.length - 1]! },
+      );
+      if (!commissioned.ok) {
+        if (
+          commissioned.stage === 'capture'
+          && (commissioned.refusal === 'revision_not_current' || commissioned.refusal === 'no_revision')
+        ) {
+          setQuickReviewNeedsCheckpoint(true);
+          return;
+        }
+        setQuickReviewError('MAIA could not reread the chapter just now. Nothing in the writing changed.');
+        return;
+      }
+      if (commissioned.outcome === 'none') {
+        /* A completed reading with no observations is not a synthesis failure.
+           It also does not establish that the chapter is finished. Preserve the
+           modest truth of this light pass instead of asking attention-map to
+           fabricate an item from an empty evidence set. */
+        setQuickReview(null);
+        setQuickReviewNone(true);
+        return;
+      }
+      const synthesis = await requestAttentionMap(
+        context.manuscriptId,
+        [commissioned.readingId],
+        [
+          'Give the writer a quick reread of this chapter after revision.',
+          'This is a light editorial check, not a full Review. Do not imply that all developmental lenses were run.',
+          'Return exactly four evidenced items using begin-here, next, later, watch.',
+          'begin-here: What is working now — start with one specific strength worth protecting.',
+          'next: What feels clearer or more settled now — only if the current text establishes it; otherwise say what holds together now.',
+          'later: What still catches — the most useful remaining friction.',
+          'watch: Where I would look next — one manageable next move, or say the chapter can rest if nothing meaningful needs attention.',
+          'Be conversational and concise. Do not rewrite the prose. Keep any reader-effect language hypothetical.',
+        ].join('\n'),
+      );
+      if (!synthesis.ok) {
+        setQuickReviewError('MAIA reread the chapter but could not gather the quick review just now.');
+        return;
+      }
+      setQuickReview(synthesis.map);
+    } finally {
+      setQuickReviewBusy(false);
+    }
+  }, [context, reviewChapter, quickReviewBusy]);
+
+  const checkpointAndQuickReread = useCallback(async () => {
+    if (!context || quickReviewBusy) return;
+    setQuickReviewBusy(true);
+    setQuickReviewError(null);
+    const kept = await checkpointServerDraft(apiFetch, context.manuscriptId, {
+      baseRevisionId: context.version,
+      idempotencyKey: newIdempotencyKey(),
+    });
+    if (kept.kind !== 'ok' || kept.revisionCount === null) {
+      setQuickReviewBusy(false);
+      setQuickReviewError(
+        kept.kind === 'conflict'
+          ? 'The draft moved while MAIA was preparing to reread it. Reload, then try again.'
+          : 'The current draft could not be saved for rereading just now. Your writing is unchanged.',
+      );
+      return;
+    }
+    setContext((previous) => previous ? {
+      ...previous,
+      version: kept.revisionId ?? previous.version,
+      draftRevision: kept.revisionCount,
+    } : previous);
+    setQuickReviewNeedsCheckpoint(false);
+    setQuickReviewBusy(false);
+    await performQuickReread();
+  }, [context, quickReviewBusy, performQuickReread]);
+
+  const performReread = useCallback(async (draftRevision: number) => {
+    if (!context || !reviewChapter?.sections.length || rereadBusy) return;
+    setRereadBusy(true);
+    setRereadNeedsCheckpoint(false);
+    setRereadError(null);
+    setRereadProgress('MAIA is rereading the chapter…');
+    try {
+      const bundle = await runChapterReview(
+        context.manuscriptId,
+        reviewChapter.sections,
+        (done, total, lens) => setRereadProgress(
+          done >= total ? 'MAIA has finished rereading. Preparing Review…'
+            : `Reading ${done + 1} of ${total}: ${lens}…`,
+        ),
+        undefined,
+        REVIEW_DEVELOPMENTAL_LENSES,
+      );
+      if (bundle.readingIds.length === 0) {
+        const checkpointNeeded = bundle.failures.some((failure) =>
+          failure.refusal === 'revision_not_current' || failure.refusal === 'no_revision');
+        if (checkpointNeeded) {
+          setRereadNeedsCheckpoint(true);
+          setRereadProgress(null);
+          return;
+        }
+        setRereadError('MAIA could not complete a new chapter Review just now. Nothing in the writing changed.');
+        return;
+      }
+      const kept = await saveChapterReviewManifest(context.manuscriptId, {
+        chapterRootSectionId: reviewChapter.root.draftSectionId,
+        sectionIds: reviewChapter.sections.map((section) => section.draftSectionId),
+        draftRevision,
+        readingIds: bundle.readingIds,
+        failures: bundle.failures,
+      });
+      if (!kept.ok) {
+        setRereadError('MAIA finished the readings, but the new Review could not be kept as one set. Nothing in the writing changed.');
+        return;
+      }
+      const next = new URLSearchParams(params?.toString() ?? '');
+      next.set('mode', 'review');
+      next.set('s', reviewChapter.root.draftSectionId);
+      next.set('reviewRun', kept.run.id);
+      next.delete('reviewFinding');
+      router.push(`${pathname}?${next.toString()}`);
+    } finally {
+      setRereadBusy(false);
+      setRereadProgress(null);
+    }
+  }, [context, reviewChapter, rereadBusy, params, pathname, router]);
+
+  const rereadChapter = useCallback(async () => {
+    if (!context || rereadBusy) return;
+    if (context.draftRevision === null) {
+      setRereadNeedsCheckpoint(true);
+      setRereadError(null);
+      return;
+    }
+    await performReread(context.draftRevision);
+  }, [context, rereadBusy, performReread]);
+
+  const checkpointAndReread = useCallback(async () => {
+    if (!context || rereadBusy) return;
+    setRereadBusy(true);
+    setRereadError(null);
+    setRereadProgress('Saving the current draft for this Review…');
+    const kept = await checkpointServerDraft(apiFetch, context.manuscriptId, {
+      baseRevisionId: context.version,
+      idempotencyKey: newIdempotencyKey(),
+    });
+    if (kept.kind !== 'ok' || kept.revisionCount === null) {
+      setRereadBusy(false);
+      setRereadProgress(null);
+      setRereadError(
+        kept.kind === 'conflict'
+          ? 'The draft moved while Review was preparing. Reload the chapter, then try again.'
+          : 'The current draft could not be saved for Review just now. Your writing is unchanged.',
+      );
+      return;
+    }
+    const draftRevision = kept.revisionCount;
+    setContext((previous) => previous ? {
+      ...previous,
+      version: kept.revisionId ?? previous.version,
+      draftRevision,
+    } : previous);
+    setRereadNeedsCheckpoint(false);
+    setRereadBusy(false);
+    await performReread(draftRevision);
+  }, [context, rereadBusy, performReread]);
+
   const openAvailableReview = useCallback((run: ChapterReviewManifest) => {
     const next = new URLSearchParams(params?.toString() ?? '');
     next.set('mode', 'review');
@@ -242,7 +453,7 @@ type ReadyReview = {
     router.push(`${pathname}?${next.toString()}`);
   }, [params, pathname, router]);
 
-  const goMode = useCallback((mode: 'home' | 'write' | 'develop' | 'review', sectionId?: string) => {
+  const goMode = useCallback((mode: 'home' | 'write' | 'develop' | 'review' | 'publish' | 'listen', sectionId?: string) => {
     if (mode === 'home') {
       const query = studioHomeReturnSearch(params?.toString() ?? '');
       router.push(`${pathname}${query ? `?${query}` : ''}`);
@@ -399,6 +610,99 @@ type ReadyReview = {
             <p className="fr-rev-sub">
               Review opens saved readings. Entering this room does not ask MAIA to read anything again.
             </p>
+            <div className="fr-tabs fr-tabs-rev" role="tablist" aria-label="Review view">
+              <button type="button" role="tab" aria-selected={tab !== 'Proof'} onClick={() => setTab('Overview')}>
+                Review
+              </button>
+              <button type="button" role="tab" aria-selected={tab === 'Proof'} onClick={() => setTab('Proof')}>
+                Proof
+              </button>
+            </div>
+            {tab === 'Proof' ? (
+              <P4R1ProofView
+                manuscriptId={context.manuscriptId}
+                workTitle={work?.title ?? context.title ?? 'This Work'}
+              />
+            ) : (
+              <>
+            <section className="fr-card p4r1-review-reread" data-review-reread>
+              <span className="p4r1-eyebrow">After revision</span>
+              <h2>How does the chapter hold now?</h2>
+              <p>
+                Start light. MAIA can reread the chapter once and tell you what is working now,
+                what still catches, and where she would look next.
+              </p>
+              <p className="p4r1-review-reread-boundary">
+                Nothing happens until you ask. Quick reread is not a full multi-lens Review and never changes your writing.
+              </p>
+              {!reviewChapter ? (
+                /* Both rereads work on a member-confirmed chapter. Without one the
+                   buttons used to return silently; say so and offer Develop, which
+                   reads any section. */
+                <div className="p4r1-review-reread-boundary" role="status" data-review-no-chapter>
+                  <p>
+                    {/* Live walk WS-LIVE-WALK-01 W10: "no confirmed chapters" read as false to a writer looking at their
+                        "Section 1". Same fact, the writer's words; nothing about what MAIA reads changes. */}
+                    Review is for looking again at a chapter after you have revised it. Your writing is not
+                    divided into chapters yet, so there is nothing here for MAIA to look at again. If you would
+                    like her to read what you have written, Develop is the place.
+                  </p>
+                  <button type="button" onClick={() => goMode('develop')}>Read it in Develop</button>
+                </div>
+              ) : quickReviewNeedsCheckpoint ? (
+                <>
+                  <p className="p4r1-review-reread-boundary">
+                    This chapter has changed since its last saved reading state. Save the current draft so MAIA rereads exactly what is here now. Your words will not change.
+                  </p>
+                  <button type="button" disabled={quickReviewBusy} onClick={() => void checkpointAndQuickReread()}>
+                    {quickReviewBusy ? 'Saving the current draft…' : 'Save current draft & quick reread'}
+                  </button>
+                </>
+              ) : (
+                <button type="button" disabled={quickReviewBusy} onClick={() => void performQuickReread()}>
+                  {quickReviewBusy ? 'MAIA is rereading the chapter…' : 'Quick reread'}
+                </button>
+              )}
+              {quickReviewError ? <p className="p4r1-error" role="status">{quickReviewError}</p> : null}
+              {quickReview ? (
+                <div className="p4r1-review-quick-result" data-review-quick-result>
+                  {quickReview.items.map((item) => (
+                    <article key={item.id}>
+                      <b>{item.label}</b>
+                      <p>{item.notice}</p>
+                    </article>
+                  ))}
+                </div>
+              ) : quickReviewNone ? (
+                <div className="p4r1-review-quick-result" data-review-quick-result>
+                  <article>
+                    <b>Nothing further surfaced in this light reread</b>
+                    <p>
+                      MAIA completed the overview read without an evidenced observation to carry forward.
+                      This light pass does not establish that the chapter is finished and does not replace a full Review.
+                    </p>
+                  </article>
+                </div>
+              ) : null}
+              {reviewChapter ? (
+              <details className="p4r1-review-deep">
+                <summary>Deep Review</summary>
+                <p className="p4r1-review-reread-boundary">
+                  Run the full governed multi-lens Review when you want a durable chapter-level evidence set and deeper comparison.
+                </p>
+                {rereadNeedsCheckpoint ? (
+                  <button type="button" disabled={rereadBusy} onClick={() => void checkpointAndReread()}>
+                    {rereadBusy ? (rereadProgress ?? 'Saving the current draft…') : 'Save current draft & run deep Review'}
+                  </button>
+                ) : (
+                  <button type="button" disabled={rereadBusy} onClick={() => void rereadChapter()}>
+                    {rereadBusy ? (rereadProgress ?? 'MAIA is running the deep Review…') : 'Run deep Review'}
+                  </button>
+                )}
+                {rereadError ? <p className="p4r1-error" role="status">{rereadError}</p> : null}
+              </details>
+              ) : null}
+            </section>
             <section className="fr-card p4r1-review-entry-card">
               <h3>Saved Reviews</h3>
               {availableRuns.length > 0 ? (
@@ -434,6 +738,8 @@ type ReadyReview = {
                 </p>
               )}
             </section>
+              </>
+            )}
           </div>
         }
         maia={
@@ -449,6 +755,7 @@ type ReadyReview = {
                   manuscriptId={context.manuscriptId}
                   sectionId={availableRootId}
                   onClose={() => setWorkTalking(false)}
+                  onStudioPlace={onStudioPlace}
                 />
               </div>
             </div>
@@ -476,15 +783,17 @@ type ReadyReview = {
     );
   }
 
+  if (phase === 'unauthorized') return <StudioSignedOut />;
   if (phase !== 'ready' || !review || !context || !data) {
     const copy = phase === 'loading' ? 'Opening this Review…'
       : phase === 'idle' ? 'No saved Review is selected. Opening Review does not read your Work.'
-        : phase === 'unauthorized' ? 'Sign in to open your Writer’s Studio.'
-          : phase === 'unavailable' ? 'This Review is not available to show here. Nothing about your Work has changed.'
+        : phase === 'unavailable' ? 'This Review is not available to show here. Nothing about your Work has changed.'
             : message ?? 'Review could not be opened.';
     return (
       <main className="fr-root" data-pc3-review-phase={phase}>
-        <div style={{ padding: 32 }}>{copy}</div>
+        <div style={{ padding: 32 }}>
+          {phase === 'error' && wayInId ? <ContinuousDraftWayIn manuscriptId={wayInId} room="Review" /> : copy}
+        </div>
       </main>
     );
   }  const selectedFinding = data.findings.find((finding) =>
@@ -510,6 +819,12 @@ type ReadyReview = {
           onOpenFinding={openFinding}
           onWorkWith={workWithFinding}
           onDiscuss={discussFinding}
+          proof={
+            <P4R1ProofView
+              manuscriptId={context.manuscriptId}
+              workTitle={work?.title ?? context.title ?? 'This Work'}
+            />
+          }
         />
       }
       maia={
@@ -525,6 +840,7 @@ type ReadyReview = {
                 manuscriptId={context.manuscriptId}
                 sectionId={selectedFinding?.sectionId ?? review.rootId}
                 onClose={() => setWorkTalking(false)}
+                onStudioPlace={onStudioPlace}
               />
             </div>
           </div>

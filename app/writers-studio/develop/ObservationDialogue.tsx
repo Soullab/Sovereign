@@ -47,6 +47,7 @@
  * one of those is safe to act on.
  */
 
+import type { TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   askForBody, authorizeSections, loadThread, threadsOn, type AskThreadView,
@@ -63,9 +64,11 @@ import {
   step as machineStep,
   type MachineState,
 } from '@/lib/writersStudio/bodyAuthorizationMachine';
-import { readWorkingStyle } from '@/lib/writersStudio/workingStyle';
+import { readWorkingStyle, type ExplanationDepth } from '@/lib/writersStudio/workingStyle';
 
 const REFUSAL_SAYS: Record<string, string> = {
+  sanctuary_not_kept: 'Sanctuary is on. This conversation is kept with its reading, so MAIA will not continue it now. Nothing was kept.',
+  posture_undeclared: 'Your Sanctuary setting could not be read, so nothing was sent or kept. Reload the page and try again.',
   unreachable: 'MAIA could not be reached. Nothing was lost — your question is held here.',
   empty_answer: 'MAIA returned nothing. Try asking again.',
   anchor_requires_reading: 'The reading this observation belongs to could not be found.',
@@ -108,13 +111,16 @@ function locationLine(l: CurrentLocation | null): string | null {
 
 export default function ObservationDialogue({
   manuscriptId, readingId, observationKey, about, superseded, onClose,
-  initialQuestion = '', autoSendInitialQuestion = false,
+  initialQuestion = '', autoSendInitialQuestion = false, showAbout = true, teachingAnchor,
+  initialResponseStyle,
 }: {
   manuscriptId: string;
   readingId: string;
   observationKey: string;
   /** What she noticed, in her words. Shown so the room is anchored to it. */
   about: string;
+  /** False when the host already shows `about` directly above this room. */
+  showAbout?: boolean;
   /** From the reading the room already rendered, so the warning precedes the first turn. */
   superseded: boolean;
   onClose: () => void;
@@ -123,6 +129,12 @@ export default function ObservationDialogue({
    * Sending still waits for thread-resume discovery so duplicate threads cannot
    * be created during the adopting window. */
   autoSendInitialQuestion?: boolean;
+  /** When initialQuestion is a Teach me button's words (F1): the server adds
+   *  the teaching shape. It applies only while the writer sends those words. */
+  teachingAnchor?: TeachingAnchor;
+  /** The depth a Develop button asked for (step 3, Q2): applies only while the
+   *  writer sends that button's words, like teachingAnchor. */
+  initialResponseStyle?: ExplanationDepth;
 }) {
   const [thread, setThread] = useState<AskThreadView | null>(null);
   /* HELD SEPARATELY FROM `thread`. A failed answer still has a threadId — the
@@ -141,6 +153,8 @@ export default function ObservationDialogue({
   const machine = useRef<MachineState>(machineInitial);
   const [authView, setAuthView] = useState<MachineState>(machineInitial);
   const pausedQuestion = useRef('');
+  const pausedTeachingAnchor = useRef<TeachingAnchor | undefined>(undefined);
+  const pausedResponseStyle = useRef<ExplanationDepth | undefined>(undefined);
 
   const mintActId = useCallback(() => `act-${crypto.randomUUID()}`, []);
   const advance = useCallback((event: Parameters<typeof machineStep>[1]) => {
@@ -186,6 +200,9 @@ export default function ObservationDialogue({
     if (!q || busy || mode.kind === 'blocked') return;
     setBusy(true);
     setRefusal(null);
+    const anchorForQ = teachingAnchor && q === initialQuestion.trim() ? teachingAnchor : undefined;
+    const styleForQ = q === initialQuestion.trim() && initialResponseStyle
+      ? initialResponseStyle : readWorkingStyle().explanation;
 
     const { outcome, ask: r } = await askForBody({
       manuscriptId,
@@ -193,11 +210,14 @@ export default function ObservationDialogue({
       ...(mode.kind === 'resume'
         ? { threadId: mode.threadId }
         : { anchor: { on: 'observation' as const, readingId, observationKey } }),
-      responseStyle: readWorkingStyle().explanation,
+      responseStyle: styleForQ,
+      ...(anchorForQ ? { teachingAnchor: anchorForQ } : {}),
     });
 
     if (outcome) {
       pausedQuestion.current = q;
+      pausedTeachingAnchor.current = anchorForQ;
+      pausedResponseStyle.current = styleForQ;
       advance({ type: 'served', outcome });
       if (r.threadId) setThreadId(r.threadId);
       if (r.location) setLocation(r.location);
@@ -216,7 +236,7 @@ export default function ObservationDialogue({
       if (r.threadId) setThreadId(r.threadId);
     }
     setBusy(false);
-  }, [draft, busy, mode, manuscriptId, readingId, observationKey, advance]);
+  }, [draft, busy, mode, manuscriptId, readingId, observationKey, advance, teachingAnchor, initialQuestion, initialResponseStyle]);
 
   const authorize = useCallback(async () => {
     const effect = advance({ type: 'press' });
@@ -231,7 +251,8 @@ export default function ObservationDialogue({
       sectionIds: effect.sectionIds,
       question: pausedQuestion.current,
       threadId: threadId ?? undefined,
-      responseStyle: readWorkingStyle().explanation,
+      responseStyle: pausedResponseStyle.current ?? readWorkingStyle().explanation,
+      ...(pausedTeachingAnchor.current ? { teachingAnchor: pausedTeachingAnchor.current } : {}),
     });
 
     if (!outcome && !r.ok && r.refusal === 'unreachable') {
@@ -299,27 +320,20 @@ export default function ObservationDialogue({
       className="mt-4 border rounded-sm p-4"
       style={{ borderColor: PRESS.ruleSoft }}
     >
-      <p className="text-[10.5px] tracking-[0.15em] uppercase opacity-45">talking about</p>
-      <p className="text-[13.5px] leading-relaxed opacity-80 mt-1" style={{ whiteSpace: 'pre-wrap' }}>
-        {about}
-      </p>
+      {showAbout ? (
+        <>
+          <p className="text-[10.5px] tracking-[0.15em] uppercase opacity-45">talking about</p>
+          <p className="text-[13.5px] leading-relaxed opacity-80 mt-1" style={{ whiteSpace: 'pre-wrap' }}>
+            {about}
+          </p>
+        </>
+      ) : null}
 
       {/* SAID ONCE, AT THE TOP. The writer needs to know before they speak. */}
       <p className="text-[12px] leading-relaxed opacity-55 mt-2" data-dialogue-bounds>
         Nothing said here changes your work or her reading. She is talking about what she noticed
         then, and has not reread the work.
       </p>
-
-      {authView.outcome ? (
-        <BodyAuthorizationPanel
-          outcome={authView.outcome}
-          selectedSectionIds={authView.selectedSectionIds}
-          busy={authView.phase === 'authorizing' || busy}
-          onToggleSection={toggleSection}
-          onAuthorize={() => void authorize()}
-          onDecline={decline}
-        />
-      ) : null}
 
       {line && (
         <p className="text-[12px] leading-relaxed opacity-70 mt-2"
@@ -390,6 +404,19 @@ export default function ObservationDialogue({
           {REFUSAL_SAYS[refusal] ?? `That did not go through (${refusal}).`}
         </p>
       )}
+
+      {/* Beside the question that needs it, not above the whole conversation:
+          drawn at the top, a writer at the composer saw no answer at all. */}
+      {authView.outcome ? (
+        <BodyAuthorizationPanel
+          outcome={authView.outcome}
+          selectedSectionIds={authView.selectedSectionIds}
+          busy={authView.phase === 'authorizing' || busy}
+          onToggleSection={toggleSection}
+          onAuthorize={() => void authorize()}
+          onDecline={decline}
+        />
+      ) : null}
 
       {/* The composer exists only where speaking is a lawful next act. Both
           other states say why instead of offering a disabled box to type into.

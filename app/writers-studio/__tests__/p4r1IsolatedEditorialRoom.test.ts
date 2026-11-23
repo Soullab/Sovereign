@@ -60,8 +60,8 @@ test('layout presets, tools, preferences and reset all change only isolated pres
   expect(room.dataset.showDirections).toBe('true');
   expect(room.dataset.showWorking).toBe('true');
   expect(room.dataset.showDepth).toBe('true');
-  expect(container.textContent).toContain('Revision · Touch');
-  expect(container.textContent).toContain('Revision latitude');
+  expect(container.textContent).toContain('Edit · Light');
+  expect(container.textContent).toContain('Edit strength');
 
   const button = (text: string) =>
     Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.trim().startsWith(text))!;
@@ -98,7 +98,9 @@ test('layout presets, tools, preferences and reset all change only isolated pres
 
   act(() => button('Reset view').click());
   expect(room.dataset.layout).toBe('balanced');
-  expect(room.dataset.readingSize).toBe('large');
+  // Accepted shared reading-size contract: local layout reset preserves this choice.
+  expect(room.dataset.readingSize).toBe('largest');
+  expect(window.localStorage.getItem('soullab.studio.reading-size.v1')).toBe('largest');
   expect(room.dataset.lineSpacing).toBe('open');
   expect(room.dataset.showDirections).toBe('true');
   expect(room.dataset.showWorking).toBe('true');
@@ -155,7 +157,7 @@ test('Preferences exposes the author-set revision latitude and paragraph permiss
   const slider = container.querySelector('#p4r1-editing-latitude') as HTMLInputElement;
   expect(slider).toBeTruthy();
   expect(slider.value).toBe('1');
-  expect(slider.getAttribute('aria-valuetext')).toBe('Touch');
+  expect(slider.getAttribute('aria-valuetext')).toBe('Light');
 
   expect(slider.min).toBe('1');
   expect(slider.max).toBe('5');
@@ -195,4 +197,33 @@ test('Working style exposes pace and explanation sliders with a live plain-langu
   });
   expect(room.dataset.workingPace).toBe('mapped');
   expect(window.localStorage.getItem('writers-studio:working-style:v1')).toContain('"pace":"mapped"');
+});
+
+
+test.each(['large', 'larger', 'largest'])('Reset view preserves shared %s reading size and author permissions', (size) => {
+  window.localStorage.setItem('soullab.studio.reading-size.v1',size);
+  const latitude=jest.fn(), paragraphs=jest.fn(), proposals=jest.fn();
+  renderRoom({onEditingLatitude:latitude,onMayRemoveParagraphs:paragraphs,onMayProposeImmediately:proposals});
+  const button=Array.from(container.querySelectorAll('button')).find(b=>b.textContent?.trim()==='Reset view')!;
+  act(()=>button.click());
+  const room=container.querySelector('[data-isolated-editorial]') as HTMLElement;
+  expect(room.dataset.readingSize).toBe(size);
+  expect(window.localStorage.getItem('soullab.studio.reading-size.v1')).toBe(size);
+  expect(latitude).not.toHaveBeenCalled();expect(paragraphs).not.toHaveBeenCalled();expect(proposals).not.toHaveBeenCalled();
+});
+
+test('Start a new conversation appears only while a conversation is open, and is the writer’s act', () => {
+  renderRoom();
+  const find = () => Array.from(container.querySelectorAll('button'))
+    .find((button) => button.textContent?.trim() === 'Start a new conversation');
+  expect(find()).toBeUndefined();
+
+  const onStartFresh = jest.fn();
+  renderRoom({ onStartFresh });
+  expect(find()).toBeTruthy();
+  act(() => find()!.click());
+  expect(onStartFresh).toHaveBeenCalledTimes(1);
+
+  renderRoom({ onStartFresh, busy: true });
+  expect(find()!.disabled).toBe(true);
 });

@@ -18,6 +18,9 @@ export interface AccessRule {
   /** Exact route match */
   exact?: string;
 
+  /** Explicit HTTP methods for narrowly scoped routes; checked before forwarding. */
+  methods?: readonly string[];
+
   /** If true, no auth required */
   public?: boolean;
   /** Minimum tier required (free < personal < pro) */
@@ -41,6 +44,19 @@ export const ACCESS_RULES: AccessRule[] = [
   // Landing & Marketing
   { exact: '/', public: true, notes: 'Studio landing page' },
   { exact: '/home', public: true, notes: 'Soullab canonical entry — signed-out visitors see the Soullab threshold; authenticated members enter Home' },
+
+  // P0 public marketing discovery, separately scoped from working/consent-gated Studios.
+  // Exact-only whitelist; NEVER grant /explore/* wildcards or weaken private
+  // /writers-studio, /studio, /maia/encounter, chart or API admission.
+  { exact: '/explore', public: true, notes: 'Public Many Doors introduction; no member data' },
+  { exact: '/explore/writers-studio', public: true, notes: 'Public writer vision; manuscript features remain gated' },
+  { exact: '/explore/pro-studio', public: true, notes: 'Public professional preview; clinical workflows remain gated' },
+  { exact: '/explore/astrology-pro', public: true, notes: 'Public professional astrology preview; private charts remain gated' },
+  { exact: '/explore/maia', public: true, notes: 'Public MAIA introduction; member encounter remains gated' },
+  { exact: '/explore/ain-os', public: true, notes: 'AIN OS research; not a licensed public download' },
+  { exact: '/explore/sound-resonance', public: true, notes: 'Sound experience preview; no public player or audio recording' },
+  { exact: '/explore/elemental-academy', public: true, notes: 'Academy curriculum preview; no course access' },
+
   { exact: '/enter', public: true, notes: 'Smart routing entry point (MAIA/onboarding)' },
   { exact: '/faq', public: true, notes: 'Public FAQ' },
   { exact: '/downloads', public: true, notes: 'Downloads page' },
@@ -99,6 +115,26 @@ export const ACCESS_RULES: AccessRule[] = [
   // the precise failure the explicit-mapping doctrine above exists to prevent.
   { exact: '/writers-studio', minTier: 'free', notes: "Writer's Studio Home (Layer 2) — same member-facing policy as /press/studio, whose address it inherited; unauthenticated visitors are redirected to sign-in before the door" },
   { prefix: '/writers-studio/', minTier: 'free', notes: "Writer's Studio member corridor — authenticated members of any tier before every Studio subroute; individual proving/lab surfaces may impose a stricter server-side gate after this outer boundary" },
+
+  // LISTEN-01 dark launch (2026-11-09) — Sound Studio review audio. PUBLIC AT THE PROXY ONLY so a
+  // cookie-less <audio> request carrying a media ticket (iOS shell) can reach the route. The route itself
+  // enforces everything: flag → identity (session OR valid media ticket) → named beta → allowlist + release.
+  // Never a public asset: no file is served without those checks (tests/listening/sound_studio_media_ticket.test.mjs).
+  { prefix: '/media/sound-studio/', public: true, notes: 'Sound Studio review audio — route-enforced: flag + session or media ticket + named beta + allowlist; 404 otherwise' },
+  { exact: '/api/listen/media-ticket', minTier: 'free', notes: 'Issue short-lived Sound Studio media tickets; flag + verified session + named beta' },
+  { exact: '/api/listen/review', minTier: 'free', notes: 'Sound Studio review conversation (LISTEN-01 phase 1) — own reviews list and save; route also requires the review flag and named-beta membership' },
+  { prefix: '/api/listen/review/', minTier: 'free', notes: 'Sound Studio review guide turn, summary and own-review delete; same flag + named-beta conditions as /listen' },
+
+  // LISTEN-45 — exact authenticated Sound Field door and exact current-session
+  // receipt. The page remains disabled-by-default behind
+  // SOULLAB_LISTEN_REVIEW_ENABLED and carries its own server session check.
+  // Exact-only is deliberate: no nested/private listening or member APIs
+  // inherit admission by accident.
+  { exact: '/listen', minTier: 'free', notes: 'Sound Field review room — authenticated browser members only; feature-disabled by default; no /listen/* wildcard' },
+  { exact: '/api/members/session', minTier: 'free', notes: 'Current verified member/session receipt used by the Sound Field root boundary and existing session consumers; exact route only' },
+  { exact: '/api/members/me', minTier: 'free', notes: 'Canonical server-truth member receipt used to repair stale browser identity caches from a verified cookie or x-session-token credential; exact route only' },
+  { exact: '/api/members/signout', minTier: 'free', notes: 'Authenticated session revocation and cookie clearing; exact route only so sign-out cannot silently degrade under strict access mode' },
+
   { exact: '/now-what/welcome', public: true, notes: 'What Now? public landing — additive; /now-what room-as-entry redirect unchanged' },
   // Now What? (Larry Closs program) — room as entry (2026-07-08). /now-what
   // redirects at the edge (next.config redirects(), which run BEFORE middleware)
@@ -117,6 +153,10 @@ export const ACCESS_RULES: AccessRule[] = [
   { exact: '/now-what/home', minTier: 'free', notes: 'Now What? Client Home — the member’s own place between conversations. Auth required: it renders the member’s carried threads and their per-item sharing state, so it must never be reachable unauthenticated. Declared explicitly rather than inheriting the Mode A unmapped-route default.' },
   { exact: '/now-what/practice', minTier: 'free', notes: 'Now What? Practice Workspace — the field holder’s own room. Auth is the door; the field-holder check is enforced separately by GET /api/practitioner/programs (403 “belongs to the field holder”), so a signed-in non-holder reaches the shell and no practice data. Declared explicitly rather than relying on the Mode A unmapped-route default, which would leave a practitioner surface open by omission.' },
   { exact: '/api/now-what/register', public: true, notes: 'Now What? independent signup API — creates member + session; email-uniqueness prevents account forking' },
+  // STUDIO-A-LA-CARTE-01 Phases 3–4 (founder rulings R1/R2 2026-11-12; invitation gate 2026-11-13).
+  { regex: /^\/doorway\/(writer|sound|guide|astrology)$/, public: true, notes: 'Studio doorway invitation sign-up page — 404 unless STUDIO_DOORWAYS_ENABLED; the invitation code is the gate, enforced by the API' },
+  { exact: '/api/doorway/check', methods: ['POST'], public: true, notes: 'Studio doorway invitation pre-check — 404 unless STUDIO_DOORWAYS_ENABLED; reads only, answers { valid } so no account field is shown before eligibility is known' },
+  { exact: '/api/doorway/register', methods: ['POST'], public: true, notes: 'Studio doorway sign-up API — 404 unless STUDIO_DOORWAYS_ENABLED; redeems one studio invitation atomically, creates a normal members row + session; email-uniqueness prevents account forking' },
   { exact: '/library', public: true, notes: 'Public library browse' },
   { exact: '/book-studio', public: true, notes: 'Book Studio — editorial workspace index' },
   { exact: '/book-studio/read', public: true, notes: 'Book Studio — manuscript reader' },
@@ -250,6 +290,16 @@ export const ACCESS_RULES: AccessRule[] = [
   { exact: '/maia', public: true, notes: 'Legacy MAIA threshold — routes people into canonical Soullab Home or explicit MAIA encounter' },
   { exact: '/maia/encounter', minTier: 'free', notes: 'Direct MAIA encounter — authenticated member destination inside Soullab' },
   { exact: '/maia/reflection', minTier: 'free', notes: 'Developmental reflection — member-only (beta v0)' },
+  // MARKED-MOMENTS-ACCESS-01 — this is an existing member-owned room,
+  // not a public surface and not a namespace grant. The exact declaration
+  // keeps strict mode aligned with Home's existing memberMoments door while
+  // leaving every /maia/moments/* neighbor unmapped. The page's Sovereign
+  // API independently enforces member identity and row ownership.
+  { exact: '/maia/moments', minTier: 'free', notes: 'Marked Moments — authenticated member-owned verbatim keeps; exact route only' },
+  // KEEP-CAPTURE-ACCESS-01 — this existing portfolio room is member-owned,
+  // authenticated and exact-only. It is not a public surface and does not
+  // authorize the /maia/keep-capture/* namespace or any portfolio API.
+  { exact: '/maia/keep-capture', minTier: 'free', notes: 'Keep/Capture portfolio — authenticated member-owned memory surface; exact route only' },
   { exact: '/maia/vision-studio', minTier: 'free', notes: 'Vision Studio — authenticated member creative room inside Soullab' },
   { exact: '/maia/compact', minTier: 'free', notes: 'MAIA compact' },
   { exact: '/maia/mandala', minTier: 'free', notes: 'Mandala interface' },
@@ -304,6 +354,8 @@ export const ACCESS_RULES: AccessRule[] = [
 
   // Elemental Alchemy — depth
   { prefix: '/maia/community/elemental-alchemy', minTier: 'free', notes: 'Elemental alchemy — depth, open to all' },
+  { exact: '/api/reader/moments', minTier: 'free', notes: 'Elemental Alchemy Reader moments — authenticated outer gate; handler independently derives member ownership from the verified session' },
+  { exact: '/api/reader/ask', minTier: 'free', notes: 'Elemental Alchemy Reader MAIA reflection — authenticated outer gate; handler independently derives member ownership from the verified session' },
 
   // Oracle tools — depth, capacity-governed by LimitsEnforcer
   { exact: '/oracle/iching', minTier: 'free', notes: 'I-Ching readings — depth, rate-limited' },
@@ -378,6 +430,7 @@ export const ACCESS_RULES: AccessRule[] = [
   // longer a redirect into founder-gated /labtools/journal.
   // HOUSE-PREFERENCES-01: member presentation only; ownership is resolved again in the reader.
   { exact: '/house', minTier: 'free', notes: 'Member House orientation' },
+  { exact: '/house/places', minTier: 'free', notes: 'HOUSE-MOBILE-01 — All places catalogue for the House; same member gate as /house' },
   { exact: '/api/house/preferences', minTier: 'free', notes: 'Verified member-owned House presentation preferences' },
   { exact: '/api/early-field/admission', minTier: 'free', notes: 'EARLY-FIELD-01 — server-side admission to the early Living Field instrument; authenticated members only; answers a boolean from the session, never a client claim' },
   { exact: '/api/house-studio/admission', minTier: 'free', notes: 'H1 — server-side admission to explicit House → Writer’s Studio Work-context arrival; authenticated members only; session-derived boolean only' },
@@ -494,6 +547,10 @@ export const ACCESS_RULES: AccessRule[] = [
   // Supervision
   { exact: '/supervision', minTier: 'pro', rolesAnyOf: ['practitioner'], notes: 'Supervision' },
 
+  // Pro Studio Reflect arrival: authenticated orientation into EXISTING free MAIA.
+  // This path grants no premium Reflect/Practice/Collective capability.
+  { exact: '/pro-studio/reflect', minTier: 'free', notes: 'Reflect arrival for signed-in members; premium features remain ungranted' },
+
   // Studio (session room + supporting pages)
   { prefix: '/studio', minTier: 'free', notes: 'Studio - open to all authenticated users' },
 
@@ -557,13 +614,78 @@ export const ACCESS_RULES: AccessRule[] = [
   // Public API
   { exact: '/api/ask', public: true, notes: 'Landing page Ask Kelly/MAIA' },
   { exact: '/api/members/check', public: true, notes: 'Check member exists' },
-  { exact: '/api/members/register', public: true, notes: 'Register member' },
-  { exact: '/api/members/register-email', public: true, notes: 'Register via magic link (no passkey)' },
+  { exact: '/api/members/register', public: true, methods: ['POST', 'OPTIONS'], notes: 'Invite-admitted registration; handler verifies admission and session outcome' },
+  { exact: '/api/members/register-email', public: true, methods: ['POST'], notes: 'Email registration; handler requires a one-use verified email proof' },
+  // AUTH-RETURN-01: exact auth endpoints; no wildcard member API admission.
+  { exact: '/api/members/email-code', public: true, methods: ['POST'], notes: 'Issue a rate-limited email challenge with truthful provider acceptance' },
+  { exact: '/api/members/email-code/verify', public: true, methods: ['POST'], notes: 'Consume a challenge into verified session or one-use registration proof' },
+  { exact: '/api/members/session', minTier: 'free', methods: ['GET', 'HEAD', 'POST'], notes: 'Verified current-session readback and cookie refresh; handler independently verifies authority' },
+  { exact: '/api/members/signout', public: true, methods: ['POST'], notes: 'Clear the caller session, including stale credentials; handler confines revocation to that session' },
+  // AUTH-RETURN-01 whole-journey routes. Exact methods only: no auth/onboarding wildcard.
+  // Public admission reaches handlers that independently validate or deliberately
+  // disclose only a tightly bounded pre-auth fact. Member mutations require the
+  // verified outer identity and must independently re-check it in the handler.
+  { exact: '/api/auth/whoami', public: true, methods: ['GET', 'OPTIONS'], notes: 'Current-session readback; handler independently validates every presented credential' },
+  { exact: '/api/members/lookup-email', public: true, methods: ['POST'], notes: 'Rate-limited pre-auth lookup with a two-boolean disclosure budget' },
+  { exact: '/api/auth/device/trust', minTier: 'free', methods: ['POST'], notes: 'Authenticated device-trust mutation; handler independently validates current session' },
+  { exact: '/api/onboarding/telemetry', minTier: 'free', methods: ['POST'], notes: 'Authenticated, non-critical onboarding telemetry' },
+  { exact: '/api/members/progress', minTier: 'free', methods: ['POST'], notes: 'Session-owned onboarding progress mutation; handler refuses cross-origin and conflicting member claims' },
+  { exact: '/api/members/profile', minTier: 'free', methods: ['GET', 'PUT'], notes: 'Session-owned profile and durable consent; exact methods, same-origin mutation, no email-identity changes' },
+  // WRITER-IDENTITY-01: canonical member self-read used by Writer's Studio.
+  // The outer matrix requires an authenticated member at any tier; the handler
+  // independently resolves the verified credential and refuses caller-supplied identity.
+  { exact: '/api/members/me', minTier: 'free', notes: 'Canonical current-member identity for Writer and member surfaces; handler independently verifies credential and exact member row' },
+  // R20: authenticated member may request a deletion verdict. The handler
+  // derives the target from the verified session and automatic deletion is held.
+  { exact: '/api/members/delete-account', minTier: 'free', notes: 'R20 member-scoped deletion request; automatic deletion held fail-closed' },
   { exact: '/api/members/signin', public: true, notes: 'Sign in' },
   { exact: '/api/auth/refresh-and-redirect', public: true, notes: 'Refresh session cookies and redirect' },
   { exact: '/api/practitioners/check', public: true, notes: 'Check practitioner status' },
   { exact: '/api/commons/contributions', public: true, notes: 'GET public contributions' },
   { exact: '/api/commons/contributions/orientation', public: true, notes: 'Orientation content' },
+
+  // ASTROLOGY-BETA-ACCESS-20261023 — exact routes only, no /api/astrology/* wildcard.
+  // Calculators accept supplied sky/birth facts and never resolve a member or
+  // read persisted member data. Their existing web/native callers deliberately
+  // use identity-free fetch, including on devices without cookie transport.
+  { exact: '/api/astrology/birth-chart', public: true, notes: 'Identity-free natal calculation; no member profile lookup' },
+  { exact: '/api/astrology/current-transits', public: true, notes: 'Identity-free sky/transit calculator; no member profile lookup' },
+  { exact: '/api/astrology/vedic/list', public: true, notes: 'Identity-free bounded provisional sidereal natal calculator; exact civil-time admission required and professional reference qualification remains held' },
+
+  // Member data/actions use verified sessions for Free, Personal, and Pro.
+  // These must never become public just to repair beta availability.
+  { exact: '/api/members/profile', minTier: 'free', notes: 'Authenticated profile; handler independently resolves verified session ownership' },
+  { exact: '/api/astrology/geocode', minTier: 'free', notes: 'Member-facing birth-location lookup, authenticated to protect external provider' },
+  { exact: '/api/astrology/reflection', minTier: 'free', notes: 'Member-owned chart recognition; independent handler session check' },
+  { exact: '/api/astrology/synastry/saved', minTier: 'free', notes: 'Saved synastry; route derives owner from verified session and rejects divergent memberId claim' },
+
+  // Astrology Pro restricted tester beta (ASTRO_PRO_ACCESS_PHASE=tester-grant:
+  // the founder plus members holding an audited grant in
+  // astro_pro_tester_grant_events). These are exact authenticated doors, NOT
+  // Pro entitlement or member-wide chart admission: this layer only requires a
+  // verified session. The page and every handler independently recheck the
+  // server session and the single access decision in lib/astrology/proAccess.ts
+  // (handlers via resolveProOwner in lib/astrology/proRouteAccess.ts), so a
+  // signed-in member without a grant passes here and is refused there. The
+  // feature stays off unless the phase is set. Every route under
+  // /api/astrology/pro/ must have its own row here; no /api/astrology/pro/
+  // prefix (#1983, founder ruling D-05 option B, 2026-11-12), pinned by
+  // __tests__/astrology-pro-access-matrix.test.ts.
+  { exact: '/astrology/pro-preview', minTier: 'free', notes: 'Pro workstation, restricted tester beta; server page checks enabled feature, verified session and Pro access (founder or audited tester grant)' },
+  { exact: '/api/astrology/pro/my-chart', minTier: 'free', notes: 'Pro owned chart API; handler rechecks member session, Pro access (founder or audited tester grant) and astrology consent' },
+  { exact: '/api/astrology/pro/ask', minTier: 'free', notes: 'Ask MAIA about a Pro chart section (POST); chart ids only, birth read server-side, nothing stored but the fact of an answer; Pro access rechecked in handler' },
+  { exact: '/api/astrology/pro/systems', minTier: 'free', notes: 'Pro Vedic, Chinese and Mayan views of a chart (POST); owner-only subject, birth read server-side and never returned; Pro access rechecked in handler' },
+  { exact: '/api/astrology/pro/help', minTier: 'free', notes: 'Reserved for the Pro MAIA help route being built in the ASTRO-PRO-MAIA-GUIDE-01 R2 lane; the handler must resolve its member through resolveProOwner before any work' },
+  { exact: '/api/astrology/pro/charts', minTier: 'free', notes: 'Pro saved charts for other people; owner from verified session, Pro access rechecked in handler' },
+  { exact: '/api/astrology/pro/derived', minTier: 'free', notes: 'Pro progressed and return charts; owner-only subject, birth read server-side, Pro access rechecked in handler' },
+  { exact: '/api/astrology/pro/ephemeris', minTier: 'free', notes: 'Pro sampled planetary longitudes for a date range; no birth or member data; Pro access rechecked in handler' },
+  { exact: '/api/astrology/pro/place', minTier: 'free', notes: 'Pro astro map and relocated chart; owner-only subject, birth read server-side, Pro access rechecked in handler' },
+  { exact: '/api/astrology/pro/sky', minTier: 'free', notes: 'Pro sky at a chosen moment; no birth or member data; Pro access rechecked in handler' },
+  { regex: /^\/api\/astrology\/pro\/charts\/[0-9a-f-]{36}$/i, minTier: 'free', notes: 'One Pro saved chart (verify, calculate, delete); owner-only, Pro access rechecked in handler' },
+  { regex: /^\/api\/astrology\/pro\/charts\/[0-9a-f-]{36}\/share$/i, minTier: 'free', notes: 'Private client link for one Pro saved chart (read, make, turn off); owner-only, Pro access rechecked in handler' },
+  { regex: /^\/api\/shared-chart\/[A-Za-z0-9_-]{43}\/ask$/, public: true, notes: 'Ask MAIA about a shared chart; only when the owner turned it on for the link; per-link allowance; nothing stored' },
+  { regex: /^\/api\/shared-chart\/[A-Za-z0-9_-]{43}\/sky$/, public: true, notes: 'Sky positions for a client viewing a shared chart; works only while the link is live; no birth or viewer data' },
+  { regex: /^\/shared-chart\/[A-Za-z0-9_-]{43}$/, public: true, notes: 'View-only client chart by private link; no account; page checks the link is live and Pro is enabled; noindex' },
 
   // Member API — contribution is participation, open to all
   { regex: /^\/api\/commons\/contributions\/[^/]+$/, minTier: 'free', notes: 'Contribution detail — depth' },
@@ -607,11 +729,11 @@ export const ACCESS_RULES: AccessRule[] = [
      contain the corridor by emptying it. The neighbour whose policy actually
      fits is /api/sovereign directly above: authenticated, free tier, no role.
 
-     ⛔ NARROWEST THAT COVERS THE ROUTES IN SCOPE, deliberately. A
-     '/api/writers-studio/' prefix would also capture /api/writers-studio/focus,
-     which carries the identical gap and is NOT part of this act — naming it
-     here would silently widen the ruling. It is recorded as an open finding
-     instead.
+     ⛔ NARROWEST THAT COVERS THE ROUTES IN SCOPE, deliberately. A broad
+     '/api/writers-studio/' prefix is prohibited: it would shadow the explicit
+     exact/regex route census, silently admit future APIs in strict mode, and
+     incorrectly impose member-session auth on the separately capability-gated
+     founder-local review endpoints.
 
      ⛔ This changes nothing inside the handlers. resolveCanonicalIdentity stays
      exactly where it is: the matrix stops an unauthenticated request at the
@@ -619,6 +741,43 @@ export const ACCESS_RULES: AccessRule[] = [
      that gets through. Neither layer is permitted to become the other's
      excuse. */
   { prefix: '/api/writers-studio/editorial/', minTier: 'free', notes: "Writer's Studio editorial corridor — authenticated members only (WS-ACCESS-CONTAINMENT-01); same policy as /api/sovereign, never /api/ain's admin gate" },
+
+  /* Founder-local review routes use a separate process capability plus loopback
+     Host/Origin checks. They deliberately do not authenticate a Soullab member,
+     write Source custody or survive outside WS_FOUNDER_LOCAL_REVIEW=1. Exact
+     public outer declarations let those route-owned checks run without granting
+     any neighboring Writer API. Production flag-off behavior remains 404. */
+  { exact: '/api/writers-studio/local-review/import', public: true, notes: 'Founder-local Writer import review — exact route; loopback + process capability enforced inside route; no member or Source authority' },
+  { exact: '/api/writers-studio/local-review/render', public: true, notes: 'Founder-local Writer render review — exact route; loopback + process capability enforced inside route; no publication or retention authority' },
+
+  /* FWE-ROUTE-01 Class A — EXACT Writer's Studio section-aware context GET.
+     The canonical Write room requests this member-owned read snapshot. An
+     unmapped path is denied in strict mode, even with a verified session.
+     Only this exact path is admitted to authenticated members: no shared
+     /api/writers-studio/ prefix, no public exception, no tier/role bypass.
+     This matrix is path-only; the route exports GET, and the route's
+     getMemberIdFromRequest + member_id checks remain the data authority.
+     Do not infer access to neighboring /rebuild or /focus endpoints. */
+  { exact: '/api/writers-studio/rebuild/context', minTier: 'free', notes: "FWE-ROUTE-01 — member-authenticated Writer's Studio read context; handler separately verifies manuscript ownership" },
+
+  /* FWE-ROUTE-02A — ten EXISTING Writer's Studio API route shapes, no more.
+     Outer admission requires an authenticated member at any tier. Independent
+     handler-level identity, ownership, Source custody, consent, and disabled
+     feature flags remain authoritative; this adds none of those powers.
+     Avoid /api/writers-studio/ prefix: it would silently admit unknown future
+     APIs. Dynamic rules match exactly ONE identifier segment and are anchored
+     to prevent neighboring paths inheriting an admission ruling.
+     Do not infer production strict mode, release, or expanded beta access. */
+  { exact: '/api/writers-studio/return/relationship', minTier: 'free', notes: 'FWE-ROUTE-02A: existing member-owned relationship return GET/PUT/DELETE; custody remains in handler' },
+  { exact: '/api/writers-studio/return/place', minTier: 'free', notes: 'FWE-ROUTE-02A: existing member-owned manuscript place GET/PUT/DELETE; custody remains in handler' },
+  { exact: '/api/writers-studio/focus', minTier: 'free', notes: 'FWE-ROUTE-02A: existing Focus POST; independently verified MAIA consent and WRITERS_STUDIO_FOCUS_ENABLED hold' },
+  { exact: '/api/writers-studio/sources', minTier: 'free', notes: 'FWE-ROUTE-02A: existing member Source list/ingest; handler verifies member identity and custody' },
+  { exact: '/api/writers-studio/rebuild/editorial/thread', minTier: 'free', notes: 'FWE-ROUTE-02A: existing editorial thread POST; independently guarded by WRITERS_STUDIO_EDITORIAL_ENABLED' },
+  { exact: '/api/writers-studio/relationships', minTier: 'free', notes: 'FWE-ROUTE-02A: existing member editorial relationships GET/POST; existing feature flags retained' },
+  { regex: /^\/api\/writers-studio\/sources\/[^/]+$/, minTier: 'free', notes: 'FWE-ROUTE-02A: existing single-source GET/PATCH/DELETE; handler independently checks arranger ownership' },
+  { regex: /^\/api\/writers-studio\/sources\/[^/]+\/file$/, minTier: 'free', notes: 'FWE-ROUTE-02A: existing member-scoped Source file GET; no Safari transport policy change' },
+  { regex: /^\/api\/writers-studio\/relationships\/[^/]+$/, minTier: 'free', notes: 'FWE-ROUTE-02A: existing single relationship GET; member-owned and feature-flagged' },
+  { regex: /^\/api\/writers-studio\/relationships\/[^/]+\/carry-sources$/, minTier: 'free', notes: 'FWE-ROUTE-02A: existing relationship carry-sources GET; member-owned and feature-flagged' },
 
   /* Invite API — the issuing side of member admission. Declared EXPLICITLY
      rather than inheriting the permissive unmapped-route default (#717), which
@@ -653,6 +812,24 @@ export const ACCESS_RULES: AccessRule[] = [
   { exact: '/api/supervision/transcript/list', minTier: 'free', notes: 'Supervision transcript transport — authenticated outer gate; GET is independently Lab Tools-gated in the handler' },
   { prefix: '/api/admin/partners/prelude/', minTier: 'free', rolesAnyOf: ['admin'], notes: 'Partner prelude administration — admin only; route also verifies authority directly' },
   { prefix: '/api/supervision', minTier: 'free', notes: 'Supervision API' },
+
+  /* PRACTITIONER-API-IDENTITY-01 — the caseload and practice APIs, declared EXPLICITLY.
+     /caseload (the PAGE) carried a rule; /api/caseload and /api/practice carried none, so in the
+     default permissive mode an unmapped path reached its handler with no session at all, and in
+     strict mode was refused only as `no-rule-match`. `minTier: 'free'` is the AUTHENTICATION
+     boundary only — the posture /api/supervision and /api/invites/ already declare. Who may act,
+     and on which rows, is enforced INDEPENDENTLY by each handler (session identity via
+     requireSessionMember + an ownership predicate); the matrix is not the handlers' excuse and the
+     handlers do not rely on it.
+
+     ⛔ No role requirement: the handlers never had one, and `rolesAnyOf: ['practitioner']` would
+     refuse the member whose first case auto-enables practitioner mode. ⛔ ACCESS_CONTROL_MODE and
+     the permissive default are unchanged.
+
+     The trailing slash is deliberate: matchRule uses raw `startsWith`, so a bare '/api/practice'
+     would also capture a sibling such as '/api/practices-admin'. */
+  { prefix: '/api/caseload/', minTier: 'free', notes: 'Caseload API — authenticated members only (PRACTITIONER-API-IDENTITY-01); each handler derives the acting practitioner from the session and checks case ownership itself' },
+  { prefix: '/api/practice/', minTier: 'free', notes: 'Practice API — authenticated members only (PRACTITIONER-API-IDENTITY-01); every handler derives the practitioner from the session, and a handler that names a session by id is owner-only (PRACTITIONER-SESSION-OWNERSHIP-01, lib/auth/requireOwnedSession.ts; pinned by app/api/__tests__/practitionerFamiliesIdentityGuard.test.ts)' },
 
   // Scribe API - session review, summaries
   { prefix: '/api/scribe', minTier: 'free', notes: 'Scribe API' },

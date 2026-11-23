@@ -1,0 +1,440 @@
+'use client';
+/**
+ * MAIA'S LETTER AND THE WALK — beside the manuscript, in Write, where the writer's words change under their own hand.
+ *
+ * Founder design 2026-11-11 ("this should have been the path all along"):
+ *   1. You open your book; MAIA has read it and has a short letter for you.
+ *   2. She walks you through it one place at a time, at your pace, asking "Is this intended?"
+ *   3. When you ask, she gives options (the passage desk: propose, Use it, Undo — all already the writer's acts).
+ *   4. You use, undo, or go to the next place.
+ *
+ * Laws held here:
+ *  - She reads the whole book by herself ONLY under the writer's standing permission for the whole Work, never in Sanctuary, and only
+ *    when no letter exists yet for this manuscript. A letter of an earlier draft is kept and SAID to be of an earlier draft; rereading
+ *    is the writer's choice.
+ *  - An observation is an invitation: nothing here scrolls, selects, focuses or advances by itself. Every move is a button the writer presses.
+ *  - Places come in the order of the writer's book, never ranked by importance. Every place is reachable from the letter.
+ *  - "It's intended" and "Later" are the writer's own decisions, kept on this device, shown and changeable. Nothing is dismissed.
+ *  - This panel never edits. "Show me options" opens the existing passage desk on the exact, verified words.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getReadScope } from '@/lib/writersStudio/readScopeClient';
+import { readCurrentSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
+import { loadCanvasInsight, pickDeskPassage, type InsightPassage } from '@/lib/writersStudio/insightCanvas';
+import { fetchLetter, postDecision } from '@/lib/writersStudio/letter/letterClient';
+import { cancelPassRun, fetchRun, startPassRun } from '@/lib/writersStudio/studio/passRunClient';
+import type { RunView } from '@/lib/writersStudio/studio/passRun';
+import { keepRefusalCopy } from '@/lib/writersStudio/keepPosture';
+import { WHOLE_WORK_MESSAGE, WHOLE_WORK_REFUSAL } from '@/lib/writersStudio/wholeWorkAccess';
+import { ProMention } from '@/app/writers-studio/ProMention';
+import type { AttentionItem } from '@/lib/writersStudio/studio/attentionMap';
+import {
+  byScale, inBookOrder, primarySectionId, loadPassDecisions, loadSavedPass, runEditorialPass, savePass, savePassDecisions,
+  type PassDecision, type SavedPass,
+} from '@/lib/writersStudio/studio/editorialPassRunner';
+
+export interface LetterSection { draftSectionId: string; heading: string | null; position: number }
+export interface PassIssueTarget { sectionId: string; readingId: string; observationKey: string }
+
+const labelOf = (s: LetterSection | undefined) => (s ? (s.heading?.trim() || `Section ${s.position + 1}`) : 'your Work');
+const hair = '1px solid color-mix(in srgb, currentColor 16%, transparent)';
+const btn = { font: 'inherit', fontSize: 12, cursor: 'pointer', color: 'inherit', background: 'none', border: hair, borderRadius: 8, padding: '5px 10px' } as const;
+const quiet = { ...btn, border: 'none', textDecoration: 'underline', padding: '2px 0' } as const;
+
+/** Pure: a kept letter is this attempt's when it is of this draft and was kept after the attempt began (a minute of clock slack). */
+export function keptDuring(letter: { draftRevision: number; createdAt: string }, draftRevision: number, startedAt: number): boolean {
+  const at = Date.parse(letter.createdAt);
+  return letter.draftRevision === draftRevision && Number.isFinite(at) && at >= startedAt - 60_000;
+}
+
+export function EditorialLetterPanel(props: {
+  manuscriptId: string;
+  sections: readonly LetterSection[];
+  /** the current draft's revision; null = could not be established, so she does not read */
+  draftRevision: number | null;
+  onShowSection: (sectionId: string) => void;
+  onEditOptions: (target: PassIssueTarget) => void;
+  /** "Show me where": hold the words this place is about in the centre and mark them (nothing changes). Absent: the section only. */
+  onShowPassage?: (target: PassIssueTarget) => void;
+  onTalk: (words: string) => void;
+  /** "Talk about it" on a place (founder direction 2026-11-12): the conversation happens in the centre, on that place's passage, the way
+   *  "Show me options" opens there, but nothing is asked for: MAIA waits for the writer. Absent: the conversation about the Work. */
+  onTalkPassage?: (target: PassIssueTarget) => void;
+  /** she finished reading (so what she has read can be re-checked) */
+  onRead?: () => void;
+  /** The Work is "MAIA asks, never rewrites" (review F4, 2026-11-15): no "Show me options", and no promise of edits.
+   *  "Talk about it" stays. The server refuses wording on such a Work regardless; this keeps the panel honest. */
+  revisionsPaused?: boolean;
+}) {
+  const { manuscriptId, sections, draftRevision } = props;
+  const [pass, setPass] = useState<SavedPass | null>(null);
+  const [decisions, setDecisions] = useState<Record<string, PassDecision>>({});
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [cursor, setCursor] = useState<number | null>(null);   // null = the letter; a number = one place
+  const [note, setNote] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
+  const [mayAutoRead, setMayAutoRead] = useState<boolean | null>(null);
+  const autoAsked = useRef(false);
+
+  /* Step 2: the letter and decisions live on the server, per Work, so they are there on any device and after any visit. The copy on
+     this device is used only when the server has none (a pass made in Sanctuary, or before letters were kept). */
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setPass(loadSavedPass(manuscriptId));
+    setDecisions(loadPassDecisions(manuscriptId));
+    setCursor(null); setError(null); setNote(null); autoAsked.current = false; setLoaded(false);
+    void fetchLetter(manuscriptId).then((out) => {
+      if (cancelled) return;
+      if (out?.letter) {
+        setPass({ draftRevision: out.letter.draftRevision, map: out.letter.map, letterId: out.letter.id });
+        setDecisions(out.decisions);
+      }
+      setLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, [manuscriptId]);
+
+  /* Step 4: with whole-Work permission the pass runs ON THE SERVER and every finished reading is kept there. Founder ruling 2026-11-17,
+     resume on request only: it advances while this panel is watching (it checks every 5 s); with no page watching it stops before its
+     next paid step, and the writer's Continue resumes it without paying again for what is already read. Without that permission the writer's click still reads
+     the book from this page, as before. */
+  const [run, setRun] = useState<RunView | null>(null);
+  const [openingAnswer, setOpeningAnswer] = useState<'yes' | 'not_quite' | null>(null);
+  const watch = useRef<number | null>(null);
+  const stopWatching = () => { if (watch.current !== null) { window.clearInterval(watch.current); watch.current = null; } };
+  const followRun = useCallback(() => {
+    stopWatching();
+    const tick = async () => {
+      const r = await fetchRun(manuscriptId);
+      if (r === undefined) return;
+      setRun(r);
+      if (!r || ['done', 'failed', 'stopped', 'cancelled'].includes(r.state)) {
+        stopWatching();
+        if (r?.state === 'done') {
+          const out = await fetchLetter(manuscriptId);
+          if (out?.letter) { setPass({ draftRevision: out.letter.draftRevision, map: out.letter.map, letterId: out.letter.id }); setDecisions(out.decisions); setCursor(null); props.onRead?.(); }
+        }
+      }
+    };
+    void tick();
+    watch.current = window.setInterval(() => { void tick(); }, 5000);
+  }, [manuscriptId, props.onRead]);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchRun(manuscriptId).then((r) => {
+      if (cancelled || !r) return;
+      setRun(r);
+      if (!['done', 'failed', 'stopped', 'cancelled'].includes(r.state)) followRun();
+    });
+    return () => { cancelled = true; stopWatching(); };
+  }, [manuscriptId, followRun]);
+  const runActive = run !== null && !['done', 'failed', 'stopped', 'cancelled'].includes(run.state);
+
+  const readOnServer = useCallback(async (): Promise<boolean> => {
+    const out = await startPassRun(manuscriptId);
+    if (!out.ok) {
+      if (out.refusal === 'daily_limit') { setError('I’ve already done two whole readings of your Work today, which is as many as I do in a day. Try again tomorrow.'); return true; }
+      if (out.refusal === 'sanctuary_not_kept' || out.refusal === 'posture_undeclared') { setError(keepRefusalCopy(out.refusal)); return true; }
+      /* Free / Pro line: never fall back to reading from this page, which would start the paid readings the server just declined. */
+      if (out.refusal === WHOLE_WORK_REFUSAL) { setError(WHOLE_WORK_MESSAGE); return true; }
+      return false;   // no whole-Work permission (or not established): read from this page instead
+    }
+    setRun(out.run); setError(null); followRun();
+    return true;
+  }, [manuscriptId, followRun]);
+
+  const read = useCallback(async () => {
+    if (busy || runActive || draftRevision === null) return;
+    if (await readOnServer()) return;
+    setBusy(true); setError(null); setNote(null);
+    setProgress('MAIA is reading your Work…');
+    const startedAt = Date.now();
+    try {
+      const out = await runEditorialPass({ manuscriptId, revisionNumber: draftRevision, sectionIds: sections.map((s) => s.draftSectionId), onProgress: setProgress, keepAsLetter: true });
+      if (!out.ok) {
+        /* Walk 2026-11-13: the page's connection dropped (net::ERR_NETWORK_CHANGED) while the server went on, wrote the letter and kept
+           it; the page said she could not prepare one until the writer reloaded. Before saying so, ask the server: a letter of this draft
+           kept during this attempt is the letter. */
+        const kept = await fetchLetter(manuscriptId);
+        if (kept?.letter && keptDuring(kept.letter, draftRevision, startedAt)) {
+          setPass({ draftRevision: kept.letter.draftRevision, map: kept.letter.map, letterId: kept.letter.id });
+          setDecisions(kept.decisions); setCursor(null); setError(null);
+          props.onRead?.();
+          return;
+        }
+        setError(out.message); return;
+      }
+      const saved = { draftRevision, map: out.map, letterId: out.letterId };
+      if (out.letterKept && out.letterKept !== 'kept') setNote(keepRefusalCopy(out.letterKept) ?? 'This letter is on this device only.');
+      setDecisions(out.letterId ? {} : loadPassDecisions(manuscriptId));
+      savePass(manuscriptId, saved);
+      setPass(saved);
+      setCursor(null);
+      props.onRead?.();
+    } finally { setBusy(false); setProgress(null); }
+  }, [busy, runActive, readOnServer, draftRevision, manuscriptId, sections, props.onRead]);
+
+  /* She has read the book already when the writer has let her read the whole Work: no letter yet → she reads, once. */
+  useEffect(() => {
+    let cancelled = false;
+    void getReadScope(manuscriptId).then((scope) => {
+      if (cancelled) return;
+      const posture = readCurrentSanctuaryPosture();
+      setMayAutoRead(Boolean(scope && scope.level === 'work' && posture.resolved && !posture.sanctuary));
+    });
+    return () => { cancelled = true; };
+  }, [manuscriptId]);
+  useEffect(() => {
+    /* Off unless NEXT_PUBLIC_WS_AUTO_READ=1: reading the whole book is nine paid readings and a synthesis, so reading by herself
+       waits for a cost ceiling and owner review (review of #2215, 2026-11-11). Until then: "Read my Work". */
+    if (process.env.NEXT_PUBLIC_WS_AUTO_READ !== '1') return;
+    if (!loaded || mayAutoRead !== true || autoAsked.current || busy || draftRevision === null || sections.length === 0) return;
+    if (pass || loadSavedPass(manuscriptId)) return;
+    autoAsked.current = true;
+    void read();
+  }, [loaded, pass, mayAutoRead, busy, draftRevision, sections.length, manuscriptId, read]);
+
+  /* Book order by default (ruling 2026-11-11); whole-Work-down only when the writer asks (ruling 2026-11-17, by scale alone). */
+  const [order, setOrder] = useState<'book' | 'scale'>('book');
+  const places = useMemo(
+    () => {
+      if (!pass) return [];
+      const items = pass.map.items.filter((it) => it.sectionIds.length > 0);
+      const sectionOrder = sections.map((s) => s.draftSectionId);
+      return order === 'scale' ? byScale(items, sectionOrder) : inBookOrder(items, sectionOrder);
+    },
+    [pass, sections, order],
+  );
+  const stale = pass !== null && draftRevision !== null && pass.draftRevision !== draftRevision;
+  /* Talking about a place happens in the centre, on its words (founder direction 2026-11-12: "the middle is where the creative process
+     between MAIA and writer happens"). The same verified passage "Show me options" would open; with none, the conversation about the
+     Work, in the centre, carrying the place. */
+  const talkAbout = async (it: AttentionItem, words: string) => {
+    if (resolving) return;
+    if (!props.onTalkPassage) { props.onTalk(words); return; }
+    setResolving(true);
+    try {
+      const target = await passageOf(it);
+      if (target) { props.onTalkPassage(target); return; }
+      props.onTalk(words);
+    } finally { setResolving(false); }
+  };
+
+  const decide = async (id: string, d: PassDecision | null) => {
+    if (pass?.letterId) {
+      const refused = await postDecision(manuscriptId, pass.letterId, id, d ?? 'cleared');
+      if (refused) { setNote(keepRefusalCopy(refused) ?? 'That decision could not be kept just now. Nothing changed.'); return; }
+      setDecisions((prev) => { const next = { ...prev }; if (d) next[id] = d; else delete next[id]; return next; });
+      return;
+    }
+    setDecisions((prev) => {
+      const next = { ...prev };
+      if (d) next[id] = d; else delete next[id];
+      savePassDecisions(manuscriptId, next);
+      return next;
+    });
+  };
+  const sectionOf = (it: AttentionItem) => { const id = primarySectionId(it, sections.map((x) => x.draftSectionId)); return sections.find((x) => x.draftSectionId === id); };
+  /* Founder 2026-11-12: "If I click onto an issue … it should bring up the manuscript copy in the center." Opening a place (from the
+     letter, or with Previous / Next) is the writer's own act, so it also brings that place's section into the centre — the same act
+     as "Show me where", which stays for coming back to it. Nothing moves unless the writer clicks. */
+  const openPlace = (i: number) => {
+    const it = places[i];
+    if (!it) return;
+    setCursor(i); setNote(null);
+    const sec = sectionOf(it);
+    if (sec) props.onShowSection(sec.draftSectionId);
+  };
+
+  /* The verified passage this place is about: in the place's own section first, and among those, one placed by words MAIA quoted that
+     are verbatim in the current draft. Shared by "Show me where" and "Show me options", so both land on the same words. */
+  const passageOf = async (it: AttentionItem): Promise<PassIssueTarget | null> => {
+    const primary = sectionOf(it)?.draftSectionId ?? null;
+    const ordered = [...it.evidence].sort((a, b) => Number(b.sectionIds.includes(primary ?? '')) - Number(a.sectionIds.includes(primary ?? '')));
+    const found: { ev: (typeof ordered)[number]; p: InsightPassage }[] = [];
+    for (const ev of ordered) {
+      const insight = await loadCanvasInsight(manuscriptId, ev.readingId, ev.observationKey);
+      for (const p of insight?.passages ?? []) if (p.verified && p.editable && p.range) found.push({ ev, p });
+    }
+    const pick = pickDeskPassage(found, primary);
+    return pick ? { sectionId: pick.p.sectionId, readingId: pick.ev.readingId, observationKey: pick.ev.observationKey } : null;
+  };
+
+  const options = async (it: AttentionItem) => {
+    if (resolving) return;
+    setResolving(true); setNote(null);
+    try {
+      /* Open the desk on the section this place is ABOUT, on the words it is about. Opening it elsewhere put MAIA in front of words the
+         place was not about, and the desk rightly refused her edits (2026-11-12). */
+      const target = await passageOf(it);
+      if (target) { props.onEditOptions(target); return; }
+      setNote('I can’t tie this to exact words in your current draft, so I won’t propose a change from here. Open the section and select the words you mean; I’ll work with those.');
+    } finally { setResolving(false); }
+  };
+
+  /* "Show me where" (walk 2026-11-13): it only re-showed the section the place had already opened, so on a long section it landed
+     nowhere. It now holds and marks the words the place is about; with no verified words, the section as before. */
+  const where = async (it: AttentionItem, sectionId: string) => {
+    if (resolving) return;
+    if (!props.onShowPassage) { props.onShowSection(sectionId); return; }
+    setResolving(true);
+    try {
+      const target = await passageOf(it);
+      if (target) props.onShowPassage(target); else props.onShowSection(sectionId);
+    } finally { setResolving(false); }
+  };
+
+  /* ── reading, or nothing yet ── */
+  if (runActive && run) {
+    return (
+      <section data-editorial-letter="running" role="status" aria-live="polite" className="fr-say">
+        <p style={{ margin: 0 }}>I’m reading your Work{run.done > 0 ? `: ${run.done} of ${run.total} readings done` : ''}{run.state === 'synthesizing' ? ', and gathering what I found' : ''}.</p>
+        <p style={{ margin: '6px 0 0', fontSize: 12, opacity: .8 }}>Keep writing; I won’t interrupt. If you close this page I’ll stop after the reading I’m on, and Continue picks up where I left off. Nothing I’ve read is paid for twice.</p>
+        <button type="button" data-letter-cancel="true" onClick={() => { void cancelPassRun(manuscriptId).then(() => fetchRun(manuscriptId)).then((r) => { if (r !== undefined) setRun(r); stopWatching(); }); }}
+          style={{ ...quiet, marginTop: 6 }}>Stop reading</button>
+      </section>
+    );
+  }
+  if (busy) {
+    return (
+      <section data-editorial-letter="reading" role="status" aria-live="polite" className="fr-say">
+        <p style={{ margin: 0 }}>I’m reading your Work. {progress}</p>
+        <p style={{ margin: '6px 0 0', fontSize: 12, opacity: .8 }}>Keep writing; I won’t interrupt. Keep this page open until I finish.</p>
+      </section>
+    );
+  }
+  const runEnded = run && (run.state === 'failed' || run.state === 'stopped') ? (
+    <p role="note" data-letter-run-ended={run.state} style={{ margin: '6px 0 0', fontSize: 12 }}>
+      {run.state === 'failed' && (run.refusal ?? '').startsWith('synthesis') ? `I read all ${run.total} lenses of your Work, but I couldn’t gather them into a letter this time. My readings are kept, so trying again only redoes that last step.`
+        : run.state === 'stopped' && run.refusal === 'sanctuary' ? 'I stopped reading because Sanctuary is on.'
+        : run.state === 'stopped' && run.refusal === 'permission_withdrawn' ? 'I stopped reading because you withdrew my permission to read the whole Work.'
+        : run.state === 'stopped' && run.refusal === 'draft_changed' ? 'I stopped because the Work changed while I was reading.'
+        : run.state === 'stopped' && run.refusal === 'no_page_watching' ? `I stopped when the page closed. ${run.done} of ${run.total} readings are done and kept; Continue picks up from there.`
+        : run.state === 'stopped' && run.refusal === 'interrupted' ? `I was interrupted. ${run.done} of ${run.total} readings are done and kept; Continue picks up from there.`
+        : `I couldn’t finish the ${run.lens ?? ''} reading (${run.done} of ${run.total} were done; they are kept).`}
+      {' '}<button type="button" data-letter-continue="true" onClick={() => void read()} style={quiet}>{run.state === 'failed' && (run.refusal ?? '').startsWith('synthesis') ? 'Try the letter again' : 'Continue'}</button>
+    </p>
+  ) : null;
+  if (!pass) {
+    return (
+      <section data-editorial-letter="none" className="fr-say">
+        <p style={{ margin: 0 }}>
+          {draftRevision === null
+            ? 'I can’t establish your current draft safely just now, so I haven’t read it.'
+            : run && run.done >= run.total
+              ? 'I’ve read your Work. My letter isn’t ready yet.'
+              : 'I haven’t read this Work yet. When I have, I’ll bring you a short letter and we can go through it together, one place at a time.'}
+        </p>
+        {error ? <p role="alert" style={{ margin: '6px 0 0', fontSize: 12 }}><ProMention message={error} /></p> : null}
+        {runEnded}
+        {draftRevision !== null ? <button type="button" data-letter-read="true" className="p4r1-talk" onClick={() => void read()} style={{ marginTop: 8 }}>Read my Work</button> : null}
+      </section>
+    );
+  }
+
+  /* ── one place ── */
+  if (cursor !== null && places[cursor]) {
+    const it = places[cursor]!;
+    const sec = sectionOf(it);
+    const d = decisions[it.id];
+    return (
+      <section data-editorial-letter="place" data-letter-place={cursor + 1} aria-label={`Place ${cursor + 1} of ${places.length}`} style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, opacity: .8 }}>
+          <span>Place {cursor + 1} of {places.length} · {labelOf(sec)}</span>
+          <button type="button" data-letter-back="true" onClick={() => { setCursor(null); setNote(null); }} style={quiet}>The letter</button>
+        </div>
+        {stale ? <p role="note" style={{ margin: 0, fontSize: 12 }}>From an earlier draft of your Work; this place may have changed.</p> : null}
+        <p style={{ margin: 0, lineHeight: 1.55 }}><strong style={{ fontWeight: 500 }}>{it.label}.</strong> {it.notice}</p>
+        {it.whyItMatters ? <p style={{ margin: 0, fontSize: 12, opacity: .85 }}>Why it may matter: {it.whyItMatters}</p> : null}
+        {it.uncertainty ? <p style={{ margin: 0, fontSize: 12, opacity: .75 }}>What I’m not sure of: {it.uncertainty}</p> : null}
+        <p style={{ margin: '2px 0 0', fontWeight: 500 }}>Is this intended?</p>
+        {d ? <p data-letter-decision={d} role="status" style={{ margin: 0, fontSize: 12 }}>You said: {d === 'intended' ? 'it’s intended.' : 'later.'} <button type="button" onClick={() => void decide(it.id, null)} style={quiet}>Change</button></p> : null}
+        <div role="group" aria-label="What would you like to do?" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {sec ? <button type="button" data-letter-act="where" disabled={resolving} onClick={() => void where(it, sec.draftSectionId)} style={btn}>Show me where</button> : null}
+          {props.revisionsPaused ? null : <button type="button" data-letter-act="options" disabled={resolving} onClick={() => void options(it)} style={btn}>{resolving ? 'Finding the words…' : 'Show me options'}</button>}
+          <button type="button" data-letter-act="talk" disabled={resolving} onClick={() => void talkAbout(it, `About “${it.label}” in ${labelOf(sec)}: you noticed: ${it.notice} `)} style={btn}>Talk about it</button>
+          <button type="button" data-letter-act="intended" onClick={() => void decide(it.id, 'intended')} style={btn}>It’s intended</button>
+          <button type="button" data-letter-act="later" onClick={() => void decide(it.id, 'later')} style={btn}>Later</button>
+        </div>
+        {note ? <p role="note" style={{ margin: 0, fontSize: 12 }}>{note}</p> : null}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+          <button type="button" data-letter-prev="true" disabled={cursor === 0} onClick={() => openPlace(cursor - 1)} style={btn}>‹ Previous</button>
+          <button type="button" data-letter-next="true" disabled={cursor >= places.length - 1} onClick={() => openPlace(cursor + 1)} style={btn}>Next place ›</button>
+        </div>
+      </section>
+    );
+  }
+
+  /* ── the letter ── */
+  const looked = places.filter((p) => decisions[p.id]).length;
+  return (
+    <section data-editorial-letter="letter" aria-label="MAIA's letter about your Work" style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+      <p style={{ margin: 0, fontSize: 12, opacity: .8 }}>
+        This letter comes from my readings of {stale ? 'an earlier draft of your Work' : 'this draft of your Work'}.
+      </p>
+      {stale ? (
+        <p role="note" data-letter-stale="true" style={{ margin: 0, fontSize: 12 }}>
+          You’ve changed the Work since I read it. <button type="button" onClick={() => void read()} style={quiet}>Read it again</button>
+        </p>
+      ) : null}
+      {error ? <p role="alert" style={{ margin: 0, fontSize: 12 }}><ProMention message={error} /></p> : null}
+      {note ? <p role="note" data-letter-note="true" style={{ margin: 0, fontSize: 12 }}>{note}</p> : null}
+      {pass.map.opening ? (
+        <div data-letter-opening="true" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <p style={{ margin: 0, lineHeight: 1.6, fontFamily: "'Iowan Old Style','Charter',Georgia,serif", fontSize: 15 }}>{pass.map.opening.reachingFor}</p>
+          {openingAnswer === null ? (
+            <div role="group" aria-label="Is that right?" style={{ display: 'flex', gap: 6 }}>
+              <button type="button" data-opening-yes="true" onClick={() => setOpeningAnswer('yes')} style={btn}>Yes</button>
+              <button type="button" data-opening-not-quite="true" onClick={() => { setOpeningAnswer('not_quite'); props.onTalk(`You read my Work as reaching for this: “${pass.map.opening!.reachingFor}” Not quite. What I’m reaching for is `); }} style={btn}>Not quite</button>
+            </div>
+          ) : <p role="status" style={{ margin: 0, fontSize: 12, opacity: .8 }}>{openingAnswer === 'yes' ? 'Good. I’ll read with that in mind.' : 'Tell me in your own words; I’ve opened our conversation.'}</p>}
+          {pass.map.opening.working.length > 0 ? (
+            <div data-letter-working="true">
+              <p style={{ margin: '4px 0 2px', fontWeight: 500 }}>What’s working</p>
+              <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {pass.map.opening.working.map((w, i) => (
+                  <li key={i} style={{ lineHeight: 1.5 }}>{w.text} <span style={{ fontFamily: "'Iowan Old Style','Charter',Georgia,serif" }}>“{w.quote}”</span>
+                    {w.sectionId ? <> <button type="button" data-working-where={i} onClick={() => props.onShowSection(w.sectionId!)} style={quiet}>Show me where</button></> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {pass.map.opening.divergence ? <p data-letter-divergence="true" style={{ margin: 0, lineHeight: 1.55 }}>{pass.map.opening.divergence}</p> : null}
+        </div>
+      ) : pass.map.opening === null ? (
+        /* Founder walk 2026-11-12: the opening was missing and nothing said so. A kept letter without its opening now says it. */
+        <p role="note" data-letter-opening-missing={pass.map.openingRefusal ?? 'unknown'} style={{ margin: 0, fontSize: 12, opacity: .8 }}>
+          I couldn’t keep my opening to this letter, where I say what I think the Work is reaching for. The places below stand on their own. When you ask me to read the Work again, I’ll try the opening again.
+        </p>
+      ) : null}
+      {places.length === 0 ? (
+        <p style={{ margin: 0 }}>{props.revisionsPaused
+          ? 'I didn’t find a place I could support with evidence where a closer look would clearly help.'
+          : 'I didn’t find a place I could support with evidence where an edit would clearly help.'}</p>
+      ) : (
+        <>
+          <p style={{ margin: 0, lineHeight: 1.55 }}>
+            I found {places.length} place{places.length === 1 ? '' : 's'} {props.revisionsPaused ? 'worth a closer look' : 'where an edit may help'}. {order === 'scale' ? 'Here they are from the whole Work down to single passages; within each, in the order they come.' : 'Here they are in the order they come in your Work.'}
+            {looked > 0 ? ` You’ve decided on ${looked} of them.` : ''}
+          </p>
+          <button type="button" data-letter-order-toggle="true" aria-pressed={order === 'scale'} onClick={() => setOrder((o) => (o === 'book' ? 'scale' : 'book'))} style={{ ...quiet, alignSelf: 'flex-start', fontSize: 12 }}>
+            {order === 'scale' ? 'Back to the order of my Work' : 'From the whole Work down'}
+          </button>
+          <ol data-letter-places="true" data-letter-order={order} style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {places.map((it, i) => (
+              <li key={it.id}>
+                <button type="button" data-letter-open={i + 1} onClick={() => openPlace(i)} style={{ ...quiet, textAlign: 'left' }}>{it.label}</button>
+                <span style={{ fontSize: 11, opacity: .7 }}> · {labelOf(sectionOf(it))}{decisions[it.id] ? ` · ${decisions[it.id] === 'intended' ? 'intended' : 'later'}` : ''}</span>
+              </li>
+            ))}
+          </ol>
+          <button type="button" data-letter-start="true" className="p4r1-talk" onClick={() => openPlace(0)}>Start with the first</button>
+        </>
+      )}
+    </section>
+  );
+}

@@ -6,6 +6,12 @@
  * itself is 07C's and is mocked here; its own gates prove it.
  */
 
+// The age gate by the Work's recorded program (#1900) is tested in lib/studios/__tests__/workAgeGate.test.ts; here it admits,
+// so this suite's stubbed database sees only the route's own queries.
+jest.mock('@/lib/studios/workAgeGate', () => ({
+  ageGateForWork: async () => ({ ok: true }), ageGateForManuscript: async () => ({ ok: true }), ageGateForThread: async () => ({ ok: true }),
+  ageGateRefusal: jest.requireActual('@/lib/studios/workAgeGate').ageGateRefusal,
+}));
 import { NextRequest } from 'next/server';
 
 jest.mock('@/lib/auth/getMemberFromRequest', () => ({ getMemberIdFromRequest: jest.fn() }));
@@ -35,8 +41,11 @@ const READING = '33333333-3333-3333-3333-333333333333';
 const ctx = { params: Promise.resolve({ id: MS }) };
 const ctxOne = (readingId: string) => ({ params: Promise.resolve({ id: MS, readingId }) });
 
+/* The client always declares its Sanctuary posture (founder ruling 2026-11-09); these tests are about other laws, so they declare ordinary
+   unless a test states otherwise. The Sanctuary refusal itself is tested below and in the real-database closure probe. */
 const post = (body: unknown) => new NextRequest(`http://localhost/api/sovereign/manuscripts/${MS}/readings`, {
-  method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body),
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: typeof body === 'string' ? body : JSON.stringify({ sanctuary: false, ...(body as object) }),
 });
 const get = (path = '') => new NextRequest(`http://localhost/api/sovereign/manuscripts/${MS}/readings${path}`, { method: 'GET' });
 
@@ -101,6 +110,15 @@ describe('POST /readings — one member gesture, one lens', () => {
     expect(mockCommission).not.toHaveBeenCalled();
   });
 
+  it('Sanctuary closure: in Sanctuary or with an undeclared posture, nothing is commissioned', async () => {
+    const raw = (b: object) => new NextRequest(`http://localhost/api/sovereign/manuscripts/${MS}/readings`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
+    const s = await POST(raw({ lens: 'voice', sanctuary: true }), ctx);
+    expect([s.status, (await s.json()).refusal]).toEqual([409, 'sanctuary_not_kept']);
+    const u = await POST(raw({ lens: 'voice' }), ctx);
+    expect([u.status, (await u.json()).refusal]).toEqual([409, 'posture_undeclared']);
+    expect(mockCommission).not.toHaveBeenCalled();
+  });
+
   it('404 not_readable when the Work is not the caller\'s or has no addressable draft; no commission', async () => {
     mockAuth.mockResolvedValue(MEMBER);
     answerSql({ owns: false, sections: [], units: 0 });
@@ -137,8 +155,23 @@ describe('POST /readings — one member gesture, one lens', () => {
       mockCommission.mockResolvedValueOnce({ outcome: 'refused', stage, refusal, detail: 'd' });
       const res = await POST(post({ lens: 'arc' }), ctx);
       expect(`${stage}/${refusal} → ${res.status}`).toBe(`${stage}/${refusal} → ${status}`);
-      expect(await res.json()).toEqual({ refusal, stage, detail: 'd' });
+      /* WS-DEVELOP-REFUSAL-TRUTH-OBS-01 · R-1 (3c7ce921). A refusal now carries two
+         orthogonal cause axes. This commission supplies no cause, so both are honestly
+         `unknown` — never `complete`. `toEqual` still pins the EXACT key set, so a reading
+         cannot ride along on a refusal. */
+      expect(await res.json()).toEqual({ refusal, stage, detail: 'd', completion: 'unknown', attribution: 'unknown' });
     }
+  });
+
+  it('a refusal that carries a cause hands both axes to the surface exactly as the commission gave them', async () => {
+    mockAuth.mockResolvedValue(MEMBER);
+    answerSql({ owns: true, sections: ['a'], units: 0 });
+    const cause = { completion: 'truncated', attribution: 'system', stopReason: 'max_tokens',
+      inputTokens: 1, outputTokens: 2, readerVersion: 'v', promptHash: 'h' };
+    mockCommission.mockResolvedValueOnce({ outcome: 'refused', stage: 'read', refusal: 'malformed_output', detail: 'd', cause });
+    const res = await POST(post({ lens: 'arc' }), ctx);
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ refusal: 'malformed_output', stage: 'read', detail: 'd', completion: 'truncated', attribution: 'system' });
   });
 });
 

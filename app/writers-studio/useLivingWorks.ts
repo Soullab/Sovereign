@@ -51,6 +51,12 @@ export interface LivingWork {
   stage: Stage | null;
   /** What kind of manuscript the writer says this currently is. Never inferred from size. */
   manuscriptState: 'pre-manuscript' | 'partial-manuscript' | 'existing-manuscript' | null;
+  /** The writer's own "MAIA asks, never rewrites" for this whole Work. Never set by the system. */
+  maiaRevisionsPaused?: boolean;
+  /** The Studio program (path) this Work belongs to, member-declared at the path door's Begin. Null: ordinary Studio. */
+  studioPath?: string | null;
+  /** Where in its program's arc the writer has put this Work (null = the first stage). */
+  studioStage?: string | null;
   createdAt: string;
   updatedAt: string;
   /** Only what the member declared in — never inferred, never system-placed. */
@@ -65,16 +71,18 @@ export function useLivingWorks() {
   const [phase, setPhase] = useState<LivingWorksPhase>('loading');
   const [works, setWorks] = useState<LivingWork[]>([]);
 
-  const load = useCallback(async () => {
+  /** Re-reads the list. Resolves true only when the list was read; false when it could not be (the old list is kept, the phase says
+   *  why). Callers that told the member "this page now shows what is current" must use the answer. */
+  const load = useCallback(async (): Promise<boolean> => {
     try {
       const res = await apiFetch('/api/sovereign/living-works', { method: 'GET' });
       if (res.status === 401) {
         setPhase('unauthorized');
-        return;
+        return false;
       }
       if (!res.ok) {
         setPhase('error');
-        return;
+        return false;
       }
       const data = await res.json();
       const list: LivingWork[] = Array.isArray(data.works) ? data.works : [];
@@ -89,9 +97,11 @@ export function useLivingWorks() {
         }))
       );
       setPhase('ready');
+      return true;
     } catch {
       // A failure to read is not an absence of works. Say only what is true.
       setPhase('error');
+      return false;
     }
   }, []);
 

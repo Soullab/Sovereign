@@ -2,15 +2,22 @@
  * POST /api/practice/session/stop
  *
  * Stop an active practice session and trigger processing
+ *
+ * Only the practitioner who owns the session may stop it; anyone else (or an unowned legacy session,
+ * or an absent id) gets the same 404 (PRACTITIONER-SESSION-OWNERSHIP-01).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { stopSession, getSession } from '@/lib/practice/PracticeStore';
+import { requireSessionMember } from '@/lib/auth/requireSessionMember';
+import { requireOwnedSession } from '@/lib/auth/requireOwnedSession';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
+    const actor = await requireSessionMember(req);
+    if ('error' in actor) return actor.error;
     const body = await req.json();
     const { sessionId } = body;
 
@@ -20,6 +27,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const owned = await requireOwnedSession(actor.memberId, sessionId);
+    if ('error' in owned) return owned.error;
 
     const session = await stopSession(sessionId);
 

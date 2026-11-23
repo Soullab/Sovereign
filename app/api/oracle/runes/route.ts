@@ -46,27 +46,18 @@ export async function POST(request: NextRequest) {
         break;
       case 'elements':
       case 'elemental-cross':
-        const elementsSpread = getRuneSpread('Elemental Cross');
-        if (elementsSpread) {
-          runeReading = castRunes(query, elementsSpread.name);
-        } else {
-          runeReading = castRunes(query, 'single');
-        }
+        runeReading = castRunes(query, 'elemental-cross');
         break;
       case 'week':
       case 'week-ahead':
-        const weekSpread = getRuneSpread('Week Ahead');
-        if (weekSpread) {
-          runeReading = castRunes(query, weekSpread.name);
-        } else {
-          runeReading = castRunes(query, 'single');
-        }
+        runeReading = castRunes(query, 'week-ahead');
         break;
       default:
-        // Try to find the spread by name
+        // Look the spread up by its registry key and pass that key on:
+        // castRunes resolves by key, not display name.
         const spread = getRuneSpread(spreadType);
         if (spread) {
-          runeReading = castRunes(query, spread.name);
+          runeReading = castRunes(query, spreadType);
         } else {
           // Default to single rune
           runeReading = castRunes(query, 'single');

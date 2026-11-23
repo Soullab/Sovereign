@@ -62,6 +62,15 @@ ARG NEXT_PUBLIC_ENABLE_EXPLAINER_SCRIPTS=true
 ENV NEXT_PUBLIC_ENABLE_EXPLAINER_SCRIPTS=${NEXT_PUBLIC_ENABLE_EXPLAINER_SCRIPTS}
 ARG NEXT_PUBLIC_SHOW_BETA_BADGE=false
 ENV NEXT_PUBLIC_SHOW_BETA_BADGE=${NEXT_PUBLIC_SHOW_BETA_BADGE}
+# Writer's Studio Develop stage (P4R1DevelopView). Off unless the build passes 1;
+# production compose passes 1 (founder ruling 2026-11-09: on for all Writer's Studio beta members).
+ARG NEXT_PUBLIC_WS_DEVELOP_STAGE=0
+ENV NEXT_PUBLIC_WS_DEVELOP_STAGE=${NEXT_PUBLIC_WS_DEVELOP_STAGE}
+# MAIA reads the opened chapter / the whole book by herself, ONLY under the writer's own standing permission to read the saved Work
+# and never in Sanctuary (the code enforces both). Off unless the build passes 1; production compose passes 1
+# (founder ruling 2026-11-12: "I don't open a manuscript and NOT want her to have read it").
+ARG NEXT_PUBLIC_WS_AUTO_READ=0
+ENV NEXT_PUBLIC_WS_AUTO_READ=${NEXT_PUBLIC_WS_AUTO_READ}
 
 # Install psql for SQL migrations (used by migrate service)
 RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*
@@ -123,6 +132,9 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder --chown=node:node /app/public ./public
+# LISTEN-01: Sound Studio review audio lives OUTSIDE public/ and is served only by the
+# gated route app/media/sound-studio/[...path] (flag + verified member). Never move it into public/.
+COPY --from=builder --chown=node:node /app/private-media ./private-media
 
 # Safety belt: ensure Prisma engines are present at runtime
 # (Next standalone tracing sometimes misses .prisma/@prisma in edge cases)

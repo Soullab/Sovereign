@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { toAudioResponsePayload } from '@/lib/voice/audioResponsePayload';
 import { detectMaiaCommands } from '@/lib/voice/VoiceCommandDetector';
+import { isAuthenticatedMusicCommandOnlyRequest } from '@/lib/listening/maiaMusicCommand';
 import { observeRelationalContent } from '@/lib/consciousness/relationalObserver';
 import { detectRelationalSignal } from '@/lib/relationships/detectRelationalSignal';
 import { persistDetectedSignal } from '@/lib/relationships/relationshipSignalService';
@@ -468,19 +469,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 🆘 SAFETY-CRISIS-01 (founder ruling 2026-10-01, Option A): server-side crisis
-    // assessment of the member's own words. This is the point where typed turns,
-    // web voice, desktop native voice and salvaged drafts all converge, so every
-    // path is assessed once and identically. No human is alerted: we are not the
-    // alert. CLEAR → deterministic 988 / Crisis Text Line referral on the response
-    // (below) + safety context for MAIA (passed to getMaiaResponse as a typed,
-    // server-only field). AMBIGUOUS → safety context for MAIA only. If MAIA's
-    // reply to an AMBIGUOUS turn asked directly about safety, a short-lived
-    // check-in flag lets an affirmative answer ("yes") escalate to CLEAR on the
-    // next turns. The log line is content-free and suppressed under Sanctuary.
-    // Placed after the durable write above, so it cannot widen the loss window.
-    const crisisCheckInKey =
-      acceptedSessionId ?? (isRecognizedUser ? `member:${userId}` : '');
+    // 🆘 SAFETY-CRISIS-01: server-side crisis assessment of the member's
+    // own words. Typed turns, web voice, desktop native voice and salvaged drafts
+    // all converge here, so every path is assessed once and identically.
+    // Recognition/member response is separate from human-delivery authority.
+    // CLEAR → deterministic 988 / Crisis Text Line referral + server-authored
+    // safety context for MAIA. AMBIGUOUS → safety context only. If MAIA asks
+    // directly about safety, a short-lived server-memory flag lets an affirmative
+    // answer ("yes") escalate on the next turns.
+    //
+    // Continuation authority is SESSION-BOUND. If the request has no sessionId,
+    // there is deliberately no cross-turn carry. Never fall back to memberId:
+    // that could let one session inherit another session's safety standing.
+    // The log line is content-free and suppressed under Sanctuary.
+    const crisisCheckInKey = acceptedSessionId ?? '';
     const crisisAssessment = assessCrisisWithCheckIn(message, takeSafetyCheckIn(crisisCheckInKey));
     if (crisisAssessment.tier === 'clear' || classifyCheckInAnswer(message) === 'negative') {
       clearSafetyCheckIn(crisisCheckInKey);
@@ -496,9 +498,16 @@ export async function POST(req: NextRequest) {
     // turn without paying for or fabricating an ordinary MAIA response.
     const commandOnlyClassification =
       commandOnly === true ? detectMaiaCommands(message) : null;
+    // LISTEN-56: this is a server-side *classification*, never sound authority.
+    // Only the existing authenticated actor can take the lightweight F1 route.
+    // Exact text and F1 durability still bind the real member turn.
+    const verifiedMusicCommandOnly = isAuthenticatedMusicCommandOnlyRequest(
+      message, commandOnly, isRecognizedUser,
+    );
     const isValidatedCommandOnly =
-      commandOnlyClassification?.disposition === 'EXECUTE' &&
-      commandOnlyClassification.onlyCommands === true;
+      (commandOnlyClassification?.disposition === 'EXECUTE' &&
+       commandOnlyClassification.onlyCommands === true) ||
+      verifiedMusicCommandOnly;
 
     if (isValidatedCommandOnly) {
       const commandAcceptanceCanonHeaders = makeCanonHeaders({
