@@ -6,11 +6,34 @@
 It is deliberately not embedded here, because a plan that names a live release goes stale when
 another lane deploys. The reviewer establishes the exact old reader from the bundle, and the deploy
 lane re-witnesses it immediately before mutation.
-**Founder authorization:** Kelly, 2026-11-23, in session: "Yes, deploy after review". This covers
-deploying canonical `clean-main-no-secrets`, which since the live release has gained exactly two
-merges:
-- PR #1741 (`5f585217d`): the P6 return-authority write-site repair. Code only, no migration.
-- PR #2379 (`a3c1969eb`): ASTRO-PRO-KEEP Phase 2. One migration.
+**Founder authorization:** Kelly, 2026-11-23, in session: "Yes, deploy after review", for the
+Pro Astrology work below. Later that day Kelly chose to **hold the release** until the other changes
+in the candidate are cleared in their own lanes. This plan authorizes no release; a release needs
+Kelly's explicit GO for the exact final commit.
+
+## Release candidate scope (corrected in R3)
+
+A deploy ships everything on canonical between the live release and the candidate, not only this
+lane's work. Production was re-read at `1c70c3c6f` on 2026-11-23 ~17:05Z. As of canonical
+`a74e83552`, the first-parent merges since the live release are:
+
+| Merge | PR | Lane | Migrations | Release clearance |
+|---|---|---|---|---|
+| `5f585217d` | #1741 P6 return-authority repair | Memory / P6 | none | reviewed by this plan only as it bears on `keepSource` |
+| `a3c1969eb` | #2379 ASTRO-PRO-KEEP Phase 2 | Astrology | `20261123000001` | **this plan** |
+| `f0cae2cf1` | #2381 review plan 1 | Astrology | none (docs) | this plan |
+| `3d6e310d9` | #2380 passage conversation keeps the writer's words | Writer's Studio | none | **held: independent Class A/R20 review owed** |
+| `f3cfccdf9` | #2382 Phase 2 review fixes | Astrology | none (fixes code) | **this plan** |
+| `a74e83552` | #2383 Keep my words | Writer's Studio | none | **held: classification and manuscript-write review owed** |
+
+Plus this plan's own merge (#2384) and any later merge. A GitHub comparison counts these as 26
+commits and 49 files. **The reviewer must enumerate the candidate's pending migrations from the
+bundle**, not from this table. If any migration other than `20261123000001` is pending, the
+review is out of scope and must return BLOCKED.
+
+This review covers only the migration act and the Pro Astrology / P6 code it names. It gives **no**
+clearance to #2380, #2383 or any other change. Each is a separate precondition of the release.
+Any merge after this review's target changes the candidate and needs the scope reassessed.
 
 ## Why there is an R2
 
@@ -46,10 +69,8 @@ refused to admit it (`MATERIAL_UNDER_APPROVED`) because of one medium finding. D
   PR #2379 and the "Empty database reconstruction" CI check are the existing database-level
   evidence; a device walk is owed after deploy.
 
-The target for this R3 review is the release candidate at the time of review. It contains PR #2380
-(Writer's Studio, no migrations), which is outside this plan's scope except that it ships in the
-same release. Its own release clearance is held separately and is a precondition of the deploy,
-not of this review.
+The target for this R3 review is the frozen release candidate at the time of review (see "Release
+candidate scope").
 
 ## Operator stop condition (manual, not in the deploy script)
 
@@ -182,8 +203,10 @@ A failed migration must leave the candidate unswapped and the old reader live.
       withholding sourced atoms' bodies?
     - Are the new tests meaningful?
     - The live old reader stores unbound keys. The operator stop condition above (a manual count,
-      not a script step) is the control. Judge whether it, with its stated residual window, is
-      adequate.
+      not a script step) is the control. **Give an explicit disposition of the residual window**
+      (the old reader opening a thread between the count and the swap): acceptable as recorded,
+      acceptable only with a named extra control, or not acceptable. A material finding here
+      means REVISE.
 
 A verdict of `REVISE` or `BLOCKED` is lawful and must never be converted into approval.
 
