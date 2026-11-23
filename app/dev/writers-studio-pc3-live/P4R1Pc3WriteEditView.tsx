@@ -39,6 +39,7 @@ const WRITE_RELATIONAL_GEOMETRY = {
 };
 import { projectPc3LiveWrite } from '@/app/writers-studio/full-redesign/liveWriteAdapter';
 import WorkConversation from '@/app/writers-studio/canvas/WorkConversation';
+import { BEGINNING_WORDS } from '@/lib/writersStudio/beginningTurn';
 import type { KeepWordsResult } from '@/lib/writersStudio/keepWords';
 import { threadsOn, threadsOnLivingWorkAsk } from '@/lib/writersStudio/askClient';
 import { priorConversationLabel, priorConversationOffer, type PriorConversationOffer } from '@/lib/writersStudio/priorConversation';
@@ -1164,7 +1165,9 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
         work={props.work}
         manuscriptId={props.context.manuscriptId}
         sectionId={props.focusId}
-        initialDraft={workConversationStarter}
+        /* Newcomer walk 2026-11-23: "Help me find a beginning" opens with a closed intent, never instruction prose in the box. */
+        initialDraft={workConversationStarter === BEGINNING_WORDS ? '' : workConversationStarter}
+        {...(workConversationStarter === BEGINNING_WORDS ? { startIntent: 'find-a-beginning' as const } : {})}
         startFresh={stageNoteStarter !== null && workConversationStarter === stageNoteStarter}
         onStudioPlace={props.onStudioPlace}
         onKeepWords={props.onKeepWords}
@@ -1606,12 +1609,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       work={props.work}
       onStartWriting={focusRealEditor}
       onTalkWithMaia={() => openWorkConversation('')}
-      onHelpBegin={() => openWorkConversation([
-        'I have a blank writing place for this Work and I want help finding a beginning.',
-        'Please begin by helping me clarify what I want to say, not by writing the opening for me.',
-        'Nothing feeding this Work has been handed to you automatically. Do not assume you have read any Idea or Source unless I explicitly bring words from it into this conversation.',
-        'Ask me one useful question to help me begin in my own words.',
-      ].join('\n\n'))}
+      onHelpBegin={() => openWorkConversation(BEGINNING_WORDS)}
     />
   ) : null;
 

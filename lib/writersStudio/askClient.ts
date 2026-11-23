@@ -13,6 +13,7 @@
  * says — only asked about the one it already holds.
  */
 
+import type { StudioIntent } from './beginningTurn';
 import { declaredSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
 import type { TeachingAnchor } from './teachingTurn';
 import { apiFetch } from '@/lib/http/apiBase';
@@ -105,6 +106,8 @@ export async function ask(input: {
   responseStyle?: ExplanationDepth;
   /** G-3: the Teach me pressed. The server owns the teaching shape. */
   teachingAnchor?: TeachingAnchor;
+  /** A pressed "Help me find a beginning". The server owns the answer's shape. */
+  studioIntent?: StudioIntent;
   /** WS-WHOLE-BOOK-CONVERSATION: the writer's declared scope ("About: where I am · the whole book"). Omitted = where I am. */
   carryScope?: 'here' | 'whole_book';
   /** The conversation's room can carry out MAIA's acting offers (WorkConversation with `onStudioAct`). */
@@ -122,6 +125,7 @@ export async function ask(input: {
         ...(input.sectionId ? { sectionId: input.sectionId } : {}),
         ...(input.responseStyle ? { responseStyle: input.responseStyle } : {}),
         ...(input.teachingAnchor ? { teachingAnchor: input.teachingAnchor } : {}),
+        ...(input.studioIntent ? { studioIntent: input.studioIntent } : {}),
         ...(input.carryScope === 'whole_book' ? { carryScope: 'whole_book' } : {}),
         ...(input.roomActs ? { roomActs: true } : {}),
         // Every request to this route declares its Sanctuary posture when it can; the server keeps nothing for one that does not.
