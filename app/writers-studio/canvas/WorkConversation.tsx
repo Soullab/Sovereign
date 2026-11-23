@@ -220,6 +220,13 @@ export interface WorkConversationProps {
   /** The heading of a chapter id MAIA named, if it is in this Work; null → no "go to chapter" button. */
   chapterLabel?: (sectionId: string) => string | null;
   onClose: () => void;
+  /**
+   * KEEP MY WORDS (founder standard 2026-11-23: "the writer's first act is authorship").
+   * Puts the writer's OWN message, exactly as sent, onto their page through the host's
+   * writing queue — the same path as typing. Never offered on MAIA's words. Resolves
+   * whether the words are now on the page. Absent → no button.
+   */
+  onKeepWords?: (text: string) => Promise<boolean> | boolean;
 }
 
 export type StudioAct =
@@ -252,7 +259,7 @@ export default function WorkConversation(props: WorkConversationProps) {
 }
 
 function ScopedWorkConversation({
-  work, manuscriptId, sectionId, initialDraft = '', placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity, startFresh: freshForNewTopic = false,
+  work, manuscriptId, sectionId, initialDraft = '', placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity, startFresh: freshForNewTopic = false, onKeepWords,
 }: WorkConversationProps & { identity: ReturnType<typeof useMemberIdentity> }) {
   /* A program Work (e.g. a college essay) names its whole-Work scope in its own words; an ordinary Work keeps "the whole book". */
   const wholeScope = studioPathById(work.studioPath ?? null)?.studioCopy.wholeScope ?? 'the whole book';
@@ -357,6 +364,9 @@ function ScopedWorkConversation({
   const [correctionStatus, setCorrectionStatus] = useState<string | null>(null);
   /* Correction offer (2026-11-19): MAIA turns whose offer the writer has answered (accepted or "Not now"), so it never nags. */
   const [offerAnswered, setOfferAnswered] = useState<ReadonlySet<number>>(() => new Set());
+  /* Keep my words: which of the writer's turns are now on the page, and a plain note when one could not be placed. */
+  const [keptToPage, setKeptToPage] = useState<ReadonlySet<number>>(() => new Set());
+  const [keepWordsNote, setKeepWordsNote] = useState<{ index: number; text: string } | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   // A draft belongs to its edit generation, not to text equality.
   const draftRevisionRef = useRef(0);
@@ -817,6 +827,28 @@ function ScopedWorkConversation({
             >
               {t.speaker === 'maia' ? parseStudioActions(t.body, 'work-conversation').text : t.body}
             </StudioText>
+            {t.speaker === 'author' && onKeepWords && t.body.trim() ? (
+              keptToPage.has(t.index) ? (
+                <StudioText role="metadata" tone="quiet" as="p" data-keep-words-done={t.index}>On your page, exactly as you wrote it.</StudioText>
+              ) : (
+                <div data-keep-words={t.index} style={{ marginTop: SPACE.hairline }}>
+                  <button type="button" data-keep-words-button={t.index}
+                    onClick={async () => {
+                      setKeepWordsNote(null);
+                      const placed = await onKeepWords(t.body);
+                      if (placed) setKeptToPage((s) => new Set(s).add(t.index));
+                      else setKeepWordsNote({ index: t.index, text: 'Your page is still saving. Try again in a moment; nothing was changed.' });
+                    }}
+                    style={{ background: 'transparent', border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm,
+                      padding: `${SPACE.hairline}px ${SPACE.tight}px`, cursor: 'pointer', color: INK.secondary }}>
+                    <StudioText role="metadata" as="span">Keep my words</StudioText>
+                  </button>
+                  {keepWordsNote?.index === t.index ? (
+                    <StudioText role="metadata" tone="secondary" as="p" data-keep-words-note="true">{keepWordsNote.text}</StudioText>
+                  ) : null}
+                </div>
+              )
+            ) : null}
             {/* D3 (R3.4.4 ruling A, 2026-11-19): every answer shows which saved sections MAIA read for it. Hosts that show
                 this themselves (onRead, e.g. the Develop stage) keep theirs; everywhere else it is said here, under her answer. */}
             {/* Package C (R20 decision 1): the server now sends each answer's own receipt, so the line is under EVERY answer and
