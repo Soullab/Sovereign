@@ -45,7 +45,7 @@ import { answerChoicesInstruction } from '@/lib/writersStudio/answerChoices';
 import { randomUUID } from 'node:crypto';
 import { query } from '@/lib/db/postgres';
 import { runStructured } from '@/lib/writersStudio/meteredStructured'; // the structured seam, unchanged, plus the shadow MAIA meter
-import { judgeEditorialQuotes, QUOTE_NOT_IN_TEXT_DETAIL } from './editorialQuoteGate';
+import { judgeEditorialQuotes, QUOTE_NOT_IN_TEXT_DETAIL, editorialQuoteDisciplineInstruction } from './editorialQuoteGate';
 import type { DispatchObservation } from '@/lib/ai/structured/dispatch';
 import { establishDisclosureBoundary, mayCrossBoundary } from '@/lib/disclosure/disclosureBoundary';
 import { confirmDisclosureCrossed } from '@/lib/disclosure/contextDisclosureReceipt';
@@ -499,6 +499,11 @@ export async function runEditorialTurn(
       latitudeInstruction(scope),
       sequenceInstruction(gated),
       proposalPolicyInstruction(proposalPolicy),
+      /* ⭐ EVERY turn, because `judgeEditorialQuotes` refuses every turn by it.
+         Unconditional on purpose: the conditional version of this discipline
+         (below, for a paused Work) left an ordinary Work judged by a rule it was
+         never told — the founder walk of 2026-11-23. */
+      editorialQuoteDisciplineInstruction(proposalPolicy !== 'reply_only'),
       // Work-wide "MAIA asks, never rewrites": no wording in any channel (2026-11-15).
       workPaused ? workQuestionsOnlyInstruction() : '',
       // The Work's Studio program, in its own posture (registry by id; never client-supplied text).

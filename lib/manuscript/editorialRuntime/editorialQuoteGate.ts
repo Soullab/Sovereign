@@ -51,3 +51,38 @@ export function judgeEditorialQuotes(request: StructuredRequest, outcome: Quotab
   ];
   return checkQuoteFidelity(outcome.reply, sources);
 }
+
+/**
+ * ⭐⭐ THE INSTRUCTION FOR THE LAW ABOVE — stated at the SAME ADDRESS as the judgement,
+ * so the two cannot drift apart.
+ *
+ * `turn.ts` already holds the governing principle, for the scope declaration: *"two
+ * resolutions could disagree, and the one that governs must be the one she was told
+ * about."* Quote fidelity was NOT held to it. The discipline was given only on a Work
+ * set to "MAIA asks, never rewrites" (`workQuestionsOnlyInstruction`), while
+ * `judgeEditorialQuotes` refuses EVERY turn by it — so on an ordinary Work MAIA was
+ * judged by a rule she was never given, and the general instruction positively allows
+ * illustrative wording.
+ *
+ * Observed as a founder walk failure on Elemental Alchemy, 2026-11-23: asking for an
+ * edit returned "MAIA quoted wording that is not in the text she was given", because
+ * the natural shape of an edit — *you wrote "X", consider "Y"* — puts her OFFER in
+ * quotation marks, where the gate can only read it as a false citation of the Work.
+ *
+ * ⛔ The gate is not weakened and no wording is exempted by framing: a quotation still
+ *    means the author's words. The offer simply travels where the writer can act on it.
+ */
+export function editorialQuoteDisciplineInstruction(mayPropose: boolean): string {
+  return [
+    'QUOTATION MARKS BELONG TO THE WRITER.',
+    'Put quotation marks ONLY around wording that appears exactly in the text you were given this turn. Quoting anything else refuses the whole turn, and the writer receives nothing at all — not your reading, not your edit.',
+    mayPropose
+      /* The schema carries `proposal.replacementText`, and the gate already grounds it:
+         wording that travels there is never mistaken for a citation, AND it reaches the
+         writer as something to use, change, discuss or undo. */
+      ? 'Wording you are PROPOSING is not a quotation. Put it in the proposal, never in quotation marks in your reply. The reply says what you notice and why; the proposal carries the words themselves.'
+      /* No proposal exists on this turn, so there is nowhere for an offer to go: it must
+         be described rather than quoted. */
+      : 'You are not offering wording on this turn. If you describe a direction the writing could take, describe it without quotation marks.',
+  ].join('\n');
+}

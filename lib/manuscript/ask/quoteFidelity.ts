@@ -9,9 +9,14 @@
 export const QUOTE_FLOOR = 25;
 
 const norm = (s: string): string => s
-  .normalize('NFKC').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/[*_`~]/g, '')
+  /* ⭐ U+00AD SOFT HYPHEN and U+2011 NON-BREAKING HYPHEN are stripped/folded with the
+     zero-widths because a DOCX import carries them INSIDE words, invisibly. Without
+     this a FAITHFUL quote of the author's own imported sentence is reported as
+     ungrounded — observed on Elemental Alchemy, 2026-11-23. They are typography,
+     never wording, so folding them narrows nothing a reader could see. */
+  .normalize('NFKC').replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, '').replace(/[*_`~]/g, '')
   .replace(/[‘’‛]/g, "'").replace(/[“”‟]/g, '"')
-  .replace(/[–—]/g, '-').replace(/…/g, '...').replace(/\.\s\.\s\./g, '...').replace(/--+/g, '-').replace(/[\[\]]/g, '')
+  .replace(/[–—‑]/g, '-').replace(/…/g, '...').replace(/\.\s\.\s\./g, '...').replace(/--+/g, '-').replace(/[\[\]]/g, '')
   .replace(/\s+/g, ' ').trim().toLowerCase();
 
 /** Spans inside straight or curly double quotes. Single quotes are skipped (apostrophes make them ambiguous). */
