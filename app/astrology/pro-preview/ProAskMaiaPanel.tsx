@@ -4,9 +4,12 @@
  * "Ask MAIA about this" for a section of Pro (founder request 2026-11-07).
  *
  * Before anything is sent the panel says whose charts MAIA will read; only the
- * section's calculated facts reach MAIA, never names or birth details, and
- * nothing is kept. The questions and answers of this visit stay in the page
- * (kept through access checks) and go when the chart closes.
+ * section's calculated facts reach MAIA, never names or birth details.
+ * Conversations are kept per subject while "Keep this conversation" is on (the
+ * default, ASTRO-PRO-KEEP Phase 1) and resume when the member returns; turning
+ * Keep off or pressing Start over deletes the kept thread. On the member's own
+ * chart, "Keep with MAIA" carries one answer into MAIA's memory (Phase 2);
+ * client threads stay with that chart only.
  *
  * Inside the cockpit (a MAIA stage is present) an instrument does not open its
  * own box: it offers its subject to the stage and shows one button that takes

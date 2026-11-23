@@ -1,9 +1,36 @@
 -- Rollback for astro_pro_threads / astro_pro_turns (ASTRO-PRO-KEEP Phase 1).
--- Discards kept member conversations. Export first if any rows exist.
+--
+-- ⭐ THE SUPPORTED ROLLBACK IS APP-ONLY: roll the image back and LEAVE THESE TABLES. Members' kept conversations
+--    are preserved and return when the keeping reader returns.
+-- ⛔ This schema rollback is DESTRUCTIVE (it erases members' kept conversations). It therefore REFUSES while any
+--    thread exists, and fails if a later migration (Phase 2) still depends on these tables: roll that back first.
 BEGIN;
+SET LOCAL lock_timeout = '5s';
+-- Lock before counting, so no thread can be committed between the count and the DROP.
+DO $$ BEGIN
+  IF to_regclass('public.astro_pro_threads') IS NOT NULL THEN
+    LOCK TABLE public.astro_pro_threads IN ACCESS EXCLUSIVE MODE;
+  END IF;
+END $$;
+DO $$
+DECLARE kept bigint;
+BEGIN
+  IF to_regclass('public.astro_pro_threads') IS NOT NULL THEN
+    SELECT count(*) INTO kept FROM public.astro_pro_threads;
+    IF kept > 0 THEN
+      RAISE EXCEPTION 'refusing destructive rollback: % kept Pro conversation(s) exist. Use the app-only rollback (image), which preserves them.', kept;
+    END IF;
+  END IF;
+END $$;
 DROP TRIGGER IF EXISTS astro_pro_turns_no_update ON astro_pro_turns;
 DROP INDEX IF EXISTS idx_astro_pro_threads_member_subject;
 DROP TABLE IF EXISTS astro_pro_turns;
 DROP TABLE IF EXISTS astro_pro_threads;
 DROP FUNCTION IF EXISTS astro_pro_turns_append_only();
+-- The objects are gone, so the ledger must not say they are applied.
+DO $$ BEGIN
+  IF to_regclass('public.schema_migrations') IS NOT NULL THEN
+    DELETE FROM public.schema_migrations WHERE filename = '20261122000001_astro_pro_conversations.sql';
+  END IF;
+END $$;
 COMMIT;
