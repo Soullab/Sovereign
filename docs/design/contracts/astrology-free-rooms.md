@@ -18,6 +18,7 @@ surfaces:
   - components/astrology/DashaTimeline.tsx
   - components/astrology/DaYunTimeline.tsx
   - components/astrology/MayanRoomViews.tsx
+  - components/astrology/CholQijDayCard.tsx
   - components/astrology/VedicRoomViews.tsx
   - components/astrology/SacredHouseWheel.tsx
   - components/astrology/ZodiacToggle.tsx
@@ -119,3 +120,9 @@ The Mayan lens too: `MayanRoomViews` (the galactic signature card and the Path o
 from the Free Mayan page and embedded by Pro's Mayan room, fed by a server-computed profile with no
 birth date in it. Pro leads with the traditional count and keeps the modern Dreamspell views clearly
 labelled as a different system.
+
+Since 2026-11-23 (founder ruling: Dreamspell secondary to traditional Maya insight) the Free Mayan
+room leads the same way: `CholQijDayCard` shows the traditional K'iche' Chol Q'ij birth day and
+today's day first (number and nawal, trecena, Haab, Long Count; no nawal meanings, which belong to
+living daykeepers), and the Dreamspell follows beneath as a separate modern system, never a
+translation of the traditional day.

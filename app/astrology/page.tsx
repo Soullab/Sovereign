@@ -1728,7 +1728,7 @@ export default function AstrologyPage() {
                         Mayan Astrology
                       </h3>
                       <p className="text-amber-200/90 text-sm">
-                        Discover your Galactic Signature in the Tzolk&apos;in Sacred Calendar →
+                        Your day in the traditional Chol Q&apos;ij (K&apos;iche&apos; Maya) count, with the modern Dreamspell beneath →
                       </p>
                     </div>
                   </Link>
@@ -1777,7 +1777,7 @@ export default function AstrologyPage() {
                           <Lock className="w-4 h-4" />
                         </h3>
                         <p className="text-amber-200/70 text-sm">
-                          Galactic Signature, Tzolk&apos;in Calendar
+                          Traditional Chol Q&apos;ij day; modern Dreamspell as a separate lens
                         </p>
                       </div>
                     </div>
@@ -1805,7 +1805,7 @@ export default function AstrologyPage() {
                       Explore Three Wisdom Systems
                     </h3>
                     <p className="text-amber-200/90 text-sm mb-4 max-w-md">
-                      Explore Vedic, modern Dreamspell and Chinese symbolic traditions within their stated limits
+                      Explore Vedic, the traditional Maya Chol Q&apos;ij (with the modern Dreamspell as a separate lens) and Chinese traditions within their stated limits
                     </p>
                     <Link
                       href="/maia/membership"

@@ -1,11 +1,13 @@
 'use client';
 
 /**
- * Mayan Astrology Dashboard
+ * Mayan calendar room.
  *
- * Tzolk'in Sacred Calendar - 260-day cycle
- * Shows birth sign (Solar Seal) and Galactic Tone
- * Integrates with Spiralogic elemental model
+ * The traditional Chol Q'ij (K'iche' Maya 260-day count, GMT correlation)
+ * comes first: the birth day and today's day. The modern Dreamspell
+ * (Argüelles, 1987) follows beneath as a separate, optional lens, never as a
+ * translation of or substitute for the traditional day (founder ruling
+ * 2026-11-23).
  *
  * Dune/Blade Runner aesthetic: Desert mysticism meets ancient future
  */
@@ -18,6 +20,13 @@ import ZodiacToggle, { type ZodiacSystem } from '@/components/astrology/ZodiacTo
 import { useVerifiedFreeAstrologyBirthProfile } from '@/lib/hooks/useVerifiedFreeAstrologyBirthProfile';
 import { motion } from 'framer-motion';
 import { MayanSignCard, MayanPathOfLife } from '@/components/astrology/MayanRoomViews';
+import { CholQijDayCard } from '@/components/astrology/CholQijDayCard';
+import {
+  traditionalMaya,
+  localCivilDate,
+  DREAMSPELL_DISTINCTION,
+  type TraditionalMaya,
+} from '@/lib/astrology/proTraditionalMaya';
 import {
   calculateMayanBirthSign,
   getTodaysMayanSign,
@@ -43,9 +52,13 @@ export default function MayanAstrologyPage() {
   const [showToday, setShowToday] = useState(false);
   const [completeProfile, setCompleteProfile] = useState<CompleteMayanProfile | null>(null);
   const [activeView, setActiveView] = useState<'signature' | 'pillars' | 'today'>('pillars');
+  const [traditionalBirth, setTraditionalBirth] = useState<TraditionalMaya | null>(null);
+  const [traditionalToday, setTraditionalToday] = useState<TraditionalMaya | null>(null);
 
-  // Public today's Dreamspell calendar display never needs natal data.
+  // Today's day in both counts never needs natal data. The traditional day is
+  // the visitor's local civil date.
   useEffect(() => {
+    setTraditionalToday(traditionalMaya(localCivilDate()));
     setTodaySign(getTodaysMayanSign());
   }, []);
 
@@ -56,13 +69,16 @@ export default function MayanAstrologyPage() {
     setBirthDate('');
     setBirthSign(null);
     setCompleteProfile(null);
+    setTraditionalBirth(null);
     const day=verifiedBirth.status==='verified'?verifiedBirth.birthData?.date:null;
     if(!day)return;
     setBirthDate(day);
-    calculateSign(new Date(day+'T12:00:00.000Z'));
+    calculateSign(day);
   },[verifiedBirth.status,verifiedBirth.memberId,verifiedBirth.birthData?.date]);
 
-  const calculateSign = (date: Date) => {
+  const calculateSign = (day: string) => {
+    setTraditionalBirth(traditionalMaya(day));
+    const date = new Date(day + 'T12:00:00.000Z');
     const sign = calculateMayanBirthSign(date);
     setBirthSign(sign);
     const profile = calculateCompleteMayanProfile(date);
@@ -72,10 +88,11 @@ export default function MayanAstrologyPage() {
   const handleDateChange = (dateString: string) => {
     setBirthDate(dateString);
     if (dateString) {
-      calculateSign(new Date(dateString+'T12:00:00.000Z'));
+      calculateSign(dateString);
     } else {
       setBirthSign(null);
       setCompleteProfile(null);
+      setTraditionalBirth(null);
     }
   };
 
@@ -108,16 +125,17 @@ export default function MayanAstrologyPage() {
         >
           <div className="inline-flex items-center gap-2 text-amber-500 mb-4">
             <Calendar className="w-6 h-6" />
-            <span className="text-sm uppercase tracking-wider font-light">Modern Dreamspell · Calendar-Inspired Reflection</span>
+            <span className="text-sm uppercase tracking-wider font-light">Chol Q’ij · K’iche’ Maya tradition</span>
           </div>
           <h1 className="text-5xl font-bold text-amber-100 mb-4">
-            Dreamspell · Modern Calendar-Inspired Astrology
+            The Maya Calendar
           </h1>
           <p className="text-amber-300/80 text-lg max-w-3xl mx-auto leading-relaxed">
-            Explore an optional symbolic reading from the modern Dreamspell
-            system. Its Solar Seals and Galactic Tones are not identical to
-            traditional Tzolk'in/Chol Q'ij daykeeping in living Maya communities.
-            These reflections are possibilities, not facts about your future.
+            The Chol Q’ij (Tzolk’in in Yucatec) is the 260-day count of thirteen
+            numbers and twenty nawales, still kept by K’iche’ and other Maya
+            daykeepers. It is a living cosmovision, not another zodiac. Your
+            birth day and today’s day in that count come first. The modern
+            Dreamspell follows below as a separate, optional lens.
           </p>
         </motion.div>
 
@@ -129,12 +147,12 @@ export default function MayanAstrologyPage() {
         >
           <div className="bg-gradient-to-br from-stone-900/80 via-amber-950/40 to-stone-900/80 backdrop-blur-xl border border-amber-900/30 rounded-2xl p-6">
             <h3 className="text-lg font-bold text-amber-100 mb-2">
-              {birthSign ? 'Birth Date' : 'Discover Your Galactic Signature'}
+              {birthSign ? 'Birth Date' : 'Find Your Chol Q’ij Birth Day'}
             </h3>
             <p className="text-amber-400/70 text-xs mb-4">
               {birthSign
-                ? 'Change the date to read another signature.'
-                : 'Enter your birth date to reveal your Mayan solar seal and galactic tone.'}
+                ? 'Change the date to read another day.'
+                : 'Enter your birth date to find your day in the traditional count.'}
             </p>
             <input
               type="date"
@@ -146,6 +164,20 @@ export default function MayanAstrologyPage() {
             />
           </div>
         </motion.div>
+
+        {/* The traditional day count, first */}
+        <div className="max-w-3xl mx-auto grid gap-6 mb-16">
+          {traditionalBirth && <CholQijDayCard day={traditionalBirth} title="Your Chol Q’ij birth day" />}
+          {traditionalToday && (
+            <CholQijDayCard day={traditionalToday} title="Today in the Chol Q’ij" showMethod={!traditionalBirth} />
+          )}
+        </div>
+
+        {/* The Dreamspell, beneath, as a separate modern system */}
+        <section aria-label="Modern Dreamspell" className="max-w-3xl mx-auto mb-8 text-center">
+          <h2 className="text-2xl font-bold text-amber-100/80 mb-2">Modern Dreamspell</h2>
+          <p className="text-amber-400/60 text-sm leading-relaxed">{DREAMSPELL_DISTINCTION}</p>
+        </section>
 
         {/* View Toggle */}
         {birthSign && todaySign && completeProfile && (
@@ -161,7 +193,7 @@ export default function MayanAstrologyPage() {
             >
               <div className="flex items-center gap-2">
                 <SunIcon className="w-5 h-5" />
-                <span className="hidden sm:inline">Galactic</span> Signature
+                <span className="hidden sm:inline">Dreamspell</span> Signature
               </div>
             </button>
             <button
@@ -192,7 +224,7 @@ export default function MayanAstrologyPage() {
             </button>
           </div>
           <p className="text-xs text-amber-400/50 text-center mt-2">
-            Path of Life shows your 3-pillar developmental arc. Signature reveals your core day-sign imprint.
+            All three views are the Dreamspell count, not the traditional day above.
           </p>
           </>
         )}
@@ -201,13 +233,13 @@ export default function MayanAstrologyPage() {
         <div className="max-w-5xl mx-auto">
           {birthSign && activeView === 'signature' && (
             <div className="max-w-3xl mx-auto">
-              <MayanSignCard sign={birthSign} title="Your Galactic Signature" />
+              <MayanSignCard sign={birthSign} title="Your Dreamspell Galactic Signature" />
             </div>
           )}
           {completeProfile && activeView === 'pillars' && <MayanPathOfLife profile={completeProfile} />}
           {todaySign && activeView === 'today' && (
             <div className="max-w-3xl mx-auto">
-              <MayanSignCard sign={todaySign} title="Today's Galactic Energy" isToday />
+              <MayanSignCard sign={todaySign} title="Today in the Dreamspell" isToday />
             </div>
           )}
         </div>
