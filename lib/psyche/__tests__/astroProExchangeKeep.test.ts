@@ -9,7 +9,7 @@
  */
 import { keepSource } from '../portfolio';
 import type { KeepGestureInput } from '../types';
-import { formatAtomsForPrompt, type MemoryAtomSnapshot } from '../../maia/memoryAtomsLoader';
+import { formatAtomsForPrompt, loadMemberMemoryAtomsForPrompt, type MemoryAtomSnapshot } from '../../maia/memoryAtomsLoader';
 
 jest.mock('@/lib/db/postgres', () => ({ query: jest.fn() }));
 const { query } = jest.requireMock('@/lib/db/postgres');
@@ -103,5 +103,32 @@ describe('formatAtomsForPrompt — astro_pro_exchange', () => {
     const out = formatAtomsForPrompt([snapshot({ body: 'y'.repeat(2000) })]);
     expect(out).toContain(`${'y'.repeat(600)}…`);
     expect(out).not.toContain('y'.repeat(601));
+  });
+});
+
+describe('loadMemberMemoryAtomsForPrompt — astro_pro_exchange', () => {
+  it('carries the reading through the loader, so MAIA receives it (not only the question)', async () => {
+    query.mockImplementation(() => Promise.resolve({ rows: [{
+      id: 'atom-1', title: 'What is my Saturn return asking?', body: 'Your Saturn returns to Capricorn…',
+      primary_register: null, registers: [], elemental_lenses: [], status: 'active',
+      kept_at: new Date(Date.now() - 86_400_000), return_preference: 'contextual_doorway',
+      source_type: 'astro_pro_exchange', is_breakthrough: false, marked_breakthrough_at: null,
+      epistemological_status: 'inferred', facilitator_id: null,
+    }] }));
+    const atoms = await loadMemberMemoryAtomsForPrompt(MEMBER);
+    expect(atoms).toHaveLength(1);
+    expect(atoms[0].body).toBe('Your Saturn returns to Capricorn…');
+    expect(formatAtomsForPrompt(atoms)).toContain('Your reading then (an interpretation offered at the time, not a finding about them): Your Saturn returns to Capricorn…');
+  });
+
+  it('still withholds the body of a sourced atom (content stays in its own table)', async () => {
+    query.mockImplementation(() => Promise.resolve({ rows: [{
+      id: 'atom-2', title: 'An idea', body: 'should not surface', primary_register: null, registers: [],
+      elemental_lenses: [], status: 'active', kept_at: new Date().toISOString(),
+      return_preference: 'contextual_doorway', source_type: 'idea', is_breakthrough: false,
+      marked_breakthrough_at: null, epistemological_status: null, facilitator_id: null,
+    }] }));
+    const atoms = await loadMemberMemoryAtomsForPrompt(MEMBER);
+    expect(atoms[0].body).toBeNull();
   });
 });

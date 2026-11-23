@@ -331,6 +331,30 @@ describe('Ask MAIA inside Pro', () => {
       expect(appendExchange).toHaveBeenCalledWith(body.threadId, `member-${testMember}`, 'What stands out?', 'The composite Sun…');
     });
 
+    it('binds the kept thread key to the chart asked about: a mislabelled key is refused and nothing is stored', async () => {
+      const C = '44444444-4444-4444-4444-444444444444';
+      const O = '55555555-5555-5555-5555-555555555555';
+      const mislabelled = [
+        { section: 'natal', subject: C, question: 'Q?', subjectKey: 'ask.natal.own.' },
+        { section: 'biwheel', subject: 'own', other: C, question: 'Q?', subjectKey: 'ask.natal.own.' },
+        { section: 'biwheel', subject: 'own', other: C, question: 'Q?', subjectKey: `ask.biwheel.own.${O}` },
+        { section: 'natal', subject: 'own', question: 'Q?', subjectKey: 'ask.transits.own.' },
+      ];
+      for (const body of mislabelled) {
+        const res = await ask(body);
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe('subject_key_mismatch');
+      }
+      expect(openThread).not.toHaveBeenCalled();
+      expect(appendExchange).not.toHaveBeenCalled();
+    });
+
+    it('refuses a second chart on a single-chart section', async () => {
+      const res = await ask({ ...base, other: '44444444-4444-4444-4444-444444444444' });
+      expect(res.status).toBe(400);
+      expect(openThread).not.toHaveBeenCalled();
+    });
+
     it('continues a thread the member owns instead of opening another', async () => {
       const id = '22222222-2222-2222-2222-222222222222';
       const body = await (await ask({ ...base, threadId: id })).json();

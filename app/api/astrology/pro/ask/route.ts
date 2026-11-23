@@ -158,6 +158,16 @@ export async function POST(request: NextRequest) {
   const personal = input.personal === true;
   if (personal && (input.subject !== 'own' || twoCharts || section === 'deep')) return proError(400, 'personal_own_chart_only');
   if (twoCharts && input.other === undefined) return proError(400, 'second_chart_required');
+  if (!twoCharts && input.other !== undefined) return proError(400, 'unexpected_field');
+  // The kept thread's key must name the chart(s) this answer is computed from. The
+  // server binds it here, never trusting the browser's label: a carry into MAIA's
+  // memory (own chart, one chart) and per-chart recall both rest on the stored key.
+  if (subjectKey !== null) {
+    const expected = typeof input.subject === 'string' && (!twoCharts || typeof input.other === 'string')
+      ? `ask.${section}.${input.subject}.${twoCharts ? input.other : ''}`
+      : null;
+    if (subjectKey !== expected) return proError(400, 'subject_key_mismatch');
+  }
 
   if (!allowed(owner.memberId)) return proError(429, 'slow_down');
 

@@ -66,7 +66,11 @@ sees it, and Pro sees it the next time the member asks about their own chart wit
 - **Removal:** the member already has reseal, set aside and archive on `/maia/keep-capture`. "Start over"
   and Keep-off delete the Pro thread. A carried atom is the member's separate Keep act and stays until the
   member removes it, as with any other Keep. The Start-over confirm text says so and names the place to
-  remove it. Account erasure already covers both tables.
+  remove it. *Corrected 2026-11-23 after independent migration review (finding F3):* account
+  erasure does not remove both tables. Atoms go by `ON DELETE CASCADE` with the member row, but
+  `astro_pro_threads` is governed content under the `refuse` posture: a member holding any Pro
+  thread gets 409 from self-serve deletion and nothing is deleted. This is Phase 1 behaviour, it fails
+  closed, and deletion goes through support. Recorded for the erasure lane's owner.
 - **Not carried:** client charts, two-chart threads (biwheel or composite, even own + client), safety
   replies, Sanctuary-equivalent (Keep off) threads. The server refuses each case (it is not just hidden
   in the UI): the carry route re-derives the subject from the stored thread and refuses unless it is
@@ -148,6 +152,21 @@ As built: the migration is `20261123000001_astro_pro_keep_phase2.sql`; the carry
    Erasure test unchanged.
 7. Acceptance: device witness, own chart (carry → main MAIA → archive) and client (natal then transits on
    the same client; a second client sees nothing).
+
+## 7a. Independent migration review, 2026-11-23 (REVISE, then fixed)
+
+The first bound review (target `f0cae2cf1`, reviewer `claude-fable-5-2`, read-only) found the
+migration safe and compatible, but returned REVISE on the code:
+- **F1 (high).** The Ask route stored the browser's `subjectKey` without binding it to the chart the
+  answer was computed from, so a hand-made request could label a client reading as own-chart and
+  carry it. **Fixed:** the route computes the expected key from `section`/`subject`/`other` and
+  refuses a mismatch (`subject_key_mismatch`). It also refuses `other` on single-chart sections.
+- **F2.** The prompt loader dropped the body of `astro_pro_exchange` atoms, so MAIA would never see
+  the reading. **Fixed**, with a test through the loader.
+- **F3.** Erasure wording, corrected in §3.
+- **F4.** The rollback script now sets `lock_timeout`.
+- **F6.** A stale `setKeep` comment, corrected.
+- **F5.** There is no rollback guard for the old reader; this is recorded, not changed.
 
 ## 8. Found, not fixed (reported only)
 
