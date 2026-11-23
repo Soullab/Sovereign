@@ -127,3 +127,19 @@ describe('Pro saved charts — storage', () => {
     expect(migration).toMatch(/SET LOCAL lock_timeout/);
   });
 });
+
+describe('Pro saved charts — deleting a chart deletes its kept conversations', () => {
+  it('removes threads naming the chart as subject or other, for the owner only, in the same statement', async () => {
+    identity.mockResolvedValue(A);
+    sql.mockReset();
+    sql.mockResolvedValue({ rows: [{ id: CHART }] } as never);
+    expect((await REMOVE(req('/api/astrology/pro/charts/' + CHART, { method: 'DELETE' }), params(CHART))).status).toBe(200);
+    expect(sql).toHaveBeenCalledTimes(1);
+    const [text, args] = sql.mock.calls[0]!;
+    expect(text).toMatch(/DELETE FROM astrology_pro_saved_charts WHERE id = \$1 AND owner_member_id = \$2/);
+    expect(text).toMatch(/DELETE FROM astro_pro_threads\s+WHERE member_id = \$2/);
+    expect(text).toMatch(/split_part\(subject_key, '\.', 3\) IN \(SELECT id::text FROM chart\)/);
+    expect(text).toMatch(/split_part\(subject_key, '\.', 4\) IN \(SELECT id::text FROM chart\)/);
+    expect(args).toEqual([CHART, A]);
+  });
+});

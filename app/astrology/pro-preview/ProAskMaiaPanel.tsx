@@ -145,23 +145,35 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
+  /** Deletes the kept conversation, after the member confirms. False if they cancel or it fails. */
+  async function deleteKept(confirmText: string): Promise<boolean> {
+    if (!threadId) return true;
+    if (typeof window !== 'undefined' && !window.confirm(confirmText)) return false;
+    try {
+      const res = await apiFetch('/api/astrology/pro/conversation', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+        body: JSON.stringify({ threadId, keep: false }),
+      });
+      if (!res.ok && res.status !== 404) { setError('Could not delete the kept conversation just now. Please try again.'); return false; }
+    } catch {
+      setError('Could not delete the kept conversation just now. Please try again.');
+      return false;
+    }
+    setThreadId(null);
+    return true;
+  }
+
   async function changeKeep(next: boolean) {
     if (next) { setKeep(true); return; }
-    if (threadId) {
-      if (typeof window !== 'undefined' && !window.confirm('Stop keeping this conversation? What was kept will be deleted.')) return;
-      try {
-        const res = await apiFetch('/api/astrology/pro/conversation', {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-          body: JSON.stringify({ threadId, keep: false }),
-        });
-        if (!res.ok && res.status !== 404) { setError('Could not stop keeping this conversation just now. Please try again.'); return; }
-      } catch {
-        setError('Could not stop keeping this conversation just now. Please try again.');
-        return;
-      }
-      setThreadId(null);
-    }
-    setKeep(false);
+    if (await deleteKept('Stop keeping this conversation? What was kept will be deleted.')) setKeep(false);
+  }
+
+  // One kept conversation per subject: starting over deletes the kept one, so
+  // nothing is left stored that the member can no longer reach or remove.
+  async function startOver() {
+    if (keep && !(await deleteKept('Start over? The conversation kept so far will be deleted.'))) return;
+    setExchanges([]);
+    setThreadId(null);
   }
 
   useEffect(() => { end.current?.scrollIntoView?.({ block: 'nearest' }); }, [exchanges.length, status]);
@@ -219,7 +231,7 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
         details. MAIA is an AI, not the astrologer.
       </p>
       <label className={styles.check}>
-        <input type="checkbox" role="switch" checked={keep} onChange={(e) => void changeKeep(e.target.checked)} />
+        <input type="checkbox" role="switch" checked={keep} disabled={status === 'asking'} onChange={(e) => void changeKeep(e.target.checked)} />
         Keep this conversation
       </label>
       <p className={styles.note}>
@@ -323,8 +335,7 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
         <button type="button" onClick={() => void ask()} disabled={status === 'asking'}>
           {status === 'asking' ? 'MAIA is reading…' : mentor ? 'Ask the mentor' : 'Ask MAIA'}
         </button>
-        {/* Starts a fresh conversation; a kept one stays kept and can be resumed. */}
-        {exchanges.length > 0 && <button type="button" onClick={() => { setExchanges([]); setThreadId(null); }}>New conversation</button>}
+        {exchanges.length > 0 && <button type="button" onClick={() => void startOver()} disabled={status === 'asking'}>Start over</button>}
       </div>
     </>
   );

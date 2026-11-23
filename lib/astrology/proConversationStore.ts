@@ -54,16 +54,18 @@ export async function appendExchange(threadId: string, memberId: string, q: stri
   });
 }
 
-/** keep=false deletes the thread's turns and stops further writes. Returns false if not the member's thread. */
+/**
+ * keep=false deletes the whole thread (its turns go by cascade), so nothing of a
+ * conversation the member stopped keeping remains, not even when it was had.
+ * Returns false if it is not the member's thread.
+ */
 export async function setKeep(threadId: string, memberId: string, keep: boolean): Promise<boolean> {
-  return transaction(async (client) => {
-    const own = await client.query(
-      `SELECT 1 FROM astro_pro_threads WHERE id = $1 AND member_id = $2 FOR UPDATE`, [threadId, memberId]);
-    if (!own.rows.length) return false;
-    if (!keep) await client.query(`DELETE FROM astro_pro_turns WHERE thread_id = $1`, [threadId]);
-    await client.query(`UPDATE astro_pro_threads SET keep = $3 WHERE id = $1 AND member_id = $2`, [threadId, memberId, keep]);
-    return true;
-  });
+  if (!keep) {
+    const r = await query(`DELETE FROM astro_pro_threads WHERE id = $1 AND member_id = $2 RETURNING id`, [threadId, memberId]);
+    return (r.rows?.length ?? 0) > 0;
+  }
+  const r = await query(`UPDATE astro_pro_threads SET keep = true WHERE id = $1 AND member_id = $2 RETURNING id`, [threadId, memberId]);
+  return (r.rows?.length ?? 0) > 0;
 }
 
 export async function listTurns(threadId: string, memberId: string): Promise<ProTurnPair[]> {

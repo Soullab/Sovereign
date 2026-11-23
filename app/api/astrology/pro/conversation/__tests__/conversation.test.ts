@@ -62,30 +62,24 @@ describe('GET conversation', () => {
 });
 
 describe('PATCH conversation', () => {
-  function fakeClient(owned: boolean) {
-    const calls: Array<[string, unknown[]]> = [];
-    const client = { query: jest.fn(async (sql: string, params: unknown[] = []) => {
-      calls.push([sql, params]);
-      return { rows: sql.includes('FOR UPDATE') ? (owned ? [{}] : []) : [] };
-    }) };
-    jest.mocked(transaction).mockImplementation(async (fn: any) => fn(client));
-    return calls;
+  function deleteReturns(owned: boolean) {
+    jest.mocked(query).mockResolvedValue({ rows: owned ? [{ id: THREAD }] : [] } as never);
   }
 
-  it('keep=false deletes the thread\'s turns and marks it not kept', async () => {
-    const calls = fakeClient(true);
+  it('keep=false deletes the whole thread (turns go by cascade), scoped to the caller', async () => {
+    deleteReturns(true);
     const res = await patch({ threadId: THREAD, keep: false });
     expect(res.status).toBe(200);
-    expect(calls.some(([sql]) => /DELETE FROM astro_pro_turns/.test(sql))).toBe(true);
-    expect(calls.some(([sql, p]) => /UPDATE astro_pro_threads SET keep/.test(sql) && p[2] === false)).toBe(true);
-    expect(calls.every(([, p]) => p.includes(THREAD))).toBe(true);
+    const [sql, params] = jest.mocked(query).mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/DELETE FROM astro_pro_threads WHERE id = \$1 AND member_id = \$2/);
+    expect(params[0]).toBe(THREAD);
+    expect(jest.mocked(query).mock.calls.some(([q]) => /UPDATE/.test(String(q)))).toBe(false);
   });
 
   it('does nothing to a thread that is not the caller\'s', async () => {
-    const calls = fakeClient(false);
+    deleteReturns(false);
     const res = await patch({ threadId: THREAD, keep: false });
     expect(res.status).toBe(404);
-    expect(calls.some(([sql]) => /DELETE/.test(sql))).toBe(false);
   });
 
   it('refuses a malformed request', async () => {
