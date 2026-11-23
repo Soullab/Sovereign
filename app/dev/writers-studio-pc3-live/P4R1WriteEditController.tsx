@@ -2642,6 +2642,7 @@ export default function FlagshipWriteEditController() {
         writingRef.current = writing;
         return (
           <P4R1Pc3WriteEditView
+            livingWorkId={work?.id ?? null}
             context={context}
             writing={writing}
             work={work}

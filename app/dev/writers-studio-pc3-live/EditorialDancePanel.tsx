@@ -24,6 +24,8 @@ import { passageActQuestion, type PassageAct as PassageActId } from '@/lib/write
 import type { ArrivalOriginRef } from '@/lib/writersStudio/arrivalOrigin';
 import { parseStudioActions, type StudioActionId } from '@/lib/writersStudio/studioActions';
 import FocusConversation from './FocusConversation';
+import { CORRECTION_OFFER_ACCEPT, CORRECTION_OFFER_COPY, CORRECTION_OFFER_DECLINE, correctionOfferFor } from '@/lib/writersStudio/correctionOffer';
+import { createWriterCorrection } from '@/lib/writersStudio/writerCorrectionsClient';
 import P4R1VoiceCapture from './P4R1VoiceCapture';
 
 /** A passage act the writer chose: plain data, so a held act runs with the
@@ -77,6 +79,12 @@ export interface EditorialDancePanelProps {
   onSaveMember: (draft: MemberRevisionDraft) => Promise<boolean>;
   onApply: () => void;
   onUndo?: () => void;
+  /**
+   * The Living Work this passage belongs to. Present → the passage room may offer to keep a
+   * plain disagreement as a correction, through the SAME route and wording as the Work
+   * conversation (#2358), so it carries into both conversations. Absent → no offer.
+   */
+  livingWorkId?: string | null;
   onKeep: () => void;
   /** Conversation-first step 3: save MAIA's option as the writer's version and apply it, in one act. */
   onUseVersion?: (draft: MemberRevisionDraft) => Promise<boolean>;
@@ -313,6 +321,12 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
   /* The act the writer asked for while a gate was still open. It continues by
      itself once the writer has answered both gates, and never before. */
   const [heldAct, setHeldAct] = useState<PassageAct | null>(null);
+  /* Correction offer (E0 walk 2026-11-23): a correction given here never reached the Work
+     conversation, because nothing here offered to keep it. Answered offers are remembered by
+     "thread:turn" so the offer never nags; nothing is kept without the writer's press. */
+  const [correctionAnswered, setCorrectionAnswered] = useState<ReadonlySet<string>>(() => new Set());
+  const [correctionBusy, setCorrectionBusy] = useState(false);
+  const [correctionNote, setCorrectionNote] = useState<{ key: string; text: string } | null>(null);
   const relationshipRef = useRef<HTMLDivElement | null>(null);
   const relationshipBlocks = Boolean(props.maiaRelationship && !props.maiaRelationship.active);
 
@@ -984,6 +998,50 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
           ) : null}
 
           {turns.map((t) => renderTurn(t))}
+
+          {(() => {
+            /* Same rule as the Work conversation: under MAIA's LATEST reply to a message that
+               plainly disagreed, offer to keep the writer's own words as a correction. Never in
+               Sanctuary or an undeclared posture; never without a Work; once per reply. */
+            const threadId = props.thread?.threadId;
+            if (!threadId || !props.livingWorkId || postureBlocksEditorial) return null;
+            const last = turns.at(-1);
+            const prev = turns.length > 1 ? turns[turns.length - 2] : null;
+            if (!last || last.speaker !== 'maia' || !prev || prev.speaker !== 'author') return null;
+            const key = `${threadId}:${last.turnIndex}`;
+            if (correctionNote?.key === key) {
+              return <li className="ws-stage-turn is-note" data-correction-note role="status"><p>{correctionNote.text}</p></li>;
+            }
+            if (correctionAnswered.has(key)) return null;
+            const offer = correctionOfferFor(prev.body);
+            if (!offer) return null;
+            const workId = props.livingWorkId;
+            const answer = async (keep: boolean) => {
+              setCorrectionAnswered((s) => new Set(s).add(key));
+              if (!keep) return;
+              setCorrectionBusy(true);
+              const result = await createWriterCorrection({
+                workId, threadId, maiaTurnIndex: last.turnIndex, kind: offer.kind, correction: prev.body.trim(),
+              });
+              setCorrectionBusy(false);
+              setCorrectionNote({ key, text: result.ok
+                ? 'Kept. MAIA will read your Work this way from now on, here and in the whole-Work conversation.'
+                : 'That correction was not kept. Nothing else changed.' });
+            };
+            return (
+              <li className="ws-stage-turn is-note" data-correction-offer={last.turnIndex} role="status">
+                <p>{CORRECTION_OFFER_COPY}</p>
+                <div className="ws-stage-option-actions">
+                  <button type="button" data-correction-offer-accept disabled={correctionBusy} onClick={() => void answer(true)}>
+                    {CORRECTION_OFFER_ACCEPT}
+                  </button>
+                  <button type="button" data-correction-offer-decline disabled={correctionBusy} onClick={() => void answer(false)}>
+                    {CORRECTION_OFFER_DECLINE}
+                  </button>
+                </div>
+              </li>
+            );
+          })()}
 
           {/* Responsive length (founder 2026-11-05: "some want more and some need less").
               The writer steers; the choice is remembered because they made it. The words
