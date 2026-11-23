@@ -331,10 +331,14 @@ export function MaiaLeftRail({ activeWorld, calmMode, calmCeiling, worldHints, a
       <div className="flex-1 flex flex-col items-center gap-1">
         {worldsBeforeIdeas.map(renderWorldButton)}
 
-        {/* Keep — pre-interpretive intake threshold, always visible */}
+        {/* Keep — pre-interpretive intake threshold. Shown only where a page wires
+            a capture handler. Since 07d6c3e32 no page passes one, and on 2026-11-22 a
+            Pro tester pressed this dead button, then "Keeps" below, and lost her
+            conversation when that navigated away. */}
+        {onCaptureSpirit && (
         <button
           key="capture"
-          onClick={() => onCaptureSpirit?.()}
+          onClick={onCaptureSpirit}
           className="group relative w-10 h-10 flex items-center justify-center rounded-xl text-stone-500 hover:text-[#D4B896]/70 hover:bg-[#D4B896]/5 transition-all duration-200"
           title="Keep this moment"
         >
@@ -343,6 +347,7 @@ export function MaiaLeftRail({ activeWorld, calmMode, calmCeiling, worldHints, a
             Keep
           </span>
         </button>
+        )}
 
         {/* Keeps — destination for the list of kept items */}
         {(() => {
