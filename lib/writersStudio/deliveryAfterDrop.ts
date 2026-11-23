@@ -18,7 +18,10 @@ import type { AskThreadView } from '@/lib/writersStudio/askClient';
 
 export type Delivery = 'answered' | 'held' | 'not_arrived' | 'unknown';
 
-export function deliveryAfterDrop(turnsBefore: number, after: AskThreadView | null, question: string): Delivery {
+/** Only the turns are read, so any conversation view — Work Ask or passage editorial — can be judged. */
+type ThreadTurns = Pick<AskThreadView, 'turns'> | { readonly turns: readonly { speaker: 'author' | 'maia'; body: string }[] };
+
+export function deliveryAfterDrop(turnsBefore: number, after: ThreadTurns | null, question: string): Delivery {
   if (!after || !Array.isArray(after.turns)) return 'unknown';
   if (after.turns.length === turnsBefore) return 'not_arrived';
   const asked = question.trim();

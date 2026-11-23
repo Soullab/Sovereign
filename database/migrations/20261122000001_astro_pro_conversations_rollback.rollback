@@ -1,0 +1,9 @@
+-- Rollback for astro_pro_threads / astro_pro_turns (ASTRO-PRO-KEEP Phase 1).
+-- Discards kept member conversations. Export first if any rows exist.
+BEGIN;
+DROP TRIGGER IF EXISTS astro_pro_turns_no_update ON astro_pro_turns;
+DROP INDEX IF EXISTS idx_astro_pro_threads_member_subject;
+DROP TABLE IF EXISTS astro_pro_turns;
+DROP TABLE IF EXISTS astro_pro_threads;
+DROP FUNCTION IF EXISTS astro_pro_turns_append_only();
+COMMIT;

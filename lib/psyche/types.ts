@@ -47,6 +47,9 @@ export type MemoryAtomSourceType =
                        // it resembles, so a reader can tell which table
                        // source_id points at without undocumented knowledge.
                        // (Ruled 2026-08-02; Amendment 5.)
+  | 'astro_pro_exchange' // ASTRO-PRO-KEEP Phase 2: one own-chart Pro Ask-MAIA
+                         // exchange the member carried with "Keep with MAIA".
+                         // source_id = astro_pro_turns.id of MAIA's turn.
   | 'practitioner_observation'; // authored BY a practitioner ABOUT the member —
                                 // NOT member-keepable (keepSource rejects it); the
                                 // member may only respond to it (decline). Present
@@ -277,6 +280,16 @@ export interface KeepGestureInput {
   registers?: MemoryRegister[];
   elementalLenses?: ElementalLens[];
   threadIds?: string[];
+
+  /**
+   * ASTRO-PRO-KEEP Phase 2. Required for, and only allowed with, sourceType
+   * 'astro_pro_exchange'; set only by POST /api/astrology/pro/conversation/carry.
+   * keepSource writes return_preference 'contextual_doorway' (the member's own act),
+   * this provenance, and epistemological_status 'inferred' (MAIA's reading).
+   */
+  astroProOrigin?: {
+    provenance: { surface: 'astro_pro'; section: string; thread_id: string; turn_index: number; asked_at: string };
+  };
 }
 
 /**

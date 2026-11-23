@@ -55,6 +55,7 @@ import type { StructuredRequest } from '@/lib/ai/structured/types';
 import { constructEditorialWriterTurn, renderEditorialTurn } from '@/lib/writers-studio/canonicalWriterTurn';
 import { writerUnderstandingContextForManuscript } from '@/lib/writersStudio/writerUnderstandingServer';
 import { decisionContextForManuscript } from '@/lib/writersStudio/decisionRecord';
+import { writerCorrectionContextForManuscript } from '@/lib/writersStudio/writerCorrectionsServer';
 import type { CandidateBlock, MemberIdentity, TierStrategy } from '@/lib/maia/canonical-turn';
 import { buildTeachingRuntimeBridge } from '@/lib/maia/teaching/TeachingRuntimeBridge';
 import { editorialDirective, type EditorialDepth, replyLengthInstruction, responsiveLengthDirective, type ReplyLength } from '@/lib/writersStudio/editorialDepth';
@@ -375,6 +376,8 @@ export async function runEditorialTurn(
   const declaredWriterContext = [
     await writerUnderstandingContextForManuscript(memberId, assembly.manuscriptId),
     input.sanctuary ? '' : await decisionContextForManuscript(memberId, assembly.manuscriptId),
+    /* E0 walk 2026-11-23: corrections the writer KEPT (in either conversation) reach this room too. */
+    input.sanctuary ? '' : await writerCorrectionContextForManuscript(memberId, assembly.manuscriptId),
   ].filter(Boolean).join("\n\n");
   const intentionBlocks: CandidateBlock[] = declaredWriterContext
     ? [{
@@ -696,6 +699,7 @@ export async function runEditorialTurn(
   const persisted = await persistMaiaEditorialOutcome({
     keep: KeepWitness.fromDeclaration(input.sanctuary),
     memberId, invocation, outcome: admission.outcome,
+    ...(input.opening ? {} : { answersMemberTurnIndex: input.currentTurnIndex }),
     ...(input.relationshipId !== undefined
       ? { relationshipAdmission: input.opening
           ? {

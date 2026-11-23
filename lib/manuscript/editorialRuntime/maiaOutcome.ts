@@ -62,6 +62,12 @@ export interface MaiaOutcomeInput {
    * those two different facts.
    */
   readonly answerProvenance?: unknown;
+  /**
+   * The writer turn this reply answers. Pre-review of #2380: a resend reuses a held turn, so
+   * two requests can be thinking about ONE writer turn. The first reply to land is kept; a
+   * second is refused (`already_answered`). Absent for a MAIA-first opening.
+   */
+  readonly answersMemberTurnIndex?: number;
   readonly relationshipAdmission?: {
     readonly relationshipId: string;
     readonly memberTurnIndex: number;
@@ -84,7 +90,9 @@ export type MaiaOutcomeRefusal =
   /** ⭐⭐ The chain moved while MAIA was thinking. ⛔ Never rebased, never retried. */
   | 'not_successor_of_head'
   | 'version_refused'
-  | 'relationship_refused';
+  | 'relationship_refused'
+  /** MAIA has already replied to this writer turn (a resend raced the first request). */
+  | 'already_answered';
 
 export type MaiaOutcomeResult =
   | {
@@ -115,7 +123,9 @@ async function proveInvocation(
   tx: TransactionClient, inv: EditorialInvocation, memberId: string,
 ): Promise<void> {
   const r = await tx.query<{ proposal_chain_id: string | null }>(
-    `SELECT proposal_chain_id FROM ask_threads WHERE id = $1 AND member_id = $2`,
+    /* NO KEY UPDATE serialises outcomes on one thread (so the already-answered check below
+       cannot race) without blocking a writer turn's insert, whose FK takes KEY SHARE. */
+    `SELECT proposal_chain_id FROM ask_threads WHERE id = $1 AND member_id = $2 FOR NO KEY UPDATE`,
     [inv.threadId, memberId]);
   if (r.rows.length === 0) throw new OutcomeRefused('thread_not_found');
   const chainId = r.rows[0]!.proposal_chain_id;
@@ -173,6 +183,14 @@ export async function persistMaiaEditorialOutcome(
   try {
     return await transaction(async (tx) => {
       await proveInvocation(tx, invocation, memberId);
+
+      if (input.answersMemberTurnIndex !== undefined) {
+        const answered = await tx.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM ask_turns
+            WHERE thread_id = $1 AND turn_index > $2 AND speaker = 'maia'`,
+          [invocation.threadId, input.answersMemberTurnIndex]);
+        if (Number(answered.rows[0]?.n ?? 0) > 0) throw new OutcomeRefused('already_answered');
+      }
 
       /* R2: an opening is an observation and a question. ⛔ A proposal or direction is
          never persisted from one, whatever the caller's policy said. */

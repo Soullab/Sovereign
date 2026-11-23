@@ -24,6 +24,8 @@ import { passageActQuestion, type PassageAct as PassageActId } from '@/lib/write
 import type { ArrivalOriginRef } from '@/lib/writersStudio/arrivalOrigin';
 import { parseStudioActions, type StudioActionId } from '@/lib/writersStudio/studioActions';
 import FocusConversation from './FocusConversation';
+import { CORRECTION_OFFER_ACCEPT, CORRECTION_OFFER_COPY, CORRECTION_OFFER_DECLINE, correctionOfferFor } from '@/lib/writersStudio/correctionOffer';
+import { createWriterCorrection } from '@/lib/writersStudio/writerCorrectionsClient';
 import P4R1VoiceCapture from './P4R1VoiceCapture';
 
 /** A passage act the writer chose: plain data, so a held act runs with the
@@ -68,10 +70,21 @@ export interface EditorialDancePanelProps {
   onSelectVersion: (id: string) => void;
   /** Design 1B: the writer clicked a control MAIA offered. Navigation only. */
   onStudioAction?: (id: StudioActionId) => void;
-  onSend: (text?: string, options?: { proposalPolicy?: 'allow' | 'reply_only'; proposalRequested?: boolean; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageActId; origin?: ArrivalOriginRef }) => void;
+  /**
+   * Resolves `true` only once MAIA's reply is shown. A composer keeps the writer's
+   * words until then, so a refusal or a failed send never costs them their message.
+   * A host that returns nothing keeps the older clear-on-send behaviour.
+   */
+  onSend: (text?: string, options?: { proposalPolicy?: 'allow' | 'reply_only'; proposalRequested?: boolean; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageActId; origin?: ArrivalOriginRef }) => void | Promise<boolean>;
   onSaveMember: (draft: MemberRevisionDraft) => Promise<boolean>;
   onApply: () => void;
   onUndo?: () => void;
+  /**
+   * The Living Work this passage belongs to. Present → the passage room may offer to keep a
+   * plain disagreement as a correction, through the SAME route and wording as the Work
+   * conversation (#2358), so it carries into both conversations. Absent → no offer.
+   */
+  livingWorkId?: string | null;
   onKeep: () => void;
   /** Conversation-first step 3: save MAIA's option as the writer's version and apply it, in one act. */
   onUseVersion?: (draft: MemberRevisionDraft) => Promise<boolean>;
@@ -136,6 +149,24 @@ function distinctMaiaVersions(thread: RebuildEditorialThread | null): RebuildEdi
 }
 
 const PAUSED_NOTE = 'You paused MAIA’s revisions for this passage. She keeps talking; resume in Preferences for new wording.';
+
+/**
+ * Clear a composer only after the send is shown to have landed, and only if the writer
+ * has not typed more since. A host that returns nothing (older callers, tests) clears
+ * at once, as before. A failed or refused send leaves the writer's words in the box.
+ */
+function clearWhenSent(
+  sent: void | Promise<boolean>,
+  submitted: string,
+  setText: (update: (current: string) => string) => void,
+): void {
+  const clearIfUnchanged = () => setText((current) => (current.trim() === submitted ? '' : current));
+  if (!sent || typeof (sent as Promise<boolean>).then !== 'function') {
+    clearIfUnchanged();
+    return;
+  }
+  (sent as Promise<boolean>).then((ok) => { if (ok) clearIfUnchanged(); }, () => { /* keep the words */ });
+}
 
 /** Step 3: about a sentence of the surrounding text on each side of the option. */
 function aroundBefore(text: string): string {
@@ -290,6 +321,25 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
   /* The act the writer asked for while a gate was still open. It continues by
      itself once the writer has answered both gates, and never before. */
   const [heldAct, setHeldAct] = useState<PassageAct | null>(null);
+  /* Correction offer (E0 walk 2026-11-23): a correction given here never reached the Work
+     conversation, because nothing here offered to keep it. Answered offers are remembered by
+     "thread:turn" so the offer never nags; nothing is kept without the writer's press. */
+  const [correctionAnswered, setCorrectionAnswered] = useState<ReadonlySet<string>>(() => new Set());
+  const [correctionBusy, setCorrectionBusy] = useState(false);
+  const [correctionNote, setCorrectionNote] = useState<{ key: string; text: string } | null>(null);
+  /* Review of #2380 (2026-11-23): keeping a correction is a REVIEWED step, as in the Work
+     conversation. The writer sees their words in an editable box and presses "Keep correction";
+     nothing is kept by the offer itself. */
+  const [correctionDraft, setCorrectionDraft] = useState<{ key: string; text: string } | null>(null);
+  /* Only the writer's own typed or spoken messages may be offered for keeping. A stored author
+     turn can be a composed request that carries draft wording and instructions (sendTalk, the
+     edit acts); those must never become a correction. Exact text, this session only: a missed
+     offer after a reload is the safe failure. */
+  const ownWordsRef = useRef<Set<string>>(new Set());
+  const sendOwnWords = (text: string, options: Parameters<typeof props.onSend>[1]) => {
+    ownWordsRef.current.add(text.trim());
+    return props.onSend(text, options);
+  };
   const relationshipRef = useRef<HTMLDivElement | null>(null);
   const relationshipBlocks = Boolean(props.maiaRelationship && !props.maiaRelationship.active);
 
@@ -447,7 +497,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
   const sendTalk = () => {
     const q = talk.trim();
     if (!q || !props.thread) return;
-    props.onSend([
+    const sent = props.onSend([
       'My working revision (not applied):',
       workingText,
       '',
@@ -457,7 +507,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
       'Treat my working revision as the wording I am shaping now. Do not silently restore your earlier proposal.',
       'Respond to my intention first. If you suggest wording, explain what it changes and what might be lost. Nothing is to be applied automatically.',
     ].join('\n'));
-    setTalk('');
+    clearWhenSent(sent, q, setTalk);
   };
 
   const saveMemberVersion = async () => {
@@ -507,8 +557,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
     }
     // Design 3C: only the writer's words are their turn; the conversational
     // shape is server-owned (turnShape), like a Teach-me's (F1).
-    props.onSend(q, withOrigin({ turnShape: 'conversation' as const }));
-    setStartPrompt('');
+    clearWhenSent(sendOwnWords(q, withOrigin({ turnShape: 'conversation' as const })), q, setStartPrompt);
   };
 
   const postureBlocksEditorial = !props.sessionPosture.resolved || props.sessionPosture.sanctuary;
@@ -752,7 +801,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
 
       <P4R1VoiceCapture
         disabled={props.busy || postureBlocksEditorial}
-        onAsk={(text) => props.onSend(text, withOrigin({ turnShape: 'conversation' as const }))}
+        onAsk={(text) => sendOwnWords(text, withOrigin({ turnShape: 'conversation' as const }))}
       />
     </div>
   );
@@ -824,13 +873,13 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
       const q = startPrompt.trim();
       if (!q || props.busy) return;
       if (postureBlocksEditorial || relationshipBlocks || choiceBlocks) {
+        ownWordsRef.current.add(q);
         setHeldAct({ label: q.length > 40 ? q.slice(0, 40) + '…' : q, prompt: q, options: { turnShape: 'conversation' } });
         if (postureBlocksEditorial) setPostureNudge(true); else if (relationshipBlocks) setRelationshipNudge(true);
         setStartPrompt('');
         return;
       }
-      props.onSend(q, withOrigin({ turnShape: 'conversation' as const }));
-      setStartPrompt('');
+      clearWhenSent(sendOwnWords(q, withOrigin({ turnShape: 'conversation' as const })), q, setStartPrompt);
     };
 
     const latestTurn = turns.at(-1);
@@ -963,6 +1012,72 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
           ) : null}
 
           {turns.map((t) => renderTurn(t))}
+
+          {(() => {
+            /* Same rule as the Work conversation: under MAIA's LATEST reply to a message that
+               plainly disagreed, offer to keep the writer's own words as a correction. Never in
+               Sanctuary or an undeclared posture; never without a Work; once per reply. */
+            const threadId = props.thread?.threadId;
+            if (!threadId || !props.livingWorkId || postureBlocksEditorial) return null;
+            const last = turns.at(-1);
+            const prev = turns.length > 1 ? turns[turns.length - 2] : null;
+            if (!last || last.speaker !== 'maia' || !prev || prev.speaker !== 'author') return null;
+            const key = `${threadId}:${last.turnIndex}`;
+            if (correctionNote?.key === key) {
+              return <li className="ws-stage-turn is-note" data-correction-note role="status"><p>{correctionNote.text}</p></li>;
+            }
+            if (correctionAnswered.has(key)) return null;
+            if (!ownWordsRef.current.has(prev.body.trim())) return null;
+            const offer = correctionOfferFor(prev.body);
+            if (!offer) return null;
+            const workId = props.livingWorkId;
+            const draft = correctionDraft?.key === key ? correctionDraft.text : null;
+            const keepReviewed = async () => {
+              const correction = (draft ?? '').trim();
+              if (!correction) return;
+              setCorrectionBusy(true);
+              const result = await createWriterCorrection({
+                workId, threadId, maiaTurnIndex: last.turnIndex, kind: offer.kind, correction,
+              });
+              setCorrectionBusy(false);
+              setCorrectionAnswered((s) => new Set(s).add(key));
+              setCorrectionDraft(null);
+              setCorrectionNote({ key, text: result.ok
+                ? 'Kept. MAIA will read your Work this way from now on, here and in the whole-Work conversation.'
+                : 'That correction was not kept. Nothing else changed.' });
+            };
+            if (draft !== null) {
+              return (
+                <li className="ws-stage-turn is-note" data-correction-review={last.turnIndex}>
+                  <label htmlFor={`correction-review-${key}`}>Your correction, in your words. Change anything before keeping it.</label>
+                  <textarea id={`correction-review-${key}`} data-correction-review-text value={draft} rows={3}
+                    onChange={(e) => setCorrectionDraft({ key, text: e.target.value })} />
+                  <div className="ws-stage-option-actions">
+                    <button type="button" data-correction-review-keep disabled={correctionBusy || !draft.trim()} onClick={() => void keepReviewed()}>
+                      Keep correction
+                    </button>
+                    <button type="button" data-correction-review-cancel disabled={correctionBusy}
+                      onClick={() => { setCorrectionDraft(null); setCorrectionAnswered((s) => new Set(s).add(key)); }}>
+                      Cancel
+                    </button>
+                  </div>
+                </li>
+              );
+            }
+            return (
+              <li className="ws-stage-turn is-note" data-correction-offer={last.turnIndex} role="status">
+                <p>{CORRECTION_OFFER_COPY}</p>
+                <div className="ws-stage-option-actions">
+                  <button type="button" data-correction-offer-accept onClick={() => setCorrectionDraft({ key, text: prev.body.trim() })}>
+                    {CORRECTION_OFFER_ACCEPT}
+                  </button>
+                  <button type="button" data-correction-offer-decline onClick={() => setCorrectionAnswered((s) => new Set(s).add(key))}>
+                    {CORRECTION_OFFER_DECLINE}
+                  </button>
+                </div>
+              </li>
+            );
+          })()}
 
           {/* Responsive length (founder 2026-11-05: "some want more and some need less").
               The writer steers; the choice is remembered because they made it. The words

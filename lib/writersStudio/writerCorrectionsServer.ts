@@ -1,4 +1,5 @@
 import { query } from '@/lib/db/postgres';
+import { livingWorkIdForManuscript } from '@/lib/manuscript/ask/workOfManuscript';
 import {
   writerCorrectionContext,
   type WriterCorrection,
@@ -13,7 +14,7 @@ type Row = {
   kind: WriterCorrectionKind;
   correction_text: string;
   created_at: string | Date;
-  prior_claim: string;
+  prior_claim: string | null;
 };
 
 const shape = (row: Row): WriterCorrection => ({
@@ -36,10 +37,15 @@ export async function currentWriterCorrectionsForWork(
     const result = await query<Row>(
       `SELECT DISTINCT ON (c.thread_id, c.maia_turn_index)
               c.id, c.living_work_id, c.thread_id, c.maia_turn_index,
-              c.kind, c.correction_text, c.created_at, t.body AS prior_claim
+              c.kind, c.correction_text, c.created_at,
+              /* Review of #2380: a passage conversation's reply quotes and rewrites manuscript
+                 wording. It must not travel into conversations whose reading permission is
+                 narrower, so only a whole-Work reply is carried as the prior claim. */
+              CASE WHEN th.proposal_chain_id IS NULL THEN t.body ELSE NULL END AS prior_claim
          FROM writer_studio_corrections c
          JOIN ask_turns t
            ON t.thread_id = c.thread_id AND t.turn_index = c.maia_turn_index
+         JOIN ask_threads th ON th.id = c.thread_id
         WHERE c.member_id = $1 AND c.living_work_id = $2
         ORDER BY c.thread_id, c.maia_turn_index, c.created_at DESC
         LIMIT 24`,
@@ -61,4 +67,18 @@ export async function writerCorrectionContextForWork(
   workId: string,
 ): Promise<string> {
   return writerCorrectionContext(await currentWriterCorrectionsForWork(memberId, workId));
+}
+
+/**
+ * The same kept corrections, for a conversation that knows only its manuscript (the passage
+ * room). E0 walk 2026-11-23: corrections reached the Work conversation but never the passage
+ * turn, so one doorway knew what the writer had kept and the other did not. Resolved exactly
+ * as decisionContextForManuscript resolves its Work; no Work, no corrections.
+ */
+export async function writerCorrectionContextForManuscript(
+  memberId: string,
+  manuscriptId: string,
+): Promise<string> {
+  const workId = await livingWorkIdForManuscript(manuscriptId, memberId);
+  return workId ? writerCorrectionContextForWork(memberId, workId) : '';
 }

@@ -3,28 +3,42 @@
  *
  * POST /api/astrology/pro/ask
  * body: { section, subject, other?, houseSystem?, at?, dayStart?, direction?, question,
- *         mode?, view?, point? }
+ *         mode?, view?, point?, subjectKey?, threadId?, keep? }
+ *
+ * Kept conversations (founder ruling 2026-11-22, ASTRO-PRO-KEEP spec): Keep is
+ * ON by default. After a normal answer the question and answer are stored in
+ * the member's own thread for `subjectKey` and `threadId` is returned. With
+ * `keep: false` nothing is stored. A storage failure never fails the answer
+ * (`kept: false`). Safety replies are never stored.
  *
  * From the cockpit's MAIA dock: `mode: 'mentor'` asks MAIA to teach a technique
  * instead of reading the chart; `view` (one of a fixed list) and `point` (a
  * body of this chart) tell MAIA what the astrologer has open. Neither carries
  * free text into the prompt.
  *
- * A conversation, not single questions: `history` carries the earlier turns of
- * this visit from the page (nothing is stored here), `depth: 'deep'` asks for a
+ * A conversation, not single questions: `history` carries the earlier turns
+ * from the page, `depth: 'deep'` asks for a
  * fuller answer, and `include` widens a natal question to the other systems.
+ *
+ * Recall (ASTRO-PRO-KEEP Phase 2, founder ruling 2026-11-23): with Keep on, MAIA
+ * also receives the caller's earlier kept exchanges about the same single chart
+ * from its other sections — verbatim, dated, bounded, framed as readings at the
+ * time. A client's conversations inform only that client's chart; they never
+ * reach memory atoms or another chart.
  *
  * `personal: true` (founder ruling 2026-11-09) lets MAIA read the astrologer's
  * OWN chart alongside what they have chosen to keep with MAIA: their kept
  * memory atoms, under each atom's own return consent. It is refused for a
  * saved chart or a second chart: a client has not consented to their chart
  * sitting beside the astrologer's memory. Memory flows into this answer only;
- * no chart material is written to the conversation or to memory (the R4F
- * concern, #1817, is the other direction and stays held).
+ * this route writes no chart material to memory. The other direction (R4F,
+ * #1817) is open for the own chart only, one exchange at a time, by the member's
+ * "Keep with MAIA" press: POST /api/astrology/pro/conversation/carry.
  *
  * Only chart ids travel; the server reads the verified owner's birth details,
  * recalculates the section and gives MAIA its facts — never a name, birth
- * date, time or place. Nothing is stored or logged but the fact of an answer.
+ * date, time or place. Nothing is logged but the fact of an answer; the
+ * conversation itself is stored only while Keep is on (above).
  * A question showing crisis or serious distress gets a fixed reply and MAIA is
  * not asked.
  */
@@ -53,6 +67,7 @@ import {
 } from '@/lib/astrology/proAskMaiaSections';
 import { PRO_RESPONSE_HEADERS, proError, proOwnerStillCurrent, resolveProOwner } from '@/lib/astrology/proRouteAccess';
 import type { SavedChartBirth } from '@/lib/astrology/proSavedCharts';
+import { PRO_SUBJECT_KEY_MAX, appendExchange, isThreadId, openThread, ownsKeptThread, recallSubjectExchanges, type RecalledExchange } from '@/lib/astrology/proConversationStore';
 import { formatAtomsForPrompt, loadMemberMemoryAtomsForPrompt } from '@/lib/maia/memoryAtomsLoader';
 
 // A short per-member limit (in memory) so a runaway loop cannot spend MAIA.
@@ -69,7 +84,7 @@ function allowed(memberId: string): boolean {
   return true;
 }
 
-const KEYS = ['section', 'subject', 'other', 'houseSystem', 'at', 'from', 'dayStart', 'direction', 'question', 'include', 'lifeContext', 'mode', 'view', 'point', 'personal', 'history', 'depth', 'ayanamsa'];
+const KEYS = ['section', 'subject', 'other', 'houseSystem', 'at', 'from', 'dayStart', 'direction', 'question', 'include', 'lifeContext', 'mode', 'view', 'point', 'personal', 'history', 'depth', 'ayanamsa', 'subjectKey', 'threadId', 'keep'];
 const DEEP_PARTS = ['four-pillars', 'maya', 'progressions'];
 
 export async function POST(request: NextRequest) {
@@ -129,12 +144,30 @@ export async function POST(request: NextRequest) {
       history.push({ q: q.trim(), a: a.trim() });
     }
   }
+  // Kept conversation: Keep is on unless the member turned it off.
+  if (input.keep !== undefined && typeof input.keep !== 'boolean') return proError(400, 'keep_unsupported');
+  const keep = input.keep !== false;
+  if (input.subjectKey !== undefined && (typeof input.subjectKey !== 'string' || !input.subjectKey || input.subjectKey.length > PRO_SUBJECT_KEY_MAX)) {
+    return proError(400, 'subject_key_invalid');
+  }
+  if (input.threadId !== undefined && !isThreadId(input.threadId)) return proError(400, 'thread_invalid');
+  const subjectKey = typeof input.subjectKey === 'string' ? input.subjectKey : null;
   const twoCharts = section === 'biwheel' || section === 'composite';
   // What MAIA knows of the astrologer goes only with the astrologer's own chart.
   if (input.personal !== undefined && typeof input.personal !== 'boolean') return proError(400, 'personal_unsupported');
   const personal = input.personal === true;
   if (personal && (input.subject !== 'own' || twoCharts || section === 'deep')) return proError(400, 'personal_own_chart_only');
   if (twoCharts && input.other === undefined) return proError(400, 'second_chart_required');
+  if (!twoCharts && input.other !== undefined) return proError(400, 'unexpected_field');
+  // The kept thread's key must name the chart(s) this answer is computed from. The
+  // server binds it here, never trusting the browser's label: a carry into MAIA's
+  // memory (own chart, one chart) and per-chart recall both rest on the stored key.
+  if (subjectKey !== null) {
+    const expected = typeof input.subject === 'string' && (!twoCharts || typeof input.other === 'string')
+      ? `ask.${section}.${input.subject}.${twoCharts ? input.other : ''}`
+      : null;
+    if (subjectKey !== expected) return proError(400, 'subject_key_mismatch');
+  }
 
   if (!allowed(owner.memberId)) return proError(429, 'slow_down');
 
@@ -240,10 +273,23 @@ export async function POST(request: NextRequest) {
       kept = formatAtomsForPrompt(atoms);
     }
 
+    // Earlier kept conversations about this same chart, from its other sections
+    // (ASTRO-PRO-KEEP Phase 2, ruling (c)): per chart only, one chart only, never a
+    // two-chart thread, never another chart's. The chart was verified as the
+    // caller's own above. Recall never fails the answer.
+    let recalled: RecalledExchange[] = [];
+    if (keep && subjectKey && !twoCharts && section !== 'deep' && mode !== 'mentor' && typeof input.subject === 'string') {
+      try {
+        recalled = await recallSubjectExchanges(owner.memberId, input.subject, subjectKey);
+      } catch {
+        recalled = [];
+      }
+    }
+
     const deep = section === 'deep';
     const llm = await getLLMProvider().generateSimple({
       tier: deep ? 'deep' : 'core',
-      systemPrompt: deep ? proDeepSystemPrompt(facts, lifeContext || null) : proAskSystemPrompt(section, facts, { mode, view, point, depth, continuing: history.length > 0, personal: personal ? { kept } : undefined }),
+      systemPrompt: deep ? proDeepSystemPrompt(facts, lifeContext || null) : proAskSystemPrompt(section, facts, { mode, view, point, depth, continuing: history.length > 0, personal: personal ? { kept } : undefined, recalled }),
       messages: [
         ...history.flatMap((turn) => [{ role: 'user' as const, content: turn.q }, { role: 'assistant' as const, content: turn.a }]),
         { role: 'user', content: question },
@@ -263,7 +309,24 @@ export async function POST(request: NextRequest) {
     // A life story that mentions risk does not stop the reading; it opens with where to turn.
     const contextConcern = deep && lifeContext && (thirdPersonConcern(lifeContext) ||
       ['crisis', 'red'].includes(String(analyzeSafetyCues(lifeContext).severity)));
-    return NextResponse.json({ answer: contextConcern ? `${PRO_DEEP_CONTEXT_NOTE}\n\n${answer}` : answer, ...(personal ? { keptUsed: keptCount } : {}) },
+    const finalAnswer = contextConcern ? `${PRO_DEEP_CONTEXT_NOTE}\n\n${answer}` : answer;
+    // Keep: store the exchange in the member's own thread. Never fails the answer.
+    let keptFields: { threadId?: string; kept?: boolean; turnIndex?: number } = {};
+    if (keep && subjectKey) {
+      try {
+        let threadId: string | null = null;
+        if (typeof input.threadId === 'string') {
+          threadId = (await ownsKeptThread(input.threadId, owner.memberId, subjectKey)) ? input.threadId : null;
+        }
+        if (!threadId) threadId = await openThread(owner.memberId, subjectKey);
+        const turnIndex = await appendExchange(threadId, owner.memberId, question, finalAnswer);
+        keptFields = turnIndex !== false ? { threadId, kept: true, turnIndex } : { kept: false };
+      } catch {
+        console.log('[astrology/pro/ask] keep failed');
+        keptFields = { kept: false };
+      }
+    }
+    return NextResponse.json({ answer: finalAnswer, ...keptFields, ...(personal ? { keptUsed: keptCount } : {}), ...(recalled.length ? { recalledUsed: recalled.length } : {}) },
       { headers: PRO_RESPONSE_HEADERS });
   } catch {
     // Exception text may contain birth inputs; never log or return it.

@@ -51,10 +51,25 @@ const ERRORS: Record<string, string> = {
   personal_own_chart_only: 'MAIA can bring what she knows of you only to your own chart.',
 };
 
+/** Deleting a conversation leaves what the member carried into MAIA's memory; say so, and where it lives. */
+const CARRIED_NOTE = ' What you kept with MAIA stays in her memory until you remove it in Keep.';
+const START_OVER_CONFIRM = (carried: boolean) =>
+  `Start over? The conversation kept so far will be deleted.${carried ? CARRIED_NOTE : ''}`;
+const STOP_KEEPING_CONFIRM = (carried: boolean) =>
+  `Stop keeping this conversation? What was kept will be deleted.${carried ? CARRIED_NOTE : ''}`;
+
 /** How many earlier turns go back with a question (the server's limit). */
 const HISTORY_TURNS = 8;
 
-interface Exchange { q: string; a: string; safety?: boolean; mentor?: boolean; keptUsed?: number }
+interface Exchange {
+  q: string; a: string; safety?: boolean; mentor?: boolean; keptUsed?: number;
+  /** MAIA's stored turn, when the exchange is kept: what "Keep with MAIA" names. */
+  turnIndex?: number;
+  /** The member carried this exchange into MAIA's memory (ASTRO-PRO-KEEP Phase 2). */
+  carried?: boolean;
+  /** Earlier kept conversations about this chart that MAIA read for this answer. */
+  recalledUsed?: number;
+}
 
 export function askKey(request: ProAskRequest): string {
   return `ask.${request.section}.${request.subject}.${request.other ?? ''}`;
@@ -111,6 +126,9 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
   const [whole, setWhole] = usePanelState(`${key}.whole`, false);
   // Own chart only, and off until the astrologer turns it on for this conversation.
   const [personal, setPersonal] = usePanelState(`${key}.personal`, false);
+  // Kept conversation: on unless the astrologer turns it off for this conversation.
+  const [threadId, setThreadId] = usePanelState<string | null>(`${key}.threadId`, null);
+  const [keep, setKeep] = usePanelState(`${key}.keep`, true);
   const [status, setStatus] = useState<'idle' | 'asking'>('idle');
   const [error, setError] = useState<string | null>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -118,7 +136,67 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
   const natal = request.section === 'natal';
   const twoCharts = request.other !== undefined;
   const canBePersonal = stage && request.subject === 'own' && !twoCharts;
+  // Keep with MAIA (ASTRO-PRO-KEEP Phase 2): own chart alone, kept conversations only.
+  const canCarry = request.subject === 'own' && !twoCharts && keep && !!threadId;
+  const [carrying, setCarrying] = useState<number | null>(null);
   const withMe = canBePersonal && personal && !mentor;
+
+  // Resume: when the log is empty, bring back the latest kept conversation for this subject.
+  useEffect(() => {
+    if (exchanges.length > 0 || !keep) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/astrology/pro/conversation?subjectKey=${encodeURIComponent(key)}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const body = await res.json().catch(() => null);
+        if (cancelled || !body || typeof body.threadId !== 'string' || !Array.isArray(body.turns)) return;
+        const turns = (body.turns as Array<{ q?: unknown; a?: unknown; turnIndex?: unknown; carried?: unknown }>)
+          .filter((t) => typeof t.q === 'string' && typeof t.a === 'string')
+          .map((t) => ({
+            q: t.q as string, a: t.a as string,
+            ...(typeof t.turnIndex === 'number' ? { turnIndex: t.turnIndex } : {}),
+            ...(t.carried === true ? { carried: true } : {}),
+          }));
+        if (turns.length === 0) return;
+        setThreadId(body.threadId);
+        setExchanges((list) => (list.length > 0 ? list : turns));
+      } catch { /* resuming is best effort; the panel works without it */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  /** Deletes the kept conversation, after the member confirms. False if they cancel or it fails. */
+  async function deleteKept(confirmText: string): Promise<boolean> {
+    if (!threadId) return true;
+    if (typeof window !== 'undefined' && !window.confirm(confirmText)) return false;
+    try {
+      const res = await apiFetch('/api/astrology/pro/conversation', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+        body: JSON.stringify({ threadId, keep: false }),
+      });
+      if (!res.ok && res.status !== 404) { setError('Could not delete the kept conversation just now. Please try again.'); return false; }
+    } catch {
+      setError('Could not delete the kept conversation just now. Please try again.');
+      return false;
+    }
+    setThreadId(null);
+    return true;
+  }
+
+  async function changeKeep(next: boolean) {
+    if (next) { setKeep(true); return; }
+    if (await deleteKept(STOP_KEEPING_CONFIRM(exchanges.some((e) => e.carried)))) setKeep(false);
+  }
+
+  // One kept conversation per subject: starting over deletes the kept one, so
+  // nothing is left stored that the member can no longer reach or remove.
+  async function startOver() {
+    if (keep && !(await deleteKept(START_OVER_CONFIRM(exchanges.some((e) => e.carried))))) return;
+    setExchanges([]);
+    setThreadId(null);
+  }
 
   useEffect(() => { end.current?.scrollIntoView?.({ block: 'nearest' }); }, [exchanges.length, status]);
 
@@ -142,6 +220,9 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
           // The earlier turns of this visit, so MAIA builds on them. A safety reply is not a turn.
           ...(stage && exchanges.some((e) => !e.safety)
             ? { history: exchanges.filter((e) => !e.safety).slice(-HISTORY_TURNS).map((e) => ({ q: e.q, a: e.a })) } : {}),
+          subjectKey: key,
+          keep,
+          ...(keep && threadId ? { threadId } : {}),
           question: q,
         }),
       });
@@ -150,9 +231,12 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
         setError(ERRORS[body?.error] || 'MAIA could not answer just now. Please try again.');
         return;
       }
+      if (keep && typeof body.threadId === 'string') setThreadId(body.threadId);
       setExchanges((list) => [...list, {
         q, a: body.answer, safety: body.safety === true, mentor,
         ...(typeof body.keptUsed === 'number' ? { keptUsed: body.keptUsed } : {}),
+        ...(typeof body.turnIndex === 'number' ? { turnIndex: body.turnIndex } : {}),
+        ...(typeof body.recalledUsed === 'number' ? { recalledUsed: body.recalledUsed } : {}),
       }]);
       if (text === undefined) setQuestion('');
     } catch {
@@ -162,13 +246,43 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
     }
   }
 
+  /** One press carries one exchange into MAIA's memory. The member's own act; nothing else is carried. */
+  async function carry(i: number) {
+    const e = exchanges[i];
+    if (!threadId || typeof e?.turnIndex !== 'number' || e.carried || carrying !== null) return;
+    setCarrying(i);
+    setError(null);
+    try {
+      const res = await apiFetch('/api/astrology/pro/conversation/carry', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+        body: JSON.stringify({ threadId, turnIndex: e.turnIndex }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body?.carried !== true) { setError('Could not keep this with MAIA just now. Please try again.'); return; }
+      setExchanges((list) => list.map((x, j) => (j === i ? { ...x, carried: true } : x)));
+    } catch {
+      setError('Could not keep this with MAIA just now. Please try again.');
+    } finally {
+      setCarrying(null);
+    }
+  }
+
   const last = exchanges[exchanges.length - 1];
 
   return (
     <>
       <p className={styles.note}>
         MAIA will read {readsWhose} to answer: only the calculated facts of this section, not names or birth
-        details. Nothing is kept. MAIA is an AI, not the astrologer.
+        details. MAIA is an AI, not the astrologer.
+      </p>
+      <label className={styles.check}>
+        <input type="checkbox" role="switch" checked={keep} disabled={status === 'asking'} onChange={(e) => void changeKeep(e.target.checked)} />
+        Keep this conversation
+      </label>
+      <p className={styles.note}>
+        {keep ? 'Kept — you can come back to this conversation.' : 'Not kept — this conversation ends when you leave.'}
+        {keep && request.subject === 'own' && !twoCharts && ' MAIA’s wider memory holds only what you choose: press “Keep with MAIA” on an answer.'}
+        {keep && request.subject !== 'own' && ' This stays with this chart only and never enters your own memory with MAIA.'}
       </p>
 
       {stage && (
@@ -194,7 +308,8 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
       {withMe && (
         <p className={styles.personalNote}>
           MAIA will also read what you have chosen to keep with her and allowed to return. It informs this answer
-          only: nothing from this conversation is saved, and your chart is not added to MAIA’s memory.
+          only. {keep ? 'This conversation is kept for you to return to' : 'This conversation is not kept'}, and your chart
+          is added to MAIA’s memory only where you press “Keep with MAIA”.
         </p>
       )}
 
@@ -226,6 +341,21 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
           <div key={i} className={styles.exchange}>
             <p className={styles.q}>{e.mentor ? 'Mentor · ' : ''}{e.q}</p>
             <p className={e.safety ? `${styles.a} ${styles.safety}` : styles.a}>{e.a}</p>
+            {typeof e.recalledUsed === 'number' && e.recalledUsed > 0 && (
+              <p className={styles.provenance}>
+                MAIA also read {e.recalledUsed} earlier kept exchange{e.recalledUsed === 1 ? '' : 's'} about this chart.
+              </p>
+            )}
+            {canCarry && !e.safety && typeof e.turnIndex === 'number' && (
+              e.carried
+                ? <p className={styles.provenance}>Kept with MAIA. You can see, seal or archive it in Keep.</p>
+                : (
+                  <button type="button" className={styles.carry} disabled={carrying !== null || status === 'asking'}
+                    onClick={() => void carry(i)}>
+                    {carrying === i ? 'Keeping…' : 'Keep with MAIA'}
+                  </button>
+                )
+            )}
             {typeof e.keptUsed === 'number' && (
               <p className={styles.provenance}>
                 {e.keptUsed === 0
@@ -267,7 +397,7 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
         <button type="button" onClick={() => void ask()} disabled={status === 'asking'}>
           {status === 'asking' ? 'MAIA is reading…' : mentor ? 'Ask the mentor' : 'Ask MAIA'}
         </button>
-        {exchanges.length > 0 && <button type="button" onClick={() => setExchanges([])}>Clear</button>}
+        {exchanges.length > 0 && <button type="button" onClick={() => void startOver()} disabled={status === 'asking'}>Start over</button>}
       </div>
     </>
   );

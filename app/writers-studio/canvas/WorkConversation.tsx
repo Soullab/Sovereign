@@ -29,6 +29,7 @@ import {
   type ResumeDecision, type ThreadDiscovery,
 } from '@/lib/writersStudio/observationDialogueResume';
 import type { LivingWork } from '../useLivingWorks';
+import type { KeepWordsResult } from '@/lib/writersStudio/keepWords';
 import { createWriterCorrection } from '@/lib/writersStudio/writerCorrectionsClient';
 import { readWorkingStyle, writeWorkingStyle } from '@/lib/writersStudio/workingStyle';
 import { teachingQuestion, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
@@ -183,6 +184,7 @@ const when = (iso: string) => {
   return Number.isNaN(d.getTime()) ? 'earlier' : d.toLocaleDateString();
 };
 
+
 export interface WorkConversationProps {
   work: LivingWork;
   /** Null before a manuscript exists; the conversation then belongs directly to the Living Work. */
@@ -220,6 +222,14 @@ export interface WorkConversationProps {
   /** The heading of a chapter id MAIA named, if it is in this Work; null → no "go to chapter" button. */
   chapterLabel?: (sectionId: string) => string | null;
   onClose: () => void;
+  /**
+   * KEEP MY WORDS (founder standard 2026-11-23: "the writer's first act is authorship").
+   * Puts the writer's OWN message, exactly as sent, onto their page through the host's
+   * writing queue — the same path as typing. Never offered on MAIA's words. Resolves
+   * whether the words are now on the page. Absent → no button.
+   */
+  /** true = the words are on the page; 'saving' = refused while the page saves; false = they could not be placed here. */
+  onKeepWords?: (text: string) => Promise<KeepWordsResult> | KeepWordsResult;
 }
 
 export type StudioAct =
@@ -252,7 +262,7 @@ export default function WorkConversation(props: WorkConversationProps) {
 }
 
 function ScopedWorkConversation({
-  work, manuscriptId, sectionId, initialDraft = '', placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity, startFresh: freshForNewTopic = false,
+  work, manuscriptId, sectionId, initialDraft = '', placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity, startFresh: freshForNewTopic = false, onKeepWords,
 }: WorkConversationProps & { identity: ReturnType<typeof useMemberIdentity> }) {
   /* A program Work (e.g. a college essay) names its whole-Work scope in its own words; an ordinary Work keeps "the whole book". */
   const wholeScope = studioPathById(work.studioPath ?? null)?.studioCopy.wholeScope ?? 'the whole book';
@@ -357,6 +367,12 @@ function ScopedWorkConversation({
   const [correctionStatus, setCorrectionStatus] = useState<string | null>(null);
   /* Correction offer (2026-11-19): MAIA turns whose offer the writer has answered (accepted or "Not now"), so it never nags. */
   const [offerAnswered, setOfferAnswered] = useState<ReadonlySet<number>>(() => new Set());
+  /* Keep my words: which of the writer's turns were placed on the page, and a plain note when one could not be.
+     Keyed by CONVERSATION and turn ("thread:index"): turn numbers restart in every conversation, so an index alone
+     would mark a message in a newly opened conversation as already placed (review of #2383). */
+  const [keptToPage, setKeptToPage] = useState<ReadonlySet<string>>(() => new Set());
+  const [keepWordsNote, setKeepWordsNote] = useState<{ key: string; text: string } | null>(null);
+  const keepKey = (index: number) => `${threadId ?? 'unsaved'}:${index}`;
   const endRef = useRef<HTMLDivElement | null>(null);
   // A draft belongs to its edit generation, not to text equality.
   const draftRevisionRef = useRef(0);
@@ -817,6 +833,31 @@ function ScopedWorkConversation({
             >
               {t.speaker === 'maia' ? parseStudioActions(t.body, 'work-conversation').text : t.body}
             </StudioText>
+            {t.speaker === 'author' && onKeepWords && t.body.trim() ? (
+              keptToPage.has(keepKey(t.index)) ? (
+                /* Says what happened (placed), never "saved": the page's own status line is the authority on saving. */
+                <StudioText role="metadata" tone="quiet" as="p" data-keep-words-done={t.index}>Placed on your page, exactly as you wrote it. It saves like anything you type.</StudioText>
+              ) : (
+                <div data-keep-words={t.index} style={{ marginTop: SPACE.hairline }}>
+                  <button type="button" data-keep-words-button={t.index}
+                    onClick={async () => {
+                      setKeepWordsNote(null);
+                      const placed = await onKeepWords(t.body);
+                      if (placed === true) setKeptToPage((s) => new Set(s).add(keepKey(t.index)));
+                      else setKeepWordsNote({ key: keepKey(t.index), text: placed === 'saving'
+                        ? 'Your page is still saving. Try again in a moment; nothing was changed.'
+                        : 'These words could not be placed on this page. Nothing was changed.' });
+                    }}
+                    style={{ background: 'transparent', border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm,
+                      padding: `${SPACE.hairline}px ${SPACE.tight}px`, cursor: 'pointer', color: INK.secondary }}>
+                    <StudioText role="metadata" as="span">Keep my words</StudioText>
+                  </button>
+                  {keepWordsNote?.key === keepKey(t.index) ? (
+                    <StudioText role="metadata" tone="secondary" as="p" data-keep-words-note="true">{keepWordsNote.text}</StudioText>
+                  ) : null}
+                </div>
+              )
+            ) : null}
             {/* D3 (R3.4.4 ruling A, 2026-11-19): every answer shows which saved sections MAIA read for it. Hosts that show
                 this themselves (onRead, e.g. the Develop stage) keep theirs; everywhere else it is said here, under her answer. */}
             {/* Package C (R20 decision 1): the server now sends each answer's own receipt, so the line is under EVERY answer and
