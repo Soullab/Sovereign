@@ -68,7 +68,12 @@ export interface EditorialDancePanelProps {
   onSelectVersion: (id: string) => void;
   /** Design 1B: the writer clicked a control MAIA offered. Navigation only. */
   onStudioAction?: (id: StudioActionId) => void;
-  onSend: (text?: string, options?: { proposalPolicy?: 'allow' | 'reply_only'; proposalRequested?: boolean; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageActId; origin?: ArrivalOriginRef }) => void;
+  /**
+   * Resolves `true` only once MAIA's reply is shown. A composer keeps the writer's
+   * words until then, so a refusal or a failed send never costs them their message.
+   * A host that returns nothing keeps the older clear-on-send behaviour.
+   */
+  onSend: (text?: string, options?: { proposalPolicy?: 'allow' | 'reply_only'; proposalRequested?: boolean; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageActId; origin?: ArrivalOriginRef }) => void | Promise<boolean>;
   onSaveMember: (draft: MemberRevisionDraft) => Promise<boolean>;
   onApply: () => void;
   onUndo?: () => void;
@@ -136,6 +141,24 @@ function distinctMaiaVersions(thread: RebuildEditorialThread | null): RebuildEdi
 }
 
 const PAUSED_NOTE = 'You paused MAIA’s revisions for this passage. She keeps talking; resume in Preferences for new wording.';
+
+/**
+ * Clear a composer only after the send is shown to have landed, and only if the writer
+ * has not typed more since. A host that returns nothing (older callers, tests) clears
+ * at once, as before. A failed or refused send leaves the writer's words in the box.
+ */
+function clearWhenSent(
+  sent: void | Promise<boolean>,
+  submitted: string,
+  setText: (update: (current: string) => string) => void,
+): void {
+  const clearIfUnchanged = () => setText((current) => (current.trim() === submitted ? '' : current));
+  if (!sent || typeof (sent as Promise<boolean>).then !== 'function') {
+    clearIfUnchanged();
+    return;
+  }
+  (sent as Promise<boolean>).then((ok) => { if (ok) clearIfUnchanged(); }, () => { /* keep the words */ });
+}
 
 /** Step 3: about a sentence of the surrounding text on each side of the option. */
 function aroundBefore(text: string): string {
@@ -447,7 +470,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
   const sendTalk = () => {
     const q = talk.trim();
     if (!q || !props.thread) return;
-    props.onSend([
+    const sent = props.onSend([
       'My working revision (not applied):',
       workingText,
       '',
@@ -457,7 +480,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
       'Treat my working revision as the wording I am shaping now. Do not silently restore your earlier proposal.',
       'Respond to my intention first. If you suggest wording, explain what it changes and what might be lost. Nothing is to be applied automatically.',
     ].join('\n'));
-    setTalk('');
+    clearWhenSent(sent, q, setTalk);
   };
 
   const saveMemberVersion = async () => {
@@ -507,8 +530,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
     }
     // Design 3C: only the writer's words are their turn; the conversational
     // shape is server-owned (turnShape), like a Teach-me's (F1).
-    props.onSend(q, withOrigin({ turnShape: 'conversation' as const }));
-    setStartPrompt('');
+    clearWhenSent(props.onSend(q, withOrigin({ turnShape: 'conversation' as const })), q, setStartPrompt);
   };
 
   const postureBlocksEditorial = !props.sessionPosture.resolved || props.sessionPosture.sanctuary;
@@ -829,8 +851,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
         setStartPrompt('');
         return;
       }
-      props.onSend(q, withOrigin({ turnShape: 'conversation' as const }));
-      setStartPrompt('');
+      clearWhenSent(props.onSend(q, withOrigin({ turnShape: 'conversation' as const })), q, setStartPrompt);
     };
 
     const latestTurn = turns.at(-1);
