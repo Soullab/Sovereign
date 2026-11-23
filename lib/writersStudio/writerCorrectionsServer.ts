@@ -1,4 +1,5 @@
 import { query } from '@/lib/db/postgres';
+import { livingWorkIdForManuscript } from '@/lib/manuscript/ask/workOfManuscript';
 import {
   writerCorrectionContext,
   type WriterCorrection,
@@ -61,4 +62,18 @@ export async function writerCorrectionContextForWork(
   workId: string,
 ): Promise<string> {
   return writerCorrectionContext(await currentWriterCorrectionsForWork(memberId, workId));
+}
+
+/**
+ * The same kept corrections, for a conversation that knows only its manuscript (the passage
+ * room). E0 walk 2026-11-23: corrections reached the Work conversation but never the passage
+ * turn, so one doorway knew what the writer had kept and the other did not. Resolved exactly
+ * as decisionContextForManuscript resolves its Work; no Work, no corrections.
+ */
+export async function writerCorrectionContextForManuscript(
+  memberId: string,
+  manuscriptId: string,
+): Promise<string> {
+  const workId = await livingWorkIdForManuscript(manuscriptId, memberId);
+  return workId ? writerCorrectionContextForWork(memberId, workId) : '';
 }
