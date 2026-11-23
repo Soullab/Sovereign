@@ -68,8 +68,8 @@ members reasonably expect.
   return rules (memory atoms), so MAIA can recognise patterns across Pro and main conversations.
   This lifts R4F #1817 for the member's **own** chart only, under this ruling.
 - Client threads: per-client recall only, per ruling 4.
-- Owed in Phase 2: a client thread must be deleted with its client record (Phase 1 keys threads by chart
-  subject but does not yet cascade on saved-chart deletion).
+- ~~Owed in Phase 2: a client thread must be deleted with its client record.~~ Built in Phase 1 (#2378,
+  deployed `1c70c3c6f`): `deleteSavedChart` deletes the chart and its threads in one statement.
 
 ## Growth-obligation answers (CLAUDE.md)
 
