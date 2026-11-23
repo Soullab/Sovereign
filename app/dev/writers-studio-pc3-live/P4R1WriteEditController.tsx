@@ -1492,6 +1492,24 @@ export default function FlagshipWriteEditController() {
 
   const removeCarrySource = useCallback(() => setSelectedCarrySource(null), []);
 
+  /**
+   * KEEP MY WORDS (founder standard 2026-11-23). The writer's own message goes onto the
+   * page they are on, exactly as written, after a blank line — through the same writing
+   * queue as typing, so it is saved, versioned and undoable like any keystroke of theirs.
+   * ⛔ Refused (nothing changed) while that section has unsaved typing in flight: the
+   * editor would otherwise hold its own text over the appended words.
+   */
+  const keepWordsOnPage = useCallback((text: string): boolean => {
+    const writing = writingRef.current;
+    if (!writing || !focusId || !text.trim()) return false;
+    if (writing.hasUnsavedWork() || ['dirty', 'saving', 'conflict', 'error'].includes(writing.statusOf(focusId))) return false;
+    const body = writing.bodyOf(focusId);
+    if (typeof body !== 'string') return false;
+    const before = body.replace(/\s+$/, '');
+    writing.editSection(focusId, before ? `${before}\n\n${text}` : text);
+    return true;
+  }, [focusId]);
+
   const sendEditorial = useCallback(async (
     requestText?: string,
     options?: { proposalPolicy?: ProposalPolicy; proposalRequested?: boolean; displayText?: string; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageAct; origin?: ArrivalOriginRef },
@@ -2586,6 +2604,7 @@ export default function FlagshipWriteEditController() {
         writingRef.current = writing;
         return (
           <P4R1Pc3WriteEditView
+            onKeepWords={keepWordsOnPage}
             context={context}
             writing={writing}
             work={work}

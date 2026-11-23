@@ -170,6 +170,8 @@ export type P4R1Pc3WriteEditViewProps = {
   canReturnToStartingPassage: boolean;
   onDepth: (depth: EditorialDepth) => void;
   onInstruction: (text: string) => void;
+  /** Keep my words: put the writer's own message onto the page they are on, through the writing queue. */
+  onKeepWords?: (text: string) => Promise<boolean> | boolean;
   onSendEditorial: (text?: string, options?: {
     proposalPolicy?: 'allow' | 'reply_only';
     proposalRequested?: boolean;
@@ -1162,6 +1164,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
         initialDraft={workConversationStarter}
         startFresh={stageNoteStarter !== null && workConversationStarter === stageNoteStarter}
         onStudioPlace={props.onStudioPlace}
+        onKeepWords={props.onKeepWords}
         onClose={() => {
           setWorkConversationOpen(false);
           setWorkConversationStarter('');
