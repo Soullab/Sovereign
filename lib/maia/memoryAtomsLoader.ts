@@ -297,9 +297,11 @@ export async function loadMemberMemoryAtomsForPrompt(
     return result.rows.map((r) => ({
       id: r.id,
       title: r.title,
-      // Body carried for spontaneous (member-typed) and practitioner_observation atoms.
+      // Body carried for spontaneous (member-typed), practitioner_observation and
+      // astro_pro_exchange atoms (the carried reading, clipped at keep time).
       // Sourced atoms (idea/journal/etc.) keep content in their native table.
-      body: (r.source_type === 'spontaneous' || r.source_type === 'practitioner_observation')
+      body: (r.source_type === 'spontaneous' || r.source_type === 'practitioner_observation'
+          || r.source_type === 'astro_pro_exchange')
         ? r.body
         : null,
       primaryRegister: r.primary_register,

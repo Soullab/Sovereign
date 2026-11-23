@@ -3,6 +3,7 @@
 -- Refuses if any member has carried an exchange: those atoms are member keeps and
 -- are not discarded by a rollback. Archive or export them deliberately first.
 BEGIN;
+SET LOCAL lock_timeout = '5s';
 
 DO $$
 BEGIN
