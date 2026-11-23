@@ -61,6 +61,7 @@ import { writerSectionLabel } from '@/lib/manuscript/ask/writerSectionLabel';
 import { readRecordOf } from '@/lib/manuscript/ask/readingReceipt';
 import { withReceipts, withoutProvenance } from '@/lib/disclosure/readingReceiptProjection';
 import { decisionContextForWork, dismissedObservationKeys } from '@/lib/writersStudio/decisionRecord';
+import { editingHistoryContextForManuscript } from '@/lib/writersStudio/editingHistory';
 import { livingWorkKind } from '@/lib/writersStudio/workKind';
 import { ANONYMISE_OFFER_INSTRUCTION, anonymiseOfferAlreadyMade } from '@/lib/writersStudio/practiceOffers';
 import { checkQuoteFidelity, NO_TEXT_ANSWER, CORRECTION_NOTE } from '@/lib/manuscript/ask/quoteFidelity';
@@ -743,8 +744,11 @@ async function workTurn(input: {
   /* ⭐ WS-DECISION-CONTINUITY — what the writer has settled, in their own words, via the ONE shared read. Sanctuary or an unstated
      posture reads nothing. Rides the existing declared-context channel so MAIA treats it as the writer's, never as a fact about the text. */
   const decisionsText = (posture.sanctuary || !postureKnown) ? '' : await decisionContextForWork(memberId, built.facts.work.id, manuscriptId);
-  const factsWithDecisions = decisionsText
-    ? { ...built.facts, writerUnderstanding: [built.facts.writerUnderstanding, decisionsText].filter(Boolean).join('\n\n') }
+  /* E0 walk 2026-11-23: what the writer did with MAIA's suggested edits (applied / undone), from the desk's
+     receipts — places only, never wording, so reading permission is not widened. Same Sanctuary rule. */
+  const editingText = (posture.sanctuary || !postureKnown) ? '' : await editingHistoryContextForManuscript(memberId, manuscriptId);
+  const factsWithDecisions = decisionsText || editingText
+    ? { ...built.facts, writerUnderstanding: [built.facts.writerUnderstanding, decisionsText, editingText].filter(Boolean).join('\n\n') }
     : built.facts;
   const workHistory = historyFor(priorTurns.map((t) => ({ speaker: t.speaker, body: t.body })), question);
   /* ⭐ A helper's book (DECLARED by the writer, never inferred) gets ONE gentle note about case stories, once ever, never in Sanctuary. */

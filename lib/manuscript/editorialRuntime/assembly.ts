@@ -153,11 +153,30 @@ export async function assembleEditorialCognition(
     instruction: r.instruction, refersTo: r.refers_to_version_id,
   }));
 
+  /* ⭐ P0 continuity (#1800, E0 walk 2026-11-23): MAIA was told every proposal but
+     never what the writer DID with it, so after Use it → Undo she described the cut
+     as the page. The desk's own receipts say it: an accepted revision authorization
+     (applied) and its recovery row (undone). Same tables and ownership joins as
+     `readApplicationRecovery`; the latest authorization per version wins. */
+  const appRows = await query<{ proposal_version_id: string; undone: boolean }>(
+    `SELECT a.proposal_version_id, (r.undone_at IS NOT NULL) AS undone
+       FROM manuscript_revision_authorizations a
+       LEFT JOIN manuscript_application_recovery r ON r.authorization_id = a.id
+      WHERE a.proposal_chain_id = $1 AND a.member_id = $2 AND a.accepted_at IS NOT NULL
+      ORDER BY a.resulting_version`,
+    [chainId, memberId]);
+  const applicationOf = new Map<string, 'applied' | 'undone'>();
+  for (const r of appRows.rows) applicationOf.set(r.proposal_version_id, r.undone ? 'undone' : 'applied');
+
   /* ⭐ SUCCESSION ORDER COMES FROM THE STEP-1 READ, never resolved here. */
-  const versions: VersionRecord[] = work.work.versions.map((v) => ({
-    kind: 'version', id: v.id, author: v.author,
-    wording: v.replacementText, supersedes: v.supersedes,
-  }));
+  const versions: VersionRecord[] = work.work.versions.map((v) => {
+    const application = applicationOf.get(v.id);
+    return {
+      kind: 'version', id: v.id, author: v.author,
+      wording: v.replacementText, supersedes: v.supersedes,
+      ...(application ? { application } : {}),
+    };
+  });
 
   /* ⭐ Explicit relationships, never inferred — and bounded by the same rules:
      only turns already in history, and never the current act's own binding. */
@@ -193,8 +212,13 @@ export async function assembleEditorialCognition(
   const surround = projected
     ? surroundOf(projected.body, locus.expectedText) : null;
 
+  /* ⭐ Does the page still read the passage? Checked against the CURRENT projected
+     section; an unreadable section leaves it unknown, and unknown is never said. */
+  const presentNow = projected ? projected.body.includes(locus.expectedText) : undefined;
+
   const participation = editorialCandidates({
-    locus: { chainId, originalText: locus.expectedText },
+    locus: { chainId, originalText: locus.expectedText,
+      ...(presentNow === undefined ? {} : { presentNow }) },
     surround,
     turns, versions, insights, directions, bindings, declaredAct,
   });

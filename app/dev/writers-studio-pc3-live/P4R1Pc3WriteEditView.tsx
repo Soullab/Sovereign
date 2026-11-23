@@ -127,6 +127,8 @@ export type P4R1Pc3WriteEditViewProps = {
   lineageReturnCandidateId: string | null;
   workspaceInsight: { readingId: string; key: string } | null;
   editorialThread: RebuildEditorialThread | null;
+  /** The Living Work, so the passage room can offer to keep a correction (#2358 route). */
+  livingWorkId?: string | null;
   /** Conversation Stage: the conversation still holding an undoable edit after Use this. */
   earlierEditorialThread?: RebuildEditorialThread | null;
   relationshipChoices: readonly RebuildEditorialRelationship[];
@@ -185,7 +187,7 @@ export type P4R1Pc3WriteEditViewProps = {
     passageAct?: PassageActId;
     /** Where the writer arrived from (F1): identities only; the server loads the observation. */
     origin?: ArrivalOriginRef;
-  }) => void;
+  }) => void | Promise<boolean>;
   /** Retire pending visible editorial result after an author STOP. */
   onStopEditorial: () => void;
   /** R2 "MAIA opens": ask MAIA to speak first in a new conversation. The controller owns the laws. */
@@ -1213,7 +1215,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
   const passageRevisionsPaused = heldKey !== null && pausedPassageKey === heldKey;
   const revisionsPaused = passageRevisionsPaused || workRevisionsPaused;
   const focusSend: P4R1Pc3WriteEditViewProps['onSendEditorial'] = (text, options) => {
-    props.onSendEditorial(text, pausedSendOptions(options, revisionsPaused));
+    return props.onSendEditorial(text, pausedSendOptions(options, revisionsPaused));
   };
   // Step 5b: the next paragraph, from Craftsman's Table's own passage logic. Moving
   // opens that passage's own conversation; nothing is saved or applied by moving.
@@ -1282,6 +1284,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       </header>
 
       <EditorialDancePanel
+        livingWorkId={props.livingWorkId ?? null}
         notYetCopy={workStudioCopy?.notYet}
         stage
         conversationChoices={props.conversationChoices ?? []}
@@ -1991,6 +1994,7 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
       />
 
       <EditorialDancePanel
+        livingWorkId={props.livingWorkId ?? null}
         notYetCopy={workStudioCopy?.notYet}
         stage
         conversationChoices={props.conversationChoices ?? []}

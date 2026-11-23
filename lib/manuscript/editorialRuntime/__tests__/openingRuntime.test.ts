@@ -21,6 +21,8 @@ jest.mock('@/lib/disclosure/contextDisclosureReceipt', () => ({ confirmDisclosur
 jest.mock('@/lib/maia/teaching/TeachingRuntimeBridge', () => ({ buildTeachingRuntimeBridge: () => ({ active: false }) }));
 jest.mock('@/lib/writersStudio/writerUnderstandingServer', () => ({ writerUnderstandingContextForManuscript: () => Promise.resolve(null) }));
 jest.mock('@/lib/writersStudio/decisionRecord', () => ({ decisionContextForManuscript: () => Promise.resolve('') }));
+/* Kept corrections reach the passage turn too (E0 walk 2026-11-23); stubbed like the other declared-context readers. */
+jest.mock('@/lib/writersStudio/writerCorrectionsServer', () => ({ writerCorrectionContextForManuscript: () => Promise.resolve('') }));
 jest.mock('@/lib/writers-studio/canonicalWriterTurn', () => ({
   constructEditorialWriterTurn: () => ({ fictional: 'canonical-turn' }),
   renderEditorialTurn: () => ({ systemPrompt: 'canonical system prompt' }),
