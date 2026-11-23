@@ -39,6 +39,7 @@ const WRITE_RELATIONAL_GEOMETRY = {
 };
 import { projectPc3LiveWrite } from '@/app/writers-studio/full-redesign/liveWriteAdapter';
 import WorkConversation from '@/app/writers-studio/canvas/WorkConversation';
+import type { KeepWordsResult } from '@/lib/writersStudio/keepWords';
 import { threadsOn, threadsOnLivingWorkAsk } from '@/lib/writersStudio/askClient';
 import { priorConversationLabel, priorConversationOffer, type PriorConversationOffer } from '@/lib/writersStudio/priorConversation';
 import { WholeManuscriptSurface, type WholeManuscriptSurfaceHandle } from '@/app/writers-studio/canvas/WholeManuscriptSurface';
@@ -173,7 +174,7 @@ export type P4R1Pc3WriteEditViewProps = {
   onDepth: (depth: EditorialDepth) => void;
   onInstruction: (text: string) => void;
   /** Keep my words: put the writer's own message onto the page they are on, through the writing queue. */
-  onKeepWords?: (text: string) => Promise<boolean> | boolean;
+  onKeepWords?: (text: string) => Promise<KeepWordsResult> | KeepWordsResult;
   onSendEditorial: (text?: string, options?: {
     proposalPolicy?: 'allow' | 'reply_only';
     proposalRequested?: boolean;

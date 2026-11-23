@@ -699,6 +699,7 @@ export async function runEditorialTurn(
   const persisted = await persistMaiaEditorialOutcome({
     keep: KeepWitness.fromDeclaration(input.sanctuary),
     memberId, invocation, outcome: admission.outcome,
+    ...(input.opening ? {} : { answersMemberTurnIndex: input.currentTurnIndex }),
     ...(input.relationshipId !== undefined
       ? { relationshipAdmission: input.opening
           ? {

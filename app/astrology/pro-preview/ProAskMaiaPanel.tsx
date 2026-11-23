@@ -85,7 +85,7 @@ function starters(request: ProAskRequest, mode: ProAskMode, personal: boolean): 
       composite: ['What is a composite chart actually a chart of?'],
       'four-pillars': ['How are the ten-year cycles counted, and why does direction matter?', 'What are the Ten Gods, and how do schools differ on them?'],
       vedic: ['How does the Vimshottari dasha system work?', 'How does a nakshatra change the reading of a graha?'],
-      mayan: ['How does the traditional count differ from the Dreamspell?', 'What are the three stages of the path of life in the Dreamspell?'],
+      mayan: ['How does the Chol Q’ij count work, and how do daykeepers keep it?', 'How does the traditional count differ from the Dreamspell?'],
     };
     return byS[request.section] ?? ['How do I find the central structure of a chart?', 'How do different schools read a T-square?', 'What should I look at first, and why?'];
   }
@@ -97,7 +97,7 @@ function starters(request: ProAskRequest, mode: ProAskMode, personal: boolean): 
     composite: ['What is this relationship, as its own entity?'],
     'four-pillars': ['What does the current ten-year cycle bring?', 'How does the day master sit among the elements?'],
     vedic: ['What does the current dasha ask?', 'What does the birth nakshatra add to the picture?'],
-    mayan: ['Walk me through the three stages of the path of life.', 'How do the Dreamspell signature and the traditional date sit side by side?'],
+    mayan: ['How is this Chol Q’ij birth day counted, and where does it fall in its trecena?', 'How do the traditional day and the separate Dreamspell signature differ?'],
   };
   return byS[request.section] ?? [
     'What is the central structure of this chart?',
