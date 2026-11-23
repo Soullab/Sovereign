@@ -21,15 +21,16 @@ function render(version: Partial<VersionRecord>, presentNow?: boolean): string {
 }
 
 describe('what the writer did with a proposal reaches MAIA', () => {
-  test('a proposal never applied is said to be only a proposal', () => {
+  test('a proposal with no apply receipt is said to have no record, never asserted about the page', () => {
     const text = render({});
-    expect(text).toContain('only proposed: never applied to the manuscript');
+    expect(text).toContain('only proposed: the Studio holds no record of the writer applying it');
+    expect(text).not.toContain('never applied to the manuscript');
     expect(text).not.toContain('APPLIED by the writer');
   });
 
-  test('an applied proposal is said to be in the manuscript', () => {
+  test('an applied proposal is history, not a claim about the page now', () => {
     const text = render({ application: 'applied' });
-    expect(text).toContain('APPLIED by the writer: the manuscript took this wording');
+    expect(text).toContain('APPLIED by the writer: the manuscript took this wording then (later edits may have changed it)');
   });
 
   test('an applied-then-undone proposal is said NOT to be in the manuscript', () => {

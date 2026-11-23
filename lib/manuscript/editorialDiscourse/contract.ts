@@ -535,9 +535,12 @@ export function renderRecord(
         + `${lineage?.adoptedFrom ? ` · MAIA's suggested wording (from ${lineage.adoptedFrom}), which the writer chose to use unchanged`
           : ''}`
         + `${lineage?.adoptedAs ? ` · the writer chose to use this wording, carried forward unchanged as their version ${lineage.adoptedAs}; see that version for what happened to it`
-          : r.application === 'applied' ? ' · APPLIED by the writer: the manuscript took this wording'
+          /* Pre-review of #2380: history, not the present. Whether the page reads this now is said
+             only where it was checked (the passage line), never inferred from a receipt. */
+          : r.application === 'applied' ? ' · APPLIED by the writer: the manuscript took this wording then (later edits may have changed it)'
           : r.application === 'undone' ? ' · the writer applied this, then UNDID it: the manuscript does not hold it'
-          : ' · only proposed: never applied to the manuscript'}]`
+          /* Absence of a receipt is said as absence, not as a fact about the page. */
+          : ' · only proposed: the Studio holds no record of the writer applying it'}]`
         + ` ${r.wording}`;
     case 'turn':
       /* ⭐⭐ W4-1.2 · THE INDEX TRAVELS. C1 correctly puts the writer's turns and

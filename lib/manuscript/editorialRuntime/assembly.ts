@@ -214,7 +214,7 @@ export async function assembleEditorialCognition(
 
   /* ⭐ Does the page still read the passage? Checked against the CURRENT projected
      section; an unreadable section leaves it unknown, and unknown is never said. */
-  const presentNow = projected ? projected.body.includes(locus.expectedText) : undefined;
+  const presentNow = projected ? passageReadsNow(projected.body, locus.expectedText) : undefined;
 
   const participation = editorialCandidates({
     locus: { chainId, originalText: locus.expectedText,
@@ -249,3 +249,15 @@ export async function assembleEditorialCognition(
  * an ungoverned producer channel — material reaching MAIA without a registered
  * producer to answer for it.
  */
+
+/**
+ * Whether the section reads the passage now. Pre-review of #2380: empty text matched every
+ * page, and a second copy elsewhere could stand in for an edited passage. Exactly one
+ * occurrence is a yes; none is a no; empty or more than one is unknown, and unknown is never said.
+ */
+export function passageReadsNow(body: string, expectedText: string): boolean | undefined {
+  if (!expectedText) return undefined;
+  const first = body.indexOf(expectedText);
+  if (first === -1) return false;
+  return body.indexOf(expectedText, first + 1) === -1 ? true : undefined;
+}
