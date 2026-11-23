@@ -50,8 +50,11 @@ members reasonably expect.
 - **Resume:** opening the same subject loads the member's most recent kept thread for it, so the panel shows
   the earlier turns and MAIA's `history` continues from them.
 - **Safety turns** (fixed crisis reply, MAIA not asked) are not stored, matching current `history` rules.
-- **Erasure:** both tables registered in `app/api/members/delete-account/route.ts`; covered by
-  `blockingForeignKeys.test.ts`.
+- **Erasure:** `astro_pro_threads` is registered as governed content in
+  `app/api/members/delete-account/route.ts` (turns cascade with their thread). Under that route's current
+  `refuse` posture, a member who has kept Pro conversations, like one with any MAIA conversation, is refused
+  self-service account deletion and sent to support; nothing is orphaned. (Corrected 2026-11-23 after the
+  migration review's F2: earlier wording implied self-service erasure.)
 - **Copy:** "nothing from this conversation is saved" is replaced by an honest statement of the Keep state.
 
 ### Phase 2 — memory (after Phase 1 is witnessed; not built here)
@@ -68,7 +71,7 @@ members reasonably expect.
 - **Uncertainty introduced:** stored interpretations may later be read as settled. Turns are stored verbatim
   with timestamps, never summarised into claims in Phase 1.
 - **Provenance and ownership:** threads belong to the member; turns are append-only; the member can delete a
-  thread or stop keeping it at any time; erasure covers both tables.
+  thread or stop keeping it at any time; account erasure goes through the support path (see Erasure).
 - **New responsibility:** member conversation content is now held for Pro. It must be covered by backup,
   erasure and Sanctuary rules. Sanctuary: Pro has no Sanctuary mode today; Keep off is the equivalent and
   must store nothing.
