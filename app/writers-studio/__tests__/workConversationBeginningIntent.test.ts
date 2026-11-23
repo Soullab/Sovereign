@@ -74,6 +74,18 @@ test('one press sends only the button\'s words, with the closed intent; the box 
   expect(host.querySelector('[data-start-intent]')).toBeNull();
 });
 
+test('the pressed button\'s words are not offered for Keep my words; the writer\'s own reply is (walk 2026-11-23)', async () => {
+  mockAsk.mockResolvedValue({ ...answered, thread: { ...answered.thread, turns: [
+    ...answered.thread.turns,
+    { index: 2, speaker: 'author', body: 'The smell of burnt sugar.', staleness: 'current' },
+    { index: 3, speaker: 'maia', body: 'There is a lot in that.', staleness: 'current' },
+  ] } });
+  await mount({ startIntent: 'find-a-beginning', onKeepWords: jest.fn(async () => true) });
+  await act(async () => { host.querySelector<HTMLButtonElement>('[data-start-intent-send]')!.click(); });
+  const offered = Array.from(host.querySelectorAll('[data-keep-words-button]')).map((b) => b.getAttribute('data-keep-words-button'));
+  expect(offered).toEqual(['2']);
+});
+
 test('"Not now" sends nothing and the offer goes', async () => {
   await mount({ startIntent: 'find-a-beginning' });
   await act(async () => { host.querySelector<HTMLButtonElement>('[data-start-intent-dismiss]')!.click(); });
