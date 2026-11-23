@@ -501,6 +501,9 @@ async function postHandler(request: NextRequest) {
     const disclosureRefused = turn.reason === 'disclosure_unavailable';
     /* WS-CONTINUITY A2: MAIA quoted wording that is not in the text she was given. A line this system drew, nothing was written — ⛔ not a provider fault. */
     const quoteRefused = turn.reason === 'quote_not_in_text';
+    /* A resend raced the first request and MAIA had already answered this writer turn. The
+       first reply stands; the writer's client re-reads the thread. ⛔ Not a provider fault. */
+    const alreadyAnswered = turn.reason === 'already_answered';
     const accountabilityUnresolved = turn.reason === 'disclosure_confirmation_unresolved';
     const safeDetail = quoteRefused
       ? 'quote_not_in_text'
@@ -570,7 +573,7 @@ async function postHandler(request: NextRequest) {
           wouldPassAtLatitude: turn.scope!.wouldPassAtLatitude,
         },
       } : {}),
-    }, { status: scopeRefused || disclosureRefused || quoteRefused ? 409 : accountabilityUnresolved ? 500 : 502 });
+    }, { status: scopeRefused || disclosureRefused || quoteRefused || alreadyAnswered ? 409 : accountabilityUnresolved ? 500 : 502 });
   }
 
   /* ⛔ THIN. No StructuredRequest, no systemPrompt, no EditorialInvocation, no
