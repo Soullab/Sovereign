@@ -72,13 +72,14 @@ describe('keepSource — astro_pro_exchange', () => {
     await expect(keepSource(MEMBER, carried({ sourceType: 'idea' }))).rejects.toThrow(/only for astro_pro_exchange/);
   });
 
-  it('leaves ordinary keeps exactly as before (no extra columns)', async () => {
+  it('gives ordinary keeps only the shared member-conferred return authority (no Pro columns)', async () => {
     query.mockImplementation((sql: string) =>
       Promise.resolve(/INSERT INTO member_memory_atoms/i.test(sql) ? atomRow({ source_type: 'idea' }) : { rows: [] }));
     await keepSource(MEMBER, { memberId: MEMBER, sourceType: 'idea', sourceId: TURN_ID, title: 't', body: null });
     const [sql, params] = insertCall();
     expect(sql).not.toContain('provenance');
-    expect(params).toHaveLength(9);
+    expect(params).toHaveLength(10);
+    expect(params[9]).toBe('contextual_doorway');
   });
 });
 

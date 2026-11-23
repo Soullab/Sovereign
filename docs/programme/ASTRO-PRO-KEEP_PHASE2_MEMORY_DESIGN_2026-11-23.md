@@ -151,7 +151,8 @@ As built: the migration is `20261123000001_astro_pro_keep_phase2.sql`; the carry
 
 ## 8. Found, not fixed (reported only)
 
-- **P6 write-site fix is not on main.** `20260903000001` sets the default to `member_pulled`, but
+- **Update 2026-11-23:** the P6 write-site fix (#1741) merged to main as `5f585217d`. This branch now uses its member-conferred return authority for the carried atom and adds only provenance and epistemic standing. #1741 is merged but not deployed.
+- *(Superseded, kept for the record)* **P6 write-site fix is not on main.** `20260903000001` sets the default to `member_pulled`, but
   `lib/psyche/returnAuthority.ts` and the explicit `contextual_doorway` at `keepSource` (commits
   `d44473826`, `09f934f96`, `6c6228c24`) are **not ancestors of `clean-main-no-secrets`**. The `keepSource`
   INSERT omits `return_preference`. Wherever that migration is applied, new member keeps would land sealed
