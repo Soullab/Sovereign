@@ -128,8 +128,8 @@ const renderSignCard = (sign: MayanBirthSign, title: string, isToday: boolean = 
           Spiralogic Integration
         </h4>
         <p className="text-amber-400/70 text-sm">
-          Your Mayan {sign.daySign.name} essence ({sign.daySign.element} element) flows through the
-          Spiralogic {sign.daySign.element} pathway, weaving ancient wisdom with conscious evolution.
+          The Dreamspell {sign.daySign.name} seal ({sign.daySign.element} element) can be read alongside the
+          Spiralogic {sign.daySign.element} pathway. This is a modern reflection, not Maya teaching.
         </p>
       </div>
     )}
@@ -293,9 +293,9 @@ const renderPathOfLife = (profile: CompleteMayanProfile) => {
             <h4 className="text-2xl font-bold text-emerald-100">{haab.fullDate}</h4>
             <p className="text-emerald-400/80">{haab.month.meaning}</p>
             <p className="text-emerald-400/60 text-xs mt-3">
-              Traditional count (GMT 584283): {profile.traditional.number} {profile.traditional.yucatec}
-              {' '}({profile.traditional.kiche} in K’iche’) · Long Count {profile.traditional.longCount}.
-              The galactic signature above is the modern Dreamspell count, a different system.
+              Traditional Chol Q’ij (GMT 584283): {profile.traditional.number} {profile.traditional.kiche}
+              {' '}(Yucatec {profile.traditional.yucatec}) · Long Count {profile.traditional.longCount}.
+              The galactic signatures above are the modern Dreamspell count, a different calendar, not a translation of it.
             </p>
             {haab.isWayeb && (
               <div className="mt-3 bg-red-900/30 border border-red-500/30 rounded-lg px-4 py-2">

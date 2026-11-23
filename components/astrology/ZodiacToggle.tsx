@@ -216,7 +216,7 @@ export default function ZodiacToggle({
       {/* Label hint */}
       {!compact && (
         <span className="text-xs text-stone-500">
-          {value === 'tropical' ? 'Western' : value === 'sidereal' ? 'Vedic/Jyotish' : value === 'chinese' ? 'Chinese/BaZi' : 'Tzolk\'in/Mayan'}
+          {value === 'tropical' ? 'Western' : value === 'sidereal' ? 'Vedic/Jyotish' : value === 'chinese' ? 'Chinese/BaZi' : 'Maya Chol Q\'ij'}
         </span>
       )}
     </div>

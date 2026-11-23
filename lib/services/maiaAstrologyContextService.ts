@@ -39,6 +39,7 @@ import {
   type CompleteMayanProfile,
   type MayanBirthSign,
 } from '@/lib/astrology/mayanAstrology';
+import { traditionalMaya, cholQijDay, type TraditionalMaya } from '@/lib/astrology/proTraditionalMaya';
 import {
   computeCelestialEvents,
   type CelestialEventsSnapshot,
@@ -415,6 +416,28 @@ interface FormattedAstrologyContext {
 }
 
 /**
+ * The Maya calendar block of MAIA's context (founder ruling 2026-11-23): the
+ * traditional Chol Q'ij is the authoritative Maya-calendar layer and comes
+ * first; the Dreamspell is a separate modern lens, labelled, never substituted
+ * for it. No nawal meanings are given: they belong to living daykeepers.
+ */
+export function formatMayaCalendarForMAIA(profile: CompleteMayanProfile): string {
+  const t = profile.traditional;
+  return '\n## Maya Calendar\n' +
+    `- Traditional Chol Q'ij birth day (K'iche' Maya count, GMT ${t.correlation}, birth civil date): ${cholQijDay(t)} (Yucatec ${t.number} ${t.yucatec}); trecena of 1 ${t.trecena.kiche}; Haab ${t.haab.day} ${t.haab.month}. This is their Maya birth day.\n` +
+    "- Do not assign meanings to the nawal or number: those are kept by living Ajq'ijab' (daykeepers). You may explain how the count works, and that a birth near sunrise or sunset may belong to the neighbouring day.\n" +
+    `- Separate modern lens, the Dreamspell (José Argüelles, 1987; not Maya teaching, a different count): signature ${profile.tzolkin.galacticSignature} (Kin ${profile.tzolkin.tzolkinNumber}); adulthood ${profile.pathOfLife.adulthood.galacticSignature}; ${profile.lifeCycleInsight}\n` +
+    "- Never call a Dreamspell signature their Mayan or Tzolk'in sign, and never treat the two as translations of each other. If both come up, say so plainly, e.g. \"Your traditional Chol Q'ij birth day is " + cholQijDay(t) + ". In the separate modern Dreamspell system, your signature is " + profile.tzolkin.galacticSignature + ". These come from different traditions, so I won't treat one as a translation of the other.\"\n";
+}
+
+/** Today's day in both counts, the traditional first. */
+export function formatTodayMayaForMAIA(today: TraditionalMaya, dreamspell: MayanBirthSign | null): string {
+  let line = `**Today in the Chol Q'ij (traditional Maya count, UTC date):** ${cholQijDay(today)} (Yucatec ${today.number} ${today.yucatec})\n`;
+  if (dreamspell) line += `**Today in the Dreamspell (modern, separate system):** ${dreamspell.galacticSignature}, Kin ${dreamspell.tzolkinNumber}\n`;
+  return line;
+}
+
+/**
  * Format astrology context as two blocks for MAIA's system prompt.
  *
  * BLOCK A (header): status directive — always included, never capped.
@@ -529,12 +552,9 @@ function formatAstrologyContextForMAIA({
     }
   }
 
-  // 2. Mayan profile (condensed — 3 key lines)
+  // 2. Maya calendar: the traditional Chol Q'ij first, the Dreamspell beneath
   if (mayanProfile) {
-    detail += '\n## Mayan Profile\n';
-    detail += `- Birth sign: ${mayanProfile.tzolkin.tone} ${mayanProfile.tzolkin.daySign.name} — ${mayanProfile.tzolkin.daySign.meaning}\n`;
-    detail += `- Adulthood pillar: ${mayanProfile.pathOfLife.adulthood.tone} ${mayanProfile.pathOfLife.adulthood.daySign.name}\n`;
-    detail += `- Life phase: ${mayanProfile.lifeCycleInsight}\n`;
+    detail += formatMayaCalendarForMAIA(mayanProfile);
   }
 
   // 3. Current sky — after personal data so natal identity is prioritised
@@ -564,9 +584,7 @@ function formatAstrologyContextForMAIA({
     }
   }
 
-  if (todaysMayanSign) {
-    detail += `**Today's Mayan Day:** ${todaysMayanSign.tone} ${todaysMayanSign.daySign.name} — ${todaysMayanSign.daySign.meaning}\n`;
-  }
+  detail += formatTodayMayaForMAIA(traditionalMaya(new Date().toISOString().slice(0, 10)), todaysMayanSign);
 
   // 4. Celestial events
   if (celestialEvents) {
@@ -1089,11 +1107,9 @@ export function detectAstrologicalRelevance(
     lowerMessage.includes('galactic')
   ) {
     if (context.mayanProfile) {
-      relevantInsights.push(`Their Mayan birth sign is ${context.mayanProfile.tzolkin.tone} ${context.mayanProfile.tzolkin.daySign.name} - share their complete profile if they ask`);
+      relevantInsights.push(`Their traditional Chol Q'ij birth day is ${cholQijDay(context.mayanProfile.traditional)} (K'iche' Maya count); their separate modern Dreamspell signature is ${context.mayanProfile.tzolkin.galacticSignature} - never present one as the other`);
     }
-    if (context.todaysMayanSign) {
-      relevantInsights.push(`Today's Mayan energy is ${context.todaysMayanSign.tone} ${context.todaysMayanSign.daySign.name}`);
-    }
+    relevantInsights.push(`Today in the traditional Chol Q'ij is ${cholQijDay(traditionalMaya(new Date().toISOString().slice(0, 10)))}`);
   }
 
   // Life phase/transition themes + Mayan pillars

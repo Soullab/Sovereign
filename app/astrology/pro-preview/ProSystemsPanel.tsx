@@ -18,6 +18,7 @@ import ChineseReadingView from '@/components/astrology/ChineseReadingView';
 import { VedicProfilePanel, VedicPlanetsPanel } from '@/components/astrology/VedicRoomViews';
 import { MayanSignCard, MayanPathOfLife } from '@/components/astrology/MayanRoomViews';
 import { getTodaysMayanSign } from '@/lib/astrology/mayanAstrology';
+import { traditionalMaya, localCivilDate, DREAMSPELL_DISTINCTION } from '@/lib/astrology/proTraditionalMaya';
 import { DaYunTimelineView } from '@/components/astrology/DaYunTimeline';
 import ProAskMaiaPanel from './ProAskMaiaPanel';
 import { rehydrateDaYunProfile } from '@/lib/astrology/daYunProfileView';
@@ -317,7 +318,7 @@ function ChineseView({ c, direction, onDirection, ask }: {
 
 type MayanRoom = 'count' | 'path' | 'signature' | 'today';
 const MAYAN_ROOMS: Array<[MayanRoom, string]> = [
-  ['count', 'Traditional count'], ['path', 'Path of life'], ['signature', 'Galactic signature'], ['today', 'Today’s energy'],
+  ['count', 'Chol Q’ij (traditional)'], ['today', 'Today'], ['path', 'Dreamspell path of life'], ['signature', 'Dreamspell signature'],
 ];
 
 /**
@@ -330,9 +331,10 @@ function MayanView({ m, ask }: { m: ProOtherSystems['mayan']; ask: { subject: st
   const t = m.traditional;
   const [room, setRoom] = useState<MayanRoom>('count');
   const today = useMemo(() => getTodaysMayanSign(), []);
+  const todayTraditional = useMemo(() => traditionalMaya(localCivilDate()), []);
   return (
     <div role="tabpanel" aria-label="Mayan">
-      <ProAskMaiaPanel subjectLabel="the Mayan count and path of life" readsWhose={ask.readsWhose}
+      <ProAskMaiaPanel subjectLabel="the Chol Q’ij day and the Dreamspell" readsWhose={ask.readsWhose}
         request={{ section: 'mayan', subject: ask.subject }} />
       <div role="tablist" aria-label="Mayan astrology rooms" className={styles.rooms}>
         {MAYAN_ROOMS.map(([value, text]) => (
@@ -344,23 +346,21 @@ function MayanView({ m, ask }: { m: ProOtherSystems['mayan']; ask: { subject: st
       </div>
 
       {room === 'count' && (
-        <div role="tabpanel" aria-label="Traditional count and Dreamspell kin">
-          <h4 className={styles.subhead}>Traditional count</h4>
+        <div role="tabpanel" aria-label="Chol Q’ij day and Dreamspell kin">
+          <h4 className={styles.subhead}>Chol Q’ij birth day · K’iche’ tradition</h4>
           <p className={styles.headline}>
             {t.number} {t.kiche} <span className={styles.muted}>(Yucatec {t.number} {t.yucatec})</span>
           </p>
           <dl className={styles.facts}>
+            <dt>Trecena</dt><dd>Day {t.trecena.position} of 13 in the trecena of 1 {t.trecena.kiche}</dd>
             <dt>Haab</dt><dd>{t.haab.day} {t.haab.month}</dd>
             <dt>Long Count</dt><dd>{t.longCount}</dd>
             <dt>Correlation</dt><dd>GMT {t.correlation}</dd>
           </dl>
           <p className={styles.note}>Method: {t.method}</p>
 
-          <h4 className={styles.subhead}>Dreamspell count (modern)</h4>
-          <p className={styles.note}>
-            Dreamspell (José Argüelles, 1987) is a modern system with its own count; it does not follow the traditional
-            day count above and is not used by Maya daykeepers.
-          </p>
+          <h4 className={styles.subhead}>Modern Dreamspell (a separate lens)</h4>
+          <p className={styles.note}>{DREAMSPELL_DISTINCTION}</p>
           <p className={styles.headline}>
             <span aria-hidden="true">{m.daySign.glyph}</span> {m.galacticSignature}
           </p>
@@ -387,14 +387,24 @@ function MayanView({ m, ask }: { m: ProOtherSystems['mayan']; ask: { subject: st
       {room === 'signature' && (
         <div role="tabpanel" aria-label="Galactic signature">
           <p className={styles.note}>The modern Dreamspell count, not the traditional day count.</p>
-          <MayanSignCard sign={m.profile.tzolkin} title="Your Galactic Signature" />
+          <MayanSignCard sign={m.profile.tzolkin} title="Dreamspell Galactic Signature" />
         </div>
       )}
 
       {room === 'today' && (
-        <div role="tabpanel" aria-label="Today’s energy">
-          <p className={styles.note}>The modern Dreamspell count for today. It uses no birth detail.</p>
-          <MayanSignCard sign={today} title="Today's Galactic Energy" isToday />
+        <div role="tabpanel" aria-label="Today in both counts">
+          <h4 className={styles.subhead}>Today in the Chol Q’ij · K’iche’ tradition</h4>
+          <p className={styles.headline}>
+            {todayTraditional.number} {todayTraditional.kiche}{' '}
+            <span className={styles.muted}>(Yucatec {todayTraditional.number} {todayTraditional.yucatec})</span>
+          </p>
+          <dl className={styles.facts}>
+            <dt>Trecena</dt><dd>Day {todayTraditional.trecena.position} of 13 in the trecena of 1 {todayTraditional.trecena.kiche}</dd>
+            <dt>Haab</dt><dd>{todayTraditional.haab.day} {todayTraditional.haab.month}</dd>
+          </dl>
+          <h4 className={styles.subhead}>Today in the modern Dreamspell (a separate lens)</h4>
+          <p className={styles.note}>The Dreamspell count for today, not a translation of the day above. It uses no birth detail.</p>
+          <MayanSignCard sign={today} title="Today in the Dreamspell" isToday />
         </div>
       )}
     </div>

@@ -114,12 +114,12 @@ const SECTION_FOCUS: Record<ProAskSection, string> = {
   'four-pillars': 'the Chinese Four Pillars (BaZi) chart below',
   progressed: 'the secondary progressions and solar arcs below, against the natal chart',
   vedic: 'the Vedic (Jyotish, sidereal) chart below, with its nakshatras and Vimshottari dasha periods',
-  mayan: 'the Mayan calendar positions below: the traditional day count, and separately the modern Dreamspell signature with its three-stage path of life',
+  mayan: 'the Maya calendar positions below: first the traditional Chol Q’ij day (the K’iche’ Maya count, the authoritative Maya-calendar layer), and separately the modern Dreamspell signature with its three-stage path of life',
   deep: 'a full reading of one person, drawing together everything below',
 };
 
 export function mayaFacts(t: TraditionalMaya, label: string): string {
-  return `${label}, traditional Maya count (GMT ${t.correlation}): ${t.number} ${t.kiche} (Yucatec ${t.number} ${t.yucatec}), Haab ${t.haab.day} ${t.haab.month}, Long Count ${t.longCount}`;
+  return `${label}, traditional Maya count (Chol Q’ij, K’iche’; GMT ${t.correlation}): ${t.number} ${t.kiche} (Yucatec ${t.number} ${t.yucatec}), day ${t.trecena.position} of the trecena of 1 ${t.trecena.kiche}, Haab ${t.haab.day} ${t.haab.month}, Long Count ${t.longCount}`;
 }
 
 const day = (d: Date | string) => new Date(d).toISOString().slice(0, 10);
@@ -278,7 +278,7 @@ ${manner}
 - Address the astrologer directly as "you". Never refer to them as "the astrologer" or in the third person.
 - Use only the facts below. If something is not there, say you can't see it. The people are "the first chart" and "the second chart"; you do not know their names, and do not ask for them or for birth details.
 - Do not predict events, deaths, illness, accidents, pregnancies, legal or money outcomes, or their timing. Do not give medical, psychological, legal or financial advice.
-- For the traditional Maya count, give the dates and explain how the count works, but do not assign meanings to its days: those belong to living daykeepers. The Dreamspell is a modern system: you may discuss its signature, tone and three-stage path of life, always naming it as Dreamspell and never as the traditional Maya count.
+- For the traditional Maya count, give the dates and explain how the count works, but do not assign meanings to its days: those belong to living daykeepers. The Dreamspell is a modern system: you may discuss its signature, tone and three-stage path of life, always naming it as Dreamspell and never as the traditional Maya count. Lead with the traditional day; never present a Dreamspell sign as the person's Mayan or Tzolk’in sign, and never treat the two as translations of one another.
 - If the question shows distress about a real person's safety, say you are not a crisis service and encourage reaching a person who can help.
 ${memory}${own}
 
