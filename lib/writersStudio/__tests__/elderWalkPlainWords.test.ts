@@ -13,7 +13,13 @@ test('MAIA is told to lead with plain words and to leave settings out unless ask
   expect(GUIDE_STANCE).toMatch(/Speak to someone who may never have used a writing tool/);
   expect(GUIDE_STANCE).toMatch(/Say first, in plain words, what they can do/);
   expect(GUIDE_STANCE).toMatch(/Do not bring in settings, preferences or the Studio's own terms/);
+  // Re-walk 2026-11-24: MAIA dropped the setting but still opened with a label ("This is the level of how the sentences
+  // move — voice on the page") and began the route with "in Write, select…". The plain answer must come first.
+  expect(GUIDE_STANCE).toMatch(/your first sentence about it is that plain-words answer/);
+  expect(GUIDE_STANCE).toMatch(/Do not open with a label for the kind of question it is/);
+  expect(GUIDE_STANCE).toMatch(/not by the Studio's names for its rooms or panels/);
   expect(studioGuideInstruction()).toContain('Speak to someone who may never have used a writing tool');
+  expect(studioGuideInstruction({ sanctuary: true })).toContain('your first sentence about it is that plain-words answer');
   expect(studioGuideInstruction({ sanctuary: true })).toContain('Speak to someone who may never have used a writing tool');
 });
 
