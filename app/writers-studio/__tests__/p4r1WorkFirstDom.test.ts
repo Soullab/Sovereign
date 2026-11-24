@@ -91,7 +91,8 @@ describe('I2 — new arrival invites writing without an option wall', () => {
       .find((button) => button.textContent?.trim() === 'Start writing');
     expect(confirm).toBeTruthy();
     act(() => confirm!.click());
-    expect(callbacks.onBegin).toHaveBeenCalledWith('');
+    // No form chosen at "What is it becoming?" (optional, 2026-11-21): the new Work is created with none.
+    expect(callbacks.onBegin).toHaveBeenCalledWith('', null);
   });
 });
 

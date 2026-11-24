@@ -1,4 +1,7 @@
 'use client';
+import { StudioVocabularyProvider, placeLabel } from '@/lib/writersStudio/StudioVocabularyContext';
+import { formVocabulary, readingFrame, type FormVocabulary } from '@/lib/writersStudio/formVocabulary';
+import { studioPathById } from '@/lib/writersStudio/studioPaths';
 
 import { freeWorkLimitFrom, workLimitMessageOr } from '@/lib/writersStudio/workLimitShared';
 import { readingProgressText } from '@/lib/writersStudio/readingProgress';
@@ -99,8 +102,8 @@ function summaryLens(summary: ReadingSummary): DevelopField | null {
     : null;
 }
 
-function sectionLabel(section: RebuildSection | undefined, index = 0): string {
-  return section?.heading?.trim() || `Section ${(section?.position ?? index) + 1}`;
+function sectionLabel(section: RebuildSection | undefined, index: number, v: FormVocabulary, total: number): string {
+  return placeLabel(v, { heading: section?.heading ?? null, position: section?.position ?? index }, total);
 }
 
 export default function P4R1DevelopController() {
@@ -451,7 +454,7 @@ export default function P4R1DevelopController() {
       return {
         kind: 'section',
         sectionId: currentSection.draftSectionId,
-        label: sectionLabel(currentSection),
+        label: sectionLabel(currentSection, 0, developVocabularyRef.current, context?.sections.length ?? 1),
       };
     });
   }, [context?.manuscriptId, currentSectionId]);
@@ -470,7 +473,7 @@ export default function P4R1DevelopController() {
       setScope({
         kind: 'section',
         sectionId: currentSection.draftSectionId,
-        label: sectionLabel(currentSection),
+        label: sectionLabel(currentSection, 0, developVocabularyRef.current, context?.sections.length ?? 1),
       });
     }
   }, [context?.manuscriptId]);
@@ -480,6 +483,18 @@ export default function P4R1DevelopController() {
     worksPhase, works, context?.manuscriptId ?? manuscriptId, carriedWorkId,
   );
   const work = currentWork(workContext);
+  /* Develop speaks in the words of what this Work is (founder rulings 2026-11-20): a program's own, else the writer's form, else neutral. */
+  const developProgram = studioPathById(work?.studioPath ?? null);
+  const developVocabulary = useMemo(() => {
+    const v = formVocabulary(developProgram ? developProgram.name : work?.form ?? null);
+    // A program names its untitled places in its own words, as Write does (studioPaths `studioCopy`).
+    return developProgram ? { ...v, place: { onlyPlace: developProgram.studioCopy.onlyPlace, part: developProgram.studioCopy.part } } : v;
+  }, [developProgram, work?.form]);
+  /* Develop's reading instructions are written in book words; MAIA is told first what this Work is (founder 2026-11-20). */
+  const developVocabularyRef = useRef(developVocabulary);
+  developVocabularyRef.current = developVocabulary;
+  const requestAttentionMapForThisWork = (...[manuscriptId, readingIds, request, opts]: Parameters<typeof requestAttentionMap>) =>
+    requestAttentionMap(manuscriptId, readingIds, readingFrame(developVocabularyRef.current) + request, opts);
 
   // The author's own declaration that this writing belongs to a Work (the same routes the Studio Home uses). The Studio
   // never infers it; after it lands the Works are re-read, the context resolves to that Work, and Talk becomes available.
@@ -808,7 +823,7 @@ export default function P4R1DevelopController() {
       setScope({
         kind: 'section',
         sectionId,
-        label: sectionLabel(selected),
+        label: sectionLabel(selected, 0, developVocabularyRef.current, context.sections.length),
       });
     }
 
@@ -1192,7 +1207,7 @@ export default function P4R1DevelopController() {
       }
 
       setReadProgress('MAIA has finished reading. Gathering her impressions…');
-      const synthesized = await requestAttentionMap(
+      const synthesized = await requestAttentionMapForThisWork(
         context.manuscriptId,
         [overviewReadingId],
         [
@@ -1336,7 +1351,7 @@ export default function P4R1DevelopController() {
         await loadSummaries();
       }
 
-      const out = await requestAttentionMap(
+      const out = await requestAttentionMapForThisWork(
         context.manuscriptId,
         [wholeReadingId],
         [
@@ -1365,7 +1380,7 @@ export default function P4R1DevelopController() {
     setChapterMovementBusy(true);
     setChapterMovementError(null);
     try {
-      const out = await requestAttentionMap(
+      const out = await requestAttentionMapForThisWork(
         context.manuscriptId,
         chapterReview.readingIds,
         [
@@ -1394,7 +1409,7 @@ export default function P4R1DevelopController() {
     setChapterScoreBusy(true);
     setChapterScoreError(null);
     try {
-      const out = await requestAttentionMap(
+      const out = await requestAttentionMapForThisWork(
         context.manuscriptId,
         chapterReview.readingIds,
         [
@@ -1429,7 +1444,7 @@ export default function P4R1DevelopController() {
       const scoreSnapshot = chapterScorecard
         ? chapterScorecard.items.map((item) => `${item.label}: ${item.notice}`).join('\n')
         : 'No scorecard requested. Work directly from the frozen chapter reading.';
-      const out = await requestAttentionMap(
+      const out = await requestAttentionMapForThisWork(
         context.manuscriptId,
         chapterReview.readingIds,
         [
@@ -1689,9 +1704,9 @@ export default function P4R1DevelopController() {
     return {
       kind: 'section',
       sectionId: currentSection.draftSectionId,
-      label: sectionLabel(currentSection),
+      label: sectionLabel(currentSection, 0, developVocabulary, context?.sections.length ?? 1),
     };
-  }, [currentSection]);
+  }, [currentSection, developVocabulary, context?.sections.length]);
 
   const chapterScope = useMemo<Extract<DevelopScopeChoice, { kind: 'chapter' }> | null>(() => {
     if (!currentChapter?.sections.length) return null;
@@ -1717,6 +1732,7 @@ export default function P4R1DevelopController() {
   }
 
   return (
+    <StudioVocabularyProvider value={developVocabulary}>
     <P4R1DevelopView
       manuscriptId={context.manuscriptId}
       work={work}
@@ -1726,6 +1742,8 @@ export default function P4R1DevelopController() {
       declareError={declareError}
       onAddToWork={(id) => void addToWork(id)}
       onMakeWork={(title) => void makeWork(title)}
+      onWorkFormSaved={() => void reloadWorks()}
+      onStartPath={(id) => router.push(`${pathname}?mode=home&path=${encodeURIComponent(id)}`)}
       workTitle={workTitle}
       appearance={appearance}
       field={field}
@@ -1820,5 +1838,6 @@ export default function P4R1DevelopController() {
       onWorkWithObservation={onWorkWithObservation}
       onThemeMutation={(mutation) => void onThemeMutation(mutation)}
     />
+    </StudioVocabularyProvider>
   );
 }

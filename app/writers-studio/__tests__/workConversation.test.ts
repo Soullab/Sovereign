@@ -319,8 +319,9 @@ describe('a Keep is the member handing her a passage', () => {
   it('says she can read the section the writer is in, when there is one (L8)', () => {
     /* The prompt gives her that one section's text (askReader workSays); the
        screen must not tell the writer otherwise. */
-    expect(surface).toContain('She can read the section you are in, and only that one.');
-    expect(surface).toMatch(/sectionId\s*\?\s*'She can read the section you are in/);
+    // Said in the Work's words (walk 2026-11-21): "the stanza you are in" for a poem, "the chapter you are in" for a book.
+    expect(surface).toContain('She can read the ${vocab.unit} you are in, and only that one.');
+    expect(surface).toMatch(/sectionId\s*\?\s*`She can read the \$\{vocab\.unit\} you are in/);
   });
 });
 

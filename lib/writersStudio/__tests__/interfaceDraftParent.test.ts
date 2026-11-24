@@ -140,7 +140,8 @@ describe('Develop gestures preserve an unsent Work draft until departure is acce
 
   it('a cancelled direct Write invitation does not bypass the room departure guard', async () => {
     await openDraft(); departure.mockReturnValue(false);
-    await click('Open this chapter in Write', true);
+    // Rendered without a Work form, so the Studio speaks neutrally (form-aware wording, 2026-11-20).
+    await click('Open this part in Write', true);
     expect(departure).toHaveBeenCalledTimes(1);
     expect(props.onMode).not.toHaveBeenCalled();
     expect(draft()?.value).toBe(draftText);

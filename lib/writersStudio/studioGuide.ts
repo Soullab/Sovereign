@@ -95,7 +95,7 @@ export const STUDIO_CONTROLS: readonly StudioControl[] = [
 
   /* ── Home ───────────────────────────────────────────────────────────────────────────── */
   { room: 'home', label: 'Return to this work', where: 'Home, on the current Work\'s card', does: 'opens the manuscript where the writer left off' },
-  { room: 'home', label: 'Choose a manuscript to continue', where: 'Home, on the current Work\'s card, when the Work has more than one manuscript', does: 'pick which manuscript to open' },
+  { room: 'home', label: 'Choose a draft to continue', where: 'Home, on the current Work\'s card, when the Work has more than one draft', does: 'pick which draft to open' },
   { room: 'home', label: 'What feeds this Work', where: 'Home, under the current Work\'s card', does: 'shows the materials the writer has said feed this Work' },
   { room: 'home', label: 'New Work', where: 'Home, under "Start or bring a Work"', does: 'creates a Work (a name can be given now or later)' },
   { room: 'home', label: 'Import writing', where: 'Home, under "Start or bring a Work"', does: 'brings an existing manuscript file into the Studio' },

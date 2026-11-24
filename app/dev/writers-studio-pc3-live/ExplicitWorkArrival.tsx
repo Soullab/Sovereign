@@ -70,8 +70,8 @@ export default function ExplicitWorkArrival({
         {manuscripts.length === 0 ? (
           <>
             <p style={{ color: '#54483d', lineHeight: 1.7 }}>
-              This Work does not have a declared manuscript yet. The Studio will
-              not choose one for you. You can begin a manuscript here, explicitly
+              This Work does not have any writing yet. The Studio will
+              not choose any for you. You can begin writing here, explicitly
               placing it in this Work.
             </p>
             <div style={{ display: 'flex', gap: 10, marginTop: 28, flexWrap: 'wrap' }}>
@@ -91,7 +91,7 @@ export default function ExplicitWorkArrival({
         ) : manuscripts.length === 1 ? (
           <>
             <p style={{ color: '#54483d', lineHeight: 1.7 }}>
-              One manuscript is declared in this Work, so the Studio can carry
+              This Work has one draft, so the Studio can carry
               you directly to it without making a selection.
             </p>
             <div
@@ -104,10 +104,10 @@ export default function ExplicitWorkArrival({
               }}
             >
               <div style={{ color: '#33291f', fontSize: 16 }}>
-                {manuscripts[0].title || 'Untitled manuscript'}
+                {manuscripts[0].title || 'Untitled draft'}
               </div>
               <div style={{ marginTop: 5, color: '#8a765e', fontSize: 12 }}>
-                The member’s declared manuscript for this Work
+                Your draft in this Work
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 28, flexWrap: 'wrap' }}>
@@ -117,7 +117,7 @@ export default function ExplicitWorkArrival({
                 onClick={() => onOpen(manuscripts[0].id)}
                 style={primaryButton}
               >
-                Open manuscript
+                Open draft
               </button>
               <button type="button" onClick={onReturn} style={quietButton}>
                 Return to Studio
@@ -127,7 +127,7 @@ export default function ExplicitWorkArrival({
         ) : (
           <>
             <p style={{ color: '#54483d', lineHeight: 1.7 }}>
-              This Work contains several manuscripts. The Studio will not guess
+              This Work has several drafts. The Studio will not guess
               which one you mean.
             </p>
             <div style={{ display: 'grid', gap: 10, marginTop: 22 }}>
@@ -140,10 +140,10 @@ export default function ExplicitWorkArrival({
                   style={manuscriptButton}
                 >
                   <span style={{ color: '#33291f', fontSize: 15 }}>
-                    {manuscript.title || 'Untitled manuscript'}
+                    {manuscript.title || 'Untitled draft'}
                   </span>
                   <span style={{ color: '#8a765e', fontSize: 11 }}>
-                    Choose this manuscript →
+                    Choose this draft →
                   </span>
                 </button>
               ))}

@@ -67,7 +67,7 @@ async function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: st
 
 async function reachConfirmation(localReview: boolean, onComplete = jest.fn()) {
   await act(async () => root.render(React.createElement(P4R1ImportManuscript, { localReview, onCancel: jest.fn(), onComplete })));
-  await typeInto(field('Manuscript title'), 'Window and Rain');
+  await typeInto(field('Title'), 'Window and Rain');
   await typeInto(field('Extracted or pasted writing'), text);
   await act(async () => button('Review structure').click());
   expect(button(localReview ? 'Confirm and open in Write' : 'Create Work and open in Write')).toBeTruthy();
@@ -104,7 +104,7 @@ it('keeps confirmation disabled while exact-identity refresh and navigation are 
   await reachConfirmation(false, onComplete);
   await act(async () => button('Create Work and open in Write').click());
   expect(onComplete).toHaveBeenCalledWith(manuscriptId);
-  const pending = button('Opening manuscript…');
+  const pending = button('Opening your writing…');
   expect(pending.disabled).toBe(true);
   expect(apiFetch).toHaveBeenCalledTimes(2);
   await act(async () => pending.click());
@@ -113,7 +113,7 @@ it('keeps confirmation disabled while exact-identity refresh and navigation are 
   await act(async () => { finish(); await completion; });
   expect(button('Open saved writing').disabled).toBe(false);
   expect(button('Back to source').disabled).toBe(true);
-  expect(host.querySelector<HTMLInputElement>('[aria-label="Section 1 heading"]')?.disabled).toBe(true);
+  expect(host.querySelector<HTMLInputElement>('[aria-label="Part 1 heading"]')?.disabled).toBe(true);
   await act(async () => button('Open saved writing').click());
   expect(apiFetch).toHaveBeenCalledTimes(2);
   expect(onComplete).toHaveBeenCalledTimes(2);

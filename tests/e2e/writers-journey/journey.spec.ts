@@ -131,9 +131,9 @@ test.describe(`Writer's Studio journey WJ-1 [defeat=${DEFEAT}]`, () => {
       await page.getByRole('button', { name: 'Import writing' }).click();
       await expect(page.getByText('Original-file import is held on this Writer image.').first()).toBeVisible();
       await page.getByPlaceholder('Title of the Work').fill('Salt and Lanterns');
-      await page.getByPlaceholder('Paste your manuscript here…').fill(PASTED);
+      await page.getByPlaceholder('Paste your writing here…').fill(PASTED);
       await page.getByRole('button', { name: 'Review structure' }).click();
-      await expect(page.getByText('3 proposed sections')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('3 proposed parts')).toBeVisible({ timeout: 30_000 });
     });
 
     await test.step('S11 she confirms the proposed structure and the Work opens in Write', async () => {

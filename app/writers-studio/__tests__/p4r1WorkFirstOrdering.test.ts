@@ -56,7 +56,7 @@ describe('W1 — existing writing is the first invitation', () => {
     const segment = between("} else if (props.arrival.kind === 'begin') {", "} else if (props.arrival.kind === 'continue' && props.arrival.resume) {");
     expect(segment).toContain('{HOME_COPY.beginWelcome}');
     expect(segment).toContain('Start writing');
-    expect(segment).toContain('onClick={() => props.onBegin(title)}');
+    expect(segment).toContain('onClick={() => props.onBegin(title, newForm)}');
     expect(segment).not.toContain('Guided / Learning / Direct');
   });
 });

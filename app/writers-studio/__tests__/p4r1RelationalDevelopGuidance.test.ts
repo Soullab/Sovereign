@@ -103,7 +103,8 @@ describe('Writer Studio relational Develop guidance', () => {
 
   it('gives a selected chapter plain, relational choices and an explicit chapter read', () => {
     expect(develop).toContain('Talk with MAIA first');
-    expect(develop).toContain('Read this ${props.scope.kind === \'chapter\' ? \'chapter\' : \'section\'} for ${LABEL[activeField]}');
+    // The chapter-level read names the Work's own part ("stanza", "section", "part"; form-aware wording, 2026-11-20).
+    expect(develop).toContain('Read this ${props.scope.kind === \'chapter\' ? studioWords.unit : \'section\'} for ${LABEL[activeField]}');
     expect(develop).toContain('See how it is shaped');
     expect(develop).toContain('Notice what returns');
     expect(develop).toContain('Meet it as a reader');

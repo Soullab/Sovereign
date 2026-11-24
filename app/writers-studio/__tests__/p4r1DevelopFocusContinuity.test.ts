@@ -43,7 +43,7 @@ describe('C3 Develop → Focus continuity', () => {
 
   it('offers exact-passage Write and orientation gestures only for their own targets', () => {
     const {file,node}=findNode(developView,n=>ts.isFunctionDeclaration(n)&&n.name?.text==='ReadingField');
-    const readingField=evaluateExpression(node.getText(file),{LABEL:{overview:'Overview'},friendlyObservation:()=>({title:'Fictional observation',lead:'Fixture'})});
+    const readingField=evaluateExpression(node.getText(file),{LABEL:{overview:'Overview'},friendlyObservation:()=>({title:'Fictional observation',lead:'Fixture'}),useFormWords:()=>(t:string)=>t});
     const buttons=(value:any):any[]=>Array.isArray(value)?value.flatMap(buttons):value&&typeof value==='object'?[...(value.type==='button'?[value]:[]),...buttons(value.props?.children)]:[];
     const make=(targets:Record<string,string>,workTargets:Record<string,string>)=>{
       const onWorkWithObservation=jest.fn(),onGoToObservation=jest.fn();

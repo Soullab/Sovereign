@@ -36,7 +36,6 @@ import {
 export interface LetterSection { draftSectionId: string; heading: string | null; position: number }
 export interface PassIssueTarget { sectionId: string; readingId: string; observationKey: string }
 
-const labelOf = (s: LetterSection | undefined) => (s ? (s.heading?.trim() || `Section ${s.position + 1}`) : 'your Work');
 const hair = '1px solid color-mix(in srgb, currentColor 16%, transparent)';
 const btn = { font: 'inherit', fontSize: 12, cursor: 'pointer', color: 'inherit', background: 'none', border: hair, borderRadius: 8, padding: '5px 10px' } as const;
 const quiet = { ...btn, border: 'none', textDecoration: 'underline', padding: '2px 0' } as const;
@@ -65,8 +64,13 @@ export function EditorialLetterPanel(props: {
   /** The Work is "MAIA asks, never rewrites" (review F4, 2026-11-15): no "Show me options", and no promise of edits.
    *  "Talk about it" stays. The server refuses wording on such a Work regardless; this keeps the panel honest. */
   revisionsPaused?: boolean;
+  /** How Write's rail names an untitled place ("Your draft", "Stanza 2"), so the letter names it the same. Absent: "Section n". */
+  placeName?: (position: number) => string;
 }) {
   const { manuscriptId, sections, draftRevision } = props;
+  const labelOf = (s: LetterSection | undefined) => (s
+    ? (s.heading?.trim() || (props.placeName ? props.placeName(s.position) : `Section ${s.position + 1}`))
+    : 'your Work');
   const [pass, setPass] = useState<SavedPass | null>(null);
   const [decisions, setDecisions] = useState<Record<string, PassDecision>>({});
   const [busy, setBusy] = useState(false);
