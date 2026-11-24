@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { PRO_CONTROLS, proGuideInstruction } from '../proGuide';
-import { proAskSystemPrompt } from '../proAskMaiaSections';
+import { proAskSystemPrompt, spiralFieldLine } from '../proAskMaiaSections';
 
 const ROOT = path.resolve(__dirname, '../../..');
 // The workstation and the shared astrology views it renders.
@@ -127,5 +127,28 @@ describe('MAIA knows the astrologer\'s own chart is theirs (phone witness 2026-1
     expect(proAskSystemPrompt('natal', 'x', { keeping: true })).not.toContain('Nothing is remembered between visits');
     expect(proAskSystemPrompt('natal', 'x', { keeping: true, continuing: true })).not.toContain('Nothing is kept after the visit');
     expect(proAskSystemPrompt('natal', 'x', {})).toContain('Nothing is remembered between visits');
+  });
+});
+
+describe('the personal reading carries where the astrologer is in their wider work with MAIA', () => {
+  it('states element, phase and motion as MAIA\'s own reading, not the chart', () => {
+    const line = spiralFieldLine({ dominant_element: 'water', phase: 7, motion: 'ascending' });
+    expect(line).toContain('water');
+    expect(line).toContain('phase 7 of 12');
+    expect(line).toContain('ascending');
+    expect(line).toContain('never present it as what the chart shows');
+  });
+
+  it('says nothing when there is no state', () => {
+    expect(spiralFieldLine({})).toBe('');
+    expect(spiralFieldLine({ phase: 0 })).toBe('');
+  });
+
+  it('puts the field in its own section only when given', () => {
+    const withField = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', { ownChart: true, personal: { kept: 'k', field: 'FIELD-LINE' } });
+    expect(withField).toContain('WHERE THEY ARE IN THEIR WIDER WORK WITH YOU');
+    expect(withField).toContain('FIELD-LINE');
+    const without = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', { ownChart: true, personal: { kept: 'k' } });
+    expect(without).not.toContain('WHERE THEY ARE IN THEIR WIDER WORK WITH YOU');
   });
 });

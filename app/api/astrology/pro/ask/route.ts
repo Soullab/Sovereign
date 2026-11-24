@@ -44,6 +44,10 @@
  */
 export const dynamic = 'force-dynamic';
 
+/** Kept atoms read to find the eight from beyond Pro Astrology (Kelly, 2026-11-24). */
+const PERSONAL_ATOM_POOL = 40;
+const PERSONAL_ATOM_LIMIT = 8;
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getLLMProvider } from '@/lib/consciousness/LLMProvider';
 import { analyzeSafetyCues } from '@/lib/comms/SafetyService';
@@ -69,6 +73,8 @@ import { PRO_RESPONSE_HEADERS, proError, proOwnerStillCurrent, resolveProOwner }
 import type { SavedChartBirth } from '@/lib/astrology/proSavedCharts';
 import { PRO_SUBJECT_KEY_MAX, appendExchange, isThreadId, openThread, ownsKeptThread, recallSubjectExchanges, type RecalledExchange } from '@/lib/astrology/proConversationStore';
 import { formatAtomsForPrompt, loadMemberMemoryAtomsForPrompt } from '@/lib/maia/memoryAtomsLoader';
+import { loadSpiralState } from '@/lib/consciousness/spiralStatePersistence';
+import { spiralFieldLine } from '@/lib/astrology/proAskMaiaSections';
 
 // A short per-member limit (in memory) so a runaway loop cannot spend MAIA.
 const RATE_WINDOW_MS = 60_000;
@@ -267,10 +273,25 @@ export async function POST(request: NextRequest) {
     // What the astrologer has kept with MAIA, under each atom's own return consent.
     let kept = '';
     let keptCount = 0;
+    let field = '';
     if (personal) {
-      const atoms = await loadMemberMemoryAtomsForPrompt(owner.memberId);
+      // Kelly, 2026-11-24 ("quick fix now"): the eight places go to the member's wider
+      // MAIA memory. Their Pro "Keep with MAIA" exchanges are left out here because
+      // they already return through the per-chart recall below, and as the newest
+      // keeps they otherwise filled nearly every place. The fuller connection
+      // (relevance-chosen, across MAIA's layers) belongs to the pattern-matching lane.
+      const atoms = (await loadMemberMemoryAtomsForPrompt(owner.memberId, PERSONAL_ATOM_POOL))
+        .filter((atom) => atom.sourceType !== 'astro_pro_exchange')
+        .slice(0, PERSONAL_ATOM_LIMIT);
       keptCount = atoms.length;
       kept = formatAtomsForPrompt(atoms);
+      // Where the member stands in their wider work with MAIA: structural position only, never content.
+      try {
+        const spiral = await loadSpiralState(owner.memberId);
+        if (spiral) field = spiralFieldLine(spiral);
+      } catch {
+        field = '';
+      }
     }
 
     // Earlier kept conversations about this same chart, from its other sections
@@ -289,7 +310,7 @@ export async function POST(request: NextRequest) {
     const deep = section === 'deep';
     const llm = await getLLMProvider().generateSimple({
       tier: deep ? 'deep' : 'core',
-      systemPrompt: deep ? proDeepSystemPrompt(facts, lifeContext || null) : proAskSystemPrompt(section, facts, { mode, view, point, depth, continuing: history.length > 0, personal: personal ? { kept } : undefined, ownChart: input.subject === 'own', keeping: Boolean(keep && subjectKey), recalled }),
+      systemPrompt: deep ? proDeepSystemPrompt(facts, lifeContext || null) : proAskSystemPrompt(section, facts, { mode, view, point, depth, continuing: history.length > 0, personal: personal ? { field, kept } : undefined, ownChart: input.subject === 'own', keeping: Boolean(keep && subjectKey), recalled }),
       messages: [
         ...history.flatMap((turn) => [{ role: 'user' as const, content: turn.q }, { role: 'assistant' as const, content: turn.a }]),
         { role: 'user', content: question },

@@ -384,8 +384,8 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
       )}
       {withMe && (
         <p className={styles.personalNote}>
-          MAIA will also read what you have chosen to keep with her and allowed to return. It informs this answer
-          only. {keep ? 'This conversation is kept for you to return to' : 'This conversation is not kept'}, and your chart
+          MAIA will also read what you have chosen to keep with her across MAIA and allowed to return, and where you
+          are in your wider work with her. It informs this answer only. {keep ? 'This conversation is kept for you to return to' : 'This conversation is not kept'}, and your chart
           is added to MAIA’s memory only where you press “Keep with MAIA”.
         </p>
       )}
