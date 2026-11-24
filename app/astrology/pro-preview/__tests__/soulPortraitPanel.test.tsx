@@ -14,11 +14,12 @@ jest.mock('../pro-saved-charts.module.css', () => ({}), { virtual: true });
 let root: Root;
 let container: HTMLDivElement;
 const fetchMock = jest.fn();
+const openDraft = jest.fn();
 
 function render(props: Partial<React.ComponentProps<typeof ProSoulPortraitPanel>> = {}) {
   act(() => root.render(React.createElement(ProSoulPortraitPanel, {
     source: 'chart-1', label: 'Example Client', chartLine: 'Example Client · 1990-06-15 · 23:30',
-    birthDate: '1990-06-15', onClose: () => {}, ...props,
+    birthDate: '1990-06-15', onClose: () => {}, openDraft, ...props,
   })));
 }
 const button = (text: string) =>
@@ -27,6 +28,7 @@ const minorBox = () => container.querySelector('input[type="checkbox"]') as HTML
 
 beforeEach(() => {
   fetchMock.mockReset();
+  openDraft.mockReset();
   (globalThis as any).fetch = fetchMock;
   container = document.createElement('div');
   document.body.append(container);
@@ -57,7 +59,7 @@ describe('Soul Portrait inside Pro', () => {
     expect(minorBox().disabled).toBe(true);
   });
 
-  it('sends the chart by id only and offers the private draft without leaving Pro', async () => {
+  it('sends the chart by id only, then opens the draft in this tab', async () => {
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ previewUrl: '/soul-portrait/preview/abc' }) });
     render();
     await act(async () => { button('Write draft').click(); });
@@ -65,10 +67,42 @@ describe('Soul Portrait inside Pro', () => {
     expect(body.proChartSource).toBe('chart-1');
     expect(body.birthData).toBeUndefined();
     expect(body).toMatchObject({ name: 'Example Client', mode: 'gift', isMinor: false });
+    // Founder ruling 2026-11-24: straight to the draft, where the client link is made.
+    expect(openDraft).toHaveBeenCalledTimes(1);
+    expect(openDraft).toHaveBeenCalledWith('/soul-portrait/preview/abc');
+    // A fallback link, in this tab, in case it does not open.
     const draft = container.querySelector('a') as HTMLAnchorElement;
     expect(draft.textContent).toBe('Open draft');
     expect(draft.getAttribute('href')).toBe('/soul-portrait/preview/abc');
-    expect(draft.target).toBe('_blank');
+    expect(draft.target).toBe('');
+  });
+
+  it('does not open anything when the draft fails', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 502, json: async () => ({ error: 'The draft came back incomplete — please try again.' }) });
+    render();
+    await act(async () => { button('Write draft').click(); });
+    expect(openDraft).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('The draft came back incomplete');
+  });
+
+  it('says where the client link is made, and sends nothing itself', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ previewUrl: '/soul-portrait/preview/abc' }) });
+    render();
+    await act(async () => { button('Write draft').click(); });
+    expect(container.textContent).toContain('To give Example Client a link: at the end of the draft');
+    // These name the real controls at the end of the draft (SendPortraitPanel).
+    expect(container.textContent).toContain('under Send this portrait');
+    expect(container.textContent).toContain('choose Create private link');
+    // Nothing is sent from here: the only request was the draft.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('for a minor, says no client link can be made', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ previewUrl: '/soul-portrait/preview/abc' }) });
+    render({ birthDate: `${new Date().getFullYear() - 10}-01-01` });
+    await act(async () => { button('Write draft').click(); });
+    expect(container.textContent).toContain('cannot be sent and no client link can be made yet');
+    expect(container.textContent).not.toContain('Create private link');
   });
 
   it('sends nothing without a name', () => {
