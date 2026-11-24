@@ -35,6 +35,7 @@ import { studioActionsInstruction } from '@/lib/writersStudio/studioActions';
 import { explanationInstruction, type ExplanationDepth } from '@/lib/writersStudio/workingStyle';
 import { pathFrameFor } from '@/lib/writersStudio/studioPaths';
 import { teachingTurnInstruction, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
+import { containsExample, examplesAllowed, EXAMPLE_NOT_ALLOWED_ANSWER } from '@/lib/writersStudio/exampleLevel';
 import { CONVENTION_STANCE_DIRECTIVE, EDITING_NAMES_DIRECTIVE, EDITORIAL_LEVELS_DIRECTIVE, EPISTEMIC_INTEGRITY_DIRECTIVE, TEXT_ACCURACY_DIRECTIVE, WRITER_ATTENTION_DIRECTIVE } from '@/lib/writersStudio/editorialDepth';
 
 /**
@@ -762,9 +763,13 @@ export async function askMaia(
       .filter((b): b is Extract<StructuredBlock, { type: 'text' }> => b.type === 'text')
       .map((b) => b.text).join('').trim();
     if (!text) return { ok: false, refusal: 'empty_answer' };
+    /* #2398 review (Low 1): checked in code, not only asked for. A Work conversation that was not given the example
+       allowance (MAIA asks, never rewrites; a program; anything uncertain) never shows a marked example. */
+    const answer = ctx.kind === 'work' && containsExample(text) && !examplesAllowed(ctx.programInstructions ?? [])
+      ? EXAMPLE_NOT_ALLOWED_ANSWER : text;
     return {
       ok: true,
-      answer: text,
+      answer,
       seen: [system, ...messages.map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))].join('\n'),
       seenForQuotes: [system, ...messages.filter((m) => m.role === 'user').map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))].join('\n'),
       provenance: {

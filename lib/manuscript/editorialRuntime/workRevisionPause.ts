@@ -15,7 +15,7 @@ import { query } from '@/lib/db/postgres';
 import {
   DEFAULT_EDITORIAL_LATITUDE, LATITUDE_BANDS, isEditorialLatitude, type EditorialLatitude,
 } from '@/lib/manuscript/editorialScope/contract';
-import { WORK_EXAMPLE_LINE } from '@/lib/writersStudio/exampleLevel';
+import { EXAMPLE_RULE_HEADER, WORK_EXAMPLE_LINE } from '@/lib/writersStudio/exampleLevel';
 
 export const WORK_REVISION_PAUSE_SQL = `SELECT EXISTS (
     SELECT 1
@@ -172,7 +172,9 @@ export async function conversationProgram(
   let program: WorkProgram;
   try {
     const r = await query<{ studio_path: string | null }>(CONVERSATION_PROGRAM_SQL, [memberId, workId, manuscriptId]);
-    if (r.rows.length === 0) program = { kind: 'none' };
+    /* #2398 review (Low 2): no Work found for this member is not "a Work with no program". The routes have already scoped
+       the Work to the member, so this should not happen; if it does, it is uncertain, and uncertain never allows examples. */
+    if (r.rows.length === 0) program = { kind: 'unknown' };
     else if (r.rows.length > 1) program = { kind: 'ambiguous' };
     else program = typeof r.rows[0]!.studio_path === 'string' ? { kind: 'one', id: r.rows[0]!.studio_path } : { kind: 'none' };
   } catch (error) {
@@ -218,7 +220,7 @@ export { WORK_EXAMPLE_LINE };
 export function workExampleWordingInstruction(latitude: EditorialLatitude = DEFAULT_EDITORIAL_LATITUDE): string {
   const band = LATITUDE_BANDS[isEditorialLatitude(latitude) ? latitude : DEFAULT_EDITORIAL_LATITUDE];
   return [
-    'WHEN THEY ASK TO SEE A CHANGE',
+    EXAMPLE_RULE_HEADER,
     'If the writer asks you to rewrite, polish, extend or add to their writing, or asks what a change would look like, you may show them one short example in your reply, so they can judge it by ear instead of from a description. Only when they ask: never volunteer one.',
     `THE WRITER HAS CHOSEN HOW MUCH AN EXAMPLE MAY CHANGE THEIR WORDS: ${band.label}. ${band.description}`,
     `Keep every example within ${band.label}. If what they asked for needs more change than that, give the ${band.label} example anyway and say in one plain sentence that a deeper example would change more of their words, and that they can press "Deeper" under it. Never go beyond their choice on your own.`,

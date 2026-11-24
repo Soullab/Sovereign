@@ -34,7 +34,13 @@ export function isExampleOriginRef(value: unknown): value is ExampleOriginRef {
 export const TRY_EXAMPLE_WORDS = 'Try that example on my page.';
 
 /** A stored reply longer than this is not carried (a Work-conversation answer is far shorter). */
-export const EXAMPLE_REPLY_MAX = 8000;
+export const EXAMPLE_REPLY_MAX = 4000;
+
+/** #2398 review (Low 4): the reply sits between <<< and >>> in the system prompt. Its own text can never close or reopen
+ *  that fence: any run of three or more angle brackets inside it is softened before it is placed there. */
+export function fenceSafe(reply: string): string {
+  return reply.replace(/<{3,}/g, (m) => '‹'.repeat(m.length)).replace(/>{3,}/g, (m) => '›'.repeat(m.length));
+}
 
 /** How MAIA treats the example she showed: server-owned, never the writer's turn. */
 export function exampleOriginInstruction(reply: string): string {
@@ -42,7 +48,7 @@ export function exampleOriginInstruction(reply: string): string {
     'THE WRITER ASKED TO TRY AN EXAMPLE ON THEIR PAGE (your own earlier reply, from the Work conversation; not their words)',
     'In the Work conversation you showed them an example, after the line "An example, not your words:". This is that reply, exactly as you wrote it:',
     '<<<',
-    reply,
+    fenceSafe(reply),
     '>>>',
     [
       'Propose an edit of the passage in front of you that follows that example as closely as the writer\'s chosen latitude allows.',

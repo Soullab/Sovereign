@@ -2,7 +2,11 @@
  * Server side of "Try this on my page" (see `exampleOrigin.ts`): resolve a client's reference to the example MAIA showed
  * in the member's own Work conversation.
  *
- * ⛔ Every lookup is scoped by member and by manuscript. Another member's conversation, a conversation on a different
+ * ⛔ Every lookup is scoped by member, by manuscript and to the Work conversation (`anchor = {"on":"work"}`, #2398 review
+ * Low 3): a reply from any other conversation on the manuscript (an observation dialogue, a passage thread) is not an
+ * example source. A manuscript thread does not record which of the member's Works it was opened from, so a manuscript
+ * held by two of the member's own Works is one conversation space; narrowing further would need a column (not here).
+ * Another member's conversation, a conversation on a different
  * manuscript from the passage's, the writer's own turn, a turn with no example, and an unknown turn all resolve to null,
  * and are indistinguishable from one another.
  */
@@ -16,6 +20,7 @@ export const EXAMPLE_TURN_SQL = `SELECT t.body
    FROM ask_turns t
    JOIN ask_threads th ON th.id = t.thread_id
   WHERE th.id = $1 AND th.member_id = $2 AND th.manuscript_id = $3
+    AND th.anchor = '{"on":"work"}'::jsonb
     AND t.turn_index = $4 AND t.speaker = 'maia'`;
 
 export async function resolveExampleOrigin(input: {
