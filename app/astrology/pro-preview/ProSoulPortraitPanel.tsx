@@ -10,13 +10,15 @@
  * Age comes from the birth date; under 18 the portrait is always written as a
  * minor's. Saved charts promise they are not shared with MAIA, so the panel
  * says MAIA will read this chart before anything is sent; nothing is sent until
- * "Write draft". The draft is private and opens in a new tab.
+ * "Write draft". The draft is private.
  *
- * The client link is made on the draft page, not here: the astrologer reads the
- * draft first, then ticks that the person agreed and chooses Create private link
- * (the send step, which makes the portrait final). Founder walk 2026-11-24: the
- * panel stopped at "Open draft" without saying so, so no link was found. It now
- * says where the link is made.
+ * Once written, the draft opens in this tab (founder ruling 2026-11-24), as the
+ * standalone Soul Portrait form does. The client link is made on the draft
+ * page: the astrologer reads the draft, then, under Send this portrait, ticks
+ * that the person agreed and chooses Create private link (which makes the
+ * portrait final). Before this, Pro stopped at "Draft ready · Open draft" in a
+ * new tab; in the 2026-11-24 founder walk four drafts were written, the draft
+ * page was never opened, and no link was made.
  */
 import { useState } from 'react';
 import { PORTRAIT_THEMES, DEFAULT_PORTRAIT_THEME, type PortraitMode, type PortraitThemeKey } from '@/lib/soulPortrait/schema';
@@ -43,7 +45,9 @@ type State =
   | { kind: 'done'; previewUrl: string; minor: boolean }
   | { kind: 'error'; message: string };
 
-export default function ProSoulPortraitPanel({ source, label, chartLine, birthDate, onClose }: {
+function openInThisTab(url: string) { window.location.assign(url); }
+
+export default function ProSoulPortraitPanel({ source, label, chartLine, birthDate, onClose, openDraft = openInThisTab }: {
   /** 'mine' or a saved chart id. */
   source: 'mine' | string;
   /** Name shown on the portrait, prefilled; '' when Pro does not know it. */
@@ -52,6 +56,8 @@ export default function ProSoulPortraitPanel({ source, label, chartLine, birthDa
   chartLine: string;
   birthDate?: string;
   onClose: () => void;
+  /** Opens the written draft; this tab by default. */
+  openDraft?: (url: string) => void;
 }) {
   const knownAge = birthDate ? ageOn(birthDate) : null;
   const [name, setName] = useState(label);
@@ -85,7 +91,10 @@ export default function ProSoulPortraitPanel({ source, label, chartLine, birthDa
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) setState({ kind: 'error', message: 'Please sign in again to write a portrait.' });
       else if (!res.ok || !data.previewUrl) setState({ kind: 'error', message: data.error || 'The draft could not be written. Please try again.' });
-      else setState({ kind: 'done', previewUrl: data.previewUrl, minor: isMinor });
+      else {
+        setState({ kind: 'done', previewUrl: data.previewUrl, minor: isMinor });
+        openDraft(data.previewUrl);
+      }
     } catch {
       setState({ kind: 'error', message: 'The draft could not be written. Please try again.' });
     }
@@ -93,20 +102,20 @@ export default function ProSoulPortraitPanel({ source, label, chartLine, birthDa
 
   if (state.kind === 'done') {
     const who = name.trim() || 'this person';
+    // Shown while the draft opens, or if it does not.
     return (
       <div className={styles.portraitPanel} role="group" aria-label="Soul Portrait">
-        <p role="status"><strong>Draft ready.</strong> It is private until you send it.</p>
+        <p role="status"><strong>Draft ready.</strong> Opening it now. It is private until you send it.</p>
         {state.minor ? (
           <p className={styles.note}>This portrait is of a minor, so it cannot be sent and no client link can be made yet.</p>
         ) : (
           <p className={styles.note}>
-            To give {who} a link, open the draft and read it. At the end of the draft, under Send this portrait, tick
-            that {who} has agreed to receive it and choose Create private link. Sending makes the portrait final.
+            To give {who} a link: at the end of the draft, under Send this portrait, tick that {who} has agreed to
+            receive it and choose Create private link. Sending makes the portrait final.
           </p>
         )}
         <div className={styles.portraitActions}>
-          <a href={state.previewUrl} target="_blank" rel="noopener noreferrer">Open draft</a>
-          <button type="button" onClick={() => setState({ kind: 'form' })}>Write another</button>
+          <a href={state.previewUrl}>Open draft</a>
           <button type="button" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -117,7 +126,7 @@ export default function ProSoulPortraitPanel({ source, label, chartLine, birthDa
   return (
     <div className={styles.portraitPanel} role="group" aria-label="Soul Portrait">
       <p className={styles.portraitChart}><span>Chart</span> {chartLine}</p>
-      <p className={styles.note}>MAIA will read this chart to write a private draft. Nothing is sent until you choose Write draft.</p>
+      <p className={styles.note}>MAIA will read this chart to write a private draft. Nothing is sent until you choose Write draft; the draft then opens here, and you make the client link at its end.</p>
       <div className={styles.portraitFields}>
         <label>Name on the portrait
           <input value={name} onChange={(e) => setName(e.target.value)} disabled={writing} maxLength={120} />
