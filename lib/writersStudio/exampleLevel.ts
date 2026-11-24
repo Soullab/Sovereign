@@ -17,6 +17,19 @@ export const WORK_EXAMPLE_LINE = 'An example, not your words:';
 export const LIGHTER_EXAMPLE_WORDS = 'Show me a lighter example.';
 export const DEEPER_EXAMPLE_WORDS = 'Show me a deeper example.';
 
+/** The first line of the server's example allowance (workRevisionPause.ts). Shared so the reply check below can tell
+ *  whether this turn was allowed to show an example at all. */
+export const EXAMPLE_RULE_HEADER = 'WHEN THEY ASK TO SEE A CHANGE';
+
+/** #2398 review (Low 1): the marking was enforced only by the prompt. Where examples are not allowed for this Work
+ *  (MAIA asks, never rewrites; a program; anything uncertain), a reply that shows one is not shown: this is said instead. */
+export const EXAMPLE_NOT_ALLOWED_ANSWER =
+  'I started to write an example of new wording, which I don\'t offer in this Work, so I\'ve left it out. Tell me what you\'d like to look at, and we can think it through together.';
+
+export function examplesAllowed(programInstructions: readonly string[]): boolean {
+  return programInstructions.some((p) => p.startsWith(`${EXAMPLE_RULE_HEADER}\n`));
+}
+
 export function containsExample(body: string): boolean {
   return body.split('\n').some((line) => line.trim() === WORK_EXAMPLE_LINE);
 }
