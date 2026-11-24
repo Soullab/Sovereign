@@ -28,6 +28,7 @@ import WorkConversation from '@/app/writers-studio/canvas/WorkConversation';
 import type { LivingWork } from '@/app/writers-studio/useLivingWorks';
 import { LATITUDE_STORAGE_KEY } from '@/lib/writersStudio/editingLatitude';
 import { containsExample, stepLatitude, WORK_EXAMPLE_LINE } from '@/lib/writersStudio/exampleLevel';
+import { EXAMPLE_REPLY_MAX } from '@/lib/writersStudio/exampleOrigin';
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 let host: HTMLDivElement, root: Root;
@@ -148,6 +149,23 @@ test('"Try this on my page" sends only which reply it is; it is not offered wher
   await say('Can you make this sound more like a book?');
   expect(host.querySelector('[data-example-level]')).not.toBeNull();
   expect(host.querySelector('[data-example-try-on-page]')).toBeNull();
+});
+
+test('#2402 review Low 2: "Try this on my page" is offered only for a reply the server will carry', async () => {
+  const onTry = jest.fn();
+  const long = `${WORK_EXAMPLE_LINE}\n${'The creek ran dark before sunrise. '.repeat(500)}`;   // > 16,000 characters
+  expect(long.length).toBeGreaterThan(EXAMPLE_REPLY_MAX);
+  mockAsk.mockResolvedValue(thread(long));
+  await mount({ onTryExampleOnPage: onTry });
+  await say('Can you make this sound more like a book?');
+  expect(host.querySelector('[data-example-level]')).not.toBeNull();       // the level box still shows
+  expect(host.querySelector('[data-example-try-on-page]')).toBeNull();     // but not a button that would fail
+
+  act(() => root.unmount()); root = createRoot(host);
+  mockAsk.mockResolvedValue(thread(`${WORK_EXAMPLE_LINE}\n${'The creek ran dark before sunrise. '.repeat(200)}`)); // ~7,000: worked before #2402
+  await mount({ onTryExampleOnPage: onTry });
+  await say('Can you make this sound more like a book?');
+  expect(host.querySelector('[data-example-try-on-page]')).not.toBeNull();
 });
 
 test('the example is found only by its own line, and levels never step past either end', () => {

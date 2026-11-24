@@ -30,8 +30,20 @@ export function examplesAllowed(programInstructions: readonly string[]): boolean
   return programInstructions.some((p) => p.startsWith(`${EXAMPLE_RULE_HEADER}\n`));
 }
 
+/* #2402 review (Low 1): the exact-line match let common variants through ("**An example, not your words:**", the example
+   on the same line, other spacing or dashes). A line is a marker when, ignoring case, formatting and punctuation, it
+   BEGINS with the marker's words. Unicode lookalikes are folded first (NFKC). A rewrite with no marker at all is still
+   bound only by MAIA's instructions; this cannot detect one. */
+const MARKER_WORDS = markerWords(WORK_EXAMPLE_LINE);
+function markerWords(line: string): string {
+  return line.normalize('NFKC').toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+}
+
 export function containsExample(body: string): boolean {
-  return body.split('\n').some((line) => line.trim() === WORK_EXAMPLE_LINE);
+  return body.split('\n').some((line) => {
+    const words = markerWords(line);
+    return words === MARKER_WORDS || words.startsWith(`${MARKER_WORDS} `);
+  });
 }
 
 /** One step lighter or deeper, never past either end; an invalid level is the smallest. */
