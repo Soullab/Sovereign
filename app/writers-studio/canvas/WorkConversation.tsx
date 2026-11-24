@@ -35,7 +35,7 @@ import { readWorkingStyle, writeWorkingStyle } from '@/lib/writersStudio/working
 import { TEACHING_ANCHORS, teachingQuestion, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
 import { BEGINNING_WORDS, type StudioIntent } from '@/lib/writersStudio/beginningTurn';
 import { DEEPER_EXAMPLE_WORDS, LIGHTER_EXAMPLE_WORDS, containsExample, stepLatitude } from '@/lib/writersStudio/exampleLevel';
-import type { ExampleOriginRef } from '@/lib/writersStudio/exampleOrigin';
+import { EXAMPLE_REPLY_MAX, type ExampleOriginRef } from '@/lib/writersStudio/exampleOrigin';
 import { DEFAULT_EDITORIAL_LATITUDE, LATITUDE_BANDS, type EditorialLatitude } from '@/lib/manuscript/editorialScope/contract';
 import { readStoredLatitude, writeStoredLatitude } from '@/lib/writersStudio/editingLatitude';
 import {
@@ -958,7 +958,7 @@ function ScopedWorkConversation({
                       onClick={() => press(DEEPER_EXAMPLE_WORDS, deeper)} style={buttonStyle}>
                       <StudioText role="metadata" as="span">Deeper{deeper !== exampleLatitude ? ` (${LATITUDE_BANDS[deeper].label})` : ''}</StudioText>
                     </button>
-                    {onTryExampleOnPage && manuscriptId && thread?.id ? (
+                    {onTryExampleOnPage && manuscriptId && thread?.id && t.body.length <= EXAMPLE_REPLY_MAX ? (
                       <button type="button" data-example-try-on-page="true" disabled={busy}
                         onClick={() => onTryExampleOnPage({ askThreadId: thread.id, turnIndex: t.index })} style={buttonStyle}>
                         <StudioText role="metadata" as="span">Try this on my page</StudioText>

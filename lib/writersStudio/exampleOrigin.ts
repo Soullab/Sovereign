@@ -34,7 +34,10 @@ export function isExampleOriginRef(value: unknown): value is ExampleOriginRef {
 export const TRY_EXAMPLE_WORDS = 'Try that example on my page.';
 
 /** A stored reply longer than this is not carried (a Work-conversation answer is far shorter). */
-export const EXAMPLE_REPLY_MAX = 4000;
+/* #2402 review (Low 2): 4000 was below what a Work reply can be (ASK_MAX_TOKENS is 16,000 tokens), so a long Deeper
+   example showed "Try this on my page" and then failed. The limit is now 16,000 characters, and the conversation offers
+   the button only for a reply within it, so the button and the server agree. */
+export const EXAMPLE_REPLY_MAX = 16_000;
 
 /** #2398 review (Low 4): the reply sits between <<< and >>> in the system prompt. Its own text can never close or reopen
  *  that fence: any run of three or more angle brackets inside it is softened before it is placed there. */

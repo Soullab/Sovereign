@@ -107,7 +107,7 @@ describe('Low 4: the earlier reply cannot break its fence', () => {
     const s = 'a > b, c < d, and -> e';
     expect(fenceSafe(s)).toBe(s);
   });
-  test('the carried reply is capped lower', () => {
-    expect(EXAMPLE_REPLY_MAX).toBe(4000);
+  test('the carried reply is capped (see exampleReview2 for the limit and the button that matches it)', () => {
+    expect(EXAMPLE_REPLY_MAX).toBe(16_000);
   });
 });
