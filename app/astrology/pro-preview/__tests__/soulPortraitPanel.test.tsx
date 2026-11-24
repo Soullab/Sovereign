@@ -58,10 +58,13 @@ describe('Soul Portrait inside Pro', () => {
   });
 
   it('sends the chart by id only and offers the private draft without leaving Pro', async () => {
-    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ previewUrl: '/soul-portrait/preview/abc' }) });
+    fetchMock.mockImplementation(async (url: string) => url === '/api/soul-portrait/generate'
+      ? { ok: true, status: 200, json: async () => ({ previewUrl: '/soul-portrait/preview/abc' }) }
+      : { ok: true, status: 200, json: async () => ({ portraits: [] }) });
     render();
     await act(async () => { button('Write draft').click(); });
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const post = fetchMock.mock.calls.find(([url]) => url === '/api/soul-portrait/generate')!;
+    const body = JSON.parse(post[1].body);
     expect(body.proChartSource).toBe('chart-1');
     expect(body.birthData).toBeUndefined();
     expect(body).toMatchObject({ name: 'Example Client', mode: 'gift', isMinor: false });
@@ -75,5 +78,27 @@ describe('Soul Portrait inside Pro', () => {
     render({ label: '' });
     expect(button('Write draft').disabled).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('offers to open a portrait already written for this person, and only theirs', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ portraits: [
+      { id: 'p1', subjectName: '  example   CLIENT ', createdAt: '2026-11-20T10:00:00Z', previewUrl: '/soul-portrait/preview/p1' },
+      { id: 'p2', subjectName: 'Someone Else', createdAt: '2026-11-21T10:00:00Z', previewUrl: '/soul-portrait/preview/p2' },
+    ] }) });
+    await act(async () => { render(); });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/soul-portrait/mine');
+    expect(init.body).toBeUndefined();
+    const links = Array.from(container.querySelectorAll('a')).filter((a) => a.textContent === 'Open portrait');
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/soul-portrait/preview/p1']);
+    expect(links[0].target).toBe('_blank');
+    expect(button('Write draft')).toBeTruthy();
+  });
+
+  it('still offers a new draft when the list cannot be read', async () => {
+    fetchMock.mockRejectedValue(new Error('offline'));
+    await act(async () => { render(); });
+    expect(container.textContent).not.toContain('Already written');
+    expect(button('Write draft').disabled).toBe(false);
   });
 });

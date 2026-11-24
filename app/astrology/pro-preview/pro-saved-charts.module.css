@@ -45,6 +45,9 @@
 .portraitYear summary { cursor: pointer; color: #e0c495; }
 .portraitYear { display: grid; gap: 6px; }
 .portraitYear textarea { width: 100%; box-sizing: border-box; margin-top: 6px; }
+.portraitExisting { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid rgba(224, 196, 149, .25); border-radius: 8px; }
+.portraitExisting ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.portraitExisting a { color: #e0c495; }
 .portraitActions { display: flex; flex-wrap: wrap; gap: 8px; }
 .portraitActions a, .portraitActions button { font: inherit; color: #f3e6cd; background: transparent; border: 1px solid #e0c495; border-radius: 8px; padding: 6px 12px; text-decoration: none; cursor: pointer; }
 .portraitActions button:disabled { opacity: .55; cursor: default; }

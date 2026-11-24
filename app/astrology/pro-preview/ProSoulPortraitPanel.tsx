@@ -12,7 +12,7 @@
  * says MAIA will read this chart before anything is sent; nothing is sent until
  * "Write draft". The draft is private and opens in a new tab.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PORTRAIT_THEMES, DEFAULT_PORTRAIT_THEME, type PortraitMode, type PortraitThemeKey } from '@/lib/soulPortrait/schema';
 import { parseTransitReport } from '@/lib/soulPortrait/generator/transitReportParser';
 import styles from './pro-saved-charts.module.css';
@@ -29,6 +29,45 @@ export function ageOn(birthDate: string, today = new Date()): number | null {
   let age = today.getFullYear() - y;
   if (today.getMonth() + 1 < mo || (today.getMonth() + 1 === mo && today.getDate() < d)) age -= 1;
   return age >= 0 && age < 130 ? age : null;
+}
+
+/** Names compared loosely: case and spacing do not matter. */
+export function sameName(a: string | null | undefined, b: string): boolean {
+  const norm = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase();
+  return !!a && norm(a) !== '' && norm(a) === norm(b);
+}
+
+function formatDay(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : `written ${d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}`;
+}
+
+type ExistingPortrait = { id: string; subjectName: string | null; createdAt: string; previewUrl: string };
+
+/**
+ * The astrologer's own portraits for this person, so one already written can be
+ * opened again (founder report 2026-11-24: "it doesn't open her soul portrait").
+ * A portrait does not record which chart it came from, only the subject's name,
+ * so this matches by name. The list request carries no chart details; the
+ * matching happens here, on the astrologer's own list.
+ */
+function useExistingPortraits(label: string): ExistingPortrait[] {
+  const [found, setFound] = useState<ExistingPortrait[]>([]);
+  useEffect(() => {
+    if (!label.trim()) return;
+    let live = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/soul-portrait/mine', { credentials: 'include' });
+        if (!res?.ok) return;
+        const data = await res.json();
+        const list: ExistingPortrait[] = Array.isArray(data?.portraits) ? data.portraits : [];
+        if (live) setFound(list.filter((p) => sameName(p.subjectName, label) && typeof p.previewUrl === 'string'));
+      } catch { /* the list is a convenience; writing a new draft still works */ }
+    })();
+    return () => { live = false; };
+  }, [label]);
+  return found;
 }
 
 type State =
@@ -55,6 +94,7 @@ export default function ProSoulPortraitPanel({ source, label, chartLine, birthDa
   const [minorTicked, setMinorTicked] = useState(false);
   const [transitReport, setTransitReport] = useState('');
   const [state, setState] = useState<State>({ kind: 'form' });
+  const existing = useExistingPortraits(label);
 
   const ageNumber = age.trim() ? Number(age) : null;
   const ageValid = ageNumber === null || (Number.isInteger(ageNumber) && ageNumber >= 0 && ageNumber < 130);
@@ -102,6 +142,20 @@ export default function ProSoulPortraitPanel({ source, label, chartLine, birthDa
   return (
     <div className={styles.portraitPanel} role="group" aria-label="Soul Portrait">
       <p className={styles.portraitChart}><span>Chart</span> {chartLine}</p>
+      {existing.length > 0 && (
+        <div className={styles.portraitExisting} aria-label="Portraits already written">
+          <p><strong>Already written for {label}</strong></p>
+          <ul>
+            {existing.map((p) => (
+              <li key={p.id}>
+                <a href={p.previewUrl} target="_blank" rel="noopener noreferrer">Open portrait</a>
+                {' '}<span className={styles.note}>{formatDay(p.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className={styles.note}>Or write a new draft below.</p>
+        </div>
+      )}
       <p className={styles.note}>MAIA will read this chart to write a private draft. Nothing is sent until you choose Write draft.</p>
       <div className={styles.portraitFields}>
         <label>Name on the portrait
