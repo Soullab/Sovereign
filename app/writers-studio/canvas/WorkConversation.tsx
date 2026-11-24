@@ -25,7 +25,7 @@ import {
 import { deliveryAfterDrop } from '@/lib/writersStudio/deliveryAfterDrop';
 import { receiptSentence } from '@/lib/manuscript/ask/readingReceipt';
 import {
-  resumeDecision, sendMode, threadChoiceLabel,
+  resumeDecision, sendMode, threadChoiceTitle, threadChoiceContext,
   type ResumeDecision, type ThreadDiscovery,
 } from '@/lib/writersStudio/observationDialogueResume';
 import type { LivingWork } from '../useLivingWorks';
@@ -836,7 +836,16 @@ function ScopedWorkConversation({
                   color: INK.primary, cursor: 'pointer',
                 }}
               >
-                {threadChoiceLabel(t, when)}
+                {/* Founder 2026-11-24: a title in the writer's own first words, then when it was last used. */}
+                {threadChoiceTitle(t) ? (
+                  <span data-resume-title style={{ display: 'block', textTransform: 'none', letterSpacing: 'normal',
+                    fontSize: '0.95rem', lineHeight: 1.35, color: INK.primary }}>
+                    {threadChoiceTitle(t)}
+                  </span>
+                ) : null}
+                <span data-resume-context style={{ display: 'block', color: INK.muted, marginTop: threadChoiceTitle(t) ? 2 : 0 }}>
+                  {threadChoiceContext(t, when)}
+                </span>
               </button>
             ))}
           </div>

@@ -68,6 +68,10 @@ type DragState = { side: Side; startX: number; startWidth: number };
 const PANEL_MIN = { left: 176, right: 250 } as const;
 const PANEL_MAX = { left: 560, right: 590 } as const;
 const CENTRE_MIN = 340;
+/* Laptop widths (721–1023px): the chapter list is a band above the page and MAIA keeps a column of her own beside it
+   (full-redesign-review.css). Founder 2026-11-24: "the column needs to be movable! Too tight on right side" — so MAIA's
+   divider shows in this band too, and once the writer has set a width it is kept instead of the 340px default cap. */
+const BESIDE_BAND = '(min-width: 721px) and (max-width: 1023px)';
 const PANEL_STORAGE_KEY = (mode: StudioMode) => 'soullab.studio.panel-layout.v1.' + mode;
 
 /**
@@ -100,6 +104,9 @@ export function Shell(props: ShellProps) {
   const [rightExpanded, setRightExpanded] = useState(rightInitiallyExpanded);
   const [leftWidth, setLeftWidth] = useState(geometry.manuscriptWidth);
   const [rightWidth, setRightWidth] = useState(geometry.maiaWidth);
+  // True once the writer has set MAIA's width (drag, arrow keys, or a saved width that is not the default).
+  const [rightChosen, setRightChosen] = useState(false);
+  const [besideBand, setBesideBand] = useState(false);
   const [readingSize, setReadingSize] = useState<StudioReadingSize>('large');
   // Do not let a render with the old mode/defaults overwrite the new mode's
   // saved widths before its hydration effect has completed.
@@ -127,6 +134,7 @@ export function Shell(props: ShellProps) {
       typeof v === 'number' && Number.isFinite(v) && v >= PANEL_MIN[side] && v <= PANEL_MAX[side];
     setLeftWidth(valid(parsed?.leftWidth, 'left') ? parsed.leftWidth : geometry.manuscriptWidth);
     setRightWidth(valid(parsed?.rightWidth, 'right') ? parsed.rightWidth : geometry.maiaWidth);
+    setRightChosen(valid(parsed?.rightWidth, 'right') && parsed.rightWidth !== geometry.maiaWidth);
     setRestoredKey(hydrationKey);
   }, [mode, geometry.manuscriptWidth, geometry.maiaWidth, rightInitiallyExpanded, hydrationKey]);
 
@@ -153,14 +161,25 @@ export function Shell(props: ShellProps) {
     setRightExpanded(true);
   }, [props.maiaRevealRequest, restoredKey, hydrationKey, hasRight]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const query = window.matchMedia(BESIDE_BAND);
+    const update = () => setBesideBand(query.matches);
+    update();
+    query.addEventListener?.('change', update);
+    return () => query.removeEventListener?.('change', update);
+  }, []);
+
   const constrain = (side: Side, requested: number): number => {
     const bounds = shellRef.current?.getBoundingClientRect().width
       ?? (typeof window === 'undefined' ? 1536 : window.innerWidth);
+    // In the laptop band the chapter list sits above the page, so it takes no width from MAIA's column.
+    const leftBeside = leftVisible && !besideBand;
     const other = side === 'left'
       ? (rightVisible ? rightWidth : 0)
-      : (leftVisible ? leftWidth : 0);
+      : (leftBeside ? leftWidth : 0);
     const space = geometry.padLeft + geometry.padRight
-      + (leftVisible ? geometry.gapLeft : 0) + (rightVisible ? geometry.gapRight : 0);
+      + (leftBeside ? geometry.gapLeft : 0) + (rightVisible ? geometry.gapRight : 0);
     const maximum = Math.max(PANEL_MIN[side], Math.min(PANEL_MAX[side], bounds - space - other - CENTRE_MIN));
     return Math.round(Math.min(maximum, Math.max(PANEL_MIN[side], requested)));
   };
@@ -168,12 +187,19 @@ export function Shell(props: ShellProps) {
   const movePanel = (side: Side, next: number) => {
     const width = constrain(side, next);
     if (side === 'left') setLeftWidth(width);
-    else setRightWidth(width);
+    else { setRightWidth(width); setRightChosen(true); }
+  };
+  /* What the writer sees, not what is stored: in the laptop band MAIA's column may be showing the 340px default cap,
+     and a drag must start from the edge under the pointer rather than jump to the stored width. */
+  const shownRightWidth = (): number => {
+    if (!besideBand) return rightWidth;
+    const shown = shellRef.current?.querySelector<HTMLElement>('.fr-maia')?.getBoundingClientRect().width;
+    return shown && Number.isFinite(shown) && shown > 0 ? shown : rightWidth;
   };
 
   const pointerDown = (side: Side, event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
-    drag.current = { side, startX: event.clientX, startWidth: side === 'left' ? leftWidth : rightWidth };
+    drag.current = { side, startX: event.clientX, startWidth: side === 'left' ? leftWidth : shownRightWidth() };
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
   };
@@ -190,7 +216,7 @@ export function Shell(props: ShellProps) {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home') return;
     event.preventDefault();
     const direction = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
-    const current = side === 'left' ? leftWidth : rightWidth;
+    const current = side === 'left' ? leftWidth : shownRightWidth();
     movePanel(side, direction === 0 ? PANEL_MIN[side] : current + direction * (side === 'left' ? 24 : -24));
   };
 
@@ -225,6 +251,7 @@ export function Shell(props: ShellProps) {
       className="fr-shell"
       data-left-open={leftVisible ? 'true' : 'false'}
       data-right-open={rightVisible ? 'true' : 'false'}
+      data-maia-width-chosen={rightChosen ? 'true' : 'false'}
       data-appearance={appearance}
       data-mode={mode}
       data-world="soullab"
@@ -337,6 +364,7 @@ export function Shell(props: ShellProps) {
                     drag.current = null;
                     setLeftWidth(geometry.manuscriptWidth);
                     setRightWidth(geometry.maiaWidth);
+                    setRightChosen(false);
                   }}
                 >
                   Reset widths
@@ -421,7 +449,7 @@ export function Shell(props: ShellProps) {
             onPointerDown={(e) => pointerDown('right', e)} onPointerMove={pointerMove}
             onPointerUp={pointerStop} onPointerCancel={pointerStop}
             onKeyDown={(e) => keyboardResize('right', e)}
-            onDoubleClick={() => setRightWidth(geometry.maiaWidth)}
+            onDoubleClick={() => { setRightWidth(geometry.maiaWidth); setRightChosen(false); }}
           />
         ) : null}
       </div>

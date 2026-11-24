@@ -390,6 +390,8 @@ export async function threadsOnLivingWorkAsk(
         id: String(thread.id),
         openedAt: String(thread.openedAt),
         turnCount: Number(thread.turnCount),
+        opening: typeof thread.opening === 'string' ? thread.opening : null,
+        lastAt: thread.lastAt ? String(thread.lastAt) : null,
       })),
     };
   } catch {
