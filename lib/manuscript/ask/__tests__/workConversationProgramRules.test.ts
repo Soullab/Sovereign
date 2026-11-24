@@ -15,7 +15,7 @@ import { runStructured } from '../../../ai/structured/router';
 import { askMaia, workAskPromptHash, type AskContext } from '../askReader';
 import { UNMEASURED } from '../staleness';
 import {
-  conversationProgram, conversationProgramInstructions, workQuestionsOnlyInstruction, workProgramUncertainInstruction,
+  conversationProgram, conversationProgramInstructions, workQuestionsOnlyInstruction, workProgramUncertainInstruction, workExampleWordingInstruction,
   CONVERSATION_PAUSE_SQL, CONVERSATION_PROGRAM_SQL,
 } from '../../editorialRuntime/workRevisionPause';
 import { studioPathById } from '@/lib/writersStudio/studioPaths';
@@ -57,9 +57,9 @@ describe('what the server computes for a Work', () => {
     expect(conversationProgramInstructions(c, postureOf)).toEqual([workQuestionsOnlyInstruction(), ESSAY]);
   });
 
-  test('an ordinary, unpaused Work gets nothing added: the conversation is exactly as before', async () => {
+  test('an ordinary, unpaused Work gets only the asked-for example allowance (founder 2026-11-24)', async () => {
     query.mockResolvedValueOnce({ rows: [{ paused: false }] }).mockResolvedValueOnce({ rows: [{ studio_path: null }] });
-    expect(conversationProgramInstructions(await conversationProgram('m1', 'w1', 'ms1'), postureOf)).toEqual([]);
+    expect(conversationProgramInstructions(await conversationProgram('m1', 'w1', 'ms1'), postureOf)).toEqual([workExampleWordingInstruction()]);
   });
 
   test('an unreadable setting fails CLOSED: questions-only on, conservative posture', async () => {
