@@ -106,3 +106,26 @@ describe('the Pro Ask prompt carries the guide', () => {
     }
   });
 });
+
+describe('MAIA knows the astrologer\'s own chart is theirs (phone witness 2026-11-24)', () => {
+  it('says so without memory on, and never asks whose chart it is', () => {
+    const prompt = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', { ownChart: true });
+    expect(prompt).toContain('The chart below is the astrologer\'s own');
+    expect(prompt).toContain('never ask whose chart it is');
+  });
+  it('says nothing of ownership for a client chart', () => {
+    const prompt = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', {});
+    expect(prompt).not.toContain('The chart below is the astrologer\'s own');
+    expect(prompt).not.toContain('your chart');
+  });
+  it('memory on keeps the fuller own-chart instruction', () => {
+    const prompt = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', { ownChart: true, personal: { kept: '' } });
+    expect(prompt).toContain('they have asked you to read it with what they have chosen to keep');
+    expect(prompt).not.toContain('The chart below is the astrologer\'s own');
+  });
+  it('a kept conversation is never described as forgotten', () => {
+    expect(proAskSystemPrompt('natal', 'x', { keeping: true })).not.toContain('Nothing is remembered between visits');
+    expect(proAskSystemPrompt('natal', 'x', { keeping: true, continuing: true })).not.toContain('Nothing is kept after the visit');
+    expect(proAskSystemPrompt('natal', 'x', {})).toContain('Nothing is remembered between visits');
+  });
+});
