@@ -68,9 +68,9 @@ export const PRO_CONTROLS: readonly ProControl[] = [
   { label: 'Back to the tools', where: 'top of this conversation', does: 'returns to the tools; key M toggles' },
   { label: 'Mentor', where: 'top right of this conversation, beside Ask', does: 'teaching the technique, with the chart only as the example' },
   { label: 'How do I…?', where: 'top right of this conversation, beside Ask and Mentor, and in this conversation before a chart is open', does: 'questions about the workstation and techniques in general; MAIA reads no chart in this mode' },
-  { label: 'In depth', where: 'in this conversation, beside Brief', does: 'a fuller answer' },
-  { label: 'Draw on all systems', where: 'in this conversation', does: 'adds progressions, the Four Pillars and the Maya count to what MAIA reads' },
-  { label: 'Read this with what you know about me', where: 'in this conversation, for the astrologer\'s own chart only', does: 'MAIA reads the chart alongside what the astrologer has chosen to keep with her, for this conversation only' },
+  { label: 'In depth', where: 'just above the box where you type, beside Brief', does: 'a fuller answer' },
+  { label: 'Draw on all systems', where: 'just above the box where you type', does: 'adds progressions, the Four Pillars and the Maya count to what MAIA reads' },
+  { label: 'Read this with what you know about me', where: 'just above the box where you type, for the astrologer\'s own chart only (not in Mentor)', does: 'MAIA reads the chart alongside what the astrologer has chosen to keep with her, for this conversation only' },
 ];
 
 export function proGuideInstruction(): string {
