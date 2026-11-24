@@ -1,4 +1,5 @@
 import type { TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
+import type { ExampleOriginRef } from '@/lib/writersStudio/exampleOrigin';
 import type { TurnShape } from '@/lib/writersStudio/conversationTurn';
 import type { PassageAct } from '@/lib/writersStudio/passageActs';
 import type { ArrivalOriginRef } from '@/lib/writersStudio/arrivalOrigin';
@@ -233,6 +234,8 @@ export async function sendBoundEditorialTurn(
     passageAct?: PassageAct;
     /** Where the writer arrived from (F1): identities only; the server loads the observation. */
     origin?: ArrivalOriginRef;
+    /** "Try this on my page": MAIA's own earlier example, identities only; the server loads it. */
+    exampleOrigin?: ExampleOriginRef;
   } | string,
 ): Promise<EditorialTurnOutcome> {
   if (!posture.resolved) return { ok: false, reason: 'posture_unresolved' };
@@ -244,6 +247,7 @@ export async function sendBoundEditorialTurn(
   const turnShape = typeof options === 'string' ? undefined : options?.turnShape;
   const passageAct = typeof options === 'string' ? undefined : options?.passageAct;
   const origin = typeof options === 'string' ? undefined : options?.origin;
+  const exampleOrigin = typeof options === 'string' ? undefined : options?.exampleOrigin;
   if (!relationshipId) return { ok: false, reason: 'scope_refused', detail: 'relationship_required' };
   try {
     const res = await apiFetch('/api/writers-studio/editorial/turn', {
@@ -261,6 +265,7 @@ export async function sendBoundEditorialTurn(
         ...(turnShape ? { turnShape } : {}),
         ...(passageAct ? { passageAct } : {}),
         ...(origin ? { origin } : {}),
+        ...(exampleOrigin ? { exampleOrigin } : {}),
         ...replyLengthField(),
       }),
     });

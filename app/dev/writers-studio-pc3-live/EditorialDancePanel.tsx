@@ -1,5 +1,6 @@
 'use client';
 
+import type { ExampleOriginRef } from '@/lib/writersStudio/exampleOrigin';
 import { MaiaRelationshipPromise } from './MaiaQuestionsOnlyCopy';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { chooseReplyLength } from '@/lib/writersStudio/replyLengthPreference';
@@ -34,7 +35,7 @@ export interface PassageAct {
   label: string;
   prompt: string;
   depth?: EditorialDepth;
-  options?: { proposalPolicy?: 'allow' | 'reply_only'; proposalRequested?: boolean; teachingAnchor?: TeachingAnchor; passageAct?: PassageActId; turnShape?: TurnShape };
+  options?: { proposalPolicy?: 'allow' | 'reply_only'; proposalRequested?: boolean; teachingAnchor?: TeachingAnchor; passageAct?: PassageActId; turnShape?: TurnShape; exampleOrigin?: ExampleOriginRef };
 }
 
 export interface EditorialDancePanelProps {
@@ -75,7 +76,7 @@ export interface EditorialDancePanelProps {
    * words until then, so a refusal or a failed send never costs them their message.
    * A host that returns nothing keeps the older clear-on-send behaviour.
    */
-  onSend: (text?: string, options?: { proposalPolicy?: 'allow' | 'reply_only'; proposalRequested?: boolean; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageActId; origin?: ArrivalOriginRef }) => void | Promise<boolean>;
+  onSend: (text?: string, options?: { proposalPolicy?: 'allow' | 'reply_only'; proposalRequested?: boolean; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageActId; origin?: ArrivalOriginRef; exampleOrigin?: ExampleOriginRef }) => void | Promise<boolean>;
   onSaveMember: (draft: MemberRevisionDraft) => Promise<boolean>;
   onApply: () => void;
   onUndo?: () => void;
@@ -541,7 +542,7 @@ export default function EditorialDancePanel(props: EditorialDancePanelProps) {
   const begin = (
     prompt: string,
     depth?: EditorialDepth,
-    options?: { proposalPolicy?: 'allow' | 'reply_only'; proposalRequested?: boolean; teachingAnchor?: TeachingAnchor; passageAct?: PassageActId },
+    options?: { proposalPolicy?: 'allow' | 'reply_only'; proposalRequested?: boolean; teachingAnchor?: TeachingAnchor; passageAct?: PassageActId; exampleOrigin?: ExampleOriginRef },
   ) => {
     if (depth) props.onDepth(depth);
     props.onSend(prompt, withOrigin(options));

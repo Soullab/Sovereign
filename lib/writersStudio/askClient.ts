@@ -13,6 +13,7 @@
  * says — only asked about the one it already holds.
  */
 
+import type { EditorialLatitude } from '@/lib/manuscript/editorialScope/contract';
 import type { StudioIntent } from './beginningTurn';
 import { declaredSanctuaryPosture } from '@/lib/sanctuary/currentClientPosture';
 import type { TeachingAnchor } from './teachingTurn';
@@ -112,6 +113,8 @@ export async function ask(input: {
   carryScope?: 'here' | 'whole_book';
   /** The conversation's room can carry out MAIA's acting offers (WorkConversation with `onStudioAct`). */
   roomActs?: boolean;
+  /** The writer's selected Revision latitude: how much an example MAIA shows may change their words (founder 2026-11-24). */
+  exampleLatitude?: EditorialLatitude;
 }): Promise<AskOutcome> {
   try {
     const res = await apiFetch(url(input.manuscriptId), {
@@ -128,6 +131,7 @@ export async function ask(input: {
         ...(input.studioIntent ? { studioIntent: input.studioIntent } : {}),
         ...(input.carryScope === 'whole_book' ? { carryScope: 'whole_book' } : {}),
         ...(input.roomActs ? { roomActs: true } : {}),
+        ...(input.exampleLatitude !== undefined ? { exampleLatitude: input.exampleLatitude } : {}),
         // Every request to this route declares its Sanctuary posture when it can; the server keeps nothing for one that does not.
         ...(input.sanctuary !== undefined ? { sanctuary: input.sanctuary } : declaredSanctuaryPosture()),
       }),
@@ -320,6 +324,7 @@ export async function askLivingWork(input: {
   workId: string;
   question: string;
   threadId?: string;
+  exampleLatitude?: EditorialLatitude;
 }): Promise<AskOutcome> {
   try {
     const res = await apiFetch(livingWorkAskUrl(input.workId), {
@@ -328,6 +333,7 @@ export async function askLivingWork(input: {
       body: JSON.stringify({
         question: input.question,
         ...(input.threadId ? { threadId: input.threadId } : {}),
+        ...(input.exampleLatitude !== undefined ? { exampleLatitude: input.exampleLatitude } : {}),
         ...declaredSanctuaryPosture(),
       }),
     });

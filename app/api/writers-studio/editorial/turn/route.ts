@@ -42,6 +42,8 @@ import { isTurnShape, type TurnShape } from '@/lib/writersStudio/conversationTur
 import { isPassageAct, type PassageAct } from '@/lib/writersStudio/passageActs';
 import { isArrivalOriginRef, type ArrivalOrigin, type ArrivalOriginRef } from '@/lib/writersStudio/arrivalOrigin';
 import { resolveArrivalOrigin } from '@/lib/writersStudio/arrivalOriginServer';
+import { isExampleOriginRef, type ExampleOriginRef } from '@/lib/writersStudio/exampleOrigin';
+import { resolveExampleOrigin } from '@/lib/writersStudio/exampleOriginServer';
 import { OPENING_GESTURE } from '@/lib/writersStudio/conversationOpening';
 import { query } from '@/lib/db/postgres';
 import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
@@ -60,7 +62,7 @@ const enabled = () => process.env.WRITERS_STUDIO_EDITORIAL_ENABLED === '1';
  */
 const TOP_KEYS = [
   'threadId', 'act', 'sanctuary', 'scope', 'proposalPolicy', 'responseDepth', 'relationshipId', 'carry',
-  'teachingAnchor', 'turnShape', 'passageAct', 'opening', 'replyLength', 'origin',
+  'teachingAnchor', 'turnShape', 'passageAct', 'opening', 'replyLength', 'origin', 'exampleOrigin',
 ] as const;
 const CARRY_KEYS = ['kind', 'sourceEpisodeSequence'] as const;
 const ACT_KEYS = ['act', 'text', 'refersTo'] as const;
@@ -99,6 +101,8 @@ type Parsed =
       replyLength: ReplyLength | null;
       /** Where the writer arrived from (F1). ⛔ Identities only; the server loads the observation. */
       origin: ArrivalOriginRef | null;
+      /** "Try this on my page" (founder 2026-11-24). ⛔ Identities only; the server loads MAIA's own earlier reply. */
+      exampleOrigin: ExampleOriginRef | null;
     }
   | { ok: false; error: string };
 
@@ -132,7 +136,7 @@ function parseClosed(body: unknown): Parsed {
   /* R2 "MAIA opens": an exclusive request shape. No act, no card, no shape, no carry. */
   if (b.opening !== undefined) {
     if (b.opening !== true) return { ok: false, error: 'opening must be true' };
-    const clash = (['act', 'passageAct', 'teachingAnchor', 'turnShape', 'carry', 'origin'] as const)
+    const clash = (['act', 'passageAct', 'teachingAnchor', 'turnShape', 'carry', 'origin', 'exampleOrigin'] as const)
       .filter((k) => b[k] !== undefined);
     if (clash.length) return { ok: false, error: `opening is exclusive with: ${clash.join(', ')}` };
     if (!(b.proposalPolicy === undefined || b.proposalPolicy === 'reply_only')) {
@@ -163,7 +167,7 @@ function parseClosed(body: unknown): Parsed {
       sanctuary: TurnPosture.resolve(b).sanctuary,
       scope: openScope, relationshipId: b.relationshipId, carry: null,
       mayProposeImmediately: false, proposalPolicy: 'reply_only', responseDepth: depth,
-      teachingAnchor: null, turnShape: null, passageAct: null, replyLength, origin: null,
+      teachingAnchor: null, turnShape: null, passageAct: null, replyLength, origin: null, exampleOrigin: null,
     };
   }
 
@@ -247,6 +251,14 @@ function parseClosed(body: unknown): Parsed {
     return { ok: false, error: 'origin must be { source, readingId, observationKey }' };
   }
   const origin: ArrivalOriginRef | null = b.origin === undefined ? null : b.origin;
+  if (!(b.exampleOrigin === undefined || isExampleOriginRef(b.exampleOrigin))) {
+    return { ok: false, error: 'exampleOrigin must be { askThreadId, turnIndex }' };
+  }
+  /* ⛔ Only with "Show me an edit" (revise): trying an example is asking for an edit, never a reply-only or teaching turn. */
+  if (b.exampleOrigin !== undefined && b.passageAct !== 'revise') {
+    return { ok: false, error: 'exampleOrigin goes only with passageAct revise' };
+  }
+  const exampleOrigin: ExampleOriginRef | null = b.exampleOrigin === undefined ? null : b.exampleOrigin;
   if (passageAct && (teachingAnchor || turnShape)) {
     return { ok: false, error: 'passageAct, teachingAnchor and turnShape are exclusive' };
   }
@@ -305,6 +317,7 @@ function parseClosed(body: unknown): Parsed {
     passageAct,
     replyLength,
     origin,
+    exampleOrigin,
   };
 }
 
@@ -437,6 +450,14 @@ async function postHandler(request: NextRequest) {
     if (!resolved) return NextResponse.json({ error: 'origin_not_found', persisted: false }, { status: 404 });
     arrivalOrigin = resolved;
   }
+  /* "Try this on my page": the example rests on MAIA's own reply in the member's own Work conversation on this manuscript,
+     resolved before anything is written. ⛔ An unresolvable reference refuses; it is never sent on as text. */
+  let exampleOrigin: string | undefined;
+  if (parsed.exampleOrigin !== null) {
+    const resolved = await resolveExampleOrigin({ memberId, threadId: parsed.threadId, ref: parsed.exampleOrigin });
+    if (!resolved) return NextResponse.json({ error: 'example_not_found', persisted: false }, { status: 404 });
+    exampleOrigin = resolved;
+  }
 
   const act = await persistMemberEditorialAct({ keep: KeepWitness.fromDeclaration(parsed.sanctuary), memberId, threadId: parsed.threadId, act: parsed.act! });
   if (!act.ok) {
@@ -466,6 +487,7 @@ async function postHandler(request: NextRequest) {
     ...(parsed.passageAct ? { passageAct: parsed.passageAct } : {}),
     ...(parsed.replyLength ? { replyLength: parsed.replyLength } : {}),
     ...(arrivalOrigin ? { arrivalOrigin } : {}),
+    ...(exampleOrigin ? { exampleOrigin } : {}),
   });
 
   if (!turn.ok) {

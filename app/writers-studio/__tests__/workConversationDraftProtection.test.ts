@@ -166,7 +166,9 @@ it('retains the exact draft after a transport refusal instead of clearing it bef
     // No saved settings on this device ⇒ the request says so, and the server uses the member's account default (founder ruling 2026-11-09).
     anchor: { on: 'work' }, sectionId: 'section-a', sanctuary: 'no_live_settings',
     // G-3 (WS-CRAFT-CONVENTIONS-01): the writer's working style travels with every question (no saved style ⇒ the default).
-    responseStyle: 'guided' });
+    responseStyle: 'guided',
+    // Founder 2026-11-24: how much an example may change the writer's words (no stored Revision latitude ⇒ the smallest).
+    exampleLatitude: 1 });
   // WS-F1: no thread to ask, so it is not known whether it arrived; the page must not claim it did not.
   expect(input().value).toBe(draft); expect(host.textContent).toContain('it isn’t known whether that reached her');
   expect(host.textContent).not.toContain('That didn’t reach her');
@@ -242,7 +244,7 @@ it('preserves identical retyping after an in-flight Living Work send', async () 
   mockAsk.mockImplementation(() => new Promise((done) => { resolve = done; }));
   await mount('Question before a manuscript', null); await click('Send');
   expect(mockAsk).toHaveBeenCalledWith({
-    workId: 'fictional-work', question: 'Question before a manuscript'
+    workId: 'fictional-work', question: 'Question before a manuscript', exampleLatitude: 1,
   });
   await type('Other question'); await type('Question before a manuscript');
   await act(async () => resolve(response));

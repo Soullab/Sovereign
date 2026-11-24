@@ -1,5 +1,6 @@
 'use client';
 
+import type { ExampleOriginRef } from '@/lib/writersStudio/exampleOrigin';
 import { FREE_WORK_LIMIT_CODE, FREE_WORK_LIMIT_MESSAGE } from '@/lib/writersStudio/workLimitShared';
 import { revealHeldPassage } from '@/lib/writersStudio/revealHeldPassage';
 import type { TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
@@ -1513,7 +1514,7 @@ export default function FlagshipWriteEditController() {
 
   const sendEditorial = useCallback(async (
     requestText?: string,
-    options?: { proposalPolicy?: ProposalPolicy; proposalRequested?: boolean; displayText?: string; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageAct; origin?: ArrivalOriginRef },
+    options?: { proposalPolicy?: ProposalPolicy; proposalRequested?: boolean; displayText?: string; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageAct; origin?: ArrivalOriginRef; exampleOrigin?: ExampleOriginRef },
   ): Promise<boolean> => {
     // displayText belongs to the local author-facing Craft presentation only.
     // It is neither a persistable author-turn field nor server authority.
@@ -1640,6 +1641,7 @@ export default function FlagshipWriteEditController() {
           ...(options?.turnShape ? { turnShape: options.turnShape } : {}),
           ...(options?.passageAct ? { passageAct: options.passageAct } : {}),
           ...(options?.origin ? { origin: options.origin } : {}),
+          ...(options?.exampleOrigin ? { exampleOrigin: options.exampleOrigin } : {}),
           ...(a2Relationship ? { relationshipId: a2Relationship.id } : {}),
           ...(carry ? { carry } : {}),
         },

@@ -27,6 +27,7 @@ import { workContextFingerprint } from '@/lib/writersStudio/workContextFingerpri
 import { meteredRoute, bindMaiaMeter } from '@/lib/writersStudio/maiaMeter';
 import { conversationProgram, conversationProgramInstructions } from '@/lib/manuscript/editorialRuntime/workRevisionPause';
 import { currentStage, studioPathById } from '@/lib/writersStudio/studioPaths';
+import { isEditorialLatitude, type EditorialLatitude } from '@/lib/manuscript/editorialScope/contract';
 
 export const dynamic = 'force-dynamic';
 
@@ -80,10 +81,16 @@ async function postHandler(
     return NextResponse.json({ refusal: 'malformed' }, { status: 400 });
   }
   const body = raw as Record<string, unknown>;
-  const allowed = new Set(['question', 'threadId', 'sanctuary']);
+  const allowed = new Set(['question', 'threadId', 'sanctuary', 'exampleLatitude']);
   if (Object.keys(body).some((key) => !allowed.has(key))) {
     return NextResponse.json({ refusal: 'malformed', detail: 'unknown field' }, { status: 400 });
   }
+
+  /* Founder 2026-11-24: an example keeps to the writer's selected Revision latitude. ⛔ Invalid is refused; absent is the smallest. */
+  if (!(body.exampleLatitude === undefined || isEditorialLatitude(body.exampleLatitude))) {
+    return NextResponse.json({ refusal: 'malformed', detail: 'exampleLatitude' }, { status: 400 });
+  }
+  const exampleLatitude: EditorialLatitude | undefined = body.exampleLatitude as EditorialLatitude | undefined;
 
   const question = typeof body.question === 'string' ? body.question.trim() : '';
   if (!question) {
@@ -159,6 +166,7 @@ async function postHandler(
     await conversationProgram(memberId, workId, built.facts.manuscript?.id ?? null),
     (id) => studioPathById(id)?.studioPosture ?? null,
     (programId, stageId) => { const p = studioPathById(programId); return p ? currentStage(p, stageId).posture ?? null : null; },
+    exampleLatitude,
   );
   const outcome = await askMaia(
     {

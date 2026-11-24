@@ -1,5 +1,7 @@
 'use client';
 
+import { TRY_EXAMPLE_WORDS } from '@/lib/writersStudio/exampleOrigin';
+import type { ExampleOriginRef } from '@/lib/writersStudio/exampleOrigin';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { apiFetch } from '@/lib/http/apiBase';
 import { MaiaNotYetNote } from './MaiaQuestionsOnlyCopy';
@@ -189,6 +191,8 @@ export type P4R1Pc3WriteEditViewProps = {
     passageAct?: PassageActId;
     /** Where the writer arrived from (F1): identities only; the server loads the observation. */
     origin?: ArrivalOriginRef;
+    /** "Try this on my page" (founder 2026-11-24): MAIA's own earlier example, by reference; the server loads it. */
+    exampleOrigin?: ExampleOriginRef;
   }) => void | Promise<boolean>;
   /** Retire pending visible editorial result after an author STOP. */
   onStopEditorial: () => void;
@@ -1171,6 +1175,12 @@ export function P4R1Pc3WriteEditView(props: P4R1Pc3WriteEditViewProps) {
         startFresh={stageNoteStarter !== null && workConversationStarter === stageNoteStarter}
         onStudioPlace={props.onStudioPlace}
         onKeepWords={props.onKeepWords}
+        /* Founder 2026-11-24 ("Yes, via the passage"): an example goes to the page only through the passage path. MAIA proposes
+           a real edit there, measured against the writer's level; the writer applies it with "Use this", or not. */
+        onTryExampleOnPage={(exampleOrigin) => runPassageAct({
+          label: 'Try this on my page', prompt: TRY_EXAMPLE_WORDS,
+          options: { proposalPolicy: 'allow', proposalRequested: true, passageAct: 'revise', exampleOrigin },
+        })}
         onClose={() => {
           setWorkConversationOpen(false);
           setWorkConversationStarter('');
