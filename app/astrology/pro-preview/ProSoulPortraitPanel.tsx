@@ -11,6 +11,12 @@
  * minor's. Saved charts promise they are not shared with MAIA, so the panel
  * says MAIA will read this chart before anything is sent; nothing is sent until
  * "Write draft". The draft is private and opens in a new tab.
+ *
+ * The client link is made on the draft page, not here: the astrologer reads the
+ * draft first, then ticks that the person agreed and chooses Create private link
+ * (the send step, which makes the portrait final). Founder walk 2026-11-24: the
+ * panel stopped at "Open draft" without saying so, so no link was found. It now
+ * says where the link is made.
  */
 import { useState } from 'react';
 import { PORTRAIT_THEMES, DEFAULT_PORTRAIT_THEME, type PortraitMode, type PortraitThemeKey } from '@/lib/soulPortrait/schema';
@@ -34,7 +40,7 @@ export function ageOn(birthDate: string, today = new Date()): number | null {
 type State =
   | { kind: 'form' }
   | { kind: 'writing' }
-  | { kind: 'done'; previewUrl: string }
+  | { kind: 'done'; previewUrl: string; minor: boolean }
   | { kind: 'error'; message: string };
 
 export default function ProSoulPortraitPanel({ source, label, chartLine, birthDate, onClose }: {
@@ -79,16 +85,25 @@ export default function ProSoulPortraitPanel({ source, label, chartLine, birthDa
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) setState({ kind: 'error', message: 'Please sign in again to write a portrait.' });
       else if (!res.ok || !data.previewUrl) setState({ kind: 'error', message: data.error || 'The draft could not be written. Please try again.' });
-      else setState({ kind: 'done', previewUrl: data.previewUrl });
+      else setState({ kind: 'done', previewUrl: data.previewUrl, minor: isMinor });
     } catch {
       setState({ kind: 'error', message: 'The draft could not be written. Please try again.' });
     }
   }
 
   if (state.kind === 'done') {
+    const who = name.trim() || 'this person';
     return (
       <div className={styles.portraitPanel} role="group" aria-label="Soul Portrait">
-        <p role="status"><strong>Draft ready.</strong> It is private until you choose to share it.</p>
+        <p role="status"><strong>Draft ready.</strong> It is private until you send it.</p>
+        {state.minor ? (
+          <p className={styles.note}>This portrait is of a minor, so it cannot be sent and no client link can be made yet.</p>
+        ) : (
+          <p className={styles.note}>
+            To give {who} a link, open the draft and read it. At the end of the draft, under Send this portrait, tick
+            that {who} has agreed to receive it and choose Create private link. Sending makes the portrait final.
+          </p>
+        )}
         <div className={styles.portraitActions}>
           <a href={state.previewUrl} target="_blank" rel="noopener noreferrer">Open draft</a>
           <button type="button" onClick={() => setState({ kind: 'form' })}>Write another</button>

@@ -71,6 +71,26 @@ describe('Soul Portrait inside Pro', () => {
     expect(draft.target).toBe('_blank');
   });
 
+  it('says where the client link is made, and sends nothing itself', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ previewUrl: '/soul-portrait/preview/abc' }) });
+    render();
+    await act(async () => { button('Write draft').click(); });
+    expect(container.textContent).toContain('To give Example Client a link, open the draft and read it.');
+    // These name the real controls at the end of the draft (SendPortraitPanel).
+    expect(container.textContent).toContain('under Send this portrait');
+    expect(container.textContent).toContain('choose Create private link');
+    // Nothing is sent from here: the only request was the draft.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('for a minor, says no client link can be made', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ previewUrl: '/soul-portrait/preview/abc' }) });
+    render({ birthDate: `${new Date().getFullYear() - 10}-01-01` });
+    await act(async () => { button('Write draft').click(); });
+    expect(container.textContent).toContain('cannot be sent and no client link can be made yet');
+    expect(container.textContent).not.toContain('Create private link');
+  });
+
   it('sends nothing without a name', () => {
     render({ label: '' });
     expect(button('Write draft').disabled).toBe(true);
