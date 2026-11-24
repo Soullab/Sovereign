@@ -44,6 +44,7 @@
 
 import { isTeachingAnchor, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
 import { isStudioIntent, type StudioIntent } from '@/lib/writersStudio/beginningTurn';
+import { isEditorialLatitude, type EditorialLatitude } from '@/lib/manuscript/editorialScope/contract';
 import { NextRequest, NextResponse } from 'next/server';
 import { ageGateForManuscript, ageGateRefusal } from '@/lib/studios/workAgeGate';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
@@ -295,6 +296,12 @@ async function postHandler(
     return NextResponse.json({ refusal: 'malformed', detail: 'studioIntent' }, { status: 400 });
   }
   const studioIntent: StudioIntent | undefined = body.studioIntent;
+  /* Founder 2026-11-24: an example MAIA shows keeps to the writer's own Revision latitude, as the writer has selected it.
+     ⛔ An invalid level is refused, never widened; an absent one is the smallest (Touch). */
+  if (!(body.exampleLatitude === undefined || isEditorialLatitude(body.exampleLatitude))) {
+    return NextResponse.json({ refusal: 'malformed', detail: 'exampleLatitude' }, { status: 400 });
+  }
+  const exampleLatitude: EditorialLatitude | undefined = body.exampleLatitude;
   /* WS-WHOLE-BOOK-CONVERSATION (founder approval 2026-11-10, D1): the carried account's scope is DECLARED by the writer's "About" control.
      ⛔ Never inferred from the question text: anything but an explicit 'whole_book' is the ordinary chapter scope. */
   const carryScope: CarryScope = body.carryScope === 'whole_book' ? 'whole_book' : 'here';
@@ -453,7 +460,7 @@ async function postHandler(
   if (check.anchor.on === 'work') {
     return workTurn({ keep: studioPosture.witness, manuscriptId: id, memberId, anchor: check.anchor, existing,
                       question, sectionId: bodySectionId, carryScope, posture: turnPosture, postureKnown: postureDeclared,
-                      responseStyle, teachingAnchor, roomActs, studioIntent });
+                      responseStyle, teachingAnchor, roomActs, studioIntent, exampleLatitude });
   }
 
   if (!reading) {
@@ -629,6 +636,8 @@ async function workTurn(input: {
   carryScope?: CarryScope;
   /** The conversation's room can carry out MAIA's acting offers (the Develop stage). */
   roomActs?: boolean;
+  /** The writer's selected Revision latitude for examples (founder 2026-11-24); absent ⇒ the smallest. */
+  exampleLatitude?: EditorialLatitude;
 }): Promise<NextResponse> {
   const { manuscriptId, memberId, anchor, existing, question, sectionId, posture, postureKnown, responseStyle, teachingAnchor } = input;
   const carryScope: CarryScope = input.carryScope ?? 'here';
@@ -786,6 +795,7 @@ async function workTurn(input: {
     await conversationProgram(memberId, built.facts.work.id, built.facts.manuscript?.id ?? manuscriptId),
     (id) => studioPathById(id)?.studioPosture ?? null,
     (programId, stageId) => { const p = studioPathById(programId); return p ? currentStage(p, stageId).posture ?? null : null; },
+    input.exampleLatitude,
   );
   const workCtx = { kind: 'work' as const, anchor, facts: factsWithDecisions, staleness, standingRead, practiceOffer, carriedReadings, locusMovedSinceEarlier,
     /* Walk 2026-11-09: in Sanctuary she suggested granting reading permission. She is now told she is in Sanctuary (and what it refuses). */

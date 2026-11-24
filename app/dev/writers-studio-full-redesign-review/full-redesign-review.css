@@ -65,6 +65,11 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
   /* WS-COLUMNS: below 1024px the manuscript list is a band above the page; hidden, it leaves no empty band. */
   .fr-shell[data-left-open='false'] .fr-manuscript, .fr-shell[data-right-open='false'] .fr-maia { display: none; }
 }
+/* Founder 2026-11-24 ("the column needs to be movable! Too tight on right side"): at laptop widths MAIA still has a column
+   beside the page, so her divider stays. The manuscript divider does not: there the chapter list is a band above the page. */
+@media (min-width: 721px) and (max-width: 1023px) {
+  .fr-shell[data-right-open='true'] .fr-panel-splitter-right { display: block; right: calc(var(--fr-pad-r) + var(--fr-maia-col, var(--fr-maia-w)) - 7px); }
+}
 /* WS-COLUMNS (founder 2026-11-21): each column carries its own collapse control; a hidden one leaves a way back at its edge.
    Same state as Layout's "‹ Manuscript" / "MAIA ›". Phones (<=720px) keep their stacked order and Layout's controls. */
 .fr-collapse { width: 24px; height: 24px; display: inline-grid; place-items: center; padding: 0; border-radius: 50%;
@@ -737,7 +742,12 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
    above the page. B0 (founder ruling 2026-11-19): the conversation lives in MAIA's column, so the page is never hidden for it; the
    former "stage" rules that hid the rail and MAIA's column are removed. Phones (<=720px) keep their own one-column order below. */
 @media (min-width: 721px) and (max-width: 1023px) {
-  .fr-shell[data-mode='write'] .fr-room { grid-template-columns: minmax(0, 1fr) min(var(--fr-maia-w), 340px); grid-template-rows: auto minmax(0, 1fr); row-gap: 10px; }
+  /* --fr-maia-col is the width MAIA's column actually takes here; the divider sits on its edge. */
+  .fr-shell[data-mode='write'] { --fr-maia-col: min(var(--fr-maia-w), 340px); }
+  .fr-shell[data-mode='write']:has([data-write-conversation-beside='true']) { --fr-maia-col: clamp(340px, var(--fr-maia-w), 42vw); }
+  /* A width the writer set themself is kept as set (bounded in Shell so the page keeps at least 340px). */
+  .fr-shell[data-mode='write'][data-maia-width-chosen='true'] { --fr-maia-col: var(--fr-maia-w); }
+  .fr-shell[data-mode='write'] .fr-room { grid-template-columns: minmax(0, 1fr) var(--fr-maia-col); grid-template-rows: auto minmax(0, 1fr); row-gap: 10px; }
   .fr-shell[data-mode='write'] .fr-manuscript { grid-column: 1; grid-row: 1; max-height: 160px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--fr-field-line); }
   .fr-shell[data-mode='write'] .fr-work { grid-column: 1; grid-row: 2; margin-left: 0; margin-right: 0; }
   .fr-shell[data-mode='write'] .fr-maia { grid-column: 2; grid-row: 1 / span 2; }
@@ -746,7 +756,7 @@ a.fr-brand:focus-visible { outline: 2px solid var(--fr-title); outline-offset: 4
   .fr-shell[data-mode='write'][data-canvas='full'] .fr-work { grid-row: 1; }
   /* B0 laptop follow-up (founder ruling 2026-11-19): while a conversation is open in MAIA's column it gets room to be read and
      answered (at least 340px, at most 42vw); the page keeps the rest and stays primary. A writer's own wider width is kept. */
-  .fr-shell[data-mode='write']:has([data-write-conversation-beside='true']) .fr-room { grid-template-columns: minmax(0, 1fr) clamp(340px, var(--fr-maia-w), 42vw); }
+  .fr-shell[data-mode='write']:has([data-write-conversation-beside='true']) .fr-room { grid-template-columns: minmax(0, 1fr) var(--fr-maia-col); }
 }
 @media (max-width: 720px) {
   .fr-shell[data-mode='write'] .fr-room { display: flex; flex-direction: column; gap: 0; padding: 0; }

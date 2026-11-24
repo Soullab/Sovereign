@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { PRO_CONTROLS, proGuideInstruction } from '../proGuide';
-import { proAskSystemPrompt } from '../proAskMaiaSections';
+import { proAskSystemPrompt, spiralFieldLine } from '../proAskMaiaSections';
 
 const ROOT = path.resolve(__dirname, '../../..');
 // The workstation and the shared astrology views it renders.
@@ -104,5 +104,64 @@ describe('the Pro Ask prompt carries the guide', () => {
       expect(prompt).toContain('THE WORKSTATION YOU ARE IN');
       expect(prompt).toContain('"Saved charts"');
     }
+  });
+});
+
+describe('MAIA knows the astrologer\'s own chart is theirs (phone witness 2026-11-24)', () => {
+  it('says so without memory on, and never asks whose chart it is', () => {
+    const prompt = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', { ownChart: true });
+    expect(prompt).toContain('The chart below is the astrologer\'s own');
+    expect(prompt).toContain('never ask whose chart it is');
+  });
+  it('says nothing of ownership for a client chart', () => {
+    const prompt = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', {});
+    expect(prompt).not.toContain('The chart below is the astrologer\'s own');
+    expect(prompt).not.toContain('your chart');
+  });
+  it('memory on keeps the fuller own-chart instruction', () => {
+    const prompt = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', { ownChart: true, personal: { kept: '' } });
+    expect(prompt).toContain('they have asked you to read it with what they have chosen to keep');
+    expect(prompt).not.toContain('The chart below is the astrologer\'s own');
+  });
+  it('a kept conversation is never described as forgotten', () => {
+    expect(proAskSystemPrompt('natal', 'x', { keeping: true })).not.toContain('Nothing is remembered between visits');
+    expect(proAskSystemPrompt('natal', 'x', { keeping: true, continuing: true })).not.toContain('Nothing is kept after the visit');
+    expect(proAskSystemPrompt('natal', 'x', {})).toContain('Nothing is remembered between visits');
+  });
+});
+
+describe('the personal reading carries where the astrologer is in their wider work with MAIA', () => {
+  it('states element, phase and motion as MAIA\'s own reading, not the chart', () => {
+    const line = spiralFieldLine({ dominant_element: 'water', phase: 7, motion: 'ascending' });
+    expect(line).toContain('water');
+    expect(line).toContain('phase 7 of 12');
+    expect(line).toContain('ascending');
+    expect(line).toContain('never present it as what the chart shows');
+  });
+
+  it('says nothing when there is no state', () => {
+    expect(spiralFieldLine({})).toBe('');
+    expect(spiralFieldLine({ phase: 0 })).toBe('');
+  });
+
+  it('puts the field in its own section only when given', () => {
+    const withField = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', { ownChart: true, personal: { kept: 'k', field: 'FIELD-LINE' } });
+    expect(withField).toContain('WHERE THEY ARE IN THEIR WIDER WORK WITH YOU');
+    expect(withField).toContain('FIELD-LINE');
+    const without = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', { ownChart: true, personal: { kept: 'k' } });
+    expect(without).not.toContain('WHERE THEY ARE IN THEIR WIDER WORK WITH YOU');
+  });
+});
+
+describe('the field line names when it was last known', () => {
+  it('says as of when, not "lately"', () => {
+    const line = spiralFieldLine({ dominant_element: 'fire', phase: 3, updated_at: '2026-06-02T00:00:00Z' });
+    expect(line).toContain('as of June 2026');
+    expect(line).not.toContain('lately');
+  });
+  it('with nothing kept but a field, does not tell MAIA to read the chart on its own', () => {
+    const p = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', { ownChart: true, personal: { kept: '', field: 'F' } });
+    expect(p).not.toContain('read the chart on its own');
+    expect(p).toContain('wider work with you');
   });
 });

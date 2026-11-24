@@ -244,7 +244,11 @@ export function proAskSystemPrompt(section: ProAskSection, facts: string,
     /** Earlier turns of this visit are in the conversation. */
     continuing?: boolean;
     /** The astrologer's own chart, read with what they have kept with MAIA (may be empty). */
-    personal?: { kept: string };
+    personal?: { kept: string; field?: string };
+    /** The (first) chart is the astrologer's own, whether or not `personal` is on (Kelly, phone witness 2026-11-24). */
+    ownChart?: boolean;
+    /** This conversation is being kept (ASTRO-PRO-KEEP Phase 1), so MAIA must not say nothing is kept. */
+    keeping?: boolean;
     /** Earlier kept exchanges about this same chart from other sections (ASTRO-PRO-KEEP Phase 2). */
     recalled?: Array<{ section: string; q: string; a: string; at: string }>;
   } = {}): string {
@@ -262,14 +266,19 @@ export function proAskSystemPrompt(section: ProAskSection, facts: string,
     : `- Speak to the astrologer as a knowledgeable colleague: you may use astrological terms. Plain text only — no headings, bullet lists or markdown. ${length}`;
   const own = where.personal
     ? `
-- This is the astrologer's own chart, and they have asked you to read it with what they have chosen to keep with you (below). Speak to them as "you". Relate the chart to what they have kept where the two genuinely meet, and say which is which: "your chart shows…" is the chart; "you once kept…" is their own words. Never say or imply the chart caused, predicted or explains anything in their life: it offers a language for it. Offer what you notice, then ask what they recognise; they are the author of the meaning. Do not recite their kept material back at length.${where.personal.kept ? '' : '\n- They have kept nothing with you that may be brought here, so say so in one sentence and read the chart on its own.'}`
-    : '';
+- This is the astrologer's own chart, and they have asked you to read it with what they have chosen to keep with you (below). Speak to them as "you". Relate the chart to what they have kept, and to where they are in their wider work with you if that is given, where the two genuinely meet, and say which is which: "your chart shows…" is the chart; "you once kept…" is their own words. Never say or imply the chart caused, predicted or explains anything in their life: it offers a language for it. Offer what you notice, then ask what they recognise; they are the author of the meaning. Do not recite their kept material back at length.${where.personal.kept ? '' : where.personal.field ? '\n- They have kept nothing with you that may be brought here, so say so in one sentence; you may still relate the chart to where they are in their wider work with you.' : '\n- They have kept nothing with you that may be brought here, so say so in one sentence and read the chart on its own.'}`
+    : where.ownChart
+      ? `
+- The chart below is the astrologer's own (in a two-chart reading, the first chart is theirs). Speak of it as "your chart" and never ask whose chart it is. You are not given what they have kept with you here: read the chart on its own, and if they want it read with what you know of them, they can turn on "Read this with what you know about me".`
+      : '';
   const recalled = where.recalled ?? [];
   const memory = recalled.length > 0
     ? `${where.continuing ? '- The earlier questions and answers of this conversation are in the conversation: build on them and do not repeat yourself.\n' : ''}- Below the facts are earlier conversations the astrologer kept about this same chart, word for word and dated. They were readings at the time, not settled facts about anyone. Where something there genuinely meets the question, you may point to a possible connection and ask whether it holds; never state a conclusion about the person, and never treat an earlier reading as established. Do not recite them back.`
     : where.continuing
-      ? '- The earlier questions and answers of this visit are in the conversation: build on them and do not repeat yourself. Nothing is kept after the visit.'
-      : '- Nothing is remembered between visits.';
+      ? `- The earlier questions and answers of this conversation are in the conversation: build on them and do not repeat yourself.${where.keeping ? ' The astrologer is keeping this conversation, so it will be here when they return.' : ' Nothing is kept after the visit.'}`
+      : where.keeping
+        ? '- The astrologer is keeping this conversation, so it will be here when they return.'
+        : '- Nothing is remembered between visits.';
   return `You are MAIA, an AI companion in Soullab, speaking with a professional astrologer in their own workspace. They are asking about ${SECTION_FOCUS[section]}.${looking} You are MAIA, not the astrologer and not a person.
 
 HOW YOU SPEAK:
@@ -288,7 +297,10 @@ ${proGuideInstruction()}
 ${facts}${where.personal?.kept ? `
 
 ──────── WHAT THE ASTROLOGER HAS CHOSEN TO KEEP WITH YOU (their own words and marks, not from the chart) ────────
-${where.personal.kept}` : ''}${recalled.length > 0 ? `
+${where.personal.kept}` : ''}${where.personal?.field ? `
+
+──────── WHERE THEY ARE IN THEIR WIDER WORK WITH YOU (MAIA's sense of their movement across your conversations; not from the chart, not a verdict) ────────
+${where.personal.field}` : ''}${recalled.length > 0 ? `
 
 ──────── EARLIER CONVERSATIONS ABOUT THIS CHART (kept by the astrologer; verbatim; readings at the time, not facts) ────────
 ${formatRecalledExchanges(recalled)}` : ''}`;
@@ -324,3 +336,19 @@ export function thirdPersonConcern(question: string): boolean {
   return THIRD_PERSON_CONCERN.some((p) => p.test(question));
 }
 
+/**
+ * The member's structural position in their wider work with MAIA (Bridge D spiral
+ * state), for the own-chart personal reading: element, phase and motion only, never
+ * conversation content (Kelly, 2026-11-24).
+ */
+export function spiralFieldLine(state: { dominant_element?: string | null; phase?: number | null; motion?: string | null; updated_at?: Date | string | null }): string {
+  const parts: string[] = [];
+  if (state.dominant_element) parts.push(`the element most alive in their work with you is ${state.dominant_element}`);
+  if (typeof state.phase === 'number' && state.phase >= 1 && state.phase <= 12) parts.push(`they are in phase ${state.phase} of 12 of the spiral`);
+  if (state.motion) parts.push(`their movement reads as ${state.motion}`);
+  const at = state.updated_at ? new Date(state.updated_at) : null;
+  const asOf = at && !Number.isNaN(at.getTime())
+    ? ` (as of ${at.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })}; it may have moved since)`
+    : '';
+  return parts.length ? `In your conversations with them${asOf}, ${parts.join('; ')}. Hold this lightly, as your own reading of their process, and never present it as what the chart shows.` : '';
+}

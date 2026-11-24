@@ -57,7 +57,7 @@ describe('Writer Studio editorial latitude experience', () => {
     expect(dance).toContain('MAIA’s latest response');
     expect(dance).toContain('data-editorial-latest-response');
     expect(dance).toContain("{ proposalPolicy: 'allow', proposalRequested: true }");
-    expect(controller).toContain('options?: { proposalPolicy?: ProposalPolicy; proposalRequested?: boolean; displayText?: string; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageAct; origin?: ArrivalOriginRef }');
+    expect(controller).toContain('options?: { proposalPolicy?: ProposalPolicy; proposalRequested?: boolean; displayText?: string; teachingAnchor?: TeachingAnchor; turnShape?: TurnShape; passageAct?: PassageAct; origin?: ArrivalOriginRef; exampleOrigin?: ExampleOriginRef }');
     // The send outcome reaches the panel so a failed send keeps the writer's words (#1800 P0).
     expect(controller).toContain('onSendEditorial={(text, options) => sendEditorial(text, options)}');
     expect(dance).toContain('{postureGate}');

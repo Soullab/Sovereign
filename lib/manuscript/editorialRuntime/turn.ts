@@ -63,6 +63,7 @@ import { teachingTurnInstruction, type TeachingAnchor } from '@/lib/writersStudi
 import { conversationTurnInstruction, type TurnShape } from '@/lib/writersStudio/conversationTurn';
 import { passageActInstruction, type PassageAct } from '@/lib/writersStudio/passageActs';
 import { arrivalOriginInstruction, type ArrivalOrigin } from '@/lib/writersStudio/arrivalOrigin';
+import { exampleOriginInstruction } from '@/lib/writersStudio/exampleOrigin';
 import { OPENING_STAND_IN, conversationOpeningInstruction, type OpeningGesture } from '@/lib/writersStudio/conversationOpening';
 import { studioGuideInstruction } from '@/lib/writersStudio/studioGuide';
 import { studioActionsInstruction } from '@/lib/writersStudio/studioActions';
@@ -165,6 +166,10 @@ export interface EditorialTurnInput {
   /** Where the writer arrived from (F1), resolved by the route from the member's own
    *  frozen reading. Its framing is added here; ⛔ never stored as the writer's turn. */
   readonly arrivalOrigin?: ArrivalOrigin;
+  /** "Try this on my page" (founder 2026-11-24): MAIA's own earlier Work-conversation reply holding an example, resolved
+   *  by the route from the member's own conversation. Its framing is added here; ⛔ never stored as the writer's turn, and
+   *  never applied as it stands: her new proposal is what the latitude check judges. */
+  readonly exampleOrigin?: string;
   /**
    * R2: MAIA speaks first. The writer's gesture is a typed event, never a turn: there is
    * NO author row to read, `currentTurnIndex` must be 0, and the outcome is forced to
@@ -488,6 +493,8 @@ export async function runEditorialTurn(
       input.passageAct ? passageActInstruction(input.passageAct) : '',
       // Server-owned arrival framing (F1), from the member's own saved reading.
       input.arrivalOrigin ? arrivalOriginInstruction(input.arrivalOrigin) : '',
+      // Server-owned: the example she showed in the Work conversation, from the member's own conversation.
+      input.exampleOrigin ? exampleOriginInstruction(input.exampleOrigin) : '',
       // R2: the opening's shape is server-owned too.
       input.opening ? conversationOpeningInstruction() : '',
       // Server-owned map of the Studio's real controls (Design 1A), so "how do I"

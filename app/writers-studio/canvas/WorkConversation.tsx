@@ -25,7 +25,7 @@ import {
 import { deliveryAfterDrop } from '@/lib/writersStudio/deliveryAfterDrop';
 import { receiptSentence } from '@/lib/manuscript/ask/readingReceipt';
 import {
-  resumeDecision, sendMode, threadChoiceLabel,
+  resumeDecision, sendMode, threadChoiceTitle, threadChoiceContext,
   type ResumeDecision, type ThreadDiscovery,
 } from '@/lib/writersStudio/observationDialogueResume';
 import type { LivingWork } from '../useLivingWorks';
@@ -34,6 +34,10 @@ import { createWriterCorrection } from '@/lib/writersStudio/writerCorrectionsCli
 import { readWorkingStyle, writeWorkingStyle } from '@/lib/writersStudio/workingStyle';
 import { TEACHING_ANCHORS, teachingQuestion, type TeachingAnchor } from '@/lib/writersStudio/teachingTurn';
 import { BEGINNING_WORDS, type StudioIntent } from '@/lib/writersStudio/beginningTurn';
+import { DEEPER_EXAMPLE_WORDS, LIGHTER_EXAMPLE_WORDS, containsExample, stepLatitude } from '@/lib/writersStudio/exampleLevel';
+import type { ExampleOriginRef } from '@/lib/writersStudio/exampleOrigin';
+import { DEFAULT_EDITORIAL_LATITUDE, LATITUDE_BANDS, type EditorialLatitude } from '@/lib/manuscript/editorialScope/contract';
+import { readStoredLatitude, writeStoredLatitude } from '@/lib/writersStudio/editingLatitude';
 import {
   proposePresentationRequest, writeStudioPresentation,
   type SafePresentationProposal,
@@ -165,10 +169,11 @@ const TEACH_NOT_ANSWERED = 'MAIA couldn’t answer the Teach me this time. Nothi
 /* Beginning walk 2026-11-23: a pressed button's words (Teach me, Help me find a beginning) are stored as the writer's turn, but
    they are not writing. Keep my words is offered only under what the writer said themselves. */
 const PRESSED_BUTTON_WORDS: ReadonlySet<string> = new Set([
-  BEGINNING_WORDS,
+  BEGINNING_WORDS, LIGHTER_EXAMPLE_WORDS, DEEPER_EXAMPLE_WORDS,
   ...TEACHING_ANCHORS.filter((a) => a !== 'change').map((a) => teachingQuestion(a)),
 ]);
 const isPressedButtonWords = (body: string) => PRESSED_BUTTON_WORDS.has(body.trim());
+const EXAMPLE_NOT_ANSWERED = 'MAIA couldn’t answer this time. Nothing you wrote was changed; press it again when you’re ready.';
 const BEGINNING_NOT_ANSWERED = 'MAIA couldn’t answer this time. Nothing you wrote was changed; press “Help me find a beginning” again when you’re ready.';
 const REFUSAL_SAYS: Record<string, string> = {
   /* WS-F1: "That didn't reach her" was removed. Every 'unreachable' now goes through afterDrop, and neither a transport error nor
@@ -243,6 +248,9 @@ export interface WorkConversationProps {
    * whether the words are now on the page. Absent → no button.
    */
   /** true = the words are on the page; 'saving' = refused while the page saves; false = they could not be placed here. */
+  /** "Try this on my page" (founder 2026-11-24): take MAIA's example to the passage, where she proposes a real edit that is
+   *  checked against the writer's level and applied only by their own "Use this". Identities only; the server loads the example. */
+  onTryExampleOnPage?: (ref: ExampleOriginRef) => void;
   onKeepWords?: (text: string) => Promise<KeepWordsResult> | KeepWordsResult;
 }
 
@@ -276,7 +284,7 @@ export default function WorkConversation(props: WorkConversationProps) {
 }
 
 function ScopedWorkConversation({
-  work, manuscriptId, sectionId, initialDraft = '', startIntent, placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity, startFresh: freshForNewTopic = false, onKeepWords,
+  work, manuscriptId, sectionId, initialDraft = '', startIntent, placeDraft, onClose, onStudioPlace, hideHoldings = false, quiet = false, onRead, onReadChapter, onStudioAct, chapterLabel, identity, startFresh: freshForNewTopic = false, onKeepWords, onTryExampleOnPage,
 }: WorkConversationProps & { identity: ReturnType<typeof useMemberIdentity> }) {
   /* A program Work (e.g. a college essay) names its whole-Work scope in its own words; an ordinary Work keeps "the whole book". */
   const wholeScope = studioPathById(work.studioPath ?? null)?.studioCopy.wholeScope ?? 'the whole book';
@@ -347,6 +355,12 @@ function ScopedWorkConversation({
   const [suggestion, setSuggestion] = useState<string | null>(initialDraft.trim() ? initialDraft : null);
   /* Newcomer walk 2026-11-23: the beginning button is offered as one press, never as words placed in the writer's box. */
   const [intentOffered, setIntentOffered] = useState(Boolean(startIntent && manuscriptId));
+  /* Founder 2026-11-24: how much an example may change the writer's words. It IS their Revision latitude (one setting for passage
+     edits and examples), read after mount so the server render and the first client render agree; unreadable ⇒ the smallest. */
+  const [exampleLatitude, setExampleLatitude] = useState<EditorialLatitude>(DEFAULT_EDITORIAL_LATITUDE);
+  useEffect(() => { setExampleLatitude(readStoredLatitude().latitude); }, []);
+  /* "Not this one": the writer set an example aside. Sends nothing, keeps nothing; held only while this conversation is on screen. */
+  const [setAsideExamples, setSetAsideExamples] = useState<ReadonlySet<number>>(new Set());
   /* WS-WHOLE-BOOK-CONVERSATION (founder approval 2026-11-10, D1): the writer DECLARES what a question is about. "where I am" is the
      default; "the whole book" carries her complete account. ⛔ A phrase in the draft may only OFFER the whole book, never switch to it. */
   /* Held in component state only: this surface reads and writes no browser storage (identity-is-server-truth law). It lasts while the
@@ -541,11 +555,13 @@ function ScopedWorkConversation({
 
   /* G-3: `teach` is a pressed Teach me (the writer's click on MAIA's offer). Its words are the button's own; the writer's draft is
      neither sent nor cleared. */
-  const send = async (teach?: TeachingAnchor, intent?: StudioIntent) => {
-    /* A pressed button (Teach me, Help me find a beginning) sends only its own words; the draft is neither sent nor cleared. */
-    const pressed = Boolean(teach || intent);
-    const question = teach ? teachingQuestion(teach) : intent ? BEGINNING_WORDS : draft.trim();
-    const pressedNotAnswered = teach ? TEACH_NOT_ANSWERED : BEGINNING_NOT_ANSWERED;
+  const send = async (teach?: TeachingAnchor, intent?: StudioIntent, example?: { words: string; latitude: EditorialLatitude }) => {
+    /* A pressed button (Teach me, Help me find a beginning, Lighter / Deeper) sends only its own words; the draft is neither sent nor cleared. */
+    const pressed = Boolean(teach || intent || example);
+    const question = teach ? teachingQuestion(teach) : intent ? BEGINNING_WORDS : example ? example.words : draft.trim();
+    const pressedNotAnswered = teach ? TEACH_NOT_ANSWERED : example ? EXAMPLE_NOT_ANSWERED : BEGINNING_NOT_ANSWERED;
+    /* Founder 2026-11-24: every turn says how much an example may change the writer's words, as they selected it. */
+    const latitudeForTurn: EditorialLatitude = example ? example.latitude : exampleLatitude;
     // Synchronous guard: two send events can fire before pending state renders.
     if (!question || pending !== null || inFlightRef.current) return;
     const requestedPresentation = pressed ? null : proposePresentationRequest(question, readWorkingStyle());
@@ -606,6 +622,7 @@ function ScopedWorkConversation({
             ...(carryScope === 'whole_book' ? { carryScope } : {}),
             /* Only a room that can carry out her acting offers (onStudioAct) says so; elsewhere she is told only about buttons shown here. */
             ...(onStudioAct ? { roomActs: true } : {}),
+            exampleLatitude: latitudeForTurn,
             /* The member's CURRENT posture, read at this gesture. Unresolved ⇒ omitted, and the server then withholds the standing read. */
             ...declaredSanctuaryPosture(),
           })
@@ -613,6 +630,7 @@ function ScopedWorkConversation({
             workId: work.id,
             question,
             ...(mode.kind === 'resume' ? { threadId: mode.threadId } : {}),
+            exampleLatitude: latitudeForTurn,
           });
       if (gen !== conversationGenRef.current) {
         // The conversation on screen is no longer the one this answer belongs to; its text stays where it was.
@@ -818,7 +836,16 @@ function ScopedWorkConversation({
                   color: INK.primary, cursor: 'pointer',
                 }}
               >
-                {threadChoiceLabel(t, when)}
+                {/* Founder 2026-11-24: a title in the writer's own first words, then when it was last used. */}
+                {threadChoiceTitle(t) ? (
+                  <span data-resume-title style={{ display: 'block', textTransform: 'none', letterSpacing: 'normal',
+                    fontSize: '0.95rem', lineHeight: 1.35, color: INK.primary }}>
+                    {threadChoiceTitle(t)}
+                  </span>
+                ) : null}
+                <span data-resume-context style={{ display: 'block', color: INK.muted, marginTop: threadChoiceTitle(t) ? 2 : 0 }}>
+                  {threadChoiceContext(t, when)}
+                </span>
               </button>
             ))}
           </div>
@@ -894,6 +921,57 @@ function ScopedWorkConversation({
                 {answerReadSentence(answerRead.read)}
               </StudioText>
             ) : null}
+            {t.speaker === 'maia' && t.index === latestMaiaIndex && containsExample(t.body) && setAsideExamples.has(t.index) ? (
+              <StudioText role="metadata" tone="quiet" as="p" data-example-set-aside={t.index}>
+                Set aside. Nothing was changed, and nothing was sent to MAIA.
+              </StudioText>
+            ) : null}
+            {t.speaker === 'maia' && t.index === latestMaiaIndex && containsExample(t.body) && !setAsideExamples.has(t.index) ? (() => {
+              /* Founder 2026-11-24: under an example, the writer sees how much it may change their words and chooses lighter or
+                 deeper. Pressing one changes their Revision latitude (the same setting as Passage Focus) and asks for a new example. */
+              const band = LATITUDE_BANDS[exampleLatitude];
+              const lighter = stepLatitude(exampleLatitude, 'lighter');
+              const deeper = stepLatitude(exampleLatitude, 'deeper');
+              const press = (words: string, latitude: EditorialLatitude) => {
+                setExampleLatitude(latitude);
+                writeStoredLatitude(latitude);
+                void send(undefined, undefined, { words, latitude });
+              };
+              const busy = pending !== null || mode.kind === 'blocked';
+              const buttonStyle = { background: 'transparent', border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm,
+                padding: `${SPACE.hairline}px ${SPACE.tight}px`, cursor: 'pointer', color: INK.secondary } as const;
+              return (
+                <div data-example-level={exampleLatitude} role="group" aria-label="How much an example may change your words"
+                  style={{ marginTop: SPACE.snug, border: `1px solid ${RULE.soft}`, borderRadius: RADIUS.sm, padding: SPACE.snug, maxWidth: '64ch' }}>
+                  <StudioText role="panelLabel" as="p" style={{ margin: 0 }}>
+                    How much this example may change your words: <strong>{band.label}</strong>
+                  </StudioText>
+                  <StudioText role="metadata" tone="secondary" as="p" style={{ margin: `${SPACE.hairline}px 0 0` }}>
+                    {band.description}
+                  </StudioText>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: SPACE.tight, marginTop: SPACE.hairline }}>
+                    <button type="button" data-example-lighter="true" disabled={busy || lighter === exampleLatitude}
+                      onClick={() => press(LIGHTER_EXAMPLE_WORDS, lighter)} style={buttonStyle}>
+                      <StudioText role="metadata" as="span">Lighter{lighter !== exampleLatitude ? ` (${LATITUDE_BANDS[lighter].label})` : ''}</StudioText>
+                    </button>
+                    <button type="button" data-example-deeper="true" disabled={busy || deeper === exampleLatitude}
+                      onClick={() => press(DEEPER_EXAMPLE_WORDS, deeper)} style={buttonStyle}>
+                      <StudioText role="metadata" as="span">Deeper{deeper !== exampleLatitude ? ` (${LATITUDE_BANDS[deeper].label})` : ''}</StudioText>
+                    </button>
+                    {onTryExampleOnPage && manuscriptId && thread?.id ? (
+                      <button type="button" data-example-try-on-page="true" disabled={busy}
+                        onClick={() => onTryExampleOnPage({ askThreadId: thread.id, turnIndex: t.index })} style={buttonStyle}>
+                        <StudioText role="metadata" as="span">Try this on my page</StudioText>
+                      </button>
+                    ) : null}
+                    <button type="button" data-example-set-aside-button="true" disabled={busy}
+                      onClick={() => setSetAsideExamples((s) => new Set(s).add(t.index))} style={buttonStyle}>
+                      <StudioText role="metadata" as="span">Not this one</StudioText>
+                    </button>
+                  </div>
+                </div>
+              );
+            })() : null}
             {(() => {
               /* Design 1B: only MAIA's latest reply may offer a control, and only
                  one this room can honour. Clicking only takes the writer there. */

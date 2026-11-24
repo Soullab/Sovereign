@@ -12,6 +12,10 @@
  * ⛔ Member-scoped in every predicate: another member's Work can never affect this.
  */
 import { query } from '@/lib/db/postgres';
+import {
+  DEFAULT_EDITORIAL_LATITUDE, LATITUDE_BANDS, isEditorialLatitude, type EditorialLatitude,
+} from '@/lib/manuscript/editorialScope/contract';
+import { WORK_EXAMPLE_LINE } from '@/lib/writersStudio/exampleLevel';
 
 export const WORK_REVISION_PAUSE_SQL = `SELECT EXISTS (
     SELECT 1
@@ -190,14 +194,55 @@ export async function conversationProgram(
 }
 
 /**
+ * Founder ruling 2026-11-24 ("Yes, as examples"), from the storyteller-elder walk: asked to make her told story
+ * "sound more like a book", MAIA explained how to reach "Show me an edit" instead of letting the writer hear one.
+ * In the Work conversation she may now show an example, under three conditions:
+ *   1. only when the writer asks to see a change, never volunteered;
+ *   2. it stays in the conversation and is never placed: the page changes only through the writer's own act;
+ *   3. she says what the example gains and what it costs.
+ * The example is set off by a fixed line and never put in quotation marks: quotation marks stay the writer's own words,
+ * and the quote-fidelity guard (lib/manuscript/ask/quoteFidelity.ts) refuses an invented span inside them.
+ *
+ * ⛔ OPT-IN, decided here on the server: only an ordinary Work (no program) whose writer has not chosen "MAIA asks,
+ * never rewrites". Not a college essay or any other program (the ruling was not made for them), and not where the
+ * setting or the program could not be read (fail closed).
+ */
+export { WORK_EXAMPLE_LINE };
+/**
+ * Founder 2026-11-24 ("it should stay in alignment with what level of intervention they asked for and that should be
+ * clearly selected"): the example keeps to the writer's own Revision latitude, the same setting that bounds passage
+ * edits (lib/manuscript/editorialScope/contract.ts). The writer sees and changes it under the example (Lighter / Deeper).
+ * ⛔ An absent or invalid level is the smallest (Touch), never a guess. ⛔ This is an instruction, not a measurement: a
+ * passage edit is diffed against its band; a conversation example is not.
+ */
+export function workExampleWordingInstruction(latitude: EditorialLatitude = DEFAULT_EDITORIAL_LATITUDE): string {
+  const band = LATITUDE_BANDS[isEditorialLatitude(latitude) ? latitude : DEFAULT_EDITORIAL_LATITUDE];
+  return [
+    'WHEN THEY ASK TO SEE A CHANGE',
+    'If the writer asks you to rewrite, polish, extend or add to their writing, or asks what a change would look like, you may show them one short example in your reply, so they can judge it by ear instead of from a description. Only when they ask: never volunteer one.',
+    `THE WRITER HAS CHOSEN HOW MUCH AN EXAMPLE MAY CHANGE THEIR WORDS: ${band.label}. ${band.description}`,
+    `Keep every example within ${band.label}. If what they asked for needs more change than that, give the ${band.label} example anyway and say in one plain sentence that a deeper example would change more of their words, and that they can press "Deeper" under it. Never go beyond their choice on your own.`,
+    'If they ask for a lighter or a deeper example, give a new one at the level they have now chosen.',
+    `Put the example on its own lines, after a line that reads exactly: ${WORK_EXAMPLE_LINE}`,
+    'Never put example wording in quotation marks. Quotation marks are only for the writer\'s own exact words.',
+    'Keep it short and as close to their own voice as the change allows. Afterwards, say in a sentence or two what it gains and what it costs them.',
+    'Never add a fact the writer has not given you: no season, place, name, number, event or detail of their life that is not already in their words. If a change would need one, leave a gap or say what kind of detail it would need, and ask them for it.',
+    'It goes onto their page only if they put it there themselves: say so once, and never present it as their words or as already in the Work.',
+  ].join('\n');
+}
+
+/**
  * The instructions MAIA is given in the Work conversation, in order: questions-only (if on), then the program's posture
- * (or the conservative one when the program is uncertain or not registered). Empty for an ordinary, unpaused Work.
+ * (or the conservative one when the program is uncertain or not registered). For an ordinary, unpaused Work: only the
+ * asked-for example allowance (founder 2026-11-24).
  */
 export function conversationProgramInstructions(
   c: ConversationProgram,
   postureOf: (id: string) => string | null,
   /** The stage's coaching for this program and declared stage (null stage = the first), or null. */
   stagePostureOf?: (programId: string, stageId: string | null) => string | null,
+  /** The writer's chosen Revision latitude, as sent with this turn; absent ⇒ the smallest. Used only where examples are allowed. */
+  exampleLatitude: EditorialLatitude = DEFAULT_EDITORIAL_LATITUDE,
 ): string[] {
   const out: string[] = [];
   if (c.questionsOnly) out.push(workQuestionsOnlyInstruction());
@@ -209,5 +254,6 @@ export function conversationProgramInstructions(
     if (stagePosture) out.push(stagePosture);
   }
   else if (c.program.kind === 'ambiguous' || c.program.kind === 'unknown') out.push(workProgramUncertainInstruction());
+  else if (c.program.kind === 'none' && !c.questionsOnly) out.push(workExampleWordingInstruction(exampleLatitude));
   return out;
 }

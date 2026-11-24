@@ -4,9 +4,12 @@
  * "Ask MAIA about this" for a section of Pro (founder request 2026-11-07).
  *
  * Before anything is sent the panel says whose charts MAIA will read; only the
- * section's calculated facts reach MAIA, never names or birth details, and
- * nothing is kept. The questions and answers of this visit stay in the page
- * (kept through access checks) and go when the chart closes.
+ * section's calculated facts reach MAIA, never names or birth details.
+ * Conversations are kept per subject while "Keep this conversation" is on (the
+ * default, ASTRO-PRO-KEEP Phase 1) and resume when the member returns; turning
+ * Keep off or pressing Start over deletes the kept thread. On the member's own
+ * chart, "Keep with MAIA" carries one answer into MAIA's memory (Phase 2);
+ * client threads stay with that chart only.
  *
  * Inside the cockpit (a MAIA stage is present) an instrument does not open its
  * own box: it offers its subject to the stage and shows one button that takes
@@ -285,34 +288,6 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
         {keep && request.subject !== 'own' && ' This stays with this chart only and never enters your own memory with MAIA.'}
       </p>
 
-      {stage && (
-        <div className={styles.options}>
-          <div className={styles.segment} role="group" aria-label="How full an answer">
-            <button type="button" aria-pressed={depth === 'brief'} onClick={() => setDepth('brief')}>Brief</button>
-            <button type="button" aria-pressed={depth === 'deep'} onClick={() => setDepth('deep')}>In depth</button>
-          </div>
-          {natal && (
-            <label className={styles.check}>
-              <input type="checkbox" checked={whole} onChange={(e) => setWhole(e.target.checked)} />
-              Draw on all systems (progressions, Four Pillars, Maya count)
-            </label>
-          )}
-          {canBePersonal && !mentor && (
-            <label className={styles.check}>
-              <input type="checkbox" checked={personal} onChange={(e) => setPersonal(e.target.checked)} />
-              Read this with what you know about me
-            </label>
-          )}
-        </div>
-      )}
-      {withMe && (
-        <p className={styles.personalNote}>
-          MAIA will also read what you have chosen to keep with her and allowed to return. It informs this answer
-          only. {keep ? 'This conversation is kept for you to return to' : 'This conversation is not kept'}, and your chart
-          is added to MAIA’s memory only where you press “Keep with MAIA”.
-        </p>
-      )}
-
       {natal && (
         <label className={styles.dateField}>
           Include transits on (optional)
@@ -384,6 +359,35 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
             <button key={text} type="button" onClick={() => { setQuestion(text); if (error) setError(null); }}>{text}</button>
           ))}
         </div>
+      )}
+
+      {/* The reading options sit by the ask box, so they are in view on a phone however long the thread (Kelly, phone witness 2026-11-24). */}
+      {stage && (
+        <div className={styles.options}>
+          <div className={styles.segment} role="group" aria-label="How full an answer">
+            <button type="button" aria-pressed={depth === 'brief'} onClick={() => setDepth('brief')}>Brief</button>
+            <button type="button" aria-pressed={depth === 'deep'} onClick={() => setDepth('deep')}>In depth</button>
+          </div>
+          {natal && (
+            <label className={styles.check}>
+              <input type="checkbox" checked={whole} onChange={(e) => setWhole(e.target.checked)} />
+              Draw on all systems (progressions, Four Pillars, Maya count)
+            </label>
+          )}
+          {canBePersonal && !mentor && (
+            <label className={styles.check}>
+              <input type="checkbox" checked={personal} onChange={(e) => setPersonal(e.target.checked)} />
+              Read this with what you know about me
+            </label>
+          )}
+        </div>
+      )}
+      {withMe && (
+        <p className={styles.personalNote}>
+          MAIA will also read what you have chosen to keep with her across MAIA and allowed to return, and where you
+          are in your wider work with her. It informs this answer only. {keep ? 'This conversation is kept for you to return to' : 'This conversation is not kept'}, and your chart
+          is added to MAIA’s memory only where you press “Keep with MAIA”.
+        </p>
       )}
 
       <textarea value={question} rows={stage ? 2 : 3} maxLength={600}

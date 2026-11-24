@@ -86,7 +86,7 @@ const GOVERNED_CONTENT: ReadonlyArray<{ table: string; column: string; label: st
   { table: 'conversation_insights', column: 'user_id', label: 'conversations' },
   { table: 'conversation_themes', column: 'user_id', label: 'conversations' },
   { table: 'conversation_memory_uses', column: 'user_id', label: 'conversations' },
-  { table: 'maia_sessions', column: 'user_id', label: 'conversations' },
+  { table: 'maia_sessions', column: 'member_id', label: 'conversations' },
   { table: 'astro_pro_threads', column: 'member_id', label: 'conversations' },
   { table: 'session_insights', column: 'user_id', label: 'conversations' },
   { table: 'user_session_patterns', column: 'user_id', label: 'conversations' },
