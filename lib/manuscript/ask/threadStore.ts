@@ -256,9 +256,15 @@ export async function loadThread(
  */
 export async function threadsOnAnchor(
   manuscriptId: string, memberId: string, anchor: AskAnchor,
-): Promise<{ id: string; openedAt: Date; turnCount: number }[]> {
+): Promise<{ id: string; openedAt: Date; turnCount: number; opening: string | null; lastAt: Date | null }[]> {
   const r = await query(
-    `SELECT t.id, t.opened_at, COUNT(u.turn_index)::int AS turn_count
+    `SELECT t.id, t.opened_at, COUNT(u.turn_index)::int AS turn_count,
+            /* Founder 2026-11-24: "Better to give the conversations titles and context." The title is the writer's own
+               first words in the conversation (never a summary MAIA wrote), and the context is when it was last used. */
+            (SELECT left(a.body, 160) FROM ask_turns a
+              WHERE a.thread_id = t.id AND a.speaker = 'author'
+              ORDER BY a.turn_index LIMIT 1) AS opening,
+            MAX(u.created_at) AS last_at
        FROM ask_threads t
        LEFT JOIN ask_turns u ON u.thread_id = t.id
       WHERE t.manuscript_id = $1 AND t.member_id = $2 AND t.anchor = $3::jsonb
@@ -269,6 +275,8 @@ export async function threadsOnAnchor(
     id: x.id as string,
     openedAt: x.opened_at as Date,
     turnCount: Number(x.turn_count),
+    opening: typeof x.opening === 'string' ? x.opening : null,
+    lastAt: (x.last_at as Date | null) ?? null,
   }));
 }
 
@@ -362,9 +370,15 @@ export async function loadLivingWorkThread(
 export async function threadsOnLivingWork(
   livingWorkId: string,
   memberId: string,
-): Promise<{ id: string; openedAt: Date; turnCount: number }[]> {
+): Promise<{ id: string; openedAt: Date; turnCount: number; opening: string | null; lastAt: Date | null }[]> {
   const r = await query(
-    `SELECT t.id, t.opened_at, COUNT(u.turn_index)::int AS turn_count
+    `SELECT t.id, t.opened_at, COUNT(u.turn_index)::int AS turn_count,
+            /* Founder 2026-11-24: "Better to give the conversations titles and context." The title is the writer's own
+               first words in the conversation (never a summary MAIA wrote), and the context is when it was last used. */
+            (SELECT left(a.body, 160) FROM ask_turns a
+              WHERE a.thread_id = t.id AND a.speaker = 'author'
+              ORDER BY a.turn_index LIMIT 1) AS opening,
+            MAX(u.created_at) AS last_at
        FROM ask_threads t
        LEFT JOIN ask_turns u ON u.thread_id = t.id
       WHERE t.living_work_id = $1
@@ -379,5 +393,7 @@ export async function threadsOnLivingWork(
     id: x.id as string,
     openedAt: x.opened_at as Date,
     turnCount: Number(x.turn_count),
+    opening: typeof x.opening === 'string' ? x.opening : null,
+    lastAt: (x.last_at as Date | null) ?? null,
   }));
 }

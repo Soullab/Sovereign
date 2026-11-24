@@ -28,6 +28,10 @@ export interface ThreadSummary {
   id: string;
   openedAt: string;
   turnCount: number;
+  /** The writer's own first words in this conversation (clipped server-side). Never a summary written for them. */
+  opening?: string | null;
+  /** When the conversation last had a turn. */
+  lastAt?: string | null;
 }
 
 /**
@@ -105,6 +109,23 @@ export function sendMode(
  * a UUID — the failure Reader-04 removed from MAIA's prose, reappearing in the
  * interface instead of the model.
  */
+/**
+ * The conversation's title, in the writer's own words: what they first said in it, on one line.
+ * Null when there is nothing of theirs to show (the label then stands alone, as before).
+ */
+export const THREAD_TITLE_MAX = 72;
+export function threadChoiceTitle(t: Pick<ThreadSummary, 'opening'>): string | null {
+  const said = (t.opening ?? '').replace(/\s+/g, ' ').trim();
+  if (!said) return null;
+  return said.length > THREAD_TITLE_MAX ? `${said.slice(0, THREAD_TITLE_MAX - 1).trimEnd()}…` : said;
+}
+
+/** When it was last used, and how long it is — the context line under the title. */
+export function threadChoiceContext(t: ThreadSummary, formatWhen: (iso: string) => string): string {
+  const turns = t.turnCount === 1 ? '1 turn' : `${t.turnCount} turns`;
+  return t.lastAt ? `Last used ${formatWhen(t.lastAt)} · ${turns}` : threadChoiceLabel(t, formatWhen);
+}
+
 export function threadChoiceLabel(t: ThreadSummary, formatWhen: (iso: string) => string): string {
   const turns = t.turnCount === 1 ? '1 turn' : `${t.turnCount} turns`;
   return `${formatWhen(t.openedAt)} · ${turns}`;
