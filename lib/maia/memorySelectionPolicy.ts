@@ -14,6 +14,12 @@
  * ending the accidental implication that "memory" currently means more than it
  * does. Changing the policy is a governed act (a new version under founder
  * ruling), never a tuning knob.
+ *
+ * Ruled exception (Kelly, 2026-11-24, "quick fix now"): the Pro Astrology own-chart
+ * personal reading (app/api/astrology/pro/ask/route.ts) reads a pool of 40 under
+ * this same policy and drops `astro_pro_exchange` atoms before taking 8, because
+ * those return there through per-chart recall. Interim, until the pattern-matching
+ * lane's relevance-chosen selection replaces it.
  */
 
 /**

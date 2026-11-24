@@ -152,3 +152,16 @@ describe('the personal reading carries where the astrologer is in their wider wo
     expect(without).not.toContain('WHERE THEY ARE IN THEIR WIDER WORK WITH YOU');
   });
 });
+
+describe('the field line names when it was last known', () => {
+  it('says as of when, not "lately"', () => {
+    const line = spiralFieldLine({ dominant_element: 'fire', phase: 3, updated_at: '2026-06-02T00:00:00Z' });
+    expect(line).toContain('as of June 2026');
+    expect(line).not.toContain('lately');
+  });
+  it('with nothing kept but a field, does not tell MAIA to read the chart on its own', () => {
+    const p = proAskSystemPrompt('natal', 'Sun Gemini 24.39°', { ownChart: true, personal: { kept: '', field: 'F' } });
+    expect(p).not.toContain('read the chart on its own');
+    expect(p).toContain('wider work with you');
+  });
+});
