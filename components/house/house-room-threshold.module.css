@@ -56,6 +56,20 @@
   font: 12px/1.4 Arial, sans-serif;
 }
 
+.ways {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.way {
+  color: #cdb18a;
+  text-decoration: none;
+  font: 12px/1.4 Arial, sans-serif;
+}
+
+.way:hover,
 .return:hover,
 .brand:hover {
   color: #f3d8ad;

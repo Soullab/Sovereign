@@ -16,7 +16,6 @@
 
 import { type, color, space, focus, motion, hit, hitStack, quiet, spine, roomMaterial } from './tokens';
 import { Return, type ReturnPiece } from './Return';
-import { KEPT_PLACES } from '@/lib/navigation/keptPlaces';
 
 export interface ArrivalProps {
   onBeginWriting: () => void;
@@ -94,15 +93,6 @@ export function Arrival({
         >
           Browse
         </button>
-        {/* Reflections sits beside Browse, as quiet as it: founder ruling
-            2026-11-25 — what a member has kept must be easy to reach from the
-            places they write and save. */}
-        <a
-          href={KEPT_PLACES.reflections.href}
-          className={`${type.meta} ${color.muted} ${focus} ${hit} ${quiet} ml-6`}
-        >
-          {KEPT_PLACES.reflections.label}
-        </a>
       </div>
     </main>
   );
