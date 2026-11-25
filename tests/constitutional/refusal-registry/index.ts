@@ -33,6 +33,8 @@
  *   R21  sanctuary content refused at the escaped store boundaries (SANC-20260614-01)
  *   R22  no durable object may be written without knowing what governed its
  *        creation (S5 mint gates: DB triggers + server-minted Provenance)
+ *   R32  no covert developmental steering in any prompt tier; the Field Safety
+ *        gate may replace a reply only on an explicit field-work request
  */
 
 // NOTE: explicit .ts extensions so this runs under both `tsx` and Node's native
@@ -63,8 +65,9 @@ import { check as r21 } from './refusal-21-sanctuary-store-boundary.ts';
 import { check as r22 } from './refusal-22-provenance-mint-gate.ts';
 import { check as r23 } from './refusal-23-consciousness-policy-influence-only.ts';
 import { check as r24 } from './refusal-24-cross-session-continuity-truthfulness.ts';
+import { check as r32 } from './refusal-32-no-covert-developmental-steering.ts';
 
-const CHECKS: RefusalCheck[] = [r01, r02, r03, r04, r05, r06, r07, r08, r09, r10, rA5, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24];
+const CHECKS: RefusalCheck[] = [r01, r02, r03, r04, r05, r06, r07, r08, r09, r10, rA5, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r32];
 
 const BOLD = '\x1b[1m';
 const DIM = '\x1b[2m';

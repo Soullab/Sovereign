@@ -108,7 +108,7 @@ import { scrubMemoryAmnesia } from '@/lib/maia/prompts/memoryCanonGuard';
 import { ensureSession, initializeSessionTable } from '@/lib/sovereign/sessionManager';
 import { ensureSchemaReady } from '@/lib/db/schemaGate';
 import { getCognitiveProfile } from '@/lib/consciousness/cognitiveProfileService';
-import { enforceFieldSafety } from '@/lib/field/enforceFieldSafety';
+import { enforceFieldSafety, type FieldSafetyDecision } from '@/lib/field/enforceFieldSafety';
 import { makeCanonHeaders } from '@/lib/sovereign/http/canonHeaders';
 import { randomUUID } from 'crypto';
 import { MemoryBundleService, type MemoryBundle } from '@/lib/memory/MemoryBundle';
@@ -675,7 +675,7 @@ export async function POST(req: NextRequest) {
 
     // 🛡️ FIELD SAFETY GATE: Check if user is safe for field/symbolic work
     let cognitiveProfile = cognitiveProfileResult;
-    let fieldSafety = null;
+    let fieldSafety: FieldSafetyDecision | null = null;
 
     if (cognitiveProfile) {
       fieldSafety = enforceFieldSafety({
@@ -719,7 +719,7 @@ export async function POST(req: NextRequest) {
 
       console.log(
         `🛡️  [Field Safety] Allowed - avg=${cognitiveProfile.rollingAverage.toFixed(2)}, ` +
-          `fieldWorkSafe=true, realm=${fieldSafety.fieldRouting.realm}`,
+          `fieldWorkSafe=${fieldSafety.fieldRouting.fieldWorkSafe}, outOfScope=${!!fieldSafety.outOfScope}, realm=${fieldSafety.fieldRouting.realm}`,
       );
     }
 
@@ -1726,7 +1726,7 @@ ${studioCtx?.clientId ? `Client context ID: ${studioCtx.clientId}` : 'No specifi
           memoryContext, // 📝 Formatted memory context for prompt
           cognitiveProfile, // 🧠 Pass cognitive profile for downstream use
           fieldRouting: fieldSafety?.fieldRouting, // 🛡️ Pass field routing decision
-          fieldWorkSafe: fieldSafety?.allowed ?? true, // 🛡️ Pass safety flag
+          fieldWorkSafe: fieldSafety ? fieldSafety.fieldRouting.fieldWorkSafe : true, // 🛡️ Router's answer, not the gate's pass
           timezone, // 📅 User's browser timezone for temporal grounding
           wuxingSnapshotAddendum: wuxingAddendum, // 🌿 Wu Xing elemental awareness (mapped to existing field)
           wuxingSnapshot, // 🌿 Raw Wu Xing data for downstream processing

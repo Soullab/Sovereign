@@ -10,6 +10,12 @@ export type FieldSafetyDecision = {
   message?: string;
   elementalNote?: string;
   fieldRouting: FieldRoutingDecision;
+  /**
+   * True when the router judged field work unsafe but the turn did not request
+   * field work, so the gate stood aside. `fieldRouting.fieldWorkSafe` stays the
+   * router's real answer; downstream shaping must read that, never `allowed`.
+   */
+  outOfScope?: boolean;
 };
 
 export type FieldSafetyContext = 'maia' | 'oracle' | 'field' | 'between' | 'unknown';
@@ -20,7 +26,17 @@ export type FieldSafetyContext = 'maia' | 'oracle' | 'field' | 'between' | 'unkn
  * Reusable guard function for checking if a user is safe for field/symbolic work.
  * Call this at the top of API routes, services, and agents before proceeding.
  *
- * @returns { allowed: true } if safe to proceed, { allowed: false, message } if blocked
+ * ⛔ SCOPE (2026-11-25, founder ruling "Yes, draft proposal"; reconciliation plan
+ * docs/programme/CODE_TO_CANON_RECONCILIATION_PLAN_2026-11-25.md §5b):
+ * this gate may refuse ONLY a turn that explicitly requests field work
+ * (`fieldWorkRequested: true`). On an ordinary turn it never replaces MAIA's
+ * reply, whatever the accumulated cognitive average says. Its input is a keyword
+ * heuristic averaged over 20 turns; it has no standing to end a conversation the
+ * member did not open as field work. No surface sets the flag today, so the gate
+ * substitutes no reply anywhere until one is deliberately wired.
+ *
+ * @returns { allowed: true } if safe to proceed or out of scope,
+ *          { allowed: false, message } only for a refused field-work request
  */
 export function enforceFieldSafety(args: {
   cognitiveProfile: CognitiveProfile | null | undefined;
@@ -30,6 +46,8 @@ export function enforceFieldSafety(args: {
   archetype?: string | null;
   bloomLevel?: number | null;
   context?: FieldSafetyContext;
+  /** The turn explicitly asks for field/symbolic work. Defaults to false. */
+  fieldWorkRequested?: boolean;
 }): FieldSafetyDecision {
   const {
     cognitiveProfile,
@@ -39,6 +57,7 @@ export function enforceFieldSafety(args: {
     archetype,
     bloomLevel,
     context = 'unknown',
+    fieldWorkRequested = false,
   } = args;
 
   // Route field work based on cognitive capacity
@@ -53,6 +72,12 @@ export function enforceFieldSafety(args: {
   // If field work is safe, allow
   if (fieldRouting.fieldWorkSafe) {
     return { allowed: true, fieldRouting };
+  }
+
+  // Not a field-work request: the gate stands aside. The routing decision is
+  // returned unchanged so downstream shaping stays conservative.
+  if (!fieldWorkRequested) {
+    return { allowed: true, outOfScope: true, fieldRouting };
   }
 
   // Otherwise, get mythic boundary message
