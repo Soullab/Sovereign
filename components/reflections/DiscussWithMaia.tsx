@@ -125,7 +125,7 @@ export default function DiscussWithMaia({ capsule }: DiscussWithMaiaProps) {
       returnTo: `/reflections/${capsule.id}`,
       contextId: capsule.id,
     });
-    router.push('/maia');
+    router.push('/maia/encounter');
     router.refresh();
   };
 

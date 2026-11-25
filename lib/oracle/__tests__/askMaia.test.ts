@@ -51,3 +51,25 @@ describe('Ask MAIA draft', () => {
     expect(withOpening('ctx', 'Q?')).toBe('ctx\n\nQ?');
   });
 });
+
+describe('Ask MAIA destination', () => {
+  // Founder walk 2026-11-25: Ask MAIA left Divination for the bare /maia
+  // threshold, which does not consume the seed. Divination is now a governed
+  // room (in-place sheet); the signed-out fallback goes to the encounter route.
+  const fs = require('node:fs') as typeof import('node:fs');
+  const path = require('node:path') as typeof import('node:path');
+  const read = (p: string) => fs.readFileSync(path.resolve(process.cwd(), p), 'utf8');
+
+  it('opens MAIA in the room when presence can host, else seeds /maia/encounter', () => {
+    const src = read('components/oracle/atlas/AskMaia.tsx');
+    expect(src).toContain('presence.openMaiaWith(prompt)');
+    expect(src).toContain("router.push('/maia/encounter')");
+    expect(src).not.toContain("router.push('/maia')");
+  });
+
+  it('Reflections MAIA links never land on the bare /maia threshold', () => {
+    for (const p of ['components/reflections/DiscussWithMaia.tsx', 'components/reflections/ReflectionsFeed.tsx']) {
+      expect(read(p)).not.toContain("router.push('/maia')");
+    }
+  });
+});
