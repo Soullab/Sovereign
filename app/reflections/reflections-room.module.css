@@ -147,6 +147,23 @@
   font: italic 13px/1.5 Georgia, serif;
 }
 
+/* The doorway to Keep (founder ruling 2026-11-25: kept places link to each other). */
+.keptPlaces {
+  margin-top: 12px;
+}
+
+.keptPlacesLink {
+  color: #d6b47a;
+  font-style: normal;
+  text-decoration: none;
+}
+
+.keptPlacesLink:hover,
+.keptPlacesLink:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .tools {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) auto;

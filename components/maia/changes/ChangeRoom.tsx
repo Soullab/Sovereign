@@ -9,6 +9,7 @@ import { FacetOriginTrail } from '@/components/house/FacetOriginTrail';
 import { OracleConversation } from '@/components/OracleConversation';
 import type { ChangeExperienceType, ChangeRecord } from '@/lib/studio/changes/types';
 import styles from './change-room.module.css';
+import { KEPT_PLACES } from '@/lib/navigation/keptPlaces';
 
 const TYPE_LABELS: Record<string, string> = {
   dissolution: 'Dissolution',
@@ -287,6 +288,7 @@ export default function ChangeRoom({ changeId }: { changeId: string }) {
           <Link href="/journal">Journal</Link>
           <Link href="/relationships">Relationships</Link>
           <Link href="/dream?from=house">Dream</Link>
+          <Link href={KEPT_PLACES.reflections.href}>{KEPT_PLACES.reflections.label}</Link>
           <Link href="/maia">MAIA</Link>
         </nav>
         <blockquote>A life can change<br />before we know<br />what to call it.</blockquote>
