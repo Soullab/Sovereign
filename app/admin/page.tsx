@@ -176,6 +176,7 @@ export default function AdminPage() {
               {[
                 { label: 'Monitor', href: '/admin/monitor' },
                 { label: 'Writer’s Studio', href: '/admin/writers-studio' },
+                { label: 'Marketing Roadmap', href: '/admin/marketing-roadmap' },
                 { label: 'Platform Pulse', href: '/admin/activity-feed' },
                 { label: 'Beta Testers', href: '/admin/beta-testers' },
                 { label: 'Opus Pulse', href: '/admin/opus-pulse' },
