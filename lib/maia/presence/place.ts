@@ -103,6 +103,12 @@ export const GOVERNED_ROOMS: readonly GoverendRoom[] = [
   // This grants no microphone, automatic music, media entitlement or source rights.
   { placeId: 'listen', placeName: 'Listening Room', routePrefix: '/listen', purpose: 'Member-chosen listening and focus journeys.' },
   { placeId: 'home', placeName: 'Home', routePrefix: '/home', purpose: 'The member landing threshold.' },
+  // Divination owns its own MAIA threshold: `Ask MAIA` on an Atlas symbol or
+  // aspect, after the member reads and edits what MAIA will receive. Founder
+  // ruling 2026-11-25: governed so that gesture opens MAIA over the page in the
+  // same field, never the ambient House handle (same grammar as Journal). Only
+  // the place facts travel, and only on a message the member chooses to send.
+  { placeId: 'divination', placeName: 'Divination', routePrefix: '/oracle', purpose: 'A room for meeting a question through symbolic practice and study.', handleVisibility: 'none' },
 ] as const;
 
 /** Full conversation surfaces — the handle/sheet is suppressed here (the page IS the relationship surface). */

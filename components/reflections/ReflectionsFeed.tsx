@@ -285,7 +285,7 @@ export default function ReflectionsFeed() {
             When something matters enough to keep — a phrase, a recognition,
             a turning point — it can return here.
           </p>
-          <button type="button" onClick={() => router.push('/maia')}>Meet MAIA →</button>
+          <button type="button" onClick={() => router.push('/maia/encounter')}>Meet MAIA →</button>
         </motion.div>
       ) : (
         <div className={styles.gemField} aria-label="Kept reflections">
@@ -304,7 +304,7 @@ export default function ReflectionsFeed() {
 
       <footer className={styles.roomFoot}>
         <span>What you keep can change how you return.</span>
-        <button type="button" onClick={() => router.push('/maia')}>Meet MAIA →</button>
+        <button type="button" onClick={() => router.push('/maia/encounter')}>Meet MAIA →</button>
       </footer>
     </section>
   );

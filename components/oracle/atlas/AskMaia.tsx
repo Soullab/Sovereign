@@ -8,7 +8,7 @@
  *  2. The member reads and can edit exactly what travels before it is sent.
  *  3. Where the presence layer can host MAIA here, the conversation opens over
  *     this page. Otherwise the existing seed channel carries the message to
- *     /maia, with the way back to this entry.
+ *     /maia/encounter (bare /maia is a threshold), with the way back to this entry.
  *  4. No new persistence, no URL parameters: the seed lives in localStorage
  *     for at most ten minutes and is consumed once.
  *
@@ -63,7 +63,7 @@ export function AskMaia({ label, prominent, ...topic }: AskMaiaProps) {
       sourceLabel: topic.aspect ? `${topic.subject} · ${topic.aspect}` : topic.subject,
       returnTo: pathname ?? '/oracle/atlas',
     });
-    router.push('/maia');
+    router.push('/maia/encounter');
   };
 
   return (
