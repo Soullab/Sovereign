@@ -117,7 +117,9 @@ describe('ACCEPTANCE 3: the member is not moved', () => {
   it('the presence path in DiscussWithMaia returns before any navigation', () => {
     const discussCode = code(discussSource);
     const openIdx = discussCode.indexOf('presence.openMaiaWith(prompt)');
-    const pushIdx = discussCode.indexOf("router.push('/maia')");
+    // Fallback target is the encounter route: bare /maia is a threshold that
+    // does not consume the seed (founder walk 2026-11-25).
+    const pushIdx = discussCode.indexOf("router.push('/maia/encounter')");
     expect(openIdx).toBeGreaterThan(-1);
     expect(pushIdx).toBeGreaterThan(openIdx);
     // Everything between the in-place send and the fallback navigation must be
