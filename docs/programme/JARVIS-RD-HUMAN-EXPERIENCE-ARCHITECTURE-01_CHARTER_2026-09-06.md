@@ -1004,3 +1004,260 @@ because we know it?*
 CURRENT** (census running read-only; outputs to `docs/programme/MAIA_WHOLE_ORGANISM_MAP/`) ·
 manifesto FROZEN · PR #1239 DRAFT · merge / deploy / MAIA runtime change NOT AUTHORIZED · member
 research NOT AUTHORIZED · collective laboratory NOT BUILT.
+
+---
+
+## 25 · Lane split — `/accounted-for` and PR #1239 transferred out (founder ruling, 2026-09-06)
+
+**Founder act.** `/accounted-for`, its source of record, the claim-reconciliation record, the page
+contract and screenshots, and PR #1239 transfer to `JARVIS-PUBLIC-ACCOUNTED-FOR-01`
+(`docs/programme/JARVIS-PUBLIC-ACCOUNTED-FOR-01_CHARTER_2026-09-06.md`). This lane no longer
+edits or governs that surface. Authority over the Human Experience Architecture — Synthesis v0.2,
+P1–P13, AP1–AP17, U1–U33, R8–R12, the frameworks, the master run — stays here; the
+publication lane translates accepted outputs and may not alter them. Split record:
+`docs/programme/JARVIS-LANE-SPLIT_HUMAN-EXPERIENCE_ACCOUNTED-FOR_2026-09-06.md`.
+
+**Next act:** Phase 1 — Whole-Organism MAIA/AIN Mapping (master run §5; read-only; Field Study
+method). Governing question from here: *how must MAIA/AIN change because of what we now understand?*
+
+**Custody record (this session, the original R&D session, acknowledging the stop).**
+
+```text
+INTENDED TRANSFER          c36d82ec
+EARLIER CONTAINMENT        6ce59f82
+OBSERVED DRIFT             f7705937
+STOP ACKNOWLEDGED AT       a7b42f29   (local HEAD == origin head at acknowledgement; re-probed)
+FINAL CONTAINMENT SHA      a7b42f29
+PHASE-1 BRANCH             claude/maia-human-experience-phase1-census   (cut at a7b42f29)
+FURTHER R&D WRITES TO #1239   NONE — from a7b42f29 the publication lane is sole writer
+```
+
+Every commit up to `a7b42f29` on the #1239 branch is preserved as history under the founder's
+no-rewrite ruling. Census pages written after the stop (03, 09, 12 and all later pages, the
+ranked map, master-run revisions) land only on the Phase-1 branch.
+
+---
+
+## 26 · Phase 1 census complete · acceptance gate PASS · ranked map delivered (2026-09-06)
+
+**What ran.** Six read-only census agents, thirteen subsystem pages under
+`docs/programme/MAIA_WHOLE_ORGANISM_MAP/` (01–13, 2,808–3,811 words each), TEMPLATE.md format.
+Custody: pages 01, 02, 04–08 landed on the #1239 branch before the stop (preserved there at
+`a7b42f29`, carried forward); pages 03, 09–13 and all revisions exist only on
+`claude/maia-human-experience-phase1-census`.
+
+**Acceptance gate (founder instrument, run once as a batch after all six agents completed):**
+13/13 present · confined to the map directory · containment diff clean on both ranges
+(`75303b3d..a7b42f29`, `a7b42f29..HEAD` — outside the map directory only this session's own
+governance commits; zero code files) · founder question first ×13 · nine questions ×13 · R11
+itemized with paths ×13 · embodies / contradicts / unknown ×13 · unknowns instrumented ×13 · gap
+tables with smallest intervention, evidence state, confidence, risk 1–5 ×13. **ALL PASS.**
+Admissibility only; correctness of interventions was compared in the R11 matrix, not inherited.
+
+**Compiled:** `docs/programme/MAIA_WHOLE_ORGANISM_MAP/00_RANKED_MAP.md` — §1 thirteen
+founder-question answers · §2 embodiments · §3 seventeen deduplicated contradiction clusters
+X1–X17, each classed CONTRADICTION / GOVERNANCE / CLAIM per the founder's compilation rules · §4
+unknowns by instrument type · §5 R11 cross-subsystem matrix · §6 top-10 by impact × leverage ÷ risk
+with evidence state and confidence, plus the governance decisions ranked by significance and not
+against experiments · §7 seven candidate answers to *what must MAIA become differently* · §8 six
+founder stops.
+
+**The matrix's reading, in one sentence:** memory-as-leverage is absent on every live surface and
+approval optimization is met by absence almost everywhere; the organism's characteristic failure
+is **undisclosed calibration of depth, intensity, framing and intimacy from inferred state, with
+explicit instructions to keep the framing invisible** — on ten of thirteen subsystems. No class C
+evidence exists for any subsystem.
+
+**Governance items surfaced (decision, not experiment):** voice egress via OpenAI TTS outside the
+R15 funnel (production-witnessed 2026-08-27; ADR-012 open); silent system-authored records about
+the member; write-side consent bypass; Sanctuary unreachable in conversation (WALKED defect
+2026-08-28) and corpus framing inside Sanctuary; public copy and records above their rung.
+
+**State:** Phase 1 exit gate met on Jarvis's check. Per master run §13 the phase does not advance
+until the founder ranking is recorded. **Nothing repaired. Nothing in MAIA changed.**
+
+---
+
+## 27 · Founder adjudication of the ranked map · Phase 1 EXIT · Phase 2 OPEN (2026-09-06)
+
+**Order of authority changed, evidence unchanged.** Two planes: **Plane A** constitutional
+decisions first, never ranked against experiments — A1 no OpenAI voice egress outside the
+sovereignty funnel (census measures the breach, does not decide it) · A2 ephemeral means no
+long-term write; Sanctuary reachable and governing cognition as well as storage · A3 an inference
+never silently acquires member-authored standing (visible authorship, inspectable path, member
+reject/withdraw) · A4 claim discipline stands · A5 X1a (persisted inferred state shaping treatment
+across the admission boundary) · A6 X9a (the product offer inside the distress-keyed reframe).
+**Class splits:** X1 → X1a governance + X1b contradiction; X9 → X9a governance + X9b contradiction.
+**Plane B** ranking 1–10: know when MAIA is wrong → plurality before interpretation (E5 → E11 → E6,
+never inject four interpretations first) → inspectable participation → transfer beyond MAIA as
+measurement architecture → living-revision memory → honest in both directions → FAST floor →
+validator authority → house vocabulary → familiarity/provenance.
+
+**Authorizations.** All §4 read-only production censuses (narrow terms; spec
+`PHASE2_READONLY_CENSUS_SPEC_2026-09-06.md`; run from minisforum, not this session). Shadows
+sequentially: E1 correction-candidate first · E5 offline · E7 comparator · E11/E6 after E5 · E12
+after coverage. Human witnesses designed now around phenomenological falsifiers, not run. Cat 4
+confirmed as the current, not exhaustive, quarantine list.
+
+**Phase 1 EXITED on `573d5268`. Phase 2 OPEN** — register `HUMAN_EXPERIENCE_GAP_REGISTER.md`
+seeded from the ranking. Governing sentence carried into the Phase 2 header:
+
+> MAIA's next problem is not becoming more intelligent. It is making the sources, limits,
+> corrections, and consequences of its intelligence genuinely relational.
+
+---
+
+## 28 · E1 correction-candidate shadow — built and gated, undeployed (2026-09-06)
+
+The first shadow instrument the founder sequenced is built on the Phase-1 branch:
+`lib/maia/canonical-turn/correctionShadow.ts` (pure, zero imports, content-free, Sanctuary
+refused inside), a log-only block on `/list` after the legacy cognition call (kill-switch
+`MAIA_CORRECTION_SHADOW=0`), eight unit falsifiers, and refusal **R32** in the registry (module
+observational; block after cognition; no member-text key in the log). Spec and witness plan:
+`docs/programme/E1_CORRECTION_SHADOW_SPEC_2026-09-06.md`. Gates recorded in the spec §4. **Deploy
+is a founder act through the deploy lane; nothing is live.** A candidate is a marker, not a
+finding; the instrument produces prevalence counts only; whether MAIA *notices* a correction
+remains the E1 witness under Phase 4 consent.
+
+---
+
+## 29 · Five founder stops closed (2026-09-06)
+
+```text
+E1                    DEPLOY AUTHORIZED — isolated E1 commit (7d894b72 code) only, never the Phase-2 head
+                      witness: candidate diff = E1 only · production GIT_COMMIT recorded ·
+                      MAIA_CORRECTION_SHADOW != 0 · no response-path consumer · no Sanctuary emission ·
+                      no member text in logs · 14-day window · counts/distributions only ·
+                      memberRef stays, no new persistence/sink
+C1–C18                RUN AUTHORIZED (C3 navigation/read-only walk only; C5 early)
+C19                   HOLD — separate code-change act
+R30                   PP-2 AUTHORIZED — pp-1 preserved; four cells adjudicated (see register)
+E5 synthetic          RUN AUTHORIZED (calibration only; adversarial corpus; version on manual change)
+E5 member sample      HOLD for Phase-4 consent; external rater outside Soullab and the framework
+#1239                 publication lane only — no act from this lane
+Shadow Field          separate Jarvis lane; not folded into the Phase-2 register
+```
+
+Execution by this session: deploy candidate branch cut from canonical with E1's code
+cherry-picked (the Phase-2 head carries the publication lane's page revisions and cannot be the
+deploy subject); read-only census script authored for ops (nothing run here — no production
+access); pp-2 opened in `lib/maia/canonical-turn/policy.ts`; E5 coding manual, synthetic corpus and
+scoring tool authored (raters are a founder appointment). Records: register (second ruling set),
+`E1_CORRECTION_SHADOW_SPEC_2026-09-06.md` §7, `PHASE2_READONLY_CENSUS_SPEC_2026-09-06.md`.
+
+---
+
+## 30 · pp-2 opened — R30 GREEN; E1 isolated deploy candidate pushed (2026-09-06)
+
+**pp-2** (`lib/maia/canonical-turn/policy.ts`, `PARTICIPATION_POLICY_VERSION = 'pp-2'`): pp-1
+preserved as the historical seed; the four cells adjudicated as restraint rules, not seed edits
+— `member.divination_intent` and `computed.divination_cast` ADMIT under memory-mode continuity
+and not Sanctuary (ephemeral → HELD `restraint:pp2_continuity_off`); `practitioner.atoms_observations`
+HELD `restraint:pp2_no_member_acceptance_basis` from ambient participation (no lifting mechanism
+exists in pp-2); `house.divination_interpretation` HELD `restraint:pp2_awaiting_member_invocation`
+and ADMITTED `member_invoked` only when the turn's sovereignty state carries a member invocation of
+the divination domain (new optional `SovereigntyState.memberInvocations`; the M2 shadow route passes
+nothing, so it stays held). Fixture `cmt-01-pp-2-admission.json` (42 producers + restraints);
+**R30 rewritten version-aware** and GREEN; R25/R26 RED as expected until M3; unit suite 82/82 with
+the six divination expectations rewritten to the ruling; registry 113/0/0; typecheck no regression.
+The shadow will now report `missingInCanonical` for the held producers on turns where legacy still
+carries them — recorded as classified policy divergence (M3 evidence), never normalized.
+
+**E1 isolated deploy candidate:** branch `claude/e1-correction-shadow-deploy` at `0780f368`, cut
+from canonical `ca5fdff4` (the #1239 merge) with exactly the six E1 code paths of `7d894b72`
+(classifier · route block · unit test · R32 + index · spec). Diff against canonical = E1 only;
+jest 79/79, registry 113/0/0 with R32, typecheck no regression. Deploy command (founder/ops, from
+the Mac Studio):
+
+```bash
+ssh soullab@minisforum 'cd ~/MAIA-SOVEREIGN && git fetch origin claude/e1-correction-shadow-deploy \
+  && scripts/pre-deploy-gate.sh deploy-maia "$(git rev-parse --short origin/claude/e1-correction-shadow-deploy)"'
+# verify: docker exec maia-sovereign printenv GIT_COMMIT → 0780f368 ; MAIA_CORRECTION_SHADOW unset
+# witness: docker logs maia-sovereign --since 336h | grep -c "\[MAIA/shadow\] correction-candidate"
+```
+
+---
+
+## 31 · Founder check on the ruling set — E1 verified, pp-2 accepted, one E5 correction, census acceptance condition (2026-09-06)
+
+**E1 — ready.** Founder independently verified `0780f368` against canonical `ca5fdff4`: one
+commit ahead, diff exactly the six E1 paths. Deploy authorization stands; pp-2 creates no hold.
+
+**pp-2 — accepted.** `318a2bd2` encodes the ruling correctly: pp-1 historical; explicit
+restraints; house interpretation held until member invocation; practitioner observations held;
+the shadow divergence retained as evidence rather than fixed. R30 resolved.
+
+**E5 — one correction before any synthetic coding.** The v1 manual departed from the
+preregistered instrument in two places: evidence spans were kept out of the submitted sheet (no
+CSV field), removing the audit trail that distinguishes textual evidence from impression; and the
+per-element yes/no contradiction flag became one turn-level pair field. Ruling:
+
+```text
+E5 protocol       KEEP FROZEN
+E5 manual v1      SUPERSEDED BEFORE USE
+E5 manual v2      conform to protocol
+coded v1 turns    ZERO
+```
+
+Executed: `E5_CODING_MANUAL_v2.md` — per-element evidence columns (`fire_evidence` …) required
+for every 2/3, `tone`/`none` for 1/0, sheet offline and never published; per-element flags
+(`fire_contra` …) yes/no, turn-level M4 derived by the scorer; v1 carries a superseded header.
+Scorer: v2 contract; rejects a 2/3 without evidence (row dropped, problem recorded); derives the
+turn-level flag; never emits a span; self-test 18/18 including three v2 fixtures. No measure,
+threshold or hypothesis changed. Execution remains HOLD until the founder accepts the conformed
+artifacts.
+
+**Census scripts — acceptance condition added:** read-only enforced (`default_transaction_read_only
+= on`; no mutation statement on inspection; log script reads only), recorded in the census spec
+before any minisforum run.
+
+**State:** E1 DEPLOY AUTHORIZED · candidate verified — PP-2 ACCEPTED — CENSUS C1–C18 AUTHORIZED,
+scripts awaiting the acceptance gate — E5 SYNTHETIC AUTHORIZED, HOLD until acceptance of v2 —
+E5 MEMBER SAMPLE NOT AUTHORIZED — C19 NOT AUTHORIZED. Next act after the agents land: accept
+artifacts against these boundaries; begin no new implementation.
+
+---
+
+## 32 · Package accepted — two corrections applied; the transition to observation (founder, 2026-09-06)
+
+**E5 v2 — substantively accepted; clerical identity correction applied.** The methodological
+repair was right, but the file still carried v1 identity: title, `VERSION` line, the scorer's
+reference, and the corpus + sealed design sheet all named manual v1. Not a new protocol version —
+a clerical correction before observation. Applied: manual v2 titled and versioned v2 (with the
+supersession and the "no measure, threshold or hypothesis moved" note in the VERSION block);
+corpus, design sheet and `scripts/witness/e5-score.ts` now reference v2; self-test still 18/18.
+**Synthetic coding is authorized to begin. The external rater is the one outstanding human
+appointment.** Corpus adversarial composition accepted: 12 mixed · 9 contradictory · 9 ambiguous ·
+9 element-poor · 11 clean single-mode.
+
+**Census — run authorized; C3 tightened and verdict boundaries fixed.** The C3 checklist as
+authored allowed toggling and restoring and asked the operator to start a session with the default
+ON; that exceeded the ruling. Rewritten as **observation only**: locate every Sanctuary control,
+record current visible state and copy, count taps from `/maia`, record control vs descriptive — do
+not toggle, do not alter defaults, do not send a test turn. Propagation of Sanctuary state to a
+live session is a **separate founder act** and is recorded in the walk as NOT OBSERVABLE UNDER
+THIS AUTHORIZATION. Verdict boundaries now binding (census spec §Verdict boundaries): **C2**
+PROXY / INCONCLUSIVE for same-turn bypass (no shared turn id — aggregate coexistence only, never
+"any nonzero = breach extent"); **C5** PROXY narrowing only the cognitive-profile-mediated
+calibration pathway, not awareness-level routing or greeting intimacy; **C15** NOT OBSERVABLE,
+never zero; **C18** NOT OBSERVABLE SERVER-SIDE, never "0 rejects"; **C14** SQL may run, render
+occurrence unknown; **C4** accepted, raw text never enters the result record.
+
+**Final state of the ruling set.**
+
+```text
+E1                  DEPLOY AUTHORIZATION STANDS
+PP-2                CLOSED / ACCEPTED
+E5 v2               ACCEPTED · synthetic coding AUTHORIZED TO BEGIN
+E5 member sample    HOLD · Phase-4 consent
+external rater      STILL TO APPOINT
+CENSUS C1–C18       RUN AUTHORIZED · scripts accepted
+C3                  observation only
+C2 · C5             PROXY verdicts
+C15 · C18           NOT OBSERVABLE
+C19                 NOT AUTHORIZED
+```
+
+**The transition (founder):** *stop designing and collect evidence. Phase 2 has enough
+instruments. The next value comes from observations, not more architecture.* No further instrument
+is designed in this lane until observations exist to design against.
