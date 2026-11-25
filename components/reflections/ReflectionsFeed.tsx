@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import type { CapsuleDTO, Element } from '@/lib/capsules/types';
 import styles from '@/app/reflections/reflections-room.module.css';
+import { KEPT_PLACES } from '@/lib/navigation/keptPlaces';
 
 type FilterTab = 'all' | 'pinned' | 'drafts' | 'archived';
 
@@ -221,6 +222,13 @@ export default function ReflectionsFeed() {
             words you chose not to lose.
           </p>
           <span>{fromHouse ? 'A room within your House.' : 'Your kept reflections live here.'}</span>
+          {/* The doorway to Keep (founder ruling 2026-11-25). */}
+          <p className={styles.keptPlaces}>
+            <a href={KEPT_PLACES.keep.href} className={styles.keptPlacesLink}>
+              {KEPT_PLACES.keep.label} →
+            </a>{' '}
+            <span>{KEPT_PLACES.keep.purpose}</span>
+          </p>
         </div>
       </header>
 

@@ -33,6 +33,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/http/apiBase';
 import { ReturnHome } from '@/components/navigation/ReturnHome';
+import Link from 'next/link';
+import { KEPT_PLACES } from '@/lib/navigation/keptPlaces';
 import { ELEMENTAL_LENS_PROMPTS } from '@/lib/psyche/types';
 import type {
   AtomGesture,
@@ -82,6 +84,10 @@ async function apiDelete<T>(url: string): Promise<T> {
 
 export default function KeepCapturePage() {
   const [kept, setKept] = useState<CrystallizedMemory[]>([]);
+  // Archived items stay findable and can be returned (Kelly, 2026-11-25:
+  // archive must mean "set aside, findable", not a disguised delete).
+  const [archived, setArchived] = useState<CrystallizedMemory[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
   const [candidates, setCandidates] = useState<PortfolioSourceCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +102,11 @@ export default function KeepCapturePage() {
         apiGet<{ candidates: PortfolioSourceCandidate[] }>('/api/psyche/portfolio/source-candidates?sourceType=idea_block'),
       ]);
       setKept(keptResp.atoms.filter((a) => a.status !== 'archived'));
+      setArchived(
+        keptResp.atoms.filter(
+          (a) => a.status === 'archived' && a.sourceType !== 'practitioner_observation',
+        ),
+      );
       setCandidates(
         [...ideaResp.candidates, ...blockResp.candidates].filter((c) => !c.alreadyKept),
       );
@@ -178,6 +189,16 @@ export default function KeepCapturePage() {
           <p className="text-stone-500 mt-2">
             What do you want MAIA to keep?
           </p>
+          {/* The doorway to Reflections (founder ruling 2026-11-25). */}
+          <p className="text-sm text-stone-500 mt-4">
+            <Link
+              href={KEPT_PLACES.reflections.href}
+              className="text-amber-700 hover:text-amber-900 underline-offset-2 hover:underline"
+            >
+              {KEPT_PLACES.reflections.label} →
+            </Link>{' '}
+            {KEPT_PLACES.reflections.purpose}
+          </p>
         </header>
 
         {loading && (
@@ -243,7 +264,36 @@ export default function KeepCapturePage() {
               </section>
             )}
 
-            {kept.length === 0 && candidates.length === 0 && (
+            {archived.length > 0 && (
+              <section className="mb-12">
+                <button
+                  type="button"
+                  onClick={() => setShowArchived((v) => !v)}
+                  aria-expanded={showArchived}
+                  className="text-xs uppercase tracking-widest text-stone-400 hover:text-stone-600 mb-4"
+                >
+                  Archived ({archived.length}) {showArchived ? '▾' : '▸'}
+                </button>
+                {showArchived && (
+                  <>
+                    <p className="text-stone-500 text-sm mb-4">
+                      MAIA doesn&apos;t bring these back. Return one and it is kept again.
+                    </p>
+                    <ul className="space-y-3">
+                      {archived.map((atom) => (
+                        <ArchivedItem
+                          key={atom.id}
+                          atom={atom}
+                          onReturn={() => applyGesture(atom.id, { kind: 'return_to_active' })}
+                        />
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </section>
+            )}
+
+            {kept.length === 0 && candidates.length === 0 && archived.length === 0 && (
               <p className="text-stone-500">
                 When you develop ideas, the ones you choose to shape and refine
                 can appear here for you to keep.
@@ -385,6 +435,45 @@ function KeptItem({
           className="text-stone-500 hover:text-stone-800"
         >
           {atom.returnPreference === 'member_pulled' ? 'Allow return' : 'Reseal'}
+        </button>
+      </div>
+    </li>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Archived item — findable, and returnable with one tap
+// ════════════════════════════════════════════════════════════════════════════
+
+function ArchivedItem({
+  atom,
+  onReturn,
+}: {
+  atom: CrystallizedMemory;
+  onReturn: () => Promise<void> | void;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <li className="bg-white/60 rounded-lg p-5 border border-stone-200">
+      <h3 className="text-stone-600 font-medium leading-snug">{atom.title}</h3>
+      {atom.body && (
+        <p className="text-stone-500 text-sm mt-2 whitespace-pre-wrap line-clamp-3">{atom.body}</p>
+      )}
+      <div className="mt-4 text-sm">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await onReturn();
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="text-amber-700 hover:text-amber-900 disabled:text-stone-300"
+        >
+          Return to Keep
         </button>
       </div>
     </li>
