@@ -3,6 +3,7 @@ room: Reflections
 human_activity: returning to personally meaningful moments, words, recognitions, and keeps without reducing them to a content list
 surfaces:
   - components/reflections/ReflectionsFeed.tsx
+  - components/reflections/ReflectionsWeb.tsx
   - app/reflections/layout.tsx
   - app/reflections/reflections-room.module.css
 change_class: experiential
@@ -72,3 +73,27 @@ The collection may vary in visual height because the member's actual material va
 **Same house?** Yes. Reflections uses the approved House field, warm architectural depth, editorial type hierarchy, restrained rules, and Soullab Holoflower language.
 
 **Distinct room?** Yes. The House is navigational and ecological; Reflections is intimate and object-centered. The member should feel they have opened a cabinet of things they chose to keep, not another House directory.
+
+---
+
+## Addendum — the Web view, Life Web step 1 (2026-11-26)
+
+**Authority:** founder authorized building step 1 of `docs/programme/REFLECTIONS_LIFE_WEB_DESIGN_2026-11-25.md` §6 on 2026-11-26 ("Yes, build step 1"), under the principles ruled there on 2026-11-25 (Q1–Q4). Steps 2–4 (member-drawn threads, named gatherings, MAIA offers) are **not** authorized by this addendum. The facet-crossings contract carries the one-line Q3 amendment this step uses.
+
+**What it is.** A second way of looking at the same gems. The room header offers `Gems · Web`. **Gems stays the default arrival**; the member chooses the Web. Nothing in the Web is a new object or a new store: it reads the member's non-archived Reflections and the crossings they already made that touch a Reflection. No new table, no write path.
+
+**What the member sees.**
+
+- A **time river** — horizontal on wide screens, vertical on phones — oldest at one edge, now at the other. Position is the date the reflection was kept, a fact.
+- **Lanes** by where each reflection came from (Conversation, Voice, Journal, Divination, Astrology, …), a fact.
+- Each gem as a small mark in its **elemental colour**, the same quiet provenance cue as the Gems view. All marks are the same size. Nothing is featured.
+- **Threads** only where the member already carried a reflection into another room (a Change, a Decision, a Daily Anchor, a Journal entry). Each thread is labelled with the crossing's own gesture ("Name a change") and appears on the date it was made, not the date of either end.
+- A **`Then ←→ Now` scrubber**: moving it back shows the river as it stood on that date — gems appear when they were kept, threads when they were made.
+- Selecting a gem shows its title, source and date, `Return to this reflection →`, and any threads with `Return to …` links. No excerpt of the other end's prose is shown.
+- One quiet line: *"Only what you kept, and where you carried it."* With no threads: *"Threads appear when you carry a reflection into another room."* No nudge to carry more.
+
+**Forbidden in the Web view** (in addition to the room's list above): clusters, themes or patterns the member did not make; MAIA text on the Web; counts or density as the experience; size or position varying by importance; any thread not backed by a member-made crossing; dotted or suggested lines; Sanctuary, sealed, archived, client or relational-observation material; any projection into Living Field or a shared surface.
+
+**Constitutional layer:** Reflection (display of facts: dates, provenance, member-made crossings). It asserts no meaning and holds nothing above Reflection.
+
+**Experience verification:** **not yet witnessed.** Step 1 exists to prove whether the time view itself serves members; it is not `LIVE` until a member/device witness on the real build is recorded here.

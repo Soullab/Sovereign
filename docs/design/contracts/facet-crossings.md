@@ -287,6 +287,8 @@ The canonical member-facing crossing registry remains:
 
 The ledger does not create a universal graph or authorize automatic Field projection.
 
+**Member-requested projection in Reflections (founder ruling Q3, 2026-11-25; first used by Life Web step 1, 2026-11-26):** a member's own crossings that touch a Reflection may be shown together as threads in the Reflections Web view, on the member's request, inside Reflections only — labels and return links, never copied prose — and never projected into Living Field or any shared surface.
+
 ## What this does not yet authorize
 
 This slice does not automatically connect:
