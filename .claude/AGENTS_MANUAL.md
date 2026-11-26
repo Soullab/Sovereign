@@ -33,7 +33,7 @@ The main session plans, writes a brief for each job, and checks the result itsel
 | **engineer** | Sonnet / high | Changes across several files, bugs with no obvious cause. |
 | **reviewer** | Sonnet / high | Read a saved diff against its brief and list what fails. Read-only. |
 
-None of them commit, push, switch branches, deploy, run migrations, touch minisforum, or read Sanctuary content, member data or secrets. They report adjacent problems instead of fixing them. Leave `CLAUDE_CODE_SUBAGENT_MODEL` unset so each keeps its own model. The `effort:` frontmatter field is not yet verified to be honoured by Claude Code.
+None of them commit, push, switch branches, deploy, run migrations, touch minisforum, or read Sanctuary content, member data or secrets. They report adjacent problems instead of fixing them. Leave `CLAUDE_CODE_SUBAGENT_MODEL` unset so each keeps its own model, and leave `CLAUDE_CODE_EFFORT_LEVEL` unset: it overrides every agent's `effort:` field (Claude Code subagent docs).
 
 Overlap to resolve later: **engineer** ≈ **maia-dev**, **reviewer** partly ≈ **security-auditor**.
 
