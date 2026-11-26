@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse guard for the worker agents (scout, builder, engineer, reviewer).
+"""PreToolUse guard for the worker agents (scout, builder, maia-dev, reviewer).
 
 Wired from each worker's frontmatter `hooks:` block, so it runs only while that
 worker is active and never for the main session.
