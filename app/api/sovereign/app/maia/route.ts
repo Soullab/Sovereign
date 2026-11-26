@@ -273,7 +273,7 @@ export async function POST(req: NextRequest) {
 
           console.log(
             `🛡️  [Field Safety] Allowed - avg=${cognitiveProfile.rollingAverage.toFixed(2)}, ` +
-              `fieldWorkSafe=true, realm=${fieldSafety.fieldRouting.realm}`,
+              `fieldWorkSafe=${fieldSafety.fieldRouting.fieldWorkSafe}, outOfScope=${!!fieldSafety.outOfScope}, realm=${fieldSafety.fieldRouting.realm}`,
           );
         }
       } catch (err) {
@@ -368,7 +368,7 @@ export async function POST(req: NextRequest) {
           userId: identityRef, // 🧠 Pass identity ref for Dialectical Scaffold logging
           cognitiveProfile, // 🧠 Pass cognitive profile for downstream use
           fieldRouting: fieldSafety?.fieldRouting, // 🛡️ Pass field routing decision
-          fieldWorkSafe: fieldSafety?.allowed ?? true, // 🛡️ Pass safety flag
+          fieldWorkSafe: fieldSafety ? fieldSafety.fieldRouting.fieldWorkSafe : true, // 🛡️ Router's answer, not the gate's pass
           // PROMPT-AUTHORITY-02: prompt-bearing client keys are removed; the server
           // authors every prompt field, below.
           ...withoutClientPromptAuthority(meta),
