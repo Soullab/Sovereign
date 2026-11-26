@@ -6,9 +6,15 @@ import {
   findHexagramFromLines,
   LineValue
 } from '@/lib/divination';
+import { lineValueToType } from '@/lib/divination/iching/casting';
 import { getMemberIdFromRequest } from '@/lib/auth/getMemberFromRequest';
 import { divinationService, type SaveIChingInput } from '@/lib/services/divinationService';
 import { memberRef } from '@/lib/privacy/memberRef';
+
+/** Draw the member's actual cast (bottom to top), never a table copy of the hexagram. */
+function drawnLines(lineValues: readonly LineValue[]): string[] {
+  return lineValues.map(v => (lineValueToType(v) === 'yang' ? '-------' : '--- ---'));
+}
 
 /**
  * I Ching Oracle API
@@ -101,7 +107,7 @@ function produceFromPreCastLines(query: string, castMethod: SaveIChingInput['cas
       number: hexagram.number,
       name: hexagram.englishName,
       keyword: hexagram.keyword,
-      lines: hexagram.lines.map(l => l === 'yang' ? '-------' : '--- ---'),
+      lines: drawnLines(lineValues),
       trigrams: {
         upper: hexagram.trigrams.upper,
         lower: hexagram.trigrams.lower
@@ -161,7 +167,7 @@ function produceFreshCast(query: string, castMethod: SaveIChingInput['cast_metho
       number: hexagram.number,
       name: hexagram.englishName,
       keyword: hexagram.keyword,
-      lines: hexagram.lines.map(l => l === 'yang' ? '-------' : '--- ---'),
+      lines: drawnLines(castReading.castLines),
       trigrams: {
         upper: hexagram.trigrams.upper,
         lower: hexagram.trigrams.lower
