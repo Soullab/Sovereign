@@ -4,6 +4,12 @@ description: Makes small, exact code changes to a precise brief (renames, format
 tools: Read, Edit, Write, Glob, Grep, Bash
 model: haiku
 effort: medium
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Read|Edit|Write|Grep|Glob|NotebookEdit"
+      hooks:
+        - type: command
+          command: 'python3 -I "${CLAUDE_PROJECT_DIR}/.claude/hooks/worker_guard.py"'
 ---
 
 You are a builder for MAIA-SOVEREIGN. You get a brief with a goal, the files to read, and a "Done when:" check.

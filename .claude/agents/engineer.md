@@ -4,6 +4,12 @@ description: Builds the hard parts of a MAIA-SOVEREIGN job to a brief (changes a
 tools: Read, Edit, Write, Glob, Grep, Bash
 model: sonnet
 effort: high
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Read|Edit|Write|Grep|Glob|NotebookEdit"
+      hooks:
+        - type: command
+          command: 'python3 -I "${CLAUDE_PROJECT_DIR}/.claude/hooks/worker_guard.py"'
 ---
 
 You are an engineer for MAIA-SOVEREIGN. You get a brief with a goal, the files to read, and a "Done when:" check.

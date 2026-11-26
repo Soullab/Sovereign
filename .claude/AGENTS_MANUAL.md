@@ -33,7 +33,11 @@ The main session plans, writes a brief for each job, and checks the result itsel
 | **engineer** | Sonnet / high | Changes across several files, bugs with no obvious cause. |
 | **reviewer** | Sonnet / high | Read a saved diff against its brief and list what fails. Read-only. |
 
-None of them commit, push, switch branches, deploy, run migrations, touch minisforum, or read Sanctuary content, member data or secrets. They report adjacent problems instead of fixing them. Leave `CLAUDE_CODE_SUBAGENT_MODEL` unset so each keeps its own model, and leave `CLAUDE_CODE_EFFORT_LEVEL` unset: it overrides every agent's `effort:` field (Claude Code subagent docs).
+**What is enforced vs. instructed:**
+- *Enforced by tool lists:* scout and reviewer have no shell and no write tools.
+- *Enforced by hook:* each worker's frontmatter runs `.claude/hooks/worker_guard.py` before its tool calls. For builder and engineer it blocks git acts that change history or branches (commit, push, merge, rebase, reset, checkout, switch, worktree, tag, …), `gh`, `ssh`/`scp`/`rsync`, `docker`, `psql`, the deploy scripts, migration scripts, and any reference to secret files (`.env*` except `.env.example` / `*.template`, `.ssh/`, `*.pem`, `*.key`). For all four it blocks reading or searching secret file paths. Read-only git (`status`, `diff`, `log`, `show`) is allowed.
+- *Instructed only:* staying inside the brief, not touching Sanctuary content or member data held in files, reporting adjacent problems instead of fixing them.
+- *Limits:* the guard matches command text, so code that builds a command at runtime can still get past it; it is a floor, not a sandbox. Project-agent frontmatter hooks run only in a workspace you have trusted, and not in `claude -p` runs — there the workers are back to prose rules. Leave `CLAUDE_CODE_SUBAGENT_MODEL` unset so each keeps its own model, and leave `CLAUDE_CODE_EFFORT_LEVEL` unset: it overrides every agent's `effort:` field (Claude Code subagent docs).
 
 Overlap to resolve later: **engineer** ≈ **maia-dev**, **reviewer** partly ≈ **security-auditor**.
 
