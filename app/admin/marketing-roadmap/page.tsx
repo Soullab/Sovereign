@@ -345,6 +345,25 @@ export default function MarketingRoadmapAdminPage() {
               </div>
             </Section>
 
+            <Section num="§5a" title="Story candidates" note={rm.storiesNote}>
+              <div className="grid gap-3 md:grid-cols-2">
+                {rm.stories.map((st) => (
+                  <div key={st.name} className="space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] uppercase tracking-wider ${st.layer === 'Live' ? 'bg-emerald-400/15 text-emerald-200' : 'bg-amber-400/15 text-amber-200'}`}>{st.layer}{st.layer === 'Live' ? '' : ' · not for public promotion'}</span>
+                      <span className="font-mono text-xs text-white/40">Wave {st.wave} · {st.studio}</span>
+                    </div>
+                    <h3 className="font-semibold">{st.name}</h3>
+                    <p className="text-sm text-white/75">{st.story}</p>
+                    <p className="text-xs text-white/55"><span className="text-white/40">Center of gravity:</span> {st.centerOfGravity}</p>
+                    <p className="text-xs text-white/55"><span className="text-white/40">Standing:</span> {st.standing}</p>
+                    <p className="border-l-2 border-teal-400 pl-3 text-xs text-white/70">{st.gate}</p>
+                    <p className="font-mono text-[11px] text-white/35">{st.source}</p>
+                  </div>
+                ))}
+              </div>
+            </Section>
+
             <Section num="§6" title="The repeatable Studio launch cycle">
               <div className="grid overflow-hidden rounded-xl border border-white/10 md:grid-cols-7">
                 {rm.launchCycle.map(([t, name, desc]) => (
