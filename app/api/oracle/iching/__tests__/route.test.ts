@@ -196,3 +196,20 @@ describe('one writer', () => {
     expect(code).not.toMatch(/body\.(user_id|userId|memberId)/);
   });
 });
+
+describe('the drawn hexagram is the member\'s actual cast', () => {
+  // Founder walk 2026-11-25: a cast of 53 (Development) drew upside down because
+  // the table's line data for 53 was stored top-down. The drawing now comes from
+  // the cast itself, bottom to top.
+  it('53 Development (mountain below, wind above) draws its cast lines', async () => {
+    mockGetMemberId.mockResolvedValue(null);
+    // bottom→top: yin yin yang(9, changing) yin yang(9) yang(9)
+    const cast: LineValue[] = [8, 8, 9, 8, 9, 9];
+    const lines = cast.map((value) => ({ type: value % 2 === 1 ? 'yang' : 'yin', changing: value === 6 || value === 9, value }));
+    const res = await POST(post({ query: 'q', lines }));
+    const json = (await res.json()) as { reading: { hexagram: { number: number; lines: string[]; transformed?: { number: number } } } };
+    expect(json.reading.hexagram.number).toBe(53);
+    expect(json.reading.hexagram.lines).toEqual(['--- ---', '--- ---', '-------', '--- ---', '-------', '-------']);
+    expect(json.reading.hexagram.transformed?.number).toBe(2);
+  });
+});
