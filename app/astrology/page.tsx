@@ -35,6 +35,7 @@ import { BirthChartCalculator } from '@/components/astrology/BirthChartCalculato
 import { BirthDataForm } from '@/components/astrology/BirthDataForm';
 import { useBirthChart, type BirthData } from '@/lib/hooks/useBirthChart';
 import { normalizeBirthCoordinates } from '@/lib/astrology/birthCoordinates';
+import { presentTransits, type PresentTransit } from '@/lib/astrology/presentTransits';
 import type { AlienPattern } from '@/lib/astrology/alienPatterns';
 import styles from './astrology-room.module.css';
 
@@ -52,6 +53,18 @@ const ZODIAC_SIGNS = [
   'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
   'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces'
 ];
+
+/** Natal points the present-moment view looks at (South Node only mirrors the North Node). */
+const PRESENT_NATAL_POINTS: ReadonlyArray<readonly [keyof BirthChartData, string]> = [
+  ['sun', 'Sun'], ['moon', 'Moon'], ['mercury', 'Mercury'], ['venus', 'Venus'], ['mars', 'Mars'],
+  ['jupiter', 'Jupiter'], ['saturn', 'Saturn'], ['uranus', 'Uranus'], ['neptune', 'Neptune'],
+  ['pluto', 'Pluto'], ['chiron', 'Chiron'], ['northNode', 'North Node'],
+  ['ascendant', 'Ascendant'], ['midheaven', 'Midheaven'],
+];
+
+const PRESENT_ASPECT_PHRASE: Record<string, string> = {
+  conjunction: 'meeting', opposition: 'opposite', square: 'square to', trine: 'trine to', sextile: 'sextile to',
+};
 
 // Convert tropical sign + degree to sidereal sign + degree
 function getTropicalLongitude(sign: string, degree: number): number {
@@ -803,6 +816,23 @@ export default function AstrologyPage() {
     }
   }, [showTransits, transitPositions.length]);
 
+  // The present moment only: slow-planet aspects to this chart right now.
+  // Calculated in the browser from the tropical chart; nothing is sent anywhere.
+  // Dates and the year ahead are Pro (lib/soulPortrait/generator/transitGenerator.ts).
+  const presentContacts = useMemo<PresentTransit[]>(() => {
+    if (!showTransits || !chartData) return [];
+    const natal: Array<{ name: string; longitude: number }> = [];
+    for (const [key, name] of PRESENT_NATAL_POINTS) {
+      const p = chartData[key] as { sign: string; degree: number } | undefined;
+      if (p?.sign && Number.isFinite(p.degree)) natal.push({ name, longitude: getTropicalLongitude(p.sign, p.degree) });
+    }
+    try {
+      return presentTransits(natal).slice(0, 5);
+    } catch {
+      return [];
+    }
+  }, [showTransits, chartData]);
+
 
   async function keepRecognitionAsReflection() {
     const text = recognitionText.trim();
@@ -1526,8 +1556,26 @@ export default function AstrologyPage() {
                     </div>
                   ))}
                 </div>
+                {chartData && (
+                  <div className={styles.skyContacts} aria-label="Touching your chart now">
+                    <small>TOUCHING YOUR CHART NOW</small>
+                    {presentContacts.length ? (
+                      <ul>
+                        {presentContacts.map((t) => (
+                          <li key={`${t.body}-${t.aspect}-${t.natalPoint}`}>
+                            <strong>{t.body} {PRESENT_ASPECT_PHRASE[t.aspect] ?? t.aspect} your {t.natalPoint}</strong>
+                            <span> · {t.orb.toFixed(1)}° from exact, {t.applying ? 'still building' : 'easing'}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p>No slow planet is in close aspect to your chart today. A quiet sky is also a season.</p>
+                    )}
+                  </div>
+                )}
                 <p className={styles.skyBoundary}>
-                  No natal influence is inferred here. This view shows the current sky only.
+                  These are the geometric contacts of the slow planets with your chart today, within two degrees.
+                  They describe timing, not fate; what they mean is yours to find.
                 </p>
                 <button type="button" onClick={() => setShowTransits(false)}>Hide current sky</button>
               </>
