@@ -349,11 +349,37 @@ export function HouseQuickAccessStacked() {
   </section>;
 }
 
+/** Reflections in Here · Now opens onto the rooms where lived material is kept, not only the
+ *  kept-reflections feed (founder direction 2026-11-26). Each door goes to that room's own page;
+ *  nothing is merged, so a journal entry still becomes a Reflection only when the member carries
+ *  it across. A door tied to a House place shows only when that place is eligible. */
+const REFLECTION_DOORS: { label: string; href: string; place?: HousePlaceId }[] = [
+  { label: 'Kept reflections', href: '/reflections?from=house' },
+  { label: 'Keeps', href: '/maia/keep-capture' },
+  { label: 'Journal', href: '/journal?from=house', place: 'journal' },
+  { label: 'Divination insights', href: '/oracle/reflections', place: 'divination' },
+  { label: 'Dreams', href: '/dream?from=house', place: 'dream' },
+];
+
+function ReflectionDoors({ eligible }: { eligible: readonly HousePlaceId[] }) {
+  const doors = REFLECTION_DOORS.filter(door => !door.place || eligible.includes(door.place));
+  return <nav className={styles.reflectionDoors} aria-label="Reflections">
+    {doors.map(door => <Link href={door.href} key={door.href}>{door.label}</Link>)}
+  </nav>;
+}
+
 export function HouseQuickAccess() {
   const { active } = useHousePreferences();
   return <div className={house.quick}><p>HERE · NOW</p>
-    {active ? visibleHouseShortcuts(active.preferences, active.eligibleIds).map(place =>
-      <Link href={place.href} key={place.id} data-place={place.id} aria-label={place.label}>
+    {active ? visibleHouseShortcuts(active.preferences, active.eligibleIds).map(place => place.id === 'reflections'
+      ? <div className={styles.reflectionGroup} key={place.id}>
+          <Link href={place.href} data-place={place.id} aria-label={place.label}>
+            <span className={styles.symbol + ' ' + styles.quickMark} data-place={place.id} aria-hidden="true">{place.mark}</span>
+            <span>{place.label}</span>
+          </Link>
+          <ReflectionDoors eligible={active.eligibleIds} />
+        </div>
+      : <Link href={place.href} key={place.id} data-place={place.id} aria-label={place.label}>
         <span className={styles.symbol + ' ' + styles.quickMark} data-place={place.id} aria-hidden="true">{place.mark}</span>
         <span>{place.label}</span>
       </Link>)
