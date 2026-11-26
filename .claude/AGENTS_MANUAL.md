@@ -22,6 +22,21 @@ claude
 | **maia-ios** | iOS builds, Capacitor issues | "Build for TestFlight" |
 | **security-auditor** | Security review, audit | "Audit the authentication flow" |
 
+### Worker agents (orchestrator-and-workers)
+
+The main session plans, writes a brief for each job, and checks the result itself. These four do the bulk work. Every brief states the goal, the files to read, and a **"Done when:"** check that can be run. The orchestrator re-runs that check before accepting any result; a worker's own report is never passed on unchecked. A job a builder fails twice goes to the engineer.
+
+| Agent | Model / effort | When to Use |
+|-------|----------------|-------------|
+| **scout** | Haiku / low | Find files, answer narrow code questions. Read-only. |
+| **builder** | Haiku / medium | Small, exact changes where the brief leaves one right answer. |
+| **engineer** | Sonnet / high | Changes across several files, bugs with no obvious cause. |
+| **reviewer** | Sonnet / high | Read a saved diff against its brief and list what fails. Read-only. |
+
+None of them commit, push, switch branches, deploy, run migrations, touch minisforum, or read Sanctuary content, member data or secrets. They report adjacent problems instead of fixing them. Leave `CLAUDE_CODE_SUBAGENT_MODEL` unset so each keeps its own model. The `effort:` frontmatter field is not yet verified to be honoured by Claude Code.
+
+Overlap to resolve later: **engineer** ≈ **maia-dev**, **reviewer** partly ≈ **security-auditor**.
+
 ---
 
 ## How to Call Agents
