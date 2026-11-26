@@ -12,6 +12,13 @@ start with it in the prompt.
 
 ## Current priority thread (update each session)
 
+- **2026-11-26 — `MAIA-ORGANISM-CENSUS-01` reconciliation addendum (SOULLAB-CONTINUITY-01 #1982) · ⭐ FOUNDER RULING TAKEN (Kelly, in session: "yes" to the read-only E1 production check and finishing the reconciliation) · branch `chore/organism-census-addendum-20261126` · ⛔ record only; nothing repaired, deployed or authorized.** Record: `docs/programme/MAIA_ORGANISM_CENSUS_RECONCILIATION_ADDENDUM_2026-11-26.md`.
+  - **E1 is not live.** Production `GIT_COMMIT=653a24b49` has no `correctionShadow.ts`, and E1 was never on canonical. Whether it ran in September cannot be recovered: images were pruned, the oldest goes back to 2026-10-21, and there is no log entry.
+  - **R32 collision.** The September code's R32 collides with canonical R32 ("no covert developmental steering"; renumbering refused in `700b6d5247`).
+  - **The 22 remaining rows, at `7acce0d372`:** X1, X2, X3, X7, X14, X15, X16 and X17 all stand in substance. The Bloom do-not-mention instruction was NOT FOUND. There is still no member withdraw surface for inferred relationship records. The Co-Lab gate doc defect is corrected. X16 is wider than recorded: the FAQ says "MAIA is not an LLM".
+  - **Across both days:** 33 rows checked, 29 stand, none of the contradictions is resolved.
+  - **Map page drift:** 0 of 420 cited paths missing. 46 of 228 line-cited files changed since `cf6d9ebf`; the pages were not edited.
+  - **Owed:** founder rulings on X6, X4 and the FAQ claim; the page-12 slot; reach traces if authorized.
 - **2026-11-26 — AI-NOS-OPEN-CORE-01 (#1910) · ALIGN-R1 strategic alignment journey (generated apps / relational intelligence) · PROPOSED, read-only:**
   - Founder rulings (in session): "Yes, run review" (read-only); "best practices" on posting (= prepare only).
   - **Record:** `docs/programme/AI-NOS-OPEN-CORE-01_ALIGN-R1_FULL_JARVIS_JOURNEY_2026-11-26.md` (code-read at `30beb68864`). Inputs: three founder strategy memos, treated as proposals.
