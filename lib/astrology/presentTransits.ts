@@ -12,9 +12,14 @@ import { longitudeOf } from './proEphemerisSeries';
 export const TRANSITING_BODIES = ['Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto'] as const;
 export type TransitingBody = typeof TRANSITING_BODIES[number];
 
-/** Orb in degrees within which a transit counts as "in effect". */
+/**
+ * Orb in degrees within which a transit counts as "in effect". 2° for every
+ * slow planet: read off the begin/end dates of two real Astrograph 12-month
+ * reports (Pluto, Uranus each 2.0° at both ends), so a calculated Year Ahead
+ * covers the same spans the pasted reports did.
+ */
 export const DEFAULT_ORBS: Record<TransitingBody, number> = {
-  Jupiter: 2, Saturn: 2, Uranus: 1.5, Neptune: 1.5, Pluto: 1.5,
+  Jupiter: 2, Saturn: 2, Uranus: 2, Neptune: 2, Pluto: 2,
 };
 
 export const TRANSIT_ASPECTS: ReadonlyArray<readonly [string, number]> = [

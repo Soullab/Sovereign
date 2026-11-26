@@ -5,7 +5,7 @@
  * planet's actual direction of motion on that date.
  */
 import * as Astronomy from 'astronomy-engine';
-import type { BirthChart, PlanetPosition } from '@/lib/astrology/proEphemerisCalculator';
+import { calculateBirthChart as calculateProBirthChart, type BirthChart, type PlanetPosition } from '@/lib/astrology/proEphemerisCalculator';
 import { SIGNS } from '@/lib/astrology/proChartGeometry';
 import { longitudeOf, type SeriesBody } from '@/lib/astrology/proEphemerisSeries';
 import { presentTransits } from '@/lib/astrology/presentTransits';
@@ -123,6 +123,54 @@ describe('generateTransitReport', () => {
     const utc = generateTransitReport(chart, { from: FROM, timeZone: 'UTC' });
     const bad = generateTransitReport(chart, { from: FROM, timeZone: 'Not/AZone' });
     expect(bad.transits.map((t) => t.exactDates)).toEqual(utc.transits.map((t) => t.exactDates));
+  });
+});
+
+/**
+ * Agreement with a real Astrograph 12-month report (starting 7/8/2026), as
+ * recorded in lib/soulPortrait/portraits/andreaFagan.ts. Dates only — the
+ * report's prose is never used. ±1 day: Astrograph and astronomy-engine differ
+ * by arcseconds, which moves a slow retrograde pass by up to a day.
+ */
+describe('agrees with an Astrograph report for the same chart', () => {
+  const near = (date: string | undefined, expected: string) => {
+    expect(date).toBeDefined();
+    expect(Math.abs(Date.parse(date!) - Date.parse(expected))).toBeLessThanOrEqual(86_400_000);
+  };
+  let transits: ReturnType<typeof generateTransitReport>['transits'] = [];
+  beforeAll(async () => {
+    const chart = await calculateProBirthChart({
+      date: '1956-07-11', time: '01:43',
+      location: { lat: 43.2342, lng: -86.2484, timezone: 'America/Detroit' },
+    });
+    transits = generateTransitReport(chart, { from: new Date('2026-07-08T12:00:00Z'), timeZone: 'America/Detroit' }).transits;
+  });
+  const find = (body: string, aspect: string, point: string, after = '2026-07-01') =>
+    transits.find((t) => t.body === body && t.aspect === aspect && t.natalPoint === point
+      && (!t.endDate || Date.parse(t.endDate) >= Date.parse(after)));
+
+  it('lists the ingress already in effect when the year opens', () => {
+    const ingress = transits.find((t) => t.kind === 'ingress' && t.body === 'Jupiter' && t.house === 4);
+    near(ingress?.exactDates[0]?.date, 'July 6, 2026');
+  });
+
+  it('spans each transit as Astrograph does (2° orb, one entry per continuous stretch)', () => {
+    const pluto = find('Pluto', 'conjunction', 'Midheaven')!;
+    near(pluto.beginDate, 'September 5, 2026');
+    near(pluto.endDate, 'November 23, 2026');
+    const uranus = find('Uranus', 'trine', 'Midheaven', '2027-01-01')!;
+    near(uranus.beginDate, 'December 2, 2026');
+    near(uranus.endDate, 'April 14, 2027');
+  });
+
+  it('matches the exact dates, retrograde passes and station touches', () => {
+    const saturn = find('Saturn', 'square', 'Mercury')!;
+    near(saturn.exactDates[0].date, 'November 6, 2026');
+    expect(saturn.exactDates[0].retrograde).toBe(true);
+    near(saturn.exactDates[1].date, 'January 12, 2027');
+    // Jupiter stations 0.006° from natal Pluto without crossing it.
+    near(find('Jupiter', 'conjunction', 'Pluto')!.exactDates[0]?.date, 'December 13, 2026');
+    near(find('Saturn', 'square', 'Sun')!.exactDates[0].date, 'April 17, 2027');
   });
 });
 

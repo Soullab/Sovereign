@@ -32,8 +32,6 @@ const NATAL_POINTS = [
   'Chiron', 'North Node', 'Ascendant', 'Midheaven',
 ] as const;
 
-/** Two in-orb runs closer than this belong to one transit (a retrograde loop). */
-const MERGE_GAP_DAYS = 200;
 const DAY_MS = 86_400_000;
 
 export interface TransitWindow {
@@ -88,12 +86,17 @@ function safeTimeZone(timeZone: string | undefined): string {
   }
 }
 
-interface Pass { ms: number; retrograde: boolean }
+/** `touch`: a station within STATION_TOUCH_DEG of exact, with no crossing. */
+interface Pass { ms: number; retrograde: boolean; touch?: boolean }
 
 interface Run { start: number; end: number }
 
-/** Sample-index runs where |delta| ≤ orb, with nearby runs merged. */
-function inOrbRuns(deltas: number[], orb: number, mergeGap: number): Run[] {
+/**
+ * Sample-index runs where |delta| ≤ orb. Each continuous run is one transit,
+ * as in Astrograph's reports: a retrograde loop that stays in orb is one entry
+ * with several exact dates; one that leaves orb and returns is a new entry.
+ */
+function inOrbRuns(deltas: number[], orb: number): Run[] {
   const runs: Run[] = [];
   let start = -1;
   for (let i = 0; i < deltas.length; i++) {
@@ -102,24 +105,36 @@ function inOrbRuns(deltas: number[], orb: number, mergeGap: number): Run[] {
     if (!inside && start >= 0) { runs.push({ start, end: i - 1 }); start = -1; }
   }
   if (start >= 0) runs.push({ start, end: deltas.length - 1 });
-  const merged: Run[] = [];
-  for (const run of runs) {
-    const last = merged[merged.length - 1];
-    if (last && run.start - last.end <= mergeGap) last.end = run.end;
-    else merged.push({ ...run });
-  }
-  return merged;
+  return runs;
 }
 
-/** Exact crossings of zero inside [start, end] (sample indices), interpolated. */
+/**
+ * A planet that stations this close to the exact angle without crossing it
+ * still makes the aspect exact (Astrograph reports these; e.g. a Jupiter
+ * station 0.006° from a natal point).
+ */
+const STATION_TOUCH_DEG = 0.02;
+
+/** Exact crossings of zero inside [start, end] (sample indices), interpolated, plus station touches. */
 function exactPasses(deltas: number[], start: number, end: number, t0: number, stepMs: number): Pass[] {
   const passes: Pass[] = [];
   for (let i = Math.max(1, start); i <= end; i++) {
     const d0 = deltas[i - 1];
     const d1 = deltas[i];
-    if (d0 === 0 || Math.sign(d0) === Math.sign(d1) || Math.abs(d1 - d0) > 90) continue;
-    const fraction = d0 / (d0 - d1);
-    passes.push({ ms: t0 + (i - 1 + fraction) * stepMs, retrograde: d1 < d0 });
+    if (Math.abs(d1 - d0) > 90) continue;
+    if (d0 !== 0 && Math.sign(d0) !== Math.sign(d1)) {
+      const fraction = d0 / (d0 - d1);
+      passes.push({ ms: t0 + (i - 1 + fraction) * stepMs, retrograde: d1 < d0 });
+      continue;
+    }
+    // Station touch: |delta| at a local minimum, no sign change on either side.
+    const d2 = deltas[i + 1];
+    if (i < end && d2 !== undefined && Math.abs(d1) <= STATION_TOUCH_DEG
+      && Math.abs(d1) < Math.abs(d0) && Math.abs(d1) <= Math.abs(d2)
+      && Math.sign(d1) === Math.sign(d0) && Math.sign(d1) === Math.sign(d2)) {
+      // The planet is turning here, so the pass is printed unmarked (as Astrograph does).
+      passes.push({ ms: t0 + i * stepMs, retrograde: false, touch: true });
+    }
   }
   return passes;
 }
@@ -174,7 +189,7 @@ export function generateTransitReport(
           : [natalLon + angle, natalLon - angle];
         for (const target of targets) {
           const deltas = lons.map((lon) => signedDelta(lon, normalizeLongitude(target)));
-          for (const run of inOrbRuns(deltas, orbs[body], MERGE_GAP_DAYS)) {
+          for (const run of inOrbRuns(deltas, orbs[body])) {
             const beginMs = msAt(run.start);
             const endMs = msAt(run.end);
             // Only transits in effect at some point inside the window.
@@ -207,15 +222,26 @@ export function generateTransitReport(
     for (const body of TRANSITING_BODIES) {
       const lons = series.longitudes[body as SeriesBody];
       const byHouse = new Map<number, Pass[]>();
+      // The ingress that put the planet in the house it occupies when the
+      // window opens is part of the year too (a report starting Jul 8 lists
+      // "Jupiter enters your 4th house, Jul 6").
+      let lastBefore: { house: number; pass: Pass } | null = null;
       for (let k = 0; k < 12; k++) {
         const deltas = lons.map((lon) => signedDelta(lon, cusps[k]));
-        for (const pass of exactPasses(deltas, 0, deltas.length - 1, t0, stepMs)) {
-          if (pass.ms < fromMs || pass.ms > toMs) continue;
+        // Only true crossings change house; a station touch on a cusp does not.
+        for (const pass of exactPasses(deltas, 0, deltas.length - 1, t0, stepMs)
+          .filter((p) => !p.touch)) {
           // Crossing cusp k forwards enters house k+1; backwards (retrograde) re-enters house k.
           const house = pass.retrograde ? ((k + 11) % 12) + 1 : k + 1;
+          if (pass.ms < fromMs) {
+            if (!lastBefore || pass.ms > lastBefore.pass.ms) lastBefore = { house, pass };
+            continue;
+          }
+          if (pass.ms > toMs) continue;
           byHouse.set(house, [...(byHouse.get(house) ?? []), pass]);
         }
       }
+      if (lastBefore) byHouse.set(lastBefore.house, [lastBefore.pass, ...(byHouse.get(lastBefore.house) ?? [])]);
       for (const [house, passes] of byHouse) {
         passes.sort((a, b) => a.ms - b.ms);
         drafts.push({ kind: 'ingress', body, house, passes, sortMs: passes[0].ms, beginMs: passes[0].ms });
