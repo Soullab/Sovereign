@@ -201,7 +201,7 @@ export async function generateSoulPortrait(
   let transitTimeframe: string | undefined;
   if (!parsedTransits && input.calculatedTransits) {
     if (input.calculator !== 'pro') throw new Error('calculated_transits_need_pro_chart');
-    const generated = generateTransitReport(chart as ProBirthChart, {
+    const generated = await generateTransitReport(chart as ProBirthChart, {
       from: input.calculatedTransits.from,
       timeZone: input.calculatedTransits.timeZone ?? input.birthData.location?.timezone,
     });

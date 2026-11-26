@@ -6,7 +6,7 @@
  * report parser yields (transitReportParser.ts), so the Year Ahead generator,
  * its transit-citation guard and the rendering are unchanged.
  *
- * DATA ONLY. Every value is astronomical: which slow planet, which aspect, which
+ * DATA ONLY. Every value is astronomical: which transiting body, which aspect, which
  * natal point, the dates it is within orb, the exact dates (with retrograde
  * passes), and the house ingresses. No meaning is assigned here.
  *
@@ -14,17 +14,24 @@
  * window padded by up to a year on each side, so a transit already in effect at
  * the start, or still in effect at the end, carries its true begin/end dates.
  * Exact moments are linear interpolations between daily samples — accurate to
- * well within a day for Jupiter and slower.
+ * well within an hour for Mars and slower.
  */
 import type { BirthChart } from '@/lib/astrology/proEphemerisCalculator';
 import { aspectEndpointLongitudes, normalizeLongitude } from '@/lib/astrology/proChartGeometry';
 import { ephemerisSeries, SERIES_LIMITS, type SeriesBody } from '@/lib/astrology/proEphemerisSeries';
-import {
-  DEFAULT_ORBS, TRANSIT_ASPECTS as ASPECTS, TRANSITING_BODIES, type TransitingBody,
-} from '@/lib/astrology/presentTransits';
+import { minorBodyLongitudes } from '@/lib/astrology/proMinorBodyEphemeris';
+import { DEFAULT_ORBS as SLOW_ORBS, TRANSIT_ASPECTS as ASPECTS, TRANSITING_BODIES as SLOW_BODIES } from '@/lib/astrology/presentTransits';
 import type { ExactPass, ParsedTransit } from './transitReportParser';
 
-export { DEFAULT_ORBS, TRANSITING_BODIES, type TransitingBody };
+/**
+ * Transiting bodies in a Year Ahead, as in Astrograph's 12-month reports: the
+ * slow planets, Chiron, and Mars. (The free present-moment view keeps to the
+ * slow planets.) Chiron comes from the JPL table (proMinorBodyEphemeris).
+ */
+export const TRANSITING_BODIES = [...SLOW_BODIES, 'Chiron', 'Mars'] as const;
+export type TransitingBody = typeof TRANSITING_BODIES[number];
+
+export const DEFAULT_ORBS: Record<TransitingBody, number> = { ...SLOW_ORBS, Chiron: 2, Mars: 2 };
 
 /** Natal points a transit may contact. South Node is left out: it only mirrors the North Node. */
 const NATAL_POINTS = [
@@ -147,13 +154,13 @@ interface Draft extends Omit<ParsedTransit, 'id' | 'exactDates' | 'beginDate' | 
 }
 
 /**
- * Calculate the transit report for `chart` over the window. Pure and
- * deterministic for a given chart and `from`.
+ * Calculate the transit report for `chart` over the window. Deterministic for
+ * a given chart and `from`; async only because Chiron's table loads on first use.
  */
-export function generateTransitReport(
+export async function generateTransitReport(
   chart: BirthChart,
   options: GenerateTransitsOptions = {},
-): GeneratedTransitReport {
+): Promise<GeneratedTransitReport> {
   const from = options.from ?? new Date();
   const months = Math.min(Math.max(Math.round(options.months ?? 12), 1), 12);
   const to = addMonths(from, months);
@@ -171,6 +178,12 @@ export function generateTransitReport(
   const t0 = new Date(series.from).getTime();
   const stepMs = series.stepHours * 3_600_000;
   const msAt = (i: number) => t0 + i * stepMs;
+  const sampleCount = series.longitudes.Sun.length;
+  const longitudes: Record<TransitingBody, number[]> = {
+    ...Object.fromEntries(TRANSITING_BODIES.filter((b) => b !== 'Chiron')
+      .map((b) => [b, series.longitudes[b as SeriesBody]])),
+    Chiron: await minorBodyLongitudes('chiron', Array.from({ length: sampleCount }, (_, i) => new Date(msAt(i)))),
+  } as Record<TransitingBody, number[]>;
   const fromMs = from.getTime();
   const toMs = to.getTime();
 
@@ -179,7 +192,7 @@ export function generateTransitReport(
 
   // ── Aspects ────────────────────────────────────────────────────────────────
   for (const body of TRANSITING_BODIES) {
-    const lons = series.longitudes[body as SeriesBody];
+    const lons = longitudes[body];
     for (const point of NATAL_POINTS) {
       const natalLon = natal.get(point);
       if (natalLon === undefined) continue;
@@ -220,7 +233,7 @@ export function generateTransitReport(
     : null;
   if (cusps && options.ingresses !== false) {
     for (const body of TRANSITING_BODIES) {
-      const lons = series.longitudes[body as SeriesBody];
+      const lons = longitudes[body];
       const byHouse = new Map<number, Pass[]>();
       // The ingress that put the planet in the house it occupies when the
       // window opens is part of the year too (a report starting Jul 8 lists
