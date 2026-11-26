@@ -12,6 +12,14 @@ start with it in the prompt.
 
 ## Current priority thread (update each session)
 
+- **2026-11-26 — AI-NOS-OPEN-CORE-01 (#1910) · ALIGN-R1 strategic alignment journey (generated apps / relational intelligence) · PROPOSED, read-only:**
+  - Founder rulings (in session): "Yes, run review" (read-only); "best practices" on posting (= prepare only).
+  - **Record:** `docs/programme/AI-NOS-OPEN-CORE-01_ALIGN-R1_FULL_JARVIS_JOURNEY_2026-11-26.md` (code-read at `30beb68864`). Inputs: three founder strategy memos, treated as proposals.
+  - **Code-read findings:** no AI-NOS kernel, capability registry or inter-Studio contract in source; Studios query Postgres directly behind separate gates; ~9 memory systems and ~8 consent stores; no single model-provider seam, silent Claude→local fallback in `lib/ai/modelService.ts`; 23 non-archive files call OpenAI, contrary to CLAUDE.md; Cabin store is unencrypted `node:sqlite`, no sync. Writer's `workReadScope` is the only receipted, revocable member grant; Writer Ask provenance is hard-typed `'anthropic'`. North-star scorecard: 4 ABSENT, 3 PARTIAL.
+  - **Critical path proposed:** J3 fidelity-instrument repair (refusal + jest reds) → R1–R5 → consent/context ownership → Writer model seam → grant contract from `workReadScope`. J7–J9 remain HOLD (#1898, R20).
+  - **Open founder decisions:** D-01 placement in #1910 · D-02 OpenAI rule · D-03 one owner per truth · D-04 governance-document custody · D-05 memo claim labels before marketing · D-06 open J3.
+  - **Not authorized:** source change, worker dispatch, migration, member data, push, PR, merge, deploy, GitHub post. Production not re-witnessed.
+
 - **2026-11-25 — Epistemic and teleological discernment review + code-to-canon reconciliation plan (SOULLAB-CONTINUITY-01 #1982) · ⭐ FOUNDER RULINGS TAKEN (Kelly, in session):**
   - "Yes, read-only review"; "Yes, post pointer"; "Yes, counts only" (×2); "Yes, DB count only" (×2); "Yes, review scaffold"; "Yes, docs PR".
   - Founder guidance recorded in the plan: heuristic, not doctrinal, intelligence; every interpretive framework is an instrument of attention, not an authority over reality; *Fidelity is not teleological* preserved; no new taxonomy.
