@@ -17,7 +17,7 @@ Stop boundary: no source change, worker dispatch, migration, member data, merge,
 | Why a lane, not a new programme | Manual §20 — the governing question is #1910's own (host-neutral, member-governed intelligence environment); success establishes no new kind of truth. |
 | Inputs | Three founder strategy memos (ChatGPT-authored, 2026-11-26): *Age of infinitely generatable software*; *Beyond Applications*; *Serving without flattering*. Treated as **proposals**, not ratified decisions. |
 | Production reference | `7591d87f2` cut over on minisforum 2026-11-25 per #1982 witness. **Not re-witnessed today.** Default branch is 3 commits ahead of it. |
-| Status | PROPOSED record. Custody: local branch `chore/ai-nos-align-r1-journey-20261126` off `30beb68864`; not pushed, no PR, not posted. Founder guidance "best practices" (2026-11-26) = prepare only. |
+| Status | PROPOSED record (content unchanged by admission). Custody: authored on `chore/ai-nos-align-r1-journey-20261126` off `30beb68864` (commit `09fbf640ac`); records PR Soullab/Sovereign#2414 merged into `clean-main-no-secrets` 2026-11-26 13:47 UTC (`d2f21e95a4`); pointers posted to #1910 and #1982. Founder rulings in session: "best practices" (= prepare only) · "Yes, open records PR" · "Yes, post pointers". Admission is custody, not ratification: D-01…D-06 remain open. |
 
 ---
 
