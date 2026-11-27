@@ -28,6 +28,10 @@ describe('Journal lived-context conventions', () => {
     expect(writing).toContain('aria-pressed={entryType === t}');
   });
 
+  it('offers Day / Dream on a quick note as well as on full writing', () => {
+    expect(writing).not.toMatch(/variant === 'writing' &&\s*\(\s*<div[^>]*aria-label="Journal entry type"/);
+  });
+
   it('allows a member-authored place but never requests device location', () => {
     expect(writing).toContain('Add a place');
     expect(writing).toContain('placeholder="Home, the garden, New Haven…"');
