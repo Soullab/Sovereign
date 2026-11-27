@@ -34,7 +34,9 @@
  *     confirm, reject, or refine; a recorded reject RELEASES the atom — it is
  *     not silently re-carried next session. (Right to Remain Unpossessed.)
  *   - Does NOT blend atoms across scope boundaries.
- *   - Does NOT compute cross-atom patterns or synthesis.
+ *   - Does NOT compute cross-atom patterns itself. Pattern recognition (SCE §6a,
+ *     ratified 2026-11-23) is MAIA's offer, governed by lib/maia/patternRecognition.ts;
+ *     without it the block keeps the original no-crossing discipline byte-for-byte.
  *
  * Consent + scope gates enforced by SQL WHERE clauses:
  *   - memory_scope + scope context (team_id / client_id / encounter_id)
@@ -412,7 +414,8 @@ function relativeTime(d: Date): string {
  *   - Practitioner observations are never phrased as "You are…" — always as
  *     "A practitioner observed…" or similar, with authority proportional to
  *     epistemologicalStatus.
- *   - No cross-atom synthesis or interpretation regardless of source type.
+ *   - No cross-atom synthesis or interpretation unless pattern recognition (SCE §6a)
+ *     is passed in; then only as a sourced, member-confirmable offer.
  *   - Returns empty string if no atoms — never injects an empty block.
  *
  * Returns '' when atoms array is empty so the caller can safely concat.
@@ -444,9 +447,37 @@ export interface AtomSections {
  */
 export const ATOM_SECTION_SEPARATOR = '\n';
 
+/**
+ * Pattern recognition (SPIRAL_CONTINUITY_ENGINE §6a, ratified 2026-11-23).
+ *
+ * When present, the member section names each atom by a short ref ([a1], [a2] …)
+ * that MAIA cites in a pattern offer, the no-crossing sentences are replaced by the
+ * Pattern Offer discipline, and `block` (built by lib/maia/patternRecognition.ts) is
+ * appended INSIDE the member section — confirmed patterns are member-owned, so they
+ * belong to the member.atoms producer and the partition boundary is unchanged.
+ *
+ * When absent (dial off, Sanctuary, any surface not wired), the output is
+ * byte-identical to the pre-amendment projection: no cross-atom claims.
+ */
+export interface AtomPatternRecognition {
+  /** atom id → ref shown to MAIA. Atoms without a ref are rendered without one. */
+  readonly atomRefs: ReadonlyMap<string, string>;
+  /** The pattern-recognition block; '' renders the discipline without a block. */
+  readonly block: string;
+}
+
 /** Pure projector: atoms → the (up to two) authorship sections, in source order. */
-export function projectAtomSections(atoms: MemoryAtomSnapshot[]): AtomSections {
-  if (!atoms || atoms.length === 0) return {};
+export function projectAtomSections(
+  atoms: MemoryAtomSnapshot[],
+  patternRecognition?: AtomPatternRecognition,
+): AtomSections {
+  if (!atoms || atoms.length === 0) {
+    // Confirmed patterns can stand even when no atom is eligible to surface this turn.
+    if (patternRecognition?.block) {
+      return { memberSection: patternRecognition.block + '\n' };
+    }
+    return {};
+  }
 
   const memberAtoms = atoms.filter(a => a.sourceType !== 'practitioner_observation');
   const practitionerAtoms = atoms.filter(a => a.sourceType === 'practitioner_observation');
@@ -460,19 +491,26 @@ export function projectAtomSections(atoms: MemoryAtomSnapshot[]): AtomSections {
     lines.push('# MEMBER-PLACED PORTFOLIO');
     lines.push('');
     lines.push(
-      'The member has explicitly kept the following material in their portfolio. ' +
-        'These are *member-placed*, not system-inferred. Recognize naturally if the ' +
-        'present moment connects, but do NOT cross-reference, synthesize, or interpret ' +
-        'across them — each atom stands as the member declared it.',
+      patternRecognition
+        ? 'The member has explicitly kept the following material in their portfolio. ' +
+            'These are *member-placed*, not system-inferred. Each item stands as the member ' +
+            'declared it. You may recognise patterns across them only under the PATTERN ' +
+            'RECOGNITION discipline below; the bracketed ref is how you cite an item.'
+        : 'The member has explicitly kept the following material in their portfolio. ' +
+            'These are *member-placed*, not system-inferred. Recognize naturally if the ' +
+            'present moment connects, but do NOT cross-reference, synthesize, or interpret ' +
+            'across them — each atom stands as the member declared it.',
     );
     lines.push('');
 
     for (const atom of memberAtoms) {
+      const ref = patternRecognition?.atomRefs.get(atom.id);
+      const refPrefix = ref ? `[${ref}] ` : '';
       // ASTRO-PRO-KEEP Phase 2: an exchange the member carried from Pro Astrology.
       // Their question is their own words; MAIA's answer was her reading at the
       // time — an interpretation, never a finding about the member.
       if (atom.sourceType === 'astro_pro_exchange') {
-        lines.push(`- In Pro Astrology, about their own chart, the member asked: "${atom.title}" — kept ${relativeTime(atom.keptAt)}${atom.status === 'still_alive' ? ' — marked still alive by the member' : ''}${atom.isBreakthrough ? ' — marked as a breakthrough by the member' : ''}`);
+        lines.push(`- ${refPrefix}In Pro Astrology, about their own chart, the member asked: "${atom.title}" — kept ${relativeTime(atom.keptAt)}${atom.status === 'still_alive' ? ' — marked still alive by the member' : ''}${atom.isBreakthrough ? ' — marked as a breakthrough by the member' : ''}`);
         const reading = (atom.body ?? '').trim();
         if (reading) {
           const truncated = reading.length > ASTRO_PRO_ATOM_READING_MAX ? reading.slice(0, ASTRO_PRO_ATOM_READING_MAX) + '…' : reading;
@@ -501,7 +539,7 @@ export function projectAtomSections(atoms: MemoryAtomSnapshot[]): AtomSections {
         parts.push('marked as a breakthrough by the member');
       }
 
-      lines.push(`- ${parts.join(' — ')}`);
+      lines.push(`- ${refPrefix}${parts.join(' — ')}`);
 
       if (atom.sourceType === 'spontaneous' && atom.body) {
         const body = atom.body.trim();
@@ -513,11 +551,23 @@ export function projectAtomSections(atoms: MemoryAtomSnapshot[]): AtomSections {
     }
 
     lines.push('');
-    lines.push(
-      'Discipline: surface as the atoms themselves declare. No cross-atom claims. ' +
-        'No system inference of patterns across these.',
-    );
-    lines.push('');
+    if (patternRecognition) {
+      lines.push(
+        'Discipline: surface as the atoms themselves declare. Any pattern across them is ' +
+          'an offer under PATTERN RECOGNITION, never a settled claim.',
+      );
+      lines.push('');
+      if (patternRecognition.block) {
+        lines.push(patternRecognition.block);
+        lines.push('');
+      }
+    } else {
+      lines.push(
+        'Discipline: surface as the atoms themselves declare. No cross-atom claims. ' +
+          'No system inference of patterns across these.',
+      );
+      lines.push('');
+    }
     memberSection = lines.join('\n');
   }
 
@@ -603,9 +653,15 @@ export function joinAtomSections(sections: AtomSections): string {
     .join(ATOM_SECTION_SEPARATOR);
 }
 
-/** Unchanged member-facing contract: atoms → the legacy addendum string. */
-export function formatAtomsForPrompt(atoms: MemoryAtomSnapshot[]): string {
-  return joinAtomSections(projectAtomSections(atoms));
+/**
+ * Member-facing contract: atoms → the addendum string. Without `patternRecognition`
+ * this is byte-identical to the pre-amendment output (no cross-atom claims).
+ */
+export function formatAtomsForPrompt(
+  atoms: MemoryAtomSnapshot[],
+  patternRecognition?: AtomPatternRecognition,
+): string {
+  return joinAtomSections(projectAtomSections(atoms, patternRecognition));
 }
 
 /**

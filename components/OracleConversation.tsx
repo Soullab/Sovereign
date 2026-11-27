@@ -258,6 +258,8 @@ import {
   type TeenSafetyCheck
 } from '@/lib/safety/teenSupportIntegration';
 import { calculateAge, getUserData, type UserData } from '@/lib/safety/teenProfileUtils';
+import { PatternOfferCard } from '@/components/maia/PatternOfferCard';
+import type { PatternOffer } from '@/lib/maia/patternRecognition';
 // 🌱 YOUTH DEVELOPMENTAL TIER - age-based constraints and session limits
 import { computeTierFromAge, getTierConfig, isYouthTier, type DevelopmentalTier } from '@/lib/youth/ageTierEngine';
 
@@ -568,6 +570,8 @@ interface OracleConversationProps {
 interface ConversationMessage {
   id: string;
   role: 'user' | 'oracle' | 'assistant';
+  // 🧩 SCE §6a — a pattern MAIA offered on this turn, for the member to keep, correct or dismiss.
+  patternOffer?: PatternOffer | null;
   text?: string;
   content?: string;
   timestamp: Date | string;
@@ -1225,6 +1229,8 @@ export const OracleConversation: React.FC<OracleConversationProps> = ({
   const ideaDismissedRef = useRef<Set<string>>(new Set());
   // 💡 IDEA FIELD: Rate limiter — max 1 toast per 30 seconds to avoid feeling extractive
   const ideaLastShownRef = useRef<number>(0);
+  // 🧩 SCE §6a — pattern offers MAIA made in this conversation (the Gentle dial allows one).
+  const patternOffersThisConversationRef = useRef<number>(0);
 
   // 📝 SCRIBE SESSION STATE: Track active scribe/witness sessions
   const [scribeSession, setScribeSession] = useState<ScribeSessionState>(DEFAULT_SCRIBE_SESSION);
@@ -5739,6 +5745,9 @@ I'm not sure what I'm feeling yet.`;
           // 🛡️ SANCTUARY MODE: Speaks freely - no memory retention
           sanctuary: effectiveSanctuary,
 
+          // 🧩 SCE §6a — lets the server honour the Gentle dial (one offer per conversation).
+          patternOffersThisConversation: patternOffersThisConversationRef.current,
+
           // 🎭 MAIA RELATIONAL MODE: Talk/Care/Scribe with sub-modes
           // This shapes MAIA's system prompt for relational attunement
           // 🚨 Crisis override takes precedence over all modes
@@ -6535,11 +6544,17 @@ I'm not sure what I'm feeling yet.`;
       // Extract wisdom routing data if present
       const wisdomRouting = responseData.metadata?.wisdomRouting;
 
+      // 🧩 SCE §6a — a pattern offer rides on MAIA's message; Sanctuary never carries one.
+      const patternOffer: PatternOffer | null =
+        !effectiveSanctuary && responseData?.patternOffer ? (responseData.patternOffer as PatternOffer) : null;
+      if (patternOffer) patternOffersThisConversationRef.current += 1;
+
       // Create oracle message with source tag
       const oracleMessage: ConversationMessage = {
         id: `msg-${Date.now()}-oracle`,
         role: 'oracle',
         text: enrichedResponseText, // Use enriched text
+        patternOffer,
         timestamp: new Date(),
         facetId: element,
         motionState: 'responding',
@@ -10158,6 +10173,11 @@ I'm not sure what I'm feeling yet.`;
                             setPatternDrawerOpen(true);
                           }}
                         />
+                      )}
+
+                      {/* 🧩 SCE §6a — the member decides on a pattern MAIA offered */}
+                      {message.role === 'oracle' && message.patternOffer && (
+                        <PatternOfferCard offer={message.patternOffer} />
                       )}
 
                       {/* 🌀 LENS SWITCH RITUAL: Stay/Switch/Blend buttons when integrity triggers offer_switch */}

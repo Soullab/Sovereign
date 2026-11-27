@@ -2,6 +2,7 @@
 import { randomUUID } from 'crypto';
 import { incrementTurnCount, addConversationExchange, getConversationHistory, getSessionContinuityWindow } from './sessionManager';
 import { buildMaiaWisePrompt, buildMaiaComprehensivePrompt, sanitizeMaiaOutput, MaiaContext, CORE_PROMPT_HISTORY_APERTURE } from './maiaVoice';
+import { parseRawPatternOffer, stripPatternOfferTags, type RawPatternOffer } from '@/lib/maia/patternRecognition';
 // AIN-CONTEXT-01 · A6 — session self-location + known absence (pure; no I/O, no memory).
 import {
   recoverDisplacedExchanges,
@@ -629,6 +630,8 @@ export type MaiaResponse = {
   servingTruth?: LiveServingTruth; // R2: routing intent + actual serving outcome
   stateVector?: StateVector;                  // 🌀 State vector reading from this turn
   practiceRecommendation?: PracticeRecommendation;  // 🌿 Practice recommendation from state vector
+  /** 🧩 SCE §6a: MAIA's raw pattern-offer line, already stripped from `text`. Validated by the route. */
+  patternOfferRaw?: RawPatternOffer;
   metadata?: {
     patterns?: PatternMeta[];
     turnId?: number;          // 🔄 For feedback linkage
@@ -3011,7 +3014,8 @@ function finalizeMemberFacingText(
   // the state-vector path, but the funnel is the layer that owns "nothing
   // internal reaches the member" — including paths (RCN) that never parse it.
   // Idempotent, so re-running after the upstream strip is harmless.
-  let text = sanitizeMaiaOutput(stripStateVectorBlocks(rawText));
+  // Pattern Offer line (SCE §6a): an internal contract, never member-facing.
+  let text = sanitizeMaiaOutput(stripPatternOfferTags(stripStateVectorBlocks(rawText)));
 
   const { mode, recognition } = determineResponseMode(input);
   let presenceConstrained = false;
@@ -3827,6 +3831,12 @@ export async function getMaiaResponse(req: MaiaRequest): Promise<MaiaResponse> {
       }
     }
 
+    // 🧩 PATTERN OFFER (SCE §6a, ratified 2026-11-23): capture MAIA's offer line from the
+    // raw reply BEFORE sanitize, then strip it, so it never reaches voice synthesis,
+    // persistence or the member. The route validates it against the refs it issued.
+    const patternOfferRaw = (meta as any)?.sanctuary === true ? null : parseRawPatternOffer(rawResponse);
+    rawResponse = stripPatternOfferTags(rawResponse);
+
     // Apply MAIA's voice sanitization (let for AIN rewrite reflex)
     // eslint-disable-next-line prefer-const
     let text = sanitizeMaiaOutput(rawResponse);
@@ -4567,6 +4577,7 @@ export async function getMaiaResponse(req: MaiaRequest): Promise<MaiaResponse> {
       servingTruth,
       stateVector: parsedStateVector || undefined,
       practiceRecommendation: practiceRec || undefined,
+      ...(patternOfferRaw ? { patternOfferRaw } : {}),
       metadata: hasMetadata ? responseMetadata : undefined
     };
 

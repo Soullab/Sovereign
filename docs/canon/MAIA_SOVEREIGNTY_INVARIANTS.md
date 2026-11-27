@@ -317,6 +317,7 @@ If not, it does not align with mission.
 - Explicit keeping — member action required
 - Resealability — the member can reverse at any time; absence may remain absence
 - Evidence before pattern; honest reporting of incompleteness
+- Patterns across kept material are offered, sourced and member-confirmed — never accumulated silently *(added 2026-11-23, founder ratification; `SPIRAL_CONTINUITY_ENGINE.md` §6a)*
 
 **Review discipline:** Before shipping anything that touches retrieval, surfacing, or continuity, ask (1) *Does this improve truthful continuity?* and (2) *Does this primarily increase the sensation of being known?* When they diverge, the first governs — and: *does this preserve the member's ability to **not** be recognized?*
 
