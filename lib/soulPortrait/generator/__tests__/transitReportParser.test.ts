@@ -9,6 +9,7 @@
  */
 
 import {
+  citeTransit,
   describeTransit,
   deriveTimeframe,
   parseTransitReport,
@@ -207,5 +208,26 @@ describe('assemble: how many transits a phase cites', () => {
     expect(earth.transits[0]).toMatch(/Point1$/);
     expect(earth.transits[18]).toMatch(/Point19$/);
     expect(new Set(earth.transits).size).toBe(19);
+  });
+});
+
+describe('citeTransit: the dated line a phase cites', () => {
+  const { transits } = parseTransitReport(REPORT);
+
+  it('gives every exact pass, retrograde marked', () => {
+    expect(citeTransit(transits[0])).toBe('Pluto opposite your Jupiter (exact Apr 2, 2026; Sep 8, 2026 R; Feb 1, 2027)');
+    expect(citeTransit(transits[2])).toBe('Saturn in trine with your Sun (exact Sep 3, 2026)');
+  });
+
+  it('dates an ingress, and leaves an undated transit bare', () => {
+    expect(citeTransit(transits[1])).toMatch(/^Jupiter entering your Twelfth House \((from )?Jun 14, 2026\)$/);
+    expect(citeTransit(transits[3])).toBe('Neptune in square with your Mercury');
+  });
+
+  it('is accepted by the no-manufactured-transit guard, as the bare form still is', () => {
+    const phase = (cited: string[]): YearAheadPhase => ({ element: 'earth', title: 't', transits: cited, body: 'b' });
+    expect(() => validateCitedTransits([phase([citeTransit(transits[0]), describeTransit(transits[2])])], transits)).not.toThrow();
+    expect(() => validateCitedTransits([phase(['Pluto opposite your Jupiter (exact Apr 3, 2026)'])], transits))
+      .toThrow(/year_ahead_manufactured_transit/);
   });
 });
