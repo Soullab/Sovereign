@@ -48,6 +48,7 @@ import { inferSpiralogicCell, type Element } from '@/lib/consciousness/spiralogi
 // no-write contract. Everything composed is read-only; MAIA_RUNTIME_PROMPT already
 // embeds the memory-canon guard.
 import { composeRoomTurnPrompt, composeConstitutionalFloor, cloudRegisterPinned } from '@/lib/maia/roomComposition';
+import { extractPatternOffer, type PatternOffer, type PatternTurnContext } from '@/lib/maia/patternRecognition';
 import { buildResponseGrammar, LIVED_RETURN_GROUNDING } from '@/lib/nowWhat/roomGrammar';
 
 const MAX_TOKENS_TURN = 700;
@@ -338,6 +339,8 @@ export async function POST(request: NextRequest) {
     // silent). Turn-only — 'propose' stays a thin JSON extractor. Flags off + no
     // field → systemPrompt is exactly the room's own prompt.
     let fieldComposed: Awaited<ReturnType<typeof composeRoomTurnPrompt>>['field'] = null;
+    // 🧩 SCE §6a — the refs MAIA was given this turn (turn mode with presence only).
+    let patternContext: PatternTurnContext | null = null;
     if (mode === 'turn') {
       const lastMemberMessage = [...history].reverse().find((t) => t.role === 'user')?.content ?? '';
       const composed = await composeRoomTurnPrompt({
@@ -350,10 +353,13 @@ export async function POST(request: NextRequest) {
         // never routing.
         program: body?.program,
         roomTag: 'NowWhat',
+        // 🧩 SCE §6a — lets the server honour the Gentle dial (one offer per conversation).
+        patternOffersThisConversation: body?.patternOffersThisConversation,
         ephemeralSessionId: 'now-what-ephemeral',
       });
       systemPrompt = composed.systemPrompt;
       fieldComposed = composed.field;
+      patternContext = composed.patternContext;
     } else {
       // NW-I01 (2026-08-26) — closes NW-S01 bypass 1.
       //
@@ -402,7 +408,14 @@ export async function POST(request: NextRequest) {
       maxTokens,
       forceClaude: cloudRegisterPinned(),
     });
-    const raw = (result.text ?? '').trim();
+    // 🧩 SCE §6a — the single point where the model's raw reply is captured: MAIA's
+    // offer line is parsed and stripped HERE, before the reply is returned (and so
+    // before the client speaks it or carries it back as history), then validated
+    // against this turn's refs. 'propose' never receives refs, so any line is dropped.
+    const extraction = extractPatternOffer(result.text ?? '', mode === 'turn' ? patternContext : null);
+    const patternOffer: PatternOffer | null = extraction.offer;
+    if (extraction.refusedReason) console.log('[NowWhat/interview] pattern offer refused', { reason: extraction.refusedReason });
+    const raw = extraction.visibleText.trim();
 
     if (mode === 'turn') {
       if (!raw) return NextResponse.json({ error: 'Nothing came through. Try once more.' }, { status: 502 });
@@ -416,6 +429,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ok: true,
         reply: raw,
+        // 🧩 SCE §6a — a pattern MAIA offered, for the member to keep, correct or dismiss.
+        ...(patternOffer ? { patternOffer } : {}),
         cellCandidate,
         served: { provider: result.provider, model: result.model },
         // Field provenance travels with the reply, same discipline as `served`:

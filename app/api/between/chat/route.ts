@@ -41,6 +41,15 @@ import {
   formatAtomsForPrompt,
   summarizeAtomsForLog,
 } from '@/lib/maia/memoryAtomsLoader';
+// 🧩 Pattern recognition across kept memory (SCE §6a, ratified 2026-11-23)
+import {
+  preparePatternTurn,
+  offersThisConversationFrom,
+  clientRendersPatternOffers,
+  validatePatternOffer,
+  type PatternTurnContext,
+  type PatternOffer,
+} from '@/lib/maia/patternRecognition';
 import {
   buildMemoryHealth,
   summarizeMemoryHealthForLog,
@@ -1881,6 +1890,9 @@ This user is in guest mode (no authenticated identity).
     // Skipped for sanctuary sessions (no cross-session memory should bleed in).
     let memoryInfluenceAddendum: string | undefined;
     let forwardReadinessAddendum: string | undefined;
+    // 🧩 SCE §6a — the refs MAIA was given this turn; null = pattern recognition off/absent
+    // (Sanctuary, anonymous, dial off with nothing confirmed, or a failed read).
+    let patternTurnContext: PatternTurnContext | null = null;
     if (!isSanctuary && effectiveUserId && !effectiveUserId.startsWith('anon:')) {
       try {
         const [recentDevelopmentalMemories, recentThemeSignals, memberMemoryAtoms] = await Promise.all([
@@ -1910,7 +1922,25 @@ This user is in guest mode (no authenticated identity).
         // (member-authorship carve-out). Discipline lives inside formatAtomsForPrompt:
         // no cross-atom synthesis, no system inference, atoms render as the member
         // declared them. Empty string if no atoms surface (no injection).
-        const atomsContextBlock = formatAtomsForPrompt(memberMemoryAtoms);
+        //
+        // 🧩 SCE §6a: with the member's dial on (Full by default), the block names each
+        // atom by a ref and carries the Pattern Offer discipline. MAIA's offer line is
+        // captured and stripped at the maiaService choke point, before sanitize, voice
+        // and persistence; it is validated below against THESE refs.
+        // Only a client that renders the offer card (it sends the Gentle count) is given
+        // refs; the I Ching embed and BookChat keep the strict block.
+        const patternOffersSoFar = (body as any)?.patternOffersThisConversation;
+        patternTurnContext = clientRendersPatternOffers(patternOffersSoFar)
+          ? await preparePatternTurn({
+              memberId: effectiveUserId,
+              sanctuary: isSanctuary,
+              atoms: memberMemoryAtoms,
+              memberMessage: message,
+              offersThisConversation: offersThisConversationFrom(patternOffersSoFar),
+              originSurface: 'between',
+            })
+          : null;
+        const atomsContextBlock = formatAtomsForPrompt(memberMemoryAtoms, patternTurnContext?.atomPatternRecognition);
         if (atomsContextBlock) {
           console.log('[MAIA/between] atoms-block emitted', {
             atomCount: memberMemoryAtoms.length,
@@ -1998,6 +2028,23 @@ This user is in guest mode (no authenticated identity).
       }),
       consultationPromise,
     ]);
+
+    // 🧩 SCE §6a — MAIA's pattern offer. The line was stripped from the reply at the
+    // maiaService choke point; here it is validated against the refs and dial of THIS
+    // turn. Sanctuary never carries one. A refused or unanswered offer leaves no trace.
+    let patternOffer: PatternOffer | null = null;
+    {
+      const verdict = validatePatternOffer(
+        orchestratorResult.patternOfferRaw,
+        isSanctuary ? null : patternTurnContext,
+      );
+      patternOffer = verdict.offer;
+      if (verdict.refusedReason) {
+        console.log('[MAIA/between] pattern offer refused', { reason: verdict.refusedReason });
+      } else if (patternOffer) {
+        console.log('[MAIA/between] pattern offer', { sources: patternOffer.sources.length, level: patternTurnContext?.level });
+      }
+    }
 
     if (consultationResult) {
       console.log(`[AIN Council] 🏛️ Consultation complete: ${consultationResult.insights.length} insights, ${consultationResult.tensions.length} tensions, emergence: ${consultationResult.emergenceRating || 'recombination'}`);
@@ -2538,6 +2585,8 @@ This user is in guest mode (no authenticated identity).
 
     const response2 = NextResponse.json({
       message: cleanedText,
+      // 🧩 SCE §6a — a pattern MAIA offered, for the member to keep, correct or dismiss.
+      ...(patternOffer ? { patternOffer } : {}),
       // 🌀 BEHAVIORAL LOOP: Suggested actions for inline rendering
       suggestedActions: fullSuggestedActions,
       consciousness: orchestratorResult.consciousness,

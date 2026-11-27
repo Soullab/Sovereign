@@ -20,6 +20,7 @@ import { safeGebserAnalysis } from '@/lib/consciousness/safe-gebser';
 import { safeElementalFieldState, safeElementalFieldSummary } from '@/lib/consciousness/safe-elemental-field';
 import { ConversationalElementalIntelligence } from '@/lib/consciousness/conversational-elemental-intelligence';
 import { getMaiaResponse } from '@/lib/sovereign/maiaService';
+import type { RawPatternOffer } from '@/lib/maia/patternRecognition';
 import { getConversationContext, ConversationContext } from '@/lib/consciousness/conversationContext';
 import { claudeDevOrchestration, type DevModeContext, type ClaudeDevAnalysis } from '@/lib/development/claude-dev-orchestration';
 import { MemoryBundleService, type MemoryBundle } from '@/lib/memory/MemoryBundle';
@@ -145,6 +146,12 @@ export interface MaiaConsciousnessResponse {
     id: string;
   };
   metadata: any;
+  /**
+   * 🧩 SCE §6a: MAIA's raw pattern-offer line, captured and already stripped from
+   * `message` at the maiaService choke point. Unvalidated: the calling route holds
+   * this turn's refs and validates it. Never member-facing as-is.
+   */
+  patternOfferRaw?: RawPatternOffer;
 }
 
 /**
@@ -885,6 +892,7 @@ export async function generateMaiaTurn(input: MaiaConsciousnessInput): Promise<M
 
   const response: MaiaConsciousnessResponse = {
     message: maiaResult.text,
+    ...(maiaResult?.patternOfferRaw ? { patternOfferRaw: maiaResult.patternOfferRaw } : {}),
     consciousness: consciousnessAnalysis,
     route: {
       endpoint: '/api/consciousness/orchestrator',
