@@ -25,6 +25,53 @@
 # with this deny inactive for that route, is rejected by the APPLICATION.
 # Removing one on the strength of a source-side change alone is not permitted.
 (deny_disabled_routes) {
+    # ADMIN-EDGE-R7017 — original trusted LAN/Tailscale rule, moved ahead
+    # of the general /api/* proxy to make its denial effective for ALL hosts
+    # importing this snippet. Never rely on X-Forwarded-For for allowlisting.
+    # This exact emergency reset endpoint is RETIRED for every peer.
+    @r7017_retired_admin_reset {
+        path /api/admin/reset-member-password /api/admin/reset-member-password/*
+    }
+    handle @r7017_retired_admin_reset {
+        respond "Not Found" 404 {
+            close
+        }
+    }
+
+    @r7017_outside_admin {
+        path /api/admin /api/admin/* /admin /admin/* /labtools/admin /labtools/admin/* /labtools/gifts /labtools/gifts/* /api/labtools/gifts /api/labtools/gifts/* /api/content/pipeline /api/content/pipeline/* /api/content/distribution /api/content/distribution/*
+        not remote_ip 100.64.0.0/10 192.168.4.0/24 127.0.0.1/32 ::1/128
+    }
+    handle @r7017_outside_admin {
+        respond "Forbidden" 403 {
+            close
+        }
+    }
+
+    # SOURCE-CUSTODY-EDGE-01 · independent pre-migration containment.
+    # The old application persists uploaded originals and reviewed edits without
+    # Sanctuary posture authority. A DB-only guard would be TOO LATE for PATCH:
+    # the legacy handler writes reviewed.txt before its database update.
+    # The old founder-only Book Studio Workbench routes independently write
+    # originals/reviewed text and must be fenced as a second API family.
+    # Its PATCH also edits a sanctuary DB flag; that gesture will be unavailable
+    # while the unconditional source-write safety fence is active.
+    # Deny these HTTP mutations at Caddy BEFORE changing source-custody schema,
+    # while the old reader can still receive traffic. Reads and source DELETE
+    # remain available. This is a compensating control, NOT a substitute for
+    # governing any direct/internal ingress that bypasses Caddy.
+    # RETIRE ONLY after: edge proof on actual live host(s), old writers drained,
+    # new source reservation/crash cleanup proofs and authorized cutover.
+    @source_write_pre_migration_hold {
+        path /api/writers-studio/sources /api/writers-studio/sources/* /api/book-studio/workbench/uploads /api/book-studio/workbench/uploads/*
+        method POST PUT PATCH
+    }
+    handle @source_write_pre_migration_hold {
+        respond "Source writing temporarily unavailable" 423 {
+            close
+        }
+    }
+
     # 04A · /api/members/migrate-data — accepts caller-chosen SOURCE and
     # DESTINATION member ids with no session resolution, and has no ACCESS_RULES
     # entry, so the Mode A unmapped-route default lets it through middleware.
@@ -145,6 +192,30 @@
 # Local development - no TLS
 :80 {
     import deny_disabled_routes
+    # Writer rollback compensation — export generation remains held until certified.
+    @writer_member_render_post_local {
+        method POST
+        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+    }
+    handle @writer_member_render_post_local {
+        header Cache-Control "private, no-store"
+        respond "Book file downloads are awaiting certification" 423
+    }
+
+    @founder_original_render_post_local {
+        method POST
+        path_regexp ^/api/book-studio/render(?:/epub)?/?$
+    }
+    handle @founder_original_render_post_local {
+        header Cache-Control "private, no-store"
+        respond "Book rendering is awaiting authorization review" 423
+    }
+
+    @historical_public_export_path_local path /exports /exports/* /exports%*
+    handle @historical_public_export_path_local {
+        header Cache-Control "private, no-store"
+        respond "Not found" 404
+    }
     @streaming {
         path /api/voice/stream-conversation
         path /api/*/stream*
@@ -176,17 +247,89 @@
 # Redirect www to apex (prevents WebAuthn ORIGIN_MISMATCH)
 www.soullab.life {
     import deny_disabled_routes
+    # Writer rollback compensation — export generation remains held until certified.
+    @writer_member_render_post_www {
+        method POST
+        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+    }
+    handle @writer_member_render_post_www {
+        header Cache-Control "private, no-store"
+        respond "Book file downloads are awaiting certification" 423
+    }
+
+    @founder_original_render_post_www {
+        method POST
+        path_regexp ^/api/book-studio/render(?:/epub)?/?$
+    }
+    handle @founder_original_render_post_www {
+        header Cache-Control "private, no-store"
+        respond "Book rendering is awaiting authorization review" 423
+    }
+
+    @historical_public_export_path_www path /exports /exports/* /exports%*
+    handle @historical_public_export_path_www {
+        header Cache-Control "private, no-store"
+        respond "Not found" 404
+    }
     redir https://soullab.life{uri} permanent
 }
 
 # MAIA application
 maia.soullab.life {
     import deny_disabled_routes
+    # Writer rollback compensation — export generation remains held until certified.
+    @writer_member_render_post_maia {
+        method POST
+        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+    }
+    handle @writer_member_render_post_maia {
+        header Cache-Control "private, no-store"
+        respond "Book file downloads are awaiting certification" 423
+    }
+
+    @founder_original_render_post_maia {
+        method POST
+        path_regexp ^/api/book-studio/render(?:/epub)?/?$
+    }
+    handle @founder_original_render_post_maia {
+        header Cache-Control "private, no-store"
+        respond "Book rendering is awaiting authorization review" 423
+    }
+
+    @historical_public_export_path_maia path /exports /exports/* /exports%*
+    handle @historical_public_export_path_maia {
+        header Cache-Control "private, no-store"
+        respond "Not found" 404
+    }
     reverse_proxy maia-sovereign:3000
 }
 
 soullab.life {
     import deny_disabled_routes
+    # Writer rollback compensation — export generation remains held until certified.
+    @writer_member_render_post_apex {
+        method POST
+        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+    }
+    handle @writer_member_render_post_apex {
+        header Cache-Control "private, no-store"
+        respond "Book file downloads are awaiting certification" 423
+    }
+
+    @founder_original_render_post_apex {
+        method POST
+        path_regexp ^/api/book-studio/render(?:/epub)?/?$
+    }
+    handle @founder_original_render_post_apex {
+        header Cache-Control "private, no-store"
+        respond "Book rendering is awaiting authorization review" 423
+    }
+
+    @historical_public_export_path_apex path /exports /exports/* /exports%*
+    handle @historical_public_export_path_apex {
+        header Cache-Control "private, no-store"
+        respond "Not found" 404
+    }
     # ═══════════════════════════════════════════════════════════════════════════
     # CORS for API requests (iOS/Capacitor app support)
     # Allows requests from capacitor://localhost, ionic://localhost, etc.
@@ -198,9 +341,6 @@ soullab.life {
     }
     @ionic_origin {
         header Origin ionic://localhost
-    }
-    @localhost_origin {
-        header Origin http://localhost*
     }
 
     # Handle CORS preflight (OPTIONS) requests for API
@@ -226,28 +366,6 @@ soullab.life {
         }
         header @preflight_ionic {
             Access-Control-Allow-Origin "ionic://localhost"
-            Access-Control-Allow-Credentials "true"
-            Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-            Access-Control-Allow-Headers "Content-Type, Authorization, X-API-Key, X-User-ID, X-Request-ID, X-Member-Id, X-Maia-Tier, X-Maia-Roles"
-            Access-Control-Max-Age "86400"
-        }
-        # Localhost origin (dev)
-        @preflight_localhost {
-            header_regexp Origin ^http://localhost
-        }
-        header @preflight_localhost {
-            Access-Control-Allow-Origin "{header.Origin}"
-            Access-Control-Allow-Credentials "true"
-            Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-            Access-Control-Allow-Headers "Content-Type, Authorization, X-API-Key, X-User-ID, X-Request-ID, X-Member-Id, X-Maia-Tier, X-Maia-Roles"
-            Access-Control-Max-Age "86400"
-        }
-        # Null origin (WebKit edge case - some Capacitor/WKWebView contexts)
-        @preflight_null {
-            header Origin null
-        }
-        header @preflight_null {
-            Access-Control-Allow-Origin "null"
             Access-Control-Allow-Credentials "true"
             Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
             Access-Control-Allow-Headers "Content-Type, Authorization, X-API-Key, X-User-ID, X-Request-ID, X-Member-Id, X-Maia-Tier, X-Maia-Roles"
@@ -335,13 +453,6 @@ soullab.life {
             Access-Control-Allow-Origin "ionic://localhost"
             Access-Control-Allow-Credentials "true"
         }
-        @api_null {
-            header Origin null
-        }
-        header @api_null {
-            Access-Control-Allow-Origin "null"
-            Access-Control-Allow-Credentials "true"
-        }
     }
 
     # Hashed static assets — cache forever (immutable)
@@ -375,7 +486,7 @@ soullab.life {
     # Regular reverse proxy for remaining requests (favicon, etc.)
     reverse_proxy maia-sovereign:3000 {
         # Health checks
-        health_uri /api/consciousness/health
+        health_uri /
         health_interval 30s
         health_timeout 5s
 
@@ -405,25 +516,9 @@ soullab.life {
         -Server
     }
 
-    # ── Admin route protection (Tailscale / VPN — enable when ready) ───────────
-    # Uncomment to restrict /api/admin/* to Tailscale IPs (100.x.x.x) only.
-    # Without Tailscale: replace with your static IP (home/office).
-    #
-    # @admin_path {
-    #     path /api/admin/*
-    # }
-    # handle @admin_path {
-    #     @not_tailscale {
-    #         not remote_ip 100.64.0.0/10 127.0.0.1/32
-    #     }
-    #     respond @not_tailscale "Forbidden" 403
-    #     reverse_proxy maia-sovereign:3000 {
-    #         header_up Host {host}
-    #         header_up X-Real-IP {remote_host}
-    #         header_up X-Forwarded-For {remote_host}
-    #         header_up X-Forwarded-Proto {scheme}
-    #     }
-    # }
+    # ADMIN-EDGE-R7017: The formerly ineffective late @admin_path matcher
+    # is moved into the common early deny_disabled_routes snippet above.
+    # No duplicate late matcher remains to be bypassed by /api/*.
 
     # Compression (exclude SSE which is handled above)
     encode gzip zstd
@@ -443,6 +538,30 @@ soullab.life {
 # ═══════════════════════════════════════════════════════════════════════════════
 jondi.soullab.life {
     import deny_disabled_routes
+    # Writer rollback compensation — export generation remains held until certified.
+    @writer_member_render_post_jondi {
+        method POST
+        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+    }
+    handle @writer_member_render_post_jondi {
+        header Cache-Control "private, no-store"
+        respond "Book file downloads are awaiting certification" 423
+    }
+
+    @founder_original_render_post_jondi {
+        method POST
+        path_regexp ^/api/book-studio/render(?:/epub)?/?$
+    }
+    handle @founder_original_render_post_jondi {
+        header Cache-Control "private, no-store"
+        respond "Book rendering is awaiting authorization review" 423
+    }
+
+    @historical_public_export_path_jondi path /exports /exports/* /exports%*
+    handle @historical_public_export_path_jondi {
+        header Cache-Control "private, no-store"
+        respond "Not found" 404
+    }
     reverse_proxy maia-sovereign:3000 {
         header_up Host {host}
         header_up X-Real-IP {remote_host}
@@ -470,6 +589,30 @@ jondi.soullab.life {
 # Middleware rewrites kelly.soullab.life/* → /fields/kelly/*
 kelly.soullab.life {
     import deny_disabled_routes
+    # Writer rollback compensation — export generation remains held until certified.
+    @writer_member_render_post_kelly {
+        method POST
+        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+    }
+    handle @writer_member_render_post_kelly {
+        header Cache-Control "private, no-store"
+        respond "Book file downloads are awaiting certification" 423
+    }
+
+    @founder_original_render_post_kelly {
+        method POST
+        path_regexp ^/api/book-studio/render(?:/epub)?/?$
+    }
+    handle @founder_original_render_post_kelly {
+        header Cache-Control "private, no-store"
+        respond "Book rendering is awaiting authorization review" 423
+    }
+
+    @historical_public_export_path_kelly path /exports /exports/* /exports%*
+    handle @historical_public_export_path_kelly {
+        header Cache-Control "private, no-store"
+        respond "Not found" 404
+    }
     reverse_proxy maia-sovereign:3000 {
         header_up Host {host}
         header_up X-Real-IP {remote_host}
@@ -497,6 +640,30 @@ kelly.soullab.life {
 # Middleware rewrites nathan.soullab.life/* → /fields/nathan/*
 nathan.soullab.life {
     import deny_disabled_routes
+    # Writer rollback compensation — export generation remains held until certified.
+    @writer_member_render_post_nathan {
+        method POST
+        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+    }
+    handle @writer_member_render_post_nathan {
+        header Cache-Control "private, no-store"
+        respond "Book file downloads are awaiting certification" 423
+    }
+
+    @founder_original_render_post_nathan {
+        method POST
+        path_regexp ^/api/book-studio/render(?:/epub)?/?$
+    }
+    handle @founder_original_render_post_nathan {
+        header Cache-Control "private, no-store"
+        respond "Book rendering is awaiting authorization review" 423
+    }
+
+    @historical_public_export_path_nathan path /exports /exports/* /exports%*
+    handle @historical_public_export_path_nathan {
+        header Cache-Control "private, no-store"
+        respond "Not found" 404
+    }
     reverse_proxy maia-sovereign:3000 {
         header_up Host {host}
         header_up X-Real-IP {remote_host}
@@ -558,6 +725,30 @@ oldhead.soullab.life {
 # ═══════════════════════════════════════════════════════════════════════════════
 chart.soullab.life {
     import deny_disabled_routes
+    # Writer rollback compensation — export generation remains held until certified.
+    @writer_member_render_post_chart {
+        method POST
+        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+    }
+    handle @writer_member_render_post_chart {
+        header Cache-Control "private, no-store"
+        respond "Book file downloads are awaiting certification" 423
+    }
+
+    @founder_original_render_post_chart {
+        method POST
+        path_regexp ^/api/book-studio/render(?:/epub)?/?$
+    }
+    handle @founder_original_render_post_chart {
+        header Cache-Control "private, no-store"
+        respond "Book rendering is awaiting authorization review" 423
+    }
+
+    @historical_public_export_path_chart path /exports /exports/* /exports%*
+    handle @historical_public_export_path_chart {
+        header Cache-Control "private, no-store"
+        respond "Not found" 404
+    }
     # Rewrite root to /chart page
     rewrite / /chart
 
@@ -598,6 +789,30 @@ chart.soullab.life {
 # ═══════════════════════════════════════════════════════════════════════════════
 writer.soullab.life, sound.soullab.life, guide.soullab.life, astrology.soullab.life {
     import deny_disabled_routes
+    # Writer rollback compensation — same per-host holds as every other proxied host.
+    @writer_member_render_post_doorway {
+        method POST
+        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+    }
+    handle @writer_member_render_post_doorway {
+        header Cache-Control "private, no-store"
+        respond "Book file downloads are awaiting certification" 423
+    }
+
+    @founder_original_render_post_doorway {
+        method POST
+        path_regexp ^/api/book-studio/render(?:/epub)?/?$
+    }
+    handle @founder_original_render_post_doorway {
+        header Cache-Control "private, no-store"
+        respond "Book rendering is awaiting authorization review" 423
+    }
+
+    @historical_public_export_path_doorway path /exports /exports/* /exports%*
+    handle @historical_public_export_path_doorway {
+        header Cache-Control "private, no-store"
+        respond "Not found" 404
+    }
 
     reverse_proxy maia-sovereign:3000 {
         header_up Host {host}
@@ -629,6 +844,30 @@ writer.soullab.life, sound.soullab.life, guide.soullab.life, astrology.soullab.l
 # ═══════════════════════════════════════════════════════════════════════════════
 elementalalchemy.soullab.life {
     import deny_disabled_routes
+    # Writer rollback compensation — export generation remains held until certified.
+    @writer_member_render_post_elemental {
+        method POST
+        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+    }
+    handle @writer_member_render_post_elemental {
+        header Cache-Control "private, no-store"
+        respond "Book file downloads are awaiting certification" 423
+    }
+
+    @founder_original_render_post_elemental {
+        method POST
+        path_regexp ^/api/book-studio/render(?:/epub)?/?$
+    }
+    handle @founder_original_render_post_elemental {
+        header Cache-Control "private, no-store"
+        respond "Book rendering is awaiting authorization review" 423
+    }
+
+    @historical_public_export_path_elemental path /exports /exports/* /exports%*
+    handle @historical_public_export_path_elemental {
+        header Cache-Control "private, no-store"
+        respond "Not found" 404
+    }
     # Rewrite root to audiobook page
     rewrite / /labtools/elemental-alchemy
 
@@ -664,6 +903,30 @@ elementalalchemy.soullab.life {
 # ═══════════════════════════════════════════════════════════════════════════════
 loralee.soullab.life {
     import deny_disabled_routes
+    # Writer rollback compensation — export generation remains held until certified.
+    @writer_member_render_post_loralee {
+        method POST
+        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+    }
+    handle @writer_member_render_post_loralee {
+        header Cache-Control "private, no-store"
+        respond "Book file downloads are awaiting certification" 423
+    }
+
+    @founder_original_render_post_loralee {
+        method POST
+        path_regexp ^/api/book-studio/render(?:/epub)?/?$
+    }
+    handle @founder_original_render_post_loralee {
+        header Cache-Control "private, no-store"
+        respond "Book rendering is awaiting authorization review" 423
+    }
+
+    @historical_public_export_path_loralee path /exports /exports/* /exports%*
+    handle @historical_public_export_path_loralee {
+        header Cache-Control "private, no-store"
+        respond "Not found" 404
+    }
     # Handle root path - rewrite to portal without trailing slash
     handle / {
         rewrite * /portal/loralee
@@ -997,4 +1260,54 @@ livekit.soullab.life {
 :8080 {
     import deny_disabled_routes
     respond /health 200
+}
+
+# WS1800 beta-host PREPARATION ONLY. Always paused; never forwards to test accounts.
+
+beta.soullab.life {
+    header {
+        Cache-Control no-store
+        X-Robots-Tag noindex, nofollow, noarchive
+        Referrer-Policy no-referrer
+    }
+    route {
+        @beta_enrollment path /signup /api/members/register* /api/members/email-code* /api/members/magic-link* /api/auth/google* /api/auth/apple* /api/auth/signin/google* /api/auth/signin/apple* /api/invites* /api/team/invite*
+        respond @beta_enrollment 404
+
+        @beta_signin_assets path /signin /api/members/signin /api/members/session /api/members/signout /_next/static/* /favicon.ico /favicon.svg /manifest.json /icons/* /fonts/* /soullab-logo.png /logo_flower%202.png /holoflower-studio-transparent.png /favicon-32x32.png /api/auth/whoami
+        handle @beta_signin_assets {
+            reverse_proxy ws-r9-4cc1d51f-public-candidate-20261016:3000
+        }
+
+        # R7 pre/post-Studio corridors. Each endpoint independently verifies
+        # the signed-in member and exact beta authority; this is not a general bypass.
+        @beta_member_thresholds path /writers-studio/invite /api/writers-studio/invite/setup /beta/consent /api/beta/consent /beta/custody /api/beta/custody /api/beta/custody/*
+        handle @beta_member_thresholds {
+            reverse_proxy ws-r9-4cc1d51f-public-candidate-20261016:3000
+        }
+
+
+        # Primary Writer Studio fictional-only preview. Two exact static
+        # resources, both guarded by the EXISTING authenticated beta edge.
+        # Never permit API, manuscript POST, directory browsing or signup.
+        @ws_primary_fictional_preview path /primary-writers-studio/index.html /primary-writers-studio/studio.html
+        handle @ws_primary_fictional_preview {
+            forward_auth ws-r9-4cc1d51f-public-candidate-20261016:3000 {
+                uri /api/sovereign/writers-studio/edge-authorize
+            }
+            root * /srv/beta
+            header Content-Security-Policy "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
+            header X-Frame-Options DENY
+            header X-Content-Type-Options nosniff
+            file_server
+        }
+
+
+        handle {
+            forward_auth ws-r9-4cc1d51f-public-candidate-20261016:3000 {
+                uri /api/sovereign/writers-studio/edge-authorize
+            }
+            reverse_proxy ws-r9-4cc1d51f-public-candidate-20261016:3000
+        }
+    }
 }
