@@ -23,14 +23,8 @@ import { query } from '@/lib/db/postgres';
 import { getMaiaResponse } from '@/lib/sovereign/maiaService';
 import { generateMaiaTurn } from '@/lib/consciousness/maiaOrchestrator';
 import { formatAtomsForPrompt, type MemoryAtomSnapshot } from '@/lib/maia/memoryAtomsLoader';
-import {
-  clientRendersPatternOffers,
-  offersThisConversationFrom,
-  parseRawPatternOffer,
-  preparePatternTurn,
-  stripPatternOfferTags,
-  validatePatternOffer,
-} from '@/lib/maia/patternRecognition';
+import { parseRawPatternOffer, stripPatternOfferTags, validatePatternOffer } from '@/lib/maia/patternRecognition';
+import { clientRendersPatternOffers, offersThisConversationFrom, preparePatternTurn } from '@/lib/maia/patternTurnSurface';
 
 const ROOT = process.cwd();
 const between = readFileSync(join(ROOT, 'app/api/between/chat/route.ts'), 'utf8');

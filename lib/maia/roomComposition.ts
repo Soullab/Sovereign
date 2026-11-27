@@ -47,7 +47,8 @@ import {
 } from '@/lib/maia/memoryLoaders';
 import { loadMemberMemoryAtomsForPrompt, formatAtomsForPrompt } from '@/lib/maia/memoryAtomsLoader';
 // 🧩 Pattern recognition across kept memory (SCE §6a, ratified 2026-11-23)
-import { preparePatternTurn, offersThisConversationFrom, clientRendersPatternOffers, type PatternTurnContext } from '@/lib/maia/patternRecognition';
+import type { PatternTurnContext } from '@/lib/maia/patternRecognition';
+import { preparePatternTurn, offersThisConversationFrom, clientRendersPatternOffers } from '@/lib/maia/patternTurnSurface';
 import {
   formatPriorExchangesForPrompt,
   computeLastPriorSessionMinutesAgo,
@@ -228,6 +229,8 @@ async function assemblePresenceContext(
       mode: null,
       currentSessionTurnCount: 0,
       lastPriorSessionMinutesAgo: computeLastPriorSessionMinutesAgo(prior),
+      // 🧩 SCE §6a — the member's own earlier words are a pattern source when offers are allowed.
+      patternRecognition: patternContext?.offerAllowed === true,
     });
     if (recall.block) blocks.push({ key: 'conversational', text: recall.block });
 

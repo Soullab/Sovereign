@@ -12,6 +12,7 @@ import { NextRequest } from 'next/server';
 import { getLLMProvider } from '@/lib/consciousness/LLMProvider';
 import { loadMemberMemoryAtomsForPrompt, type MemoryAtomSnapshot } from '@/lib/maia/memoryAtomsLoader';
 import { query } from '@/lib/db/postgres';
+import { loadConversationalRecallPref, loadPriorCrossSessionExchanges } from '@/lib/maia/memoryLoaders';
 import { POST as nowWhatPOST } from '@/app/api/now-what/interview/route';
 import { POST as visionStudioPOST } from '@/app/api/maia/vision-studio/interview/route';
 
@@ -73,6 +74,8 @@ beforeEach(() => {
   jest.mocked(getLLMProvider).mockReturnValue({ generateSimple } as never);
   jest.mocked(loadMemberMemoryAtomsForPrompt).mockReset().mockResolvedValue([atom(A1, 'I want to leave the job'), atom(A2, 'The open road')]);
   jest.mocked(query).mockReset().mockResolvedValue({ rows: [] } as never); // no dial row → Full
+  jest.mocked(loadConversationalRecallPref).mockReset().mockResolvedValue(false as never);
+  jest.mocked(loadPriorCrossSessionExchanges).mockReset().mockResolvedValue([] as never);
 });
 afterEach(() => {
   jest.restoreAllMocks();
@@ -124,6 +127,23 @@ describe.each(ROUTES)('$name interview: pattern offer', ({ handler, url }) => {
     const body = await res.json();
     expect(body.reply).toBe(VISIBLE);
     expect(body.patternOffer).toBeUndefined();
+  });
+
+  it("the member's own earlier words become a pattern source only when an offer is allowed", async () => {
+    jest.mocked(loadConversationalRecallPref).mockResolvedValue(true as never);
+    jest.mocked(loadPriorCrossSessionExchanges).mockResolvedValue([
+      { session_id: 'earlier', role: 'user', created_at: new Date(Date.now() - 3 * 86_400_000), content: 'I always end up by the water.' },
+    ] as never);
+    await post(handler, url, turn());
+    const allowed = generateSimple.mock.calls[0][0].systemPrompt as string;
+    expect(allowed).toContain('I always end up by the water.');
+    expect(allowed).not.toContain('Do not synthesize across them.');
+
+    generateSimple.mockClear();
+    await post(handler, url, turn({ patternOffersThisConversation: undefined }));
+    const strict = generateSimple.mock.calls[0][0].systemPrompt as string;
+    expect(strict).toContain('I always end up by the water.');
+    expect(strict).toContain('Do not synthesize across them.');
   });
 
   it("'propose' never receives refs and never returns an offer", async () => {

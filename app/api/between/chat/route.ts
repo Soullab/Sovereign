@@ -42,14 +42,8 @@ import {
   summarizeAtomsForLog,
 } from '@/lib/maia/memoryAtomsLoader';
 // 🧩 Pattern recognition across kept memory (SCE §6a, ratified 2026-11-23)
-import {
-  preparePatternTurn,
-  offersThisConversationFrom,
-  clientRendersPatternOffers,
-  validatePatternOffer,
-  type PatternTurnContext,
-  type PatternOffer,
-} from '@/lib/maia/patternRecognition';
+import { validatePatternOffer, type PatternTurnContext, type PatternOffer } from '@/lib/maia/patternRecognition';
+import { preparePatternTurn, offersThisConversationFrom, clientRendersPatternOffers } from '@/lib/maia/patternTurnSurface';
 import {
   buildMemoryHealth,
   summarizeMemoryHealthForLog,
