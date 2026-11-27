@@ -75,6 +75,14 @@ export async function POST(request: NextRequest) {
   // so the portrait describes the same chart they were reading in Pro.
   const calculator: 'standard' | 'pro' =
     body?.calculator === 'pro' || proChartSource !== undefined ? 'pro' : 'standard';
+
+  // Year Ahead from our own ephemeris instead of a pasted report
+  // (lib/soulPortrait/generator/transitGenerator.ts). Pro only: it reads the
+  // same Pro chart the portrait is drawn from. A pasted report, if any, wins.
+  const calculateTransits = body?.transitSource === 'calculated' && !transitReport;
+  if (calculateTransits && calculator !== 'pro') {
+    return NextResponse.json({ error: 'Calculated transits need a Pro chart' }, { status: 400 });
+  }
   if (calculator === 'pro' && !(proPreviewEnabled(process.env) && await proMemberAllowed(memberId, process.env))) {
     return NextResponse.json({ error: 'Pro Astrology access required' }, { status: 403 });
   }
@@ -113,6 +121,7 @@ export async function POST(request: NextRequest) {
       isMinor: body?.isMinor === true,
       transitReport,
       calculator,
+      calculatedTransits: calculateTransits ? {} : undefined,
     });
 
     const stored = await createDraftPortrait({
@@ -141,6 +150,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'No transit data found in the pasted report — check it contains lines like "Transiting Pluto in opposition with natal Jupiter" with dates, or clear the field to generate Part I only.' },
         { status: 400 },
+      );
+    }
+    if (err?.message === 'calculated_transits_empty') {
+      return NextResponse.json(
+        { error: 'No slow-planet transits fall in the next 12 months for this chart — generate Part I only.' },
+        { status: 422 },
       );
     }
     if (err?.message === 'year_ahead_incomplete_output' || String(err?.message || '').startsWith('year_ahead_manufactured_transit')) {
