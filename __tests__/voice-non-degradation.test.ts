@@ -225,11 +225,24 @@ const RATIFIED_COGNITION_TAIL = [
   'console.log',
 ];
 
+// ⚠️ PROBE ANCHOR. Every probe below mutates ORACLE by replacing this exact text,
+// and each asserts `probed !== ORACLE` first, so a stale anchor fails loudly
+// rather than letting a probe test the unmutated source. Re-synced 2026-11-26:
+// d3e57ea39 / 94ecfa9f8 (2026-10-27/28) added `freshMusicIntent` to the call and
+// left the probes unable to mutate for a month.
 const CANONICAL_VOICE_CALL = `await handleTextMessage(t, undefined, undefined, {
         parseResult: voiceMaiaResult,
         commandsAlreadyApplied: voiceMaiaResult.disposition === 'EXECUTE',
         confirmationHandled: voiceMaiaResult.disposition === 'EXECUTE',
+        freshMusicIntent: musicDecision.status === 'recognized'
+          ? { command: musicDecision.command, epoch: musicCommandEpoch.current,
+              instance: currentMusicBoundary.current.transport?.listeningInstance ?? null }
+          : undefined,
       });`;
+
+it('⚠️ the probe anchor still matches the source exactly once', () => {
+  expect(ORACLE.split(CANONICAL_VOICE_CALL)).toHaveLength(2);
+});
 
 /**
  * ⭐ THE RATIFIED ADMISSION PHASE — every explicit return, keyed by its own log
@@ -465,7 +478,8 @@ describe('PROBES — the gate must catch what nobody listed', () => {
     expect(handlerCalls(probed)).not.toEqual(RATIFIED_CALLS);
     expect(handlerCalls(probed)).toContain('totallyNewResponder');
     expect(cognitionTail(probed)).not.toEqual(RATIFIED_COGNITION_TAIL);
-    expect(cognitionTail(probed)[1]).toBe('totallyNewResponder'); // ahead of cognition
+    const tail = cognitionTail(probed);
+    expect(tail[tail.indexOf('handleTextMessage') - 1]).toBe('totallyNewResponder'); // immediately ahead of cognition
   });
 
   it('⛔ a KNOWN call moved to sit immediately ahead of cognition fails', () => {
@@ -522,6 +536,7 @@ describe('PROBES — the gate must catch what nobody listed', () => {
       CANONICAL_VOICE_CALL,
       `await sendStreamingMessage(t); return;\n      ${CANONICAL_VOICE_CALL}`,
     );
+    expect(probed).not.toBe(ORACLE);
     expect(enumerateExits(probed)).not.toEqual([...RATIFIED_EXITS]);
     expect(handlerCalls(probed)).toContain('sendStreamingMessage');
   });
