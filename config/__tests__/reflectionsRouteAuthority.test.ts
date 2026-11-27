@@ -42,6 +42,12 @@ describe('/reflections — the member home', () => {
     expect(member('/reflections/abc-123').unmapped).toBeFalsy();
   });
 
+  it('maps the Web view data route, so strict mode cannot break the Web', () => {
+    expect(member('/api/reflections/river').allowed).toBe(true);
+    expect(member('/api/reflections/river').unmapped).toBeFalsy();
+    expect(checkAccess('/api/reflections/river', 'free', [], false).allowed).toBe(false);
+  });
+
   it('still requires authentication — member-facing is not public', () => {
     expect(checkAccess('/reflections', 'free', [], false).allowed).toBe(false);
   });

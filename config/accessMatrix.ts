@@ -479,6 +479,7 @@ export const ACCESS_RULES: AccessRule[] = [
   // deny a member their own reflections as an unmapped route.
   { exact: '/reflections', minTier: 'free', notes: 'Member reflections feed' },
   { prefix: '/reflections/', minTier: 'free', notes: 'A single member reflection' },
+  { exact: '/api/reflections/river', minTier: 'free', notes: 'Reflections Web view data — read-only, member-scoped by requireMemberId() in the route' },
   // ⛔ NO /labtools/reflections RULE — deliberately. Founder ruling 2026-09-04
   // took Reflections OUT of Lab Tools; app/labtools/reflections/ is deleted.
   // The declaration contradiction that stood here (declared 'free', enforced

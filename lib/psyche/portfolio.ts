@@ -757,11 +757,19 @@ export async function createLensPass(
   // NOTE: direct UPDATE — does NOT use the 'touch' gesture, which is reserved
   // for the member-explicit "Still here" affordance and increments still_here_count.
   // We want lens passes to reflect liveness without inflating the witness counter.
+  //
+  // The kept pass also records its lens on the atom (founder ruling 2026-11-26): the
+  // element mark on a Keep card means "angles you chose to look through". It is the
+  // member's own act (they answered and kept it), never inferred, and uses the same
+  // set-union as the existing `add_lens` gesture, so a lens is recorded once.
   await query(
     `UPDATE member_memory_atoms
-        SET last_touched_at = NOW()
+        SET last_touched_at = NOW(),
+            elemental_lenses = (
+              SELECT ARRAY(SELECT DISTINCT unnest(elemental_lenses || ARRAY[$3]))
+            )
       WHERE member_id = $1 AND id = $2`,
-    [memberId, input.memoryAtomId],
+    [memberId, input.memoryAtomId, input.lens],
   );
 
   return rowToLensPass(result.rows[0]);
