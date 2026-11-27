@@ -16,6 +16,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import { useOpenMaiaHere } from '@/components/oracle/useOpenMaiaHere';
 import {
   ArrowLeft,
   Sparkles,
@@ -95,6 +96,7 @@ interface RuneReading {
 
 export default function RunesOraclePage() {
   const router = useRouter();
+  const openMaiaHere = useOpenMaiaHere();
   const [phase, setPhase] = useState<ReadingPhase>('question');
   const [question, setQuestion] = useState('');
   const [selectedSpread, setSelectedSpread] = useState<RuneSpreadOption | null>(null);
@@ -654,7 +656,7 @@ export default function RunesOraclePage() {
                           const runesSummary = reading.drawnRunes.map(r =>
                             `${r.symbol} ${r.name}${r.isReversed ? ' (Merkstave/Reversed)' : ''} in ${r.position}: ${r.meaning}`
                           ).join('\n');
-                          const context = encodeURIComponent(
+                          const context = (
                             `I just received a Rune reading for my question: "${question}"\n\n` +
                             `Spread: ${selectedSpread.name}\n\n` +
                             `Runes drawn:\n${runesSummary}\n\n` +
@@ -663,7 +665,7 @@ export default function RunesOraclePage() {
                             (reading.wyrdMessage ? `Message from Wyrd: ${reading.wyrdMessage}\n\n` : '') +
                             `Help me understand how this applies to my situation and what the runes are revealing.`
                           );
-                          router.push(`/maia?context=${context}`);
+                          openMaiaHere(context, { source: 'divination:runes', sourceLabel: 'Rune reading' });
                         }}
                         className={`${divinationType.action} w-full min-h-12 px-6 py-3 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-semibold rounded-lg shadow-lg transition-all duration-300 flex items-center justify-center gap-2`}
                       >

@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useOpenMaiaHere } from '@/components/oracle/useOpenMaiaHere';
 import { apiFetch } from '@/lib/http/apiBase';
 import { readability } from '@/lib/house/readability';
 import {
@@ -83,6 +84,7 @@ function parseReadingTarget(value: string | null): { type: Exclude<DivinationTyp
 
 export default function DivinationReflectionsPage() {
   const router = useRouter();
+  const openMaiaHere = useOpenMaiaHere();
   const searchParams = useSearchParams();
   const returnTarget = parseReadingTarget(searchParams?.get('reading') || null);
   const openedReturnTarget = useRef(false);
@@ -266,7 +268,7 @@ export default function DivinationReflectionsPage() {
         `Help me understand how this reading has unfolded in my life.`;
     }
 
-    router.push(`/maia?context=${encodeURIComponent(context)}`);
+    openMaiaHere(context, { source: 'divination:reflections', sourceLabel: 'Saved reading' });
   };
 
   return (

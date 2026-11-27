@@ -10,6 +10,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import { useOpenMaiaHere } from '@/components/oracle/useOpenMaiaHere';
 import Image from 'next/image';
 import {
   ArrowLeft,
@@ -163,6 +164,7 @@ const DIFFICULTY_GROUPS = [
 
 export default function TarotOraclePage() {
   const router = useRouter();
+  const openMaiaHere = useOpenMaiaHere();
   const [phase, setPhase] = useState<ReadingPhase>('question');
   const [question, setQuestion] = useState('');
   const [selectedSpread, setSelectedSpread] = useState<SpreadType | null>(null);
@@ -728,7 +730,7 @@ export default function TarotOraclePage() {
                           const cardsSummary = reading.cards.map(c =>
                             `${c.name}${c.reversed ? ' (Reversed)' : ''} in ${c.position}: ${c.keywords.slice(0, 3).join(', ')}`
                           ).join('\n');
-                          const context = encodeURIComponent(
+                          const context = (
                             `I just received a Tarot reading for my question: "${question}"\n\n` +
                             `Spread: ${reading.spreadName}\n\n` +
                             `Cards drawn:\n${cardsSummary}\n\n` +
@@ -736,7 +738,7 @@ export default function TarotOraclePage() {
                             `Guidance: ${reading.advice}\n\n` +
                             `Help me understand how this applies to my situation and what the cards are revealing.`
                           );
-                          router.push(`/maia?context=${context}`);
+                          openMaiaHere(context, { source: 'divination:tarot', sourceLabel: 'Tarot reading' });
                         }}
                         className={`${divinationType.action} w-full min-h-12 px-6 py-3 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-semibold rounded-lg shadow-lg transition-all duration-300 flex items-center justify-center gap-2`}
                       >
