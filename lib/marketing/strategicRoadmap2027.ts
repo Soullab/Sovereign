@@ -134,10 +134,13 @@ export const ROADMAP = {
         'with threads only where you carried something into your life — a Change, a Decision, your Daily Anchor.',
       centerOfGravity: 'The member sees their own kept moments over time. MAIA draws nothing and names nothing.',
       standing:
-        'Built (Life Web step 1, 2026-11-26), not yet deployed or witnessed by a member. ' +
+        'Built on a branch, not merged (Life Web step 1, Soullab/Sovereign#2424, 2026-11-26); ' +
+        'not deployed and not witnessed by a member. ' +
         'Threads drawn by the member, named gatherings and MAIA offers are later steps and not built.',
       gate: 'Becomes Live only after a member/device witness on the deployed build is recorded in the Reflections contract.',
       source: 'docs/programme/REFLECTIONS_LIFE_WEB_DESIGN_2026-11-25.md · docs/design/contracts/reflections-room.md',
+      /** Where the member/device witness is recorded. Required before `layer` may be Live. */
+      witness: null as string | null,
     },
   ],
   storiesNote:
