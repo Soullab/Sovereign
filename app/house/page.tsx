@@ -56,11 +56,11 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
         <div className={styles.welcome}>
           <p>THE HOUSE</p>
           <h1>Welcome home,<br />{firstName}.</h1>
-          <h2>Many paths. A deeper you.</h2>
+          <h2>Many facets. One beautiful life.</h2>
         </div>
 
         <aside className={styles.presence} aria-label="House presence">
-          <blockquote>Not a place<br />to escape life,<br />but a way to meet it<br />more fully.</blockquote>
+          <blockquote>A place to arrive,<br />to breathe,<br />and meet your life<br />more fully.</blockquote>
           <div className={styles.maiaPresence}>
             <MaiaThresholdLink />
             <p>Always here<br />when you are ready.</p>
