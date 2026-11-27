@@ -6,7 +6,7 @@ import styles from './house.module.css';
 import { memberForHouse, livingWorksForHouse, cabinHousePreferences } from './houseData';
 import { MaiaThresholdLink } from './MaiaThresholdLink';
 import { HouseRail } from './HouseRail';
-import { HousePreferencesProvider, HouseMemberControls, HouseCenter, HouseQuickAccess, HouseDirectory, HousePassingThrough, HouseQuickAccessStacked } from './HousePreferences';
+import { HousePreferencesProvider, HouseMemberControls, HouseCenter, HouseQuickAccess, HouseDirectory, HousePassingThrough, HouseQuickAccessStacked, HouseArrangeButton } from './HousePreferences';
 import { selectPassingQuote } from './passingContext';
 import { PASSING_QUOTES } from './passingQuotes';
 import { studioArrivalFromHouse } from '@/app/writers-studio/situatedWork';
@@ -50,13 +50,13 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
         </div>
         <header className={styles.topline}>
           <span>A SPACE TO REFLECT, CREATE, EXPLORE AND RETURN</span>
-          <HouseMemberControls name={firstName} arrange="wide" />
+          <HouseMemberControls name={firstName} arrange="none" tagline="Explore Your World" />
         </header>
 
         <div className={styles.welcome}>
           <p>THE HOUSE</p>
           <h1>Welcome home,<br />{firstName}.</h1>
-          <h2>Many facets. One beautiful life.</h2>
+          <h2>Many facets. One love.</h2>
         </div>
 
         <aside className={styles.presence} aria-label="House presence">
@@ -67,6 +67,7 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
             <MaiaThresholdLink variant="invitation" />
           </div>
           <HouseQuickAccess />
+          <HouseArrangeButton />
           <HousePassingThrough quote={passingQuote} />
           <p className={styles.whole}>Different places.<br />A more whole you.</p>
         </aside>

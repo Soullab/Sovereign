@@ -311,12 +311,19 @@ export function HousePreferencesProvider({ initial, children }: { initial: House
 
 /** `arrange="wide"`: the House home on phones and iPads already has a full Arrange my House
  *  button beside Here · Now, so the small corner one shows on wide screens only. */
-export function HouseMemberControls({ name, arrange = 'always' }: { name: string; arrange?: 'always' | 'wide' }) {
+export function HouseMemberControls({ name, arrange = 'always', tagline }: { name: string; arrange?: 'always' | 'wide' | 'none'; tagline?: string }) {
   const { active, open, message } = useHousePreferences();
   return <span className={`${house.member} ${styles.member}`}><span>{name}</span>
-    <button type="button" className={`${styles.arrange}${arrange === 'wide' ? ` ${styles.arrangeWide}` : ''}`} disabled={!active} onClick={() => open()}>Arrange my House</button>
+    {tagline && <span className={styles.worldLine}>{tagline}</span>}
+    {arrange !== 'none' && <button type="button" className={`${styles.arrange}${arrange === 'wide' ? ` ${styles.arrangeWide}` : ''}`} disabled={!active} onClick={() => open()}>Arrange my House</button>}
     {message && <span className={styles.notice} role="status">{message}{!active && <> <Link href="/house">Reload House</Link></>}</span>}
   </span>;
+}
+
+/** Wide screens: a clear Arrange my House under Here · Now, matching the stacked phone version. */
+export function HouseArrangeButton() {
+  const { active, open } = useHousePreferences();
+  return <button type="button" className={`${styles.arrange} ${styles.arrangeWide} ${styles.arrangeBlock}`} disabled={!active} onClick={() => open()}>Arrange my House</button>;
 }
 
 export function HouseCenter() {
