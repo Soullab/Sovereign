@@ -72,4 +72,23 @@ describe('Ask MAIA destination', () => {
       expect(read(p)).not.toContain("router.push('/maia')");
     }
   });
+
+  it('the shared in-room hook hosts first and falls back to /maia/encounter', () => {
+    const src = read('components/oracle/useOpenMaiaHere.ts');
+    const open = src.indexOf('presence.openMaiaWith(text)');
+    const push = src.indexOf("router.push('/maia/encounter')");
+    expect(open).toBeGreaterThan(-1);
+    expect(push).toBeGreaterThan(open);
+    expect(src.slice(open, push)).toMatch(/return;/);
+  });
+
+  // Founder walk 2026-11-26: Tarot's "Consult with MAIA" left for /maia.
+  it('Tarot, Runes and saved readings open MAIA in the room, never /maia?context', () => {
+    for (const p of ['app/oracle/tarot/page.tsx', 'app/oracle/runes/page.tsx', 'app/oracle/reflections/page.tsx']) {
+      const src = read(p);
+      expect(src).toContain('useOpenMaiaHere()');
+      expect(src).toMatch(/openMaiaHere\(context, \{ source: 'divination:/);
+      expect(src).not.toMatch(/\/maia\?context/);
+    }
+  });
 });
