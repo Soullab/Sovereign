@@ -10,6 +10,7 @@
 
 import { withTimeout } from '@/lib/utils/withTimeout';
 import { pushVoiceDebug } from '@/lib/voice/voiceDebugBus';
+import { doorwayForHost } from '@/lib/studios/doorways';
 
 // Hard fallback for iOS/Capacitor - NEVER use relative /api on mobile
 const FALLBACK_API_BASE_URL = 'https://soullab.life';
@@ -57,6 +58,20 @@ export const BUILD_STAMP = {
  * We MUST detect iOS and force the real API URL, even if Capacitor.isNativePlatform() lies.
  */
 export function apiBaseUrl(): string {
+  // STUDIO DOORWAYS (STUDIO-A-LA-CARTE-01): writer./sound./guide./astrology.<root> are served by this same
+  // app behind the same Caddy as the apex. A page on one of those addresses must call its OWN origin: the
+  // absolute fallback below would make every call cross-origin to the apex, which Caddy (correctly) refuses,
+  // leaving the Studio empty and the writer looking signed out (local walk 2026-11-21). Same-origin, not a
+  // wider CORS allowance. Checked first so a build-time NEXT_PUBLIC_API_BASE_URL cannot pull a doorway page
+  // cross-origin; native shells never match (their host is `localhost`, their scheme is not http/https).
+  if (typeof window !== 'undefined') {
+    const { protocol, host } = window.location;
+    if ((protocol === 'https:' || protocol === 'http:') &&
+        doorwayForHost(host, process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? 'soullab.life')) {
+      return '';
+    }
+  }
+
   const env = (process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
 
   // If env is set, always trust it.

@@ -105,7 +105,7 @@ it('a good code creates a normal member, records the door, and sends them to the
   const res = await register(post('/api/doorway/register', good));
   expect(res.status).toBe(200);
   const body = await res.json();
-  expect(body.next).toBe('/writers-studio');
+  expect(body.next).toBe('/writers-studio/welcome');
   const memberInsert = txQuery.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO members'))!;
   expect(memberInsert[1][0]).toMatch(/^STUDIO-WRITER-[A-Z2-9]{8}$/);
   expect(txQuery.mock.calls.some(([sql, p]) => String(sql).includes('studio_doorway_redemptions') && p[0] === 7 && p[1] === 'm1' && p[2] === 'writer')).toBe(true);
@@ -131,7 +131,7 @@ it('NEGATIVE: an unknown or cross-Studio path is ignored, never used as a return
     return { rows: [] };
   });
   const bad = await register(post('/api/doorway/register', { ...good, path: 'https://evil.example/' }));
-  expect((await bad.json()).next).toBe('/writers-studio');
+  expect((await bad.json()).next).toBe('/writers-studio/welcome');
 
   const sound = await register(post('/api/doorway/register', { ...good, studio: 'sound', email: 'sound@example.com', path: 'college-essay' }));
   expect((await sound.json()).next).toBe('/listen');
