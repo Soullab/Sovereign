@@ -14,13 +14,14 @@
 import { getLLMProvider } from '@/lib/consciousness/LLMProvider';
 import type { ElementKey, YearAhead, YearAheadPhase } from '@/lib/soulPortrait/schema';
 import {
+  citeTransit,
   describeTransit,
   deriveTimeframe,
   transitDataText,
   type ParsedTransit,
 } from './transitReportParser';
 import { parseModelJson } from './parseModelJson';
-import { yearAheadSystemPrompt } from './yearAheadPrompt';
+import { YEAR_AHEAD_MAX_CITED, yearAheadSystemPrompt } from './yearAheadPrompt';
 
 /** The Seasonal Spiral's fixed elemental order (schema: YearAhead docs). */
 const SPIRAL_ORDER: ElementKey[] = ['earth', 'fire', 'water', 'air', 'aether'];
@@ -32,7 +33,9 @@ const ELEMENT_SET = new Set<string>(SPIRAL_ORDER);
  * into a draft.
  */
 export function validateCitedTransits(phases: YearAheadPhase[], parsed: ParsedTransit[]): void {
-  const real = new Set(parsed.map((t) => describeTransit(t)));
+  // A cited line is the dated form (citeTransit) or, in drafts made before
+  // dates were added, the bare form (describeTransit). Either must be in the data.
+  const real = new Set(parsed.flatMap((t) => [citeTransit(t), describeTransit(t)]));
   for (const phase of phases) {
     for (const cited of phase.transits) {
       if (!real.has(cited)) {
@@ -43,20 +46,22 @@ export function validateCitedTransits(phases: YearAheadPhase[], parsed: ParsedTr
 }
 
 /** Assemble the validated YearAhead from the model's flat JSON + parsed transit data. */
-function assemble(parsed: ParsedTransit[], j: any, timeframe?: string): YearAhead {
+export function assemble(parsed: ParsedTransit[], j: any, timeframe?: string): YearAhead {
   const byId = new Map(parsed.map((t) => [t.id, t]));
 
   const phases: YearAheadPhase[] = SPIRAL_ORDER.map((element) => {
     const p = j.phases?.[element] ?? {};
     const ids: number[] = (Array.isArray(p.transitIds) ? p.transitIds : [])
       .map((n: any) => Number(n))
-      .filter((n: number) => byId.has(n));
+      .filter((n: number, i: number, all: number[]) => byId.has(n) && all.indexOf(n) === i)
+      // Cited most significant first; anything past the cap is dropped.
+      .slice(0, YEAR_AHEAD_MAX_CITED);
     return {
       element,
       title: String(p.title || ''),
       timeframe: p.timeframe ? String(p.timeframe) : undefined,
       // Rendered from DATA — the model's only authority here is the ID list.
-      transits: ids.map((id) => describeTransit(byId.get(id)!)),
+      transits: ids.map((id) => citeTransit(byId.get(id)!)),
       body: String(p.body || ''),
       question: p.question ? String(p.question) : undefined,
       practice: p.practice?.prompt

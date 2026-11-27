@@ -13,6 +13,9 @@
  * fresh (precedent: portraits/andrea.ts).
  */
 
+/** Most transits a phase may cite (founder, 2026-11-27: up to 19 when relevant and useful). */
+export const YEAR_AHEAD_MAX_CITED = 19;
+
 export const YEAR_AHEAD_OUTPUT_CONTRACT = `Return ONLY a JSON object (no markdown, no prose outside JSON) with EXACTLY these keys:
 {
   "subtitle": "a short evocative name for the year's arc, e.g. The Spiral of Emergence",
@@ -30,7 +33,7 @@ export const YEAR_AHEAD_OUTPUT_CONTRACT = `Return ONLY a JSON object (no markdow
   "questions": ["3-5 living questions to carry through the year — not goals, not predictions"],
   "closing": { "title": "A Word for the Year", "body": "1 short closing paragraph or blessing" }
 }
-Every "transitIds" entry MUST be one of the transit ID numbers listed in the data (cite by number only). Each phase needs at least one transit ID. Assign each transit to the ONE phase it most belongs to; you may leave a transit uncited if it fits nowhere, but never invent one.`;
+Every "transitIds" entry MUST be one of the transit ID numbers listed in the data (cite by number only). Each phase needs at least one transit ID and at most ${YEAR_AHEAD_MAX_CITED}, most significant first. Cite a transit only if it is relevant and useful to that season — the slow, long-running ones usually carry it; a brief one (Mars especially) earns a place only when it marks a real turn. Cite each transit in the ONE phase it most belongs to. Leave uncited whatever adds nothing; never invent one.`;
 
 export function yearAheadSystemPrompt(opts: {
   name: string;

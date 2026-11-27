@@ -273,6 +273,33 @@ export function describeTransit(t: ParsedTransit): string {
   return `${t.body} ${phrase(t.natalPoint || '')}`;
 }
 
+/** "April 2, 2026" → "Apr 2, 2026"; a date it cannot read is kept as printed. */
+function shortDate(date: string): string {
+  const ms = Date.parse(`${date} 12:00 UTC`);
+  if (!Number.isFinite(ms)) return date;
+  return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+/**
+ * The line a Year Ahead phase cites: the transit with its dates, all from
+ * DATA — "Jupiter in trine with your Sun (exact Sep 20, 2026; Mar 23, 2027 R)".
+ * Without an exact pass it gives the span in orb. Two passes of one transit
+ * therefore never read as a repeat.
+ */
+export function citeTransit(t: ParsedTransit): string {
+  const what = describeTransit(t);
+  let when = '';
+  if (t.exactDates.length) {
+    const passes = t.exactDates.map((e) => `${shortDate(e.date)}${e.retrograde ? ' R' : ''}`).join('; ');
+    when = t.kind === 'ingress' ? passes : `exact ${passes}`;
+  } else if (t.beginDate && t.endDate) {
+    when = `${shortDate(t.beginDate)} – ${shortDate(t.endDate)}`;
+  } else if (t.beginDate) {
+    when = `from ${shortDate(t.beginDate)}`;
+  }
+  return when ? `${what} (${when})` : what;
+}
+
 /** Compact factual line for the prompt: what + when, nothing interpretive. */
 function transitFactLine(t: ParsedTransit): string {
   const what =
