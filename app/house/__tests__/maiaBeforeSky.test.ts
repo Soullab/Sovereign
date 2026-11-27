@@ -7,7 +7,7 @@ const page = fs.readFileSync(path.join(process.cwd(), 'app/house/page.tsx'), 'ut
 
 test('MAIA’s presence comes before the current-sky panel in the page order', () => {
   const maia = page.indexOf('aria-label="House presence"');
-  const sky = page.indexOf('<CurrentTransitsField variant="house" />');
+  const sky = page.indexOf('<CurrentTransitsField variant="house" proAstrology={proAstrologyAdmitted} />');
   expect(maia).toBeGreaterThan(-1);
   expect(sky).toBeGreaterThan(maia);
 });

@@ -69,7 +69,7 @@ describe('what MAIA is told', () => {
   });
 
   it('explains Free and Pro as rooms, not priced plans, and never as public', () => {
-    expect(text).toContain('Free Astrology and Astrology Pro are two different rooms');
+    expect(text).toContain('Basic Astrology and Astrology Pro are two different rooms');
     expect(text).toContain('there are no prices or tiers to quote');
     expect(text).toContain('open at present to invited testers');
     expect(text).toContain('open by individual invitation');
