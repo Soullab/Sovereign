@@ -17,13 +17,15 @@
  * ⛔ NOT AUTHORIZATION. A practitioner row, studioMode, or any subscription
  * claim is NOT proof of a paid entitlement. Those facts are accepted in the
  * input type so the tests can show they have no effect; `proStudioEntitlement`
- * must come from a verified entitlement source, which does not exist yet — so
- * production callers must pass 'absent' until it does.
+ * must come from a verified entitlement source. That source is the provenance-
+ * bearing Pro Studio grant (`pro_studio_grants`, read by lib/proStudio/grant via
+ * `readProStudioGrant`); it is the ONLY thing that may yield 'verified'. Anything
+ * else, including an unreadable grant table, is 'absent'.
  *
  * Founder ruling (2026-11-27): the founder allowlist (FOUNDER_MEMBER_IDS, read
  * server-side via lib/founder/founderAuth) is OPERATOR access, not a paid
- * entitlement, and opens the full workspace now. Every other member keeps the
- * limited entry until the dedicated provenance-bearing Pro Studio grant exists.
+ * entitlement, and opens the full workspace. It is a separate fact from the
+ * Pro Studio grant; neither stands in for the other.
  * `founderAccess` must come from isFounderMemberId(session.memberId), never a
  * client claim, tier, practitioner row or studioMode.
  *
@@ -37,7 +39,7 @@ export type PersonalPortalEntrance = 'signed_out_intro' | 'personal_space';
 
 export interface EntranceFacts {
   signedIn: boolean;
-  /** 'verified' ONLY from a verified entitlement source. Never inferred. */
+  /** 'verified' ONLY from a current Pro Studio grant (lib/proStudio/grant). Never inferred. */
   proStudioEntitlement: 'verified' | 'absent';
   /** True ONLY when the server-side founder allowlist names this member. */
   founderAccess?: boolean;

@@ -1,0 +1,21 @@
+-- Rollback for 20261127000001_pro_studio_grants.sql (HOUSE-ENTRANCE-01 Pro Studio grant).
+--
+-- Refuses if any grant row exists, revoked or not: each row is a provenance record of
+-- who was given the workspace, by whom and by which path. Export it deliberately first.
+-- With the table gone the reader fails closed: every member gets the learn-and-try page.
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+
+DO $$
+BEGIN
+  IF to_regclass('public.pro_studio_grants') IS NOT NULL
+     AND EXISTS (SELECT 1 FROM pro_studio_grants) THEN
+    RAISE EXCEPTION 'Refusing rollback: pro_studio_grants holds provenance records. Export them deliberately first.';
+  END IF;
+END $$;
+
+-- Dropping the table drops its triggers with it.
+DROP TABLE IF EXISTS pro_studio_grants;
+DROP FUNCTION IF EXISTS pro_studio_grants_guard();
+
+COMMIT;
