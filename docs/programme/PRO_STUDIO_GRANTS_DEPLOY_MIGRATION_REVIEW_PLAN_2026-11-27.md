@@ -26,6 +26,7 @@ First-parent merges on canonical since `6c1c7e51b`, as observed by the harness t
 | #2406 | Reflections design doc | no |
 | #2443 | JARVIS isolation profile settings and manual | no |
 | #2449 | Home "Your Pro rooms": `lib/house/proRooms.ts`, `app/house/page.tsx`, House CSS and tests | yes |
+| #2447 | Year-ahead report cites transits: `lib/soulPortrait/generator/*` | yes, does not read or write `pro_studio_grants` |
 | this PR | this plan, and the merge of `68d6b6eaf` | no |
 
 The reviewer should treat the target's application diff from the old reader as code that needs
