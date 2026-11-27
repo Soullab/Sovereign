@@ -14,7 +14,7 @@ import { canUseHouseStudioH1 } from '@/lib/access/houseStudioH1Access';
 import { houseWritingHref } from '@/app/writers-studio/h1Arrival';
 import { houseWriterStudioHref } from '@/lib/house/houseCabinContext';
 import { CurrentTransitsField } from '@/components/astrology/CurrentTransitsField';
-import { proMemberAllowed } from '@/lib/astrology/proAccess';
+import { proRoomsForMember } from '@/lib/house/proRooms';
 
 const GROUNDS = [
   { href: '/relationships', label: 'People', line: 'Return to the relationships you are tending' },
@@ -35,8 +35,10 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
     ? cabinHousePreferences(member.id)
     : await readHousePreferences(member.id, query);
   const passingQuote = selectPassingQuote(PASSING_QUOTES, new Date());
-  // Astrology Pro admits by its own grant (lib/astrology/proAccess.ts); a failed check admits no one.
-  const proAstrologyAdmitted = !cabinOffline && await proMemberAllowed(member.id, process.env).catch(() => false);
+  // Each Pro room admits by its own grant (lib/house/proRooms.ts); a failed check admits no one.
+  const proRooms = cabinOffline ? [] : await proRoomsForMember(member.id);
+  // Astrology Pro admits by its own grant (lib/astrology/proAccess.ts) via proMemberAllowed.
+  const proAstrologyAdmitted = proRooms.some((room) => room.id === 'pro-astrology');
 
   return (
     <HousePreferencesProvider initial={housePreferences} key={housePreferences.tag.split('-')[1]}>
@@ -87,6 +89,20 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
 
         <HouseCenter />
         <HouseQuickAccessStacked />
+
+        {/* Founder direction 2026-11-27: Pro rooms the member holds appear here automatically. */}
+        {proRooms.length > 0 ? (
+          <section className={styles.proRooms} aria-labelledby="home-pro-rooms-title">
+            <p id="home-pro-rooms-title">YOUR PRO ROOMS</p>
+            {proRooms.map((room) => (
+              <Link key={room.id} className={styles.proRoom} href={room.href}>
+                <span className={styles.proRoomLabel}>{room.label}</span>
+                <span className={styles.proRoomPurpose}>{room.purpose}</span>
+                <span aria-hidden="true">→</span>
+              </Link>
+            ))}
+          </section>
+        ) : null}
 
         {/* HOUSE-MOBILE-01 (phones and iPads): the sky and what's alive as one line each.
             Wide screens keep the full sky panel and the What's alive row below. */}

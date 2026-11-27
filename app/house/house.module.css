@@ -440,3 +440,12 @@
   .goLive.goLiveNarrow span { flex: 1 1 auto; min-width: 0; }
   .goLive.goLiveNarrow a { flex: 0 0 auto; white-space: nowrap; font-size: 22px; }
 }
+
+/* Founder direction 2026-11-27: Pro rooms the member holds, on every width. */
+.proRooms { position: relative; z-index: 1; margin-top: 28px; border-top: 1px solid rgba(225, 193, 147, .2); }
+.proRooms > p { margin: 16px 4px 4px; color: #cdbda5; font: 10px/1.6 Arial, sans-serif; letter-spacing: .32em; }
+.proRoom { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 4px; border-bottom: 1px solid rgba(225, 193, 147, .14); color: #efe6d6; text-decoration: none; }
+.proRoom:hover, .proRoom:focus-visible { color: #e8be78; }
+.proRoomLabel { font: 18px/1.2 Georgia, serif; white-space: nowrap; }
+.proRoomPurpose { flex: 1 1 auto; min-width: 0; color: #b9aa93; font: 13px/1.4 Arial, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 480px) { .proRoomPurpose { display: none; } .proRoom { justify-content: space-between; } }
