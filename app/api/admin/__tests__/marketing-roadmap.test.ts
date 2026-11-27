@@ -67,6 +67,8 @@ describe('story candidates carry their claim layer', () => {
     for (const st of ROADMAP.stories) {
       expect(['Live', 'Designed', 'Vision']).toContain(st.layer);
       expect(st.gate.length).toBeGreaterThan(0);
+      // Claim discipline: a story may be Live only with a recorded witness.
+      if (st.layer === 'Live') expect(st.witness).toBeTruthy();
     }
     const web = ROADMAP.stories.find((st) => st.name === 'Reflections · the Web');
     expect(web?.layer).toBe('Designed');
