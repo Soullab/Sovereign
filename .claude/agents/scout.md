@@ -4,6 +4,7 @@ description: Finds files and answers narrow questions about the MAIA-SOVEREIGN c
 tools: Read, Glob, Grep
 model: haiku
 effort: low
+omitClaudeMd: true
 hooks:
   PreToolUse:
     - matcher: "Read|Grep|Glob"
