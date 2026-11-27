@@ -27,6 +27,18 @@ start with it in the prompt.
   - **Critical path proposed:** J3 fidelity-instrument repair (refusal + jest reds) → R1–R5 → consent/context ownership → Writer model seam → grant contract from `workReadScope`. J7–J9 remain HOLD (#1898, R20).
   - **Open founder decisions:** D-01 placement in #1910 · D-02 OpenAI rule · D-03 one owner per truth · D-04 governance-document custody · D-05 memo claim labels before marketing · D-06 open J3.
   - **Not authorized:** source change, worker dispatch, migration, member data, push, PR, merge, deploy, GitHub post. Production not re-witnessed.
+- **2026-11-25 — First reconciliation remedy: covert Bloom steering removed + Field Safety gate scoped · MERGED, DEPLOYED, PRODUCTION-WITNESSED (SOULLAB-CONTINUITY-01 #1982) · ⭐ FOUNDER RULINGS TAKEN (Kelly, in session):**
+  - "Yes, draft proposal"; "Yes, post pointer"; founder merge of #2411; "best practice" (= prepare only); "Yes, cut over"; "Yes, record it".
+  - **Change:** PR #2411, fix commit `45a83b4456`, merged as `7591d87f2d`. Plan §5b of `docs/programme/CODE_TO_CANON_RECONCILIATION_PLAN_2026-11-25.md`.
+    - Covert steering removed on FAST, DEEP and CORE ("Pull them toward Level N+1 … Do NOT mention Bloom's Taxonomy"; CORE "Scaffold toward…" via `lib/sovereign/maiaVoice.ts`, a third channel found while building). Bloom detection and logging are unchanged.
+    - `enforceFieldSafety` refuses only when `fieldWorkRequested: true` (default false; no caller sets it). Downstream code reads the router verdict, never the gate's pass.
+    - Guards: refusal **R32** (registered in the harness and `REFUSAL_REGISTRY.md`) and `lib/field/__tests__/enforceFieldSafety.scope.test.ts`.
+  - **Deploy:** `prepare-maia 7591d87f2` (Co-Lab 32/0/0, no pending migrations, rollback baseline `c758fa66f` frozen), then `cutover-maia 7591d87f2` at 22:50:23Z. Provenance verified on both channels; `DEPLOY_LANE=deploy-lane`; `/api/health` reports `version: 7591d87f2`.
+  - **Production witness (log markers only, no member content), one founder turn at 23:21:20Z:** scaffold-injection lines 0; "COGNITIVE SCAFFOLDING" text 0; Bloom detection 1 (level 2); Field Safety "Blocked" 0; errors none. The tier of that turn is not established from the logs.
+  - **Limits:** one turn only. The Field Safety gate did not run (no cognitive profile; `cognitive_turn_events` still empty), so its change stands on tests, not runtime. Public reachability from outside the LAN is not confirmed by a cellular check.
+  - **Pre-existing red, DISCOVERED and not addressed (identical on base `a93a34639d`):** refusal harness 6 failures (R03, R-A5, R24); jest 11 failures across 4 suites, including `__tests__/voice-non-degradation.test.ts` PROBES (the Deep-Intelligence Gate pin).
+  - **Workstation note:** Chrome on the Mac Studio reported `ERR_ADDRESS_UNREACHABLE` for soullab.life while the server answered 200. Chrome launched from the shell loaded the page, so the fault was workstation-side, not production. Suspected cause: a stale macOS Local Network grant (split-horizon `/etc/hosts` → `192.168.4.38`), not confirmed. The founder's browser then loaded `/api/health`.
+  - ⛔ **Still open (founder rulings):** plan R1–R5; awareness ladder, teloi provenance, engagement scoring, streaks; repair of the `cognitive_turn_events` writer (failure unattributed, HELD); any surface requesting field work. The #1819 LoRA hold is unchanged.
 
 - **2026-11-25 — Epistemic and teleological discernment review + code-to-canon reconciliation plan (SOULLAB-CONTINUITY-01 #1982) · ⭐ FOUNDER RULINGS TAKEN (Kelly, in session):**
   - "Yes, read-only review"; "Yes, post pointer"; "Yes, counts only" (×2); "Yes, DB count only" (×2); "Yes, review scaffold"; "Yes, docs PR".

@@ -111,3 +111,46 @@ describe('Soul Portrait inside Pro', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('Year Ahead source', () => {
+  const radio = (text: string) =>
+    Array.from(container.querySelectorAll('label')).find((l) => l.textContent?.includes(text))!
+      .querySelector('input[type="radio"]') as HTMLInputElement;
+  const sent = async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ previewUrl: '/p' }) });
+    await act(async () => { button('Write draft').click(); });
+    return JSON.parse(fetchMock.mock.calls[0][1].body);
+  };
+
+  it('calculates transits from the chart by default — no report to paste', async () => {
+    render();
+    expect(radio('Calculate from this chart').checked).toBe(true);
+    expect(container.querySelector('textarea')).toBeNull();
+    const body = await sent();
+    expect(body.transitSource).toBe('calculated');
+    expect(body.transitReport).toBeUndefined();
+  });
+
+  it('still accepts a pasted report, and sends only that', async () => {
+    render();
+    act(() => radio('Paste a transit report').click());
+    expect(button('Write draft').disabled).toBe(true); // nothing pasted yet
+    const area = container.querySelector('textarea') as HTMLTextAreaElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+      setter.call(area, 'Transiting Pluto in opposition with natal Jupiter\nMarch 4, 2026 until January 10, 2027');
+      area.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const body = await sent();
+    expect(body.transitSource).toBeUndefined();
+    expect(body.transitReport).toContain('Transiting Pluto');
+  });
+
+  it('sends no transits when the Year Ahead is left out', async () => {
+    render();
+    act(() => radio('No Year Ahead').click());
+    const body = await sent();
+    expect(body.transitSource).toBeUndefined();
+    expect(body.transitReport).toBeUndefined();
+  });
+});
