@@ -787,57 +787,60 @@ chart.soullab.life {
 # ⚠️ DNS A records for these four hosts must exist BEFORE this block is deployed,
 #    or Caddy's ACME certificate requests fail (and are retried) for each host.
 # ═══════════════════════════════════════════════════════════════════════════════
-writer.soullab.life, sound.soullab.life, guide.soullab.life, astrology.soullab.life {
-    import deny_disabled_routes
-    # Writer rollback compensation — same per-host holds as every other proxied host.
-    @writer_member_render_post_doorway {
-        method POST
-        path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
-    }
-    handle @writer_member_render_post_doorway {
-        header Cache-Control "private, no-store"
-        respond "Book file downloads are awaiting certification" 423
-    }
-
-    @founder_original_render_post_doorway {
-        method POST
-        path_regexp ^/api/book-studio/render(?:/epub)?/?$
-    }
-    handle @founder_original_render_post_doorway {
-        header Cache-Control "private, no-store"
-        respond "Book rendering is awaiting authorization review" 423
-    }
-
-    @historical_public_export_path_doorway path /exports /exports/* /exports%*
-    handle @historical_public_export_path_doorway {
-        header Cache-Control "private, no-store"
-        respond "Not found" 404
-    }
-
-    reverse_proxy maia-sovereign:3000 {
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-    }
-
-    header {
-        X-MAIA-Origin "caddy-sovereign-studio-doorway"
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Frame-Options "SAMEORIGIN"
-        X-Content-Type-Options "nosniff"
-        -Server
-    }
-
-    encode gzip zstd
-
-    log {
-        output file /var/log/caddy/studio-doorways-access.log {
-            roll_size 10mb
-            roll_keep 5
-        }
-    }
-}
+# ⛔ DISABLED 2026-11-27 (founder ruling): the four doorway hosts have no DNS A records yet.
+#    To re-enable after DNS exists: uncomment the block below (strip one leading "# "),
+#    then validate. It already carries the per-host Writer holds.
+# writer.soullab.life, sound.soullab.life, guide.soullab.life, astrology.soullab.life {
+#     import deny_disabled_routes
+#     # Writer rollback compensation — same per-host holds as every other proxied host.
+#     @writer_member_render_post_doorway {
+#         method POST
+#         path_regexp ^/api/sovereign/manuscripts/[^/]+/render/?$
+#     }
+#     handle @writer_member_render_post_doorway {
+#         header Cache-Control "private, no-store"
+#         respond "Book file downloads are awaiting certification" 423
+#     }
+#
+#     @founder_original_render_post_doorway {
+#         method POST
+#         path_regexp ^/api/book-studio/render(?:/epub)?/?$
+#     }
+#     handle @founder_original_render_post_doorway {
+#         header Cache-Control "private, no-store"
+#         respond "Book rendering is awaiting authorization review" 423
+#     }
+#
+#     @historical_public_export_path_doorway path /exports /exports/* /exports%*
+#     handle @historical_public_export_path_doorway {
+#         header Cache-Control "private, no-store"
+#         respond "Not found" 404
+#     }
+#
+#     reverse_proxy maia-sovereign:3000 {
+#         header_up Host {host}
+#         header_up X-Real-IP {remote_host}
+#         header_up X-Forwarded-For {remote_host}
+#         header_up X-Forwarded-Proto {scheme}
+#     }
+#
+#     header {
+#         X-MAIA-Origin "caddy-sovereign-studio-doorway"
+#         Strict-Transport-Security "max-age=31536000; includeSubDomains"
+#         X-Frame-Options "SAMEORIGIN"
+#         X-Content-Type-Options "nosniff"
+#         -Server
+#     }
+#
+#     encode gzip zstd
+#
+#     log {
+#         output file /var/log/caddy/studio-doorways-access.log {
+#             roll_size 10mb
+#             roll_keep 5
+#         }
+#     }
+# }
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Elemental Alchemy Audiobook
