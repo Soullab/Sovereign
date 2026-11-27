@@ -32,10 +32,13 @@ type BirthChartLike = {
 export function CurrentTransitsField({
   birthChart,
   variant = 'astrology',
+  proAstrology = false,
 }: {
   birthChart?: BirthChartLike | null;
   /** 'line' (House on phones/iPad, 2026-11-05): one quiet row, the full sky lives in Astrology. */
   variant?: 'astrology' | 'house' | 'line';
+  /** House only: the member is admitted to Astrology Pro (decided on the server). */
+  proAstrology?: boolean;
 }) {
   const canOpenAstrology = useAstrologyTester();
   const [positions, setPositions] = useState<TransitPosition[]>([]);
@@ -165,8 +168,12 @@ export function CurrentTransitsField({
             {/* Free Astrology is testers-only (lib/astrology/testerGate.ts); no door for anyone else. */}
             {canOpenAstrology ? (
               <Link href="/astrology">
-                {variant === 'house' ? 'Open Astrology →' : 'Explore the moment in your chart →'}
+                {variant === 'house' ? (proAstrology ? 'Open Basic Astrology →' : 'Open Astrology →') : 'Explore the moment in your chart →'}
               </Link>
+            ) : null}
+            {/* Astrology Pro admits by its own grant, independent of the Basic tester flag. */}
+            {variant === 'house' && proAstrology ? (
+              <Link href="/astrology/pro-preview">Open Pro Astrology →</Link>
             ) : null}
           </div>
         </>

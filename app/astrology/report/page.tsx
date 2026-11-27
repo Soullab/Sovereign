@@ -7,7 +7,7 @@ export default function AstrologyReportHeldPage() {
       <div className="mx-auto max-w-3xl space-y-8">
         <Link href="/astrology" className="inline-flex items-center gap-2 text-amber-200/60 hover:text-amber-200">
           <ArrowLeft className="h-4 w-4" />
-          Back to Free Astrology
+          Back to Basic Astrology
         </Link>
         <section className="rounded-2xl border border-amber-500/20 bg-amber-950/10 p-8">
           <div className="flex items-center gap-3 text-amber-200">

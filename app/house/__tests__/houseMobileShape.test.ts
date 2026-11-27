@@ -11,7 +11,7 @@ const css = read('app/house/house.module.css');
 
 test('the full directory and full sky panel are wide-screen only', () => {
   expect(page).toContain('<div className={styles.wideOnly}><HouseDirectory /></div>');
-  expect(page).toContain('<div className={styles.wideOnly}><CurrentTransitsField variant="house" /></div>');
+  expect(page).toContain('<div className={styles.wideOnly}><CurrentTransitsField variant="house" proAstrology={proAstrologyAdmitted} /></div>');
   expect(css).toMatch(/@media \(max-width: 1200px\) \{\s*\.wideOnly \{ display: none !important; \}/);
 });
 
