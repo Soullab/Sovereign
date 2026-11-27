@@ -635,6 +635,39 @@
   font-size:17px;
   font-weight:400;
 }
+.skyContacts{
+  margin-top:20px;
+  padding:16px 18px;
+  border:1px solid rgba(132,154,179,.14);
+  border-radius:9px;
+  background:rgba(132,154,179,.035);
+}
+.skyContacts small{
+  display:block;
+  color:#8fa5bd;
+  font:12px/1.4 Arial,sans-serif;
+  letter-spacing:.12em;
+}
+.skyContacts ul{
+  margin:10px 0 0;
+  padding:0;
+  list-style:none;
+}
+.skyContacts li{
+  padding:6px 0;
+  color:#9f9384;
+  font-size:15px;
+  line-height:1.5;
+}
+.skyContacts li strong{
+  color:#d7ccbd;
+  font-weight:400;
+}
+.skyContacts p{
+  margin:10px 0 0;
+  color:#9f9384;
+  font-size:15px;
+}
 .skyBoundary,.skyStatus{
   margin:16px 0 0;
   color:#9f9384;

@@ -25,19 +25,22 @@ current_authority: docs/research/human-experience/SYNTHESIS_v0.2_2026-09-06.md  
 foundational_research_R1_R7: COMPLETE (v0.1, historical)
 challenge_pass_R8_R12: CLOSED / COMPLETE (all five ADJUDICATED)
 synthesis_v0_2: ACCEPTED — current programme synthesis; P1–P13 CANDIDATE; empirical postures provisional
-current_phase: "1 — Whole-organism map"   # opened by founder act 2026-09-06 (pivot: "The next frontier is MAIA herself")
-current_act: READ-ONLY CENSUS of every MAIA/AIN subsystem against v0.2 → one ranked map for founder adjudication
+phase_2_posture: OBSERVE · DO NOT DESIGN — new instruments HOLD, new implementation HOLD; a result returns to the register as an evidence-state change (observed | downgraded | falsified | still unknown | instrument-inadequate), never as a repair
+current_phase: "2 — Gap analysis / Phase-2 register"   # Phase 1 EXITED on 573d5268 by founder adjudication 2026-09-06 (ranked map §9)
+current_act: Plane A constitutional decisions recorded (A1–A6) · Plane B ranking 1–10 seeds the register · read-only production censuses AUTHORIZED (spec written; run from minisforum, not here) · E1 correction-candidate shadow BUILT + GATED (R32; deploy = founder act; unwitnessed) · human witnesses DESIGN-ONLY
 phase_0_5_residual: MERGE RULING on PR #1239 still a founder stop; no longer sequenced before Phase 1
 manifesto_expansion: FROZEN (founder, 2026-09-06) — /accounted-for is secondary; revised only at phase boundaries or when a label's warrant changes
-current_public_artifact: /accounted-for
-current_pr: "#1239 · DRAFT"
+publication_lane: JARVIS-PUBLIC-ACCOUNTED-FOR-01   # owns /accounted-for, its source of record, reconciliation record, contract, screenshots, PR #1239 (split 2026-09-06)
+current_public_artifact: /accounted-for — DELEGATED to the publication lane; this run supplies accepted outputs only
+current_pr: "#1239 · DRAFT — custody with the publication lane; this run does not write to it"
+rd_branch: claude/maia-human-experience-phase1-census   # cut at containment SHA a7b42f29
 merge: NOT AUTHORIZED
 deploy: NOT AUTHORIZED
 maia_runtime_change: NOT AUTHORIZED
 member_research: NOT AUTHORIZED
 collective_laboratory: NOT BUILT
-next_phase_on_exit: "2 — Gap analysis (founder ranks the map; Jarvis proposes)"
-last_state_change: 2026-09-06 (founder pivot — Phase 1 opened; manifesto frozen; master run promoted)
+next_phase_on_exit: "3 — Experimental programme (each experiment its own founder act; E1 shadow, E5 offline, E7 shadow already sequenced)"
+last_state_change: 2026-09-06 (instruments complete and accepted; lane crossed into evidence collection — E1 deploy → census, C5 early → E5 synthetic)
 ```
 
 ```text
@@ -46,9 +49,9 @@ PURPOSE                Understand the Human Question: Self · Relationship · Wo
 AI POSITION            Emergent participant — important, secondary, not center
 CURRENT AUTHORITY      Synthesis v0.2
 FOUNDATIONAL CHALLENGE CLOSED
-CURRENT ACT            Phase 1 — whole-organism census (read-only); merge ruling on #1239 pending in parallel
-CURRENT PUBLIC ARTIFACT /accounted-for
-CURRENT PR             #1239 · DRAFT
+CURRENT ACT            Phase 2 — register seeded from the founder ranking; censuses authorized; E1 shadow first; merge ruling on #1239 with the publication lane
+CURRENT PUBLIC ARTIFACT /accounted-for — delegated to JARVIS-PUBLIC-ACCOUNTED-FOR-01
+CURRENT PR             #1239 · DRAFT — publication-lane custody; R&D branch = claude/maia-human-experience-phase1-census
 MERGE                  NOT AUTHORIZED
 DEPLOY                 NOT AUTHORIZED
 MAIA RUNTIME CHANGE    NOT AUTHORIZED
@@ -100,38 +103,22 @@ without a founder act; new questions go to CONTESTED_QUESTIONS and are worked in
 
 ---
 
-## 4 · Phase 0.5 — Public artifact closure · **RESIDUAL founder stop (merge ruling); manifesto expansion FROZEN**
+## 4 · Phase 0.5 — Public artifact closure · **DELEGATED to `JARVIS-PUBLIC-ACCOUNTED-FOR-01` (lane split, 2026-09-06)**
 
 ```text
-PROGRAMME STATE   v0.2 ACCEPTED → reconciliation RUN → /accounted-for FINAL COPY on branch → verification STRUCTURAL → render + gates DONE → MERGE RULING pending
-CURRENT ACT       MERGE RULING (founder stop)
-INPUT AUTHORITIES SYNTHESIS_v0.2 · MARKETING_CLAIM_DISCIPLINE · CLAIM_STATE_AUTHORITY · CLAIM_LADDER · CLAIM_RECONCILIATION record · Experience Contract accounted-for.md · pitch source of record §7a–§7c
-TASKS (Jarvis)    keep the page reconciled if v0.2 changes · keep render + gates green · paraphrase-check sources in ledger priority order as egress allows; on each check, re-read the page for any sentence that gained or lost warrant · maintain PR #1239 as DRAFT
-FOUNDER STOPS     merge ruling · deploy ruling · any public claim beyond the page · any outreach
-EXIT GATE         founder merge ruling recorded in charter; PR merged (or closed with reason); deploy ruled separately; the page live carries no sentence above its rung
-OUTPUTS           charter §25 (merge ruling) · merged PR or closure record · deploy record if authorized · state block advanced
-NEXT PHASE        1 — Whole-organism map (OPENED by founder act 2026-09-06 without waiting for this exit; the merge ruling remains pending in parallel)
+CUSTODY           /accounted-for · pitch source of record · claim-reconciliation record · Experience Contract + screenshots · PR #1239 → JARVIS-PUBLIC-ACCOUNTED-FOR-01
+THIS RUN          supplies accepted outputs (v0.2 and later synthesis states; principle/AP/U states; experiment outcomes) — it does not edit, render, gate, or maintain the page or PR #1239
+DIRECTION         R&D / canon / runtime evidence → claim reconciliation → page → public; never the reverse
+STATE AT SPLIT    reconciliation RUN · final copy DONE · verification STRUCTURAL · render + gates DONE at cf6d9ebf; merge ruling = founder stop, in the publication lane
+CONTAINMENT       final containment SHA a7b42f29 (charter §25); every R&D commit before it on the #1239 branch preserved, not rewritten
+NEXT PHASE        1 — Whole-organism map (already CURRENT; opened by founder act without waiting on the merge ruling)
 ```
 
-Sub-sequence, with today's state:
+The manifesto freeze (founder, 2026-09-06) is carried by the publication lane's charter; this run
+revises nothing on the page. When a phase boundary changes what may be said publicly, this run
+records the change in the charter and the publication lane translates it.
 
-```text
-SYNTHESIS v0.2                         ACCEPTED
-      ↓
-CLAIM-DISCIPLINE RECONCILIATION        RUN — 32-row record
-      ↓
-/accounted-for FINAL                   DONE on branch (seventh revision)
-      ↓
-SOURCE / CLAIM VERIFICATION            STRUCTURAL — no sentence depends on a source's content; paraphrase backlog open
-      ↓
-RENDER + GATES                         DONE — design-canon · no-supabase · diff-check · typecheck no-regression
-      ↓
-MERGE RULING                           ← FOUNDER STOP (here)
-```
-
----
-
-## 5 · Phase 1 — Whole-organism map · **CURRENT** (opened 2026-09-06)
+## 5 · Phase 1 — Whole-organism map · **CLOSED 2026-09-06 on `573d5268`** (founder adjudication in `MAIA_WHOLE_ORGANISM_MAP/00_RANKED_MAP.md` §9)
 
 **Overriding instruction (founder, verbatim):** *The Human Experience Architecture exists to
 change MAIA and AIN, not merely to describe them. Begin the whole-organism mapping. For every
@@ -261,12 +248,28 @@ This map is the next-generation MAIA roadmap's source. **No parallel roadmap is 
 
 ---
 
-## 6 · Phase 2 — Gap analysis · opens on Phase 1 exit
+## 6 · Phase 2 — Gap analysis / register · **CURRENT** (opened 2026-09-06 on the founder ranking)
+
+> **MAIA's next problem is not becoming more intelligent. It is making the sources, limits,
+> corrections, and consequences of its intelligence genuinely relational.** (founder, Phase 1 exit)
+
+**Two planes (founder).** Plane A — constitutional decisions (A1 no OpenAI voice egress outside
+the funnel · A2 ephemeral = no long-term write, Sanctuary reachable and governing cognition · A3
+inference never silently acquires member-authored standing · A4 claim discipline · A5 X1a · A6
+X9a) are governance work, sequenced first and never ranked against experiments. Plane B — the
+R&D ranking 1–10 (correction instrument → plurality before interpretation, E5 → E11 → E6 →
+inspectable participation → transfer beyond MAIA as measurement architecture → living-revision
+memory → honest in both directions → FAST floor → validator authority → house vocabulary →
+familiarity/provenance) seeds the register. Register: `docs/programme/HUMAN_EXPERIENCE_GAP_REGISTER.md`.
+Authorized now: all §4 read-only censuses (spec `PHASE2_READONLY_CENSUS_SPEC_2026-09-06.md`);
+shadows sequentially E1 → E5(offline) → E7 → E11/E6 (after E5) → E12 (after coverage census);
+human witnesses design-only around phenomenological falsifiers; Cat 4 quarantine current, not exhaustive.
+
 
 ```text
 INPUT AUTHORITIES MAIA_WHOLE_ORGANISM_MAP · v0.2 §3–§5 · CONTESTED_QUESTIONS
 TASKS (Jarvis)    build the gap register in four classes — principle · instrument · consent · architecture — each row with leverage, risk, hierarchy position, the smallest prototype that would test it, and which experiment (E1–E10) or new hypothesis it feeds; add a fifth class since v0.2: influence gaps (P4′ commitments absent or unknowable)
-FOUNDER STOPS     ranking (Jarvis proposes; founder ranks) · opening any experiment · any repair
+FOUNDER STOPS     re-ranking · running any census (minisforum; ops) · each shadow instrument's deploy · each Plane A remedy (governance work, each its own act) · opening any experiment beyond the sequenced shadows · any repair
 EXIT GATE         ranked gap register, founder-ranked, each row pointing to a Stage 10 hypothesis or to PARK with reason
 OUTPUTS           docs/programme/HUMAN_EXPERIENCE_GAP_REGISTER.md · re-cut of the MAIA roadmap *from* the register (the only roadmap)
 NEXT PHASE        3 — Experimental programme (each experiment its own founder act)
@@ -357,7 +360,7 @@ OUTPUTS           spec · shadow implementation · witness record · FIS candida
 
 ```text
 INPUT AUTHORITIES gap register (Phase 2) · experiment outcomes (Phase 3) · consented rows (Phase 4) · CLAIM_LADDER rung 5 with kind named · MARKETING_CLAIM_DISCIPLINE · CLAIM_STATE_AUTHORITY
-TASKS (Jarvis)    keep the roadmap cut from the register (never a parallel roadmap) · draft positioning only from rung-5 claims with their kind named · draft papers only from Phase 4 consented rows · revise /accounted-for at every phase boundary · maintain the public ledger
+TASKS (Jarvis)    keep the roadmap cut from the register (never a parallel roadmap) · draft positioning only from rung-5 claims with their kind named · draft papers only from Phase 4 consented rows · hand each phase boundary's accepted outputs to JARVIS-PUBLIC-ACCOUNTED-FOR-01, which revises /accounted-for and maintains the public ledger
 FOUNDER STOPS     every public claim · every outreach · every paper · brand decisions
 EXIT GATE         none — this phase is continuous once opened; it is the OBSERVE → … → LIFE / WORLD loop running
 ```

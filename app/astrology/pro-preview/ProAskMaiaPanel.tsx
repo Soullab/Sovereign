@@ -22,6 +22,7 @@
  * the other systems, and — for their OWN chart only, chosen each time — have
  * MAIA read it with what they have chosen to keep with her.
  */
+import { KEPT_PLACES } from '@/lib/navigation/keptPlaces';
 import { useEffect, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { apiFetch } from '@/lib/http/apiBase';
@@ -323,7 +324,7 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
             )}
             {canCarry && !e.safety && typeof e.turnIndex === 'number' && (
               e.carried
-                ? <p className={styles.provenance}>Kept with MAIA. You can see, seal or archive it in Keep.</p>
+                ? <p className={styles.provenance}>Kept with MAIA. You can see, seal or archive it in <a href={KEPT_PLACES.keep.href}>{KEPT_PLACES.keep.label}</a>.</p>
                 : (
                   <button type="button" className={styles.carry} disabled={carrying !== null || status === 'asking'}
                     onClick={() => void carry(i)}>

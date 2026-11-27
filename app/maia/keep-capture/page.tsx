@@ -31,8 +31,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { ELEMENT_ICONS, ELEMENT_TONES_ON_LIGHT } from '@/lib/reflections/labels';
 import { apiFetch } from '@/lib/http/apiBase';
 import { ReturnHome } from '@/components/navigation/ReturnHome';
+import Link from 'next/link';
+import { KEPT_PLACES } from '@/lib/navigation/keptPlaces';
 import { ELEMENTAL_LENS_PROMPTS } from '@/lib/psyche/types';
 import type {
   AtomGesture,
@@ -82,10 +85,15 @@ async function apiDelete<T>(url: string): Promise<T> {
 
 export default function KeepCapturePage() {
   const [kept, setKept] = useState<CrystallizedMemory[]>([]);
+  // Archived items stay findable and can be returned (Kelly, 2026-11-25:
+  // archive must mean "set aside, findable", not a disguised delete).
+  const [archived, setArchived] = useState<CrystallizedMemory[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
   const [candidates, setCandidates] = useState<PortfolioSourceCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeLensAtom, setActiveLensAtom] = useState<CrystallizedMemory | null>(null);
+  const [startLens, setStartLens] = useState<ElementalLens | null>(null);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -96,6 +104,11 @@ export default function KeepCapturePage() {
         apiGet<{ candidates: PortfolioSourceCandidate[] }>('/api/psyche/portfolio/source-candidates?sourceType=idea_block'),
       ]);
       setKept(keptResp.atoms.filter((a) => a.status !== 'archived'));
+      setArchived(
+        keptResp.atoms.filter(
+          (a) => a.status === 'archived' && a.sourceType !== 'practitioner_observation',
+        ),
+      );
       setCandidates(
         [...ideaResp.candidates, ...blockResp.candidates].filter((c) => !c.alreadyKept),
       );
@@ -178,6 +191,16 @@ export default function KeepCapturePage() {
           <p className="text-stone-500 mt-2">
             What do you want MAIA to keep?
           </p>
+          {/* The doorway to Reflections (founder ruling 2026-11-25). */}
+          <p className="text-sm text-stone-500 mt-4">
+            <Link
+              href={KEPT_PLACES.reflections.href}
+              className="text-amber-700 hover:text-amber-900 underline-offset-2 hover:underline"
+            >
+              {KEPT_PLACES.reflections.label} →
+            </Link>{' '}
+            {KEPT_PLACES.reflections.purpose}
+          </p>
         </header>
 
         {loading && (
@@ -201,7 +224,10 @@ export default function KeepCapturePage() {
                       key={atom.id}
                       atom={atom}
                       onGesture={(g) => applyGesture(atom.id, g)}
-                      onLook={() => setActiveLensAtom(atom)}
+                      onLook={(l) => {
+                        setStartLens(l ?? null);
+                        setActiveLensAtom(atom);
+                      }}
                     />
                   ))}
                 </ul>
@@ -243,7 +269,36 @@ export default function KeepCapturePage() {
               </section>
             )}
 
-            {kept.length === 0 && candidates.length === 0 && (
+            {archived.length > 0 && (
+              <section className="mb-12">
+                <button
+                  type="button"
+                  onClick={() => setShowArchived((v) => !v)}
+                  aria-expanded={showArchived}
+                  className="text-xs uppercase tracking-widest text-stone-400 hover:text-stone-600 mb-4"
+                >
+                  Archived ({archived.length}) {showArchived ? '▾' : '▸'}
+                </button>
+                {showArchived && (
+                  <>
+                    <p className="text-stone-500 text-sm mb-4">
+                      MAIA doesn&apos;t bring these back. Return one and it is kept again.
+                    </p>
+                    <ul className="space-y-3">
+                      {archived.map((atom) => (
+                        <ArchivedItem
+                          key={atom.id}
+                          atom={atom}
+                          onReturn={() => applyGesture(atom.id, { kind: 'return_to_active' })}
+                        />
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </section>
+            )}
+
+            {kept.length === 0 && candidates.length === 0 && archived.length === 0 && (
               <p className="text-stone-500">
                 When you develop ideas, the ones you choose to shape and refine
                 can appear here for you to keep.
@@ -256,6 +311,7 @@ export default function KeepCapturePage() {
       {activeLensAtom && (
         <LensDialog
           atom={activeLensAtom}
+          startLens={startLens}
           onClose={() => setActiveLensAtom(null)}
           onSaved={async () => {
             setActiveLensAtom(null);
@@ -264,6 +320,62 @@ export default function KeepCapturePage() {
         />
       )}
     </main>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Element mark — the member's own chosen angles, shown at the front of a card.
+//
+// Only lenses the member chose through "Look at this another way" appear here.
+// MAIA never assigns one (lib/psyche/types.ts: "Never inferred by MAIA").
+// A card with none shows a quiet empty circle that opens the same doorway.
+// Icons and colours come from lib/reflections/labels.ts, shared with Reflections.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Same icons and tones as the Reflections room (lib/reflections/labels.ts), so an element
+// reads the same wherever the member meets it.
+const LENS_ICON = ELEMENT_ICONS;
+const LENS_COLOR = ELEMENT_TONES_ON_LIGHT;
+
+/**
+ * The head of every Keep card shows all five elements (founder ruling 2026-11-27).
+ * Faint until the member has kept a response through that lens; then it takes its colour.
+ * Tapping one opens "Look at this another way" through that element. Nothing is assigned:
+ * the five are an offer, and colour means only "an angle you chose to look through".
+ */
+const ALL_LENSES: ElementalLens[] = ['fire', 'water', 'earth', 'air', 'aether'];
+
+function ElementMark({
+  lenses,
+  onLook,
+}: {
+  lenses: ElementalLens[] | undefined;
+  onLook: (lens: ElementalLens) => void;
+}) {
+  const chosen = new Set(lenses ?? []);
+  return (
+    <div className="-ml-1.5 mb-1 flex items-center" role="group" aria-label="Look at this through an element">
+      {ALL_LENSES.map((l) => {
+        const Icon = LENS_ICON[l];
+        const kept = chosen.has(l);
+        return (
+          <button
+            key={l}
+            type="button"
+            onClick={() => onLook(l)}
+            aria-label={kept ? `${l}, an angle you looked through. Look again` : `Look at this through ${l}`}
+            title={kept ? `${l} · looked through` : `Look through ${l}`}
+            className="group p-1.5 rounded-full"
+          >
+            <Icon
+              className={`w-4 h-4 transition-opacity ${kept ? '' : 'text-stone-500 opacity-40 group-hover:opacity-80 group-focus-visible:opacity-80'}`}
+              style={{ color: kept ? LENS_COLOR[l] : undefined }}
+              aria-hidden="true"
+            />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -278,7 +390,7 @@ function KeptItem({
 }: {
   atom: CrystallizedMemory;
   onGesture: (g: AtomGesture) => void;
-  onLook: () => void;
+  onLook: (lens?: ElementalLens) => void;
 }) {
   const isStillAlive = atom.status === 'still_alive';
   const isSetAside = atom.status === 'set_aside';
@@ -291,7 +403,10 @@ function KeptItem({
   return (
     <li className="bg-white rounded-lg p-5 border border-stone-200">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="text-stone-800 font-medium leading-snug">{atom.title}</h3>
+        <div className="min-w-0">
+          <ElementMark lenses={atom.elementalLenses} onLook={onLook} />
+          <h3 className="text-stone-800 font-medium leading-snug">{atom.title}</h3>
+        </div>
         {isStillAlive && (
           <span className="text-xs text-amber-600 mt-1 whitespace-nowrap">still alive</span>
         )}
@@ -320,7 +435,7 @@ function KeptItem({
           {justWitnessed ? '✓ Held' : 'Still here'}
         </button>
 
-        <button onClick={onLook} className="text-stone-700 hover:text-stone-900">
+        <button onClick={() => onLook()} className="text-stone-700 hover:text-stone-900">
           Look at this another way
         </button>
 
@@ -385,6 +500,45 @@ function KeptItem({
           className="text-stone-500 hover:text-stone-800"
         >
           {atom.returnPreference === 'member_pulled' ? 'Allow return' : 'Reseal'}
+        </button>
+      </div>
+    </li>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Archived item — findable, and returnable with one tap
+// ════════════════════════════════════════════════════════════════════════════
+
+function ArchivedItem({
+  atom,
+  onReturn,
+}: {
+  atom: CrystallizedMemory;
+  onReturn: () => Promise<void> | void;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <li className="bg-white/60 rounded-lg p-5 border border-stone-200">
+      <h3 className="text-stone-600 font-medium leading-snug">{atom.title}</h3>
+      {atom.body && (
+        <p className="text-stone-500 text-sm mt-2 whitespace-pre-wrap line-clamp-3">{atom.body}</p>
+      )}
+      <div className="mt-4 text-sm">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await onReturn();
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="text-amber-700 hover:text-amber-900 disabled:text-stone-300"
+        >
+          Return to Keep
         </button>
       </div>
     </li>
@@ -502,14 +656,16 @@ function CandidateItem({
 
 function LensDialog({
   atom,
+  startLens,
   onClose,
   onSaved,
 }: {
   atom: CrystallizedMemory;
+  startLens?: ElementalLens | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [lens, setLens] = useState<ElementalLens | null>(null);
+  const [lens, setLens] = useState<ElementalLens | null>(startLens ?? null);
   const [response, setResponse] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -553,8 +709,18 @@ function LensDialog({
                 <button
                   key={l}
                   onClick={() => setLens(l)}
-                  className="text-left p-3 bg-white border border-stone-200 rounded-lg hover:border-stone-400 transition-colors"
+                  className="text-left p-3 bg-white border border-stone-200 rounded-lg hover:border-stone-400 transition-colors flex items-center"
                 >
+                  {(() => {
+                    const Icon = LENS_ICON[l];
+                    return (
+                      <Icon
+                        className="w-4 h-4 mr-2 shrink-0"
+                        style={{ color: LENS_COLOR[l] }}
+                        aria-hidden="true"
+                      />
+                    );
+                  })()}
                   <span className="text-stone-700 capitalize">{l}:</span>
                   <span className="text-stone-600 ml-2">{ELEMENTAL_LENS_PROMPTS[l]}</span>
                 </button>

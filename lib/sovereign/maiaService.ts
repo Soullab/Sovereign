@@ -1438,23 +1438,14 @@ Timezone: UTC (default - user's timezone unavailable).`;
 It is currently ${timeOfDay} for the user. Use "${timeGreeting}" when greeting them.
 Do NOT use greetings for other times of day.`;
 
-  // 🧠 THE DIALECTICAL SCAFFOLD - Add cognitive scaffolding for FAST path
-  let cognitiveScaffolding = '';
-  const bloomDetection = (meta as any).bloomDetection as BloomDetection | undefined;
-
-  if (bloomDetection?.scaffoldingPrompt) {
-    const levelName = bloomDetection.level;
-    const nextLevel = bloomDetection.numericLevel + 1;
-
-    cognitiveScaffolding = `\n\n🧠 COGNITIVE SCAFFOLDING (Dialectical Scaffold):
-User is currently at Bloom Level ${bloomDetection.numericLevel} (${levelName}).
-Pull them toward Level ${nextLevel} by incorporating this Socratic question naturally into your response:
-"${bloomDetection.scaffoldingPrompt}"
-
-Do NOT mention Bloom's Taxonomy explicitly. The scaffolding should feel organic and conversational.`;
-
-    console.log(`🧠 [Dialectical Scaffold] FAST path scaffolding injected: Level ${bloomDetection.numericLevel} → ${nextLevel}`);
-  }
+  // 🧠 THE DIALECTICAL SCAFFOLD — FAST path: NOT INJECTED.
+  // ⛔ 2026-11-25 (founder ruling "Yes, draft proposal"; reconciliation plan §5b):
+  // the scaffold told MAIA to "pull" the member toward the next Bloom level and to
+  // conceal that it was doing so. That is covert developmental steering toward a
+  // destination the member did not choose (Invariant 14; Canon v1.1 :119-125;
+  // non-manipulation). Bloom detection still runs as a private lens; it no longer
+  // reaches the prompt. Guarded by refusal R32.
+  const cognitiveScaffolding = '';
 
   // 📚 KNOWLEDGE FIELD: 12-domain consciousness registry (non-ambient — detection-gated)
   let knowledgeFieldAddendum = '';
@@ -2570,23 +2561,9 @@ The current user has not provided their name. Address them as "friend" or "there
     // Continue without elemental - this is instrumentation, not a hard dependency
   }
 
-  // 🧠 THE DIALECTICAL SCAFFOLD - Extract cognitive level for DEEP path
-  const bloomDetection = (meta as any).bloomDetection as BloomDetection | undefined;
-  let cognitiveScaffoldingNote = '';
-
-  if (bloomDetection?.scaffoldingPrompt) {
-    const levelName = bloomDetection.level;
-    const nextLevel = bloomDetection.numericLevel + 1;
-
-    cognitiveScaffoldingNote = `\n\n🧠 COGNITIVE SCAFFOLDING (Dialectical Scaffold):
-User is currently at Bloom Level ${bloomDetection.numericLevel} (${levelName}).
-Pull them toward Level ${nextLevel} by incorporating this Socratic question naturally:
-"${bloomDetection.scaffoldingPrompt}"
-
-Do NOT mention Bloom's Taxonomy explicitly. The scaffolding should feel organic and conversational.`;
-
-    console.log(`🧠 [Dialectical Scaffold] DEEP path scaffolding prepared: Level ${bloomDetection.numericLevel} → ${nextLevel}`);
-  }
+  // 🧠 THE DIALECTICAL SCAFFOLD — DEEP path: NOT INJECTED (see the FAST-path note;
+  // same ruling, same reason). Guarded by refusal R32.
+  const cognitiveScaffoldingNote = '';
 
   // 📚 KNOWLEDGE FIELD: 12-domain consciousness registry (DEEP path)
   let knowledgeFieldNote = '';
@@ -3278,7 +3255,8 @@ export async function getMaiaResponse(req: MaiaRequest): Promise<MaiaResponse> {
 
           // Attach field routing to meta for downstream use
           (meta as any).fieldRouting = fieldSafety.fieldRouting;
-          (meta as any).fieldWorkSafe = true;
+          // The router's own answer, not the gate's: an out-of-scope pass is not "safe".
+          (meta as any).fieldWorkSafe = fieldSafety.fieldRouting.fieldWorkSafe;
           (meta as any).cognitiveProfile = cognitiveProfile;
         }
       } catch (err) {

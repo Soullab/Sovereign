@@ -143,7 +143,7 @@ export const CIRCLES_RAIL_ITEM: MaiaRailItem = {
 
 export const ASTROLOGY_RAIL_ITEM: MaiaRailItem = {
   id: 'astrology',
-  label: 'Free Astrology',
+  label: 'Basic Astrology',
   icon: Orbit,
   route: '/astrology',
   classification: 'studio',

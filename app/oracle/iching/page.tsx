@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '@/lib/http/apiBase';
 import { castYarrowLine } from '@/lib/divination/iching/casting';
+import { hexagramRowsTopDown } from '@/lib/divination/iching/displayRows';
 import { EmbeddedMAIAChat } from '@/components/oracle/EmbeddedMAIAChat';
 import { LivingExplorer } from '@/components/oracle/iching/LivingExplorer';
 import { ConsultationStages } from '@/components/oracle/ConsultationStages';
@@ -584,9 +585,9 @@ function IChingOracleContent() {
                       </h4>
 
                       <div className="space-y-3 mb-6">
-                        {reading.hexagram.lines.map((line, index) => (
+                        {hexagramRowsTopDown(reading.hexagram.lines, reading.hexagram.changingLines).map(({ line, position, changing }, index) => (
                           <motion.div
-                            key={index}
+                            key={position}
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: index * 0.1 }}
@@ -604,7 +605,7 @@ function IChingOracleContent() {
                                 </>
                               )}
                             </div>
-                            {reading.hexagram.changingLines?.includes(5 - index + 1) && (
+                            {changing && (
                               <Sparkles className="w-4 h-4 text-[#D4B896] ml-3" />
                             )}
                           </motion.div>

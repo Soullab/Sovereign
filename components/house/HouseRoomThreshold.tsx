@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import styles from './house-room-threshold.module.css';
+import { KEPT_PLACES } from '@/lib/navigation/keptPlaces';
 
 /**
  * The shared threshold between a facet room and Home.
@@ -21,9 +22,12 @@ import styles from './house-room-threshold.module.css';
 export function HouseRoomThreshold({
   room,
   destinationCarriesMark = false,
+  reflections = false,
 }: {
   room: string;
   destinationCarriesMark?: boolean;
+  /** Rooms where members save things show a Reflections doorway (founder ruling 2026-11-25). */
+  reflections?: boolean;
 }) {
   return (
     <header
@@ -43,7 +47,12 @@ export function HouseRoomThreshold({
         <span>THE HOUSE</span>
         <b>{room}</b>
       </div>
-      <Link href="/home" className={styles.return}>Return Home →</Link>
+      <div className={styles.ways}>
+        {reflections && (
+          <Link href={KEPT_PLACES.reflections.href} className={styles.way}>{KEPT_PLACES.reflections.label}</Link>
+        )}
+        <Link href="/home" className={styles.return}>Return Home →</Link>
+      </div>
     </header>
   );
 }

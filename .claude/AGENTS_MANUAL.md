@@ -16,11 +16,31 @@ claude
 | Agent | When to Use | Example |
 |-------|-------------|---------|
 | **ain-architect** | Design decisions, architecture questions | "How should we structure the memory system?" |
-| **maia-dev** | Building features, fixing bugs | "Implement the spiral profile service" |
+| **maia-dev** | Building features, fixing bugs (the one implementation agent; guarded, brief + Done-when) | "Implement the spiral profile service" |
 | **ain-growth** | Marketing, content, community | "Write a blog post about sovereign AI" |
-| **maia-ops** | Deployments, health checks, releases | "Deploy to production" |
+| **maia-ops** | Read-only production status and provenance; prepares a deploy candidate only on founder instruction naming the SHA; never cuts over on its own | "Check what commit is live on minisforum" |
 | **maia-ios** | iOS builds, Capacitor issues | "Build for TestFlight" |
-| **security-auditor** | Security review, audit | "Audit the authentication flow" |
+| **security-auditor** | Security, consent and auth review; required in addition to reviewer when a diff touches sacred or auth paths | "Audit the authentication flow" |
+
+### Worker agents (orchestrator-and-workers)
+
+The main session plans, writes a brief for each job, and checks the result itself. These do the bulk work. Every brief states the goal, the files to read, and a **"Done when:"** check that can be run. The orchestrator re-runs that check before accepting any result; a worker's own report is never passed on unchecked. A job a builder fails twice goes to maia-dev.
+
+| Agent | Model / effort | When to Use |
+|-------|----------------|-------------|
+| **scout** | Haiku / low | Find files, answer narrow code questions. Read-only. |
+| **builder** | Haiku / medium | Small, exact changes where the brief leaves one right answer. *Experimental: kept only if the JARVIS-AIO-01 benchmark shows it lowers cost per accepted task.* |
+| **maia-dev** | Sonnet / high | Changes across several files, bugs with no obvious cause. (Absorbed the former `engineer`.) |
+| **reviewer** | Sonnet / high | Read a saved diff against its brief and list what fails. Read-only. |
+| **security-auditor** | Sonnet / high | Also required when the diff touches sacred or auth paths. Read-only. |
+
+**What is enforced vs. instructed:**
+- *Enforced by tool lists:* scout and reviewer have no shell and no write tools.
+- *Enforced by hook:* each worker's frontmatter runs `.claude/hooks/worker_guard.py` before its tool calls. For builder and maia-dev it blocks git acts that change history or branches (commit, push, merge, rebase, reset, checkout, switch, worktree, tag, …), `gh`, `ssh`/`scp`/`rsync`, `docker`, `psql`, the deploy scripts, migration scripts, and any reference to secret files (`.env*` except `.env.example` / `*.template`, `.ssh/`, `*.pem`, `*.key`). For scout, reviewer and security-auditor too, it blocks reading or searching secret file paths. Read-only git (`status`, `diff`, `log`, `show`) is allowed.
+- *Instructed only:* staying inside the brief, not touching Sanctuary content or member data held in files, reporting adjacent problems instead of fixing them.
+- *Limits:* the guard matches command text, so code that builds a command at runtime can still get past it; it is a floor, not a sandbox. Project-agent frontmatter hooks run only in a workspace you have trusted, and not in `claude -p` runs — there the workers are back to prose rules. Leave `CLAUDE_CODE_SUBAGENT_MODEL` unset so each keeps its own model, and leave `CLAUDE_CODE_EFFORT_LEVEL` unset: it overrides every agent's `effort:` field (Claude Code subagent docs).
+
+**The guard is error prevention, not a security boundary** (JARVIS-WORKERS-ACCEPT-01 §5): it does not stop a worker that edits `.claude/`, reads credentials outside its pattern, or builds a command at runtime. Enforceable isolation is the separate JARVIS-AIO-01 P3-d proposal.
 
 ---
 

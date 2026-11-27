@@ -311,12 +311,19 @@ export function HousePreferencesProvider({ initial, children }: { initial: House
 
 /** `arrange="wide"`: the House home on phones and iPads already has a full Arrange my House
  *  button beside Here · Now, so the small corner one shows on wide screens only. */
-export function HouseMemberControls({ name, arrange = 'always' }: { name: string; arrange?: 'always' | 'wide' }) {
+export function HouseMemberControls({ name, arrange = 'always', tagline }: { name: string; arrange?: 'always' | 'wide' | 'none'; tagline?: string }) {
   const { active, open, message } = useHousePreferences();
   return <span className={`${house.member} ${styles.member}`}><span>{name}</span>
-    <button type="button" className={`${styles.arrange}${arrange === 'wide' ? ` ${styles.arrangeWide}` : ''}`} disabled={!active} onClick={() => open()}>Arrange my House</button>
+    {tagline && <span className={styles.worldLine}>{tagline}</span>}
+    {arrange !== 'none' && <button type="button" className={`${styles.arrange}${arrange === 'wide' ? ` ${styles.arrangeWide}` : ''}`} disabled={!active} onClick={() => open()}>Arrange my House</button>}
     {message && <span className={styles.notice} role="status">{message}{!active && <> <Link href="/house">Reload House</Link></>}</span>}
   </span>;
+}
+
+/** Wide screens: a clear Arrange my House under Here · Now, matching the stacked phone version. */
+export function HouseArrangeButton() {
+  const { active, open } = useHousePreferences();
+  return <button type="button" className={`${styles.arrange} ${styles.arrangeWide} ${styles.arrangeBlock}`} disabled={!active} onClick={() => open()}>Arrange my House</button>;
 }
 
 export function HouseCenter() {
@@ -349,11 +356,37 @@ export function HouseQuickAccessStacked() {
   </section>;
 }
 
+/** Reflections in Here · Now opens onto the rooms where lived material is kept, not only the
+ *  kept-reflections feed (founder direction 2026-11-26). Each door goes to that room's own page;
+ *  nothing is merged, so a journal entry still becomes a Reflection only when the member carries
+ *  it across. A door tied to a House place shows only when that place is eligible. */
+const REFLECTION_DOORS: { label: string; href: string; place?: HousePlaceId }[] = [
+  { label: 'Kept reflections', href: '/reflections?from=house' },
+  { label: 'Keeps', href: '/maia/keep-capture' },
+  { label: 'Journal', href: '/journal?from=house', place: 'journal' },
+  { label: 'Divination insights', href: '/oracle/reflections', place: 'divination' },
+  { label: 'Dreams', href: '/dream?from=house', place: 'dream' },
+];
+
+function ReflectionDoors({ eligible }: { eligible: readonly HousePlaceId[] }) {
+  const doors = REFLECTION_DOORS.filter(door => !door.place || eligible.includes(door.place));
+  return <nav className={styles.reflectionDoors} aria-label="Reflections">
+    {doors.map(door => <Link href={door.href} key={door.href}>{door.label}</Link>)}
+  </nav>;
+}
+
 export function HouseQuickAccess() {
   const { active } = useHousePreferences();
   return <div className={house.quick}><p>HERE · NOW</p>
-    {active ? visibleHouseShortcuts(active.preferences, active.eligibleIds).map(place =>
-      <Link href={place.href} key={place.id} data-place={place.id} aria-label={place.label}>
+    {active ? visibleHouseShortcuts(active.preferences, active.eligibleIds).map(place => place.id === 'reflections'
+      ? <div className={styles.reflectionGroup} key={place.id}>
+          <Link href={place.href} data-place={place.id} aria-label={place.label}>
+            <span className={styles.symbol + ' ' + styles.quickMark} data-place={place.id} aria-hidden="true">{place.mark}</span>
+            <span>{place.label}</span>
+          </Link>
+          <ReflectionDoors eligible={active.eligibleIds} />
+        </div>
+      : <Link href={place.href} key={place.id} data-place={place.id} aria-label={place.label}>
         <span className={styles.symbol + ' ' + styles.quickMark} data-place={place.id} aria-hidden="true">{place.mark}</span>
         <span>{place.label}</span>
       </Link>)

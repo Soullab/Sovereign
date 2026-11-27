@@ -290,101 +290,10 @@ Previous conversation context: ${context.summary || 'This is a new conversation.
 }
 
 
-/**
- * Generate cognitive scaffolding guidance based on Bloom's Taxonomy detection
- * Helps MAIA scaffold users upward through cognitive levels
- */
-function generateCognitiveScaffoldingGuidance(context: MaiaContext): string | null {
-  // This will be populated by maiaService when it calls awarenessLevelDetection
-  const cognitiveLevel = (context as any).cognitiveLevel;
-
-  if (!cognitiveLevel) return null;
-
-  const { level, numericLevel, scaffoldingPrompt, rationale } = cognitiveLevel;
-
-  // Scaffolding strategies by level
-  const scaffoldingStrategies: Record<string, string> = {
-    'REMEMBER': `
-🧠 COGNITIVE SCAFFOLDING - Level 1 (Remembering):
-User is quoting/repeating concepts. Scaffold them toward UNDERSTANDING (Level 2).
-
-Strategy:
-- Acknowledge what they've learned
-- Ask them to put it in their own words: "${scaffoldingPrompt || 'What does this mean to you personally?'}"
-- Request concrete examples from their life
-- Avoid reinforcing external authority ("the teacher says...")
-- Pull them toward experiential understanding
-
-Detection: ${rationale.join(', ')}`,
-
-    'UNDERSTAND': `
-🧠 COGNITIVE SCAFFOLDING - Level 2 (Understanding):
-User can explain concepts but hasn't applied them. Scaffold toward APPLICATION (Level 3).
-
-Strategy:
-- Validate their theoretical understanding
-- Request specific examples: "${scaffoldingPrompt || 'Can you tell me about a time you tried this?'}"
-- Ask about real-world situations
-- Bridge from concept to lived experience
-- Encourage experimentation
-
-Detection: ${rationale.join(', ')}`,
-
-    'APPLY': `
-🧠 COGNITIVE SCAFFOLDING - Level 3 (Applying):
-User is using concepts in life. Scaffold toward ANALYSIS (Level 4).
-
-Strategy:
-- Celebrate their practical engagement
-- Invite pattern recognition: "${scaffoldingPrompt || 'What patterns do you notice across these experiences?'}"
-- Ask comparative questions ("How is this different from...?")
-- Help them see structure beneath events
-- Move from single events to recurring dynamics
-
-Detection: ${rationale.join(', ')}`,
-
-    'ANALYZE': `
-🧠 COGNITIVE SCAFFOLDING - Level 4 (Analyzing):
-User is seeing patterns and structures. Scaffold toward EVALUATION (Level 5).
-
-Strategy:
-- Affirm their analytical capacity
-- Invite value prioritization: "${scaffoldingPrompt || 'What matters most here?'}"
-- Ask about trade-offs and choices
-- Help them make judgments and commitments
-- Encourage discernment over mere analysis
-
-Detection: ${rationale.join(', ')}`,
-
-    'EVALUATE': `
-🧠 COGNITIVE SCAFFOLDING - Level 5 (Evaluating):
-User is making value judgments. Scaffold toward CREATION (Level 6).
-
-Strategy:
-- Honor their discernment
-- Invite generative thinking: "${scaffoldingPrompt || 'What new approach could you design?'}"
-- Ask about serving others with this insight
-- Encourage original synthesis
-- Bridge to wisdom-holder capacity
-
-Detection: ${rationale.join(', ')}`,
-
-    'CREATE': `
-🧠 COGNITIVE SCAFFOLDING - Level 6 (Creating):
-User is at highest cognitive level - creating original practices/frameworks.
-
-Strategy:
-- Engage as peer/co-creator
-- Explore service applications: "How might this serve others?"
-- Refine their creations through dialogue
-- Consider wisdom-holder readiness
-- Invite Community Commons contribution
-
-Detection: ${rationale.join(', ')}`
-  };
-
-  return scaffoldingStrategies[level] || null;
-}
+// 🧠 Dialectical Scaffold guidance (generateCognitiveScaffoldingGuidance) was removed
+// 2026-11-25 (founder ruling "Yes, draft proposal"; reconciliation plan §5b). It told
+// MAIA to "scaffold the user toward" the next Bloom level — developmental steering
+// toward a destination the member did not choose. Guarded by refusal R32.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SHARED ADDENDA INJECTION
@@ -865,15 +774,9 @@ NEVER close with "Sit with that tonight" or any time-directive. End with a genui
     }
   }
 
-  // 🧠 BLOOM'S COGNITIVE SCAFFOLDING (if available from Bloom detection)
-  if (context.cognitiveLevel) {
-    // Inject scaffolding guidance based on detected cognitive level
-    const cognitiveGuidance = generateCognitiveScaffoldingGuidance(context);
-    if (cognitiveGuidance) {
-      adaptedPrompt += cognitiveGuidance;
-      console.log(`🧠 [Dialectical Scaffold] Scaffolding guidance injected for Level ${context.cognitiveLevel.numericLevel}`);
-    }
-  }
+  // 🧠 BLOOM'S COGNITIVE SCAFFOLDING — NOT INJECTED (2026-11-25; see the note above
+  // the shared addenda section). context.cognitiveLevel may still be present; it
+  // no longer reaches the prompt. Guarded by refusal R32.
 
   // 🗣️ AWARENESS-BASED LANGUAGE ADAPTATION RULES
   const awarenessPromptBlock = awarenessLanguageAdapter.generatePromptBlock(awarenessLevel, systemReferences);

@@ -33,37 +33,23 @@ import {
   Target,
   Compass,
   Eye,
-  Flame,
-  Droplets,
-  Mountain,
-  Wind,
-  Star,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import type { CapsuleDTO, Element } from '@/lib/capsules/types';
+import type { CapsuleDTO } from '@/lib/capsules/types';
+import { ELEMENT_ICONS, ELEMENT_TONES, KEPT_TONE } from '@/lib/reflections/labels';
 import DiscussWithMaia from './DiscussWithMaia';
 import { FacetOriginTrail } from '@/components/house/FacetOriginTrail';
 import { useMaiaPlace } from '@/components/maia/presence/MaiaPresence';
 
-// Element icons mapping.
-// Typed as LucideIcon rather than React.FC<{ className?: string }> — the call
-// site passes `style` for the element colour, which the narrower type rejected.
-const ElementIcon: Record<Element, LucideIcon> = {
-  fire: Flame,
-  water: Droplets,
-  earth: Mountain,
-  air: Wind,
-  aether: Star,
-};
+// Element icons and tones are the Reflections room's shared vocabulary (lib/reflections/labels.ts),
+// the same as Gems, the Web and Keep, so an element reads the same in every room.
+const ElementIcon = ELEMENT_ICONS;
+const elementColors = ELEMENT_TONES;
 
-// Element colors
-const elementColors: Record<Element, string> = {
-  fire: '#e85d4c',
-  water: '#5a7a9f',
-  earth: '#7a6f5a',
-  air: '#5a7a6f',
-  aether: '#8b7aa0',
-};
+/** Return to the view the member came from: arriving from the Web (`?from=web`) goes back to it. */
+function reflectionsHome(): string {
+  if (typeof window === 'undefined') return '/reflections';
+  return new URLSearchParams(window.location.search).get('from') === 'web' ? '/reflections?view=web' : '/reflections';
+}
 
 export interface ReflectionDetailProps {
   /** Capsule id — supplied by the route that mounts this. */
@@ -220,7 +206,7 @@ export default function ReflectionDetail({ id }: ReflectionDetailProps) {
       >
         <div className="max-w-2xl mx-auto px-6 py-12">
           <button
-            onClick={() => router.push('/reflections')}
+            onClick={() => router.push(reflectionsHome())}
             className="flex items-center gap-2 text-stone-400 hover:text-stone-600 transition-colors text-[13px] tracking-wide mb-8"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -230,7 +216,7 @@ export default function ReflectionDetail({ id }: ReflectionDetailProps) {
           <div className="text-center py-20">
             <p className="text-red-500 text-[14px]">{error || 'Reflection not found'}</p>
             <button
-              onClick={() => router.push('/reflections')}
+              onClick={() => router.push(reflectionsHome())}
               className="mt-4 text-[13px] text-stone-500 hover:text-stone-700 underline"
             >
               Return to reflections
@@ -243,7 +229,7 @@ export default function ReflectionDetail({ id }: ReflectionDetailProps) {
 
   const element = capsule.signals?.element;
   const ElementIconComponent = element ? ElementIcon[element] : null;
-  const elementColor = element ? elementColors[element] : '#5a7a6f';
+  const elementColor = element ? elementColors[element] : KEPT_TONE;
 
   return (
     <div
@@ -254,7 +240,7 @@ export default function ReflectionDetail({ id }: ReflectionDetailProps) {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <button
-            onClick={() => router.push('/reflections')}
+            onClick={() => router.push(reflectionsHome())}
             className="flex items-center gap-2 text-stone-400 hover:text-stone-600 transition-colors text-[13px] tracking-wide"
           >
             <ArrowLeft className="h-4 w-4" />

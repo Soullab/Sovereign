@@ -25,6 +25,16 @@ describe('House entrances — fictional members', () => {
     expect(resolvePersonalPortalEntrance(f)).toBe('personal_space');
   });
 
+  test('founder allowlist (operator access) opens the full workspace; personal space stays independent', () => {
+    const f = member({ founderAccess: true });
+    expect(resolveProStudioEntrance(f)).toBe('full_workspace');
+    expect(resolvePersonalPortalEntrance(f)).toBe('personal_space');
+  });
+
+  test('founder access never opens anything while signed out', () => {
+    expect(resolveProStudioEntrance(member({ signedIn: false, founderAccess: true }))).toBe('signed_out_intro');
+  });
+
   test('a practitioner row is NOT a paid entitlement', () => {
     expect(resolveProStudioEntrance(member({ hasPractitionerRow: true }))).toBe('limited_try');
   });

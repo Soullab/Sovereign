@@ -8,6 +8,7 @@ surfaces:
   - components/OracleConversation.tsx
   - components/maia/presence/MaiaPresence.tsx
   - components/ui/ModernTextInput.tsx
+  - components/reflections/DiscussWithMaia.tsx
 change_class: experiential
 principles:
   - INHABITABLE_ARCHITECTURE_STANDARD — the room remains the place; shared House presence must not overwrite it

@@ -208,6 +208,14 @@ describe('isMaiaHandleVisible (affordance, not eligibility)', () => {
     expect(placeFromPathname('/journal')?.placeName).toBe('Journal');
   });
 
+  it('Divination is governed but never advertises the House handle', () => {
+    // Founder ruling 2026-11-25: Ask MAIA opens over the room; no ambient handle.
+    for (const route of ['/oracle', '/oracle/iching', '/oracle/atlas/iching/43']) {
+      expect(resolveGovernedRoom(route)?.placeId).toBe('divination');
+      expect(isMaiaHandleVisible(route, placeFromPathname(route))).toBe(false);
+    }
+  });
+
   it('never widens eligibility: ungoverned routes and full surfaces stay false', () => {
     // A registered place cannot buy a handle on a route the registry does not
     // govern — visibility is always narrower than permission, never broader.

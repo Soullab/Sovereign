@@ -4,17 +4,13 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import type { CapsuleDTO, Element } from '@/lib/capsules/types';
+import { ELEMENT_TONES, KEPT_TONE, sourceLabel } from '@/lib/reflections/labels';
+import ReflectionsWeb from './ReflectionsWeb';
 import styles from '@/app/reflections/reflections-room.module.css';
+import { KEPT_PLACES } from '@/lib/navigation/keptPlaces';
 
 type FilterTab = 'all' | 'pinned' | 'drafts' | 'archived';
-
-const ELEMENT_TONES: Record<Element, string> = {
-  fire: '#d58a28',
-  water: '#6f94bd',
-  earth: '#9eae6e',
-  air: '#c9b995',
-  aether: '#9d7fb0',
-};
+type RoomView = 'gems' | 'web';
 
 function dateFor(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', {
@@ -24,17 +20,8 @@ function dateFor(iso: string) {
   });
 }
 
-function sourceLabel(source: CapsuleDTO['sourceType']) {
-  if (source === 'chat') return 'Conversation';
-  if (source === 'voice') return 'Voice';
-  if (source === 'journal') return 'Journal';
-  if (source === 'transcript') return 'Transcript';
-  if (source === 'astrology') return 'Astrology';
-  return 'Note';
-}
-
 function ReflectionMark({ element }: { element?: Element }) {
-  const tone = element ? ELEMENT_TONES[element] : '#d2b078';
+  const tone = element ? ELEMENT_TONES[element] : KEPT_TONE;
   return (
     <span
       className={styles.reflectionMark}
@@ -55,7 +42,7 @@ interface ReflectionGemProps {
 
 function ReflectionGem({ capsule, index, onOpen, onPin, onArchive }: ReflectionGemProps) {
   const element = capsule.signals?.element;
-  const tone = element ? ELEMENT_TONES[element] : '#d2b078';
+  const tone = element ? ELEMENT_TONES[element] : KEPT_TONE;
   const gold = capsule.goldLines[0];
 
   return (
@@ -125,6 +112,17 @@ export default function ReflectionsFeed() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
+  // Gems is the default arrival; the member chooses the Web (reflections-room contract, addendum).
+  const [view, setView] = useState<RoomView>(searchParams?.get('view') === 'web' ? 'web' : 'gems');
+
+  const chooseView = (next: RoomView) => {
+    setView(next);
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    if (next === 'web') params.set('view', 'web');
+    else params.delete('view');
+    const qs = params.toString();
+    router.replace(qs ? `/reflections?${qs}` : '/reflections', { scroll: false });
+  };
 
   const fetchCapsules = useCallback(async () => {
     try {
@@ -169,8 +167,10 @@ export default function ReflectionsFeed() {
   }, [searchQuery, activeFilter, router]);
 
   useEffect(() => {
+    // The Web loads its own lean data; the full collection is fetched only for Gems.
+    if (view !== 'gems') return;
     void fetchCapsules();
-  }, [fetchCapsules]);
+  }, [fetchCapsules, view]);
 
   const handlePin = async (id: string, pinned: boolean) => {
     try {
@@ -221,8 +221,22 @@ export default function ReflectionsFeed() {
             words you chose not to lose.
           </p>
           <span>{fromHouse ? 'A room within your House.' : 'Your kept reflections live here.'}</span>
+          {/* The doorway to Keep (founder ruling 2026-11-25). */}
+          <p className={styles.keptPlaces}>
+            <a href={KEPT_PLACES.keep.href} className={styles.keptPlacesLink}>
+              {KEPT_PLACES.keep.label} →
+            </a>{' '}
+            <span>{KEPT_PLACES.keep.purpose}</span>
+          </p>
+          <nav className={styles.roomViews} aria-label="Ways of looking">
+            <button type="button" aria-pressed={view === 'gems'} onClick={() => chooseView('gems')}>Gems</button>
+            <i aria-hidden="true">·</i>
+            <button type="button" aria-pressed={view === 'web'} onClick={() => chooseView('web')}>Web</button>
+          </nav>
         </div>
       </header>
+
+      {view === 'web' ? <ReflectionsWeb /> : <>
 
       <div className={styles.tools}>
         <label className={styles.search}>
@@ -277,7 +291,7 @@ export default function ReflectionsFeed() {
             When something matters enough to keep — a phrase, a recognition,
             a turning point — it can return here.
           </p>
-          <button type="button" onClick={() => router.push('/maia')}>Meet MAIA →</button>
+          <button type="button" onClick={() => router.push('/maia/encounter')}>Meet MAIA →</button>
         </motion.div>
       ) : (
         <div className={styles.gemField} aria-label="Kept reflections">
@@ -293,10 +307,11 @@ export default function ReflectionsFeed() {
           ))}
         </div>
       )}
+      </>}
 
       <footer className={styles.roomFoot}>
         <span>What you keep can change how you return.</span>
-        <button type="button" onClick={() => router.push('/maia')}>Meet MAIA →</button>
+        <button type="button" onClick={() => router.push('/maia/encounter')}>Meet MAIA →</button>
       </footer>
     </section>
   );
