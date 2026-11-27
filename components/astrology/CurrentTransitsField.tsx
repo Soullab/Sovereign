@@ -37,7 +37,7 @@ export function CurrentTransitsField({
   birthChart?: BirthChartLike | null;
   /** 'line' (House on phones/iPad, 2026-11-05): one quiet row, the full sky lives in Astrology. */
   variant?: 'astrology' | 'house' | 'line';
-  /** House only: the member is admitted to Astrology Pro (decided on the server). */
+  /** House and line only: the member is admitted to Astrology Pro (decided on the server). */
   proAstrology?: boolean;
 }) {
   const canOpenAstrology = useAstrologyTester();
@@ -105,9 +105,13 @@ export function CurrentTransitsField({
       <>
         <span className={styles.lineLabel}>The sky now</span>
         <span className={styles.lineSummary}>{summary}</span>
-        {canOpenAstrology ? <span className={styles.lineChevron} aria-hidden="true">›</span> : null}
+        {canOpenAstrology || proAstrology ? <span className={styles.lineChevron} aria-hidden="true">›</span> : null}
       </>
     );
+    // Pro members are taken to Pro Astrology; Basic Astrology stays in the Here · Now list.
+    if (proAstrology) {
+      return <Link href="/astrology/pro-preview" className={styles.line} aria-label={`The sky now: ${summary}. Open Pro Astrology`}>{body}</Link>;
+    }
     return canOpenAstrology
       ? <Link href="/astrology" className={styles.line} aria-label={`The sky now: ${summary}. Open Astrology`}>{body}</Link>
       : <div className={styles.line} aria-label={`The sky now: ${summary}`}>{body}</div>;

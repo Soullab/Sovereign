@@ -17,13 +17,13 @@ test('the full directory and full sky panel are wide-screen only', () => {
 
 test('phones and iPads get an All places door, a Today line and a More of the House fold', () => {
   expect(page).toContain('href="/house/places"');
-  expect(page).toContain('<CurrentTransitsField variant="line" />');
+  expect(page).toContain('<CurrentTransitsField variant="line" proAstrology={proAstrologyAdmitted} />');
   expect(page).toContain('More of the House');
   expect(css).toMatch(/^\.narrowOnly \{ display: none; \}/m);
 });
 
 test('MAIA still comes before the sky line', () => {
-  expect(page.indexOf('<CurrentTransitsField variant="line" />')).toBeGreaterThan(page.indexOf('aria-label="House presence"'));
+  expect(page.indexOf('<CurrentTransitsField variant="line" proAstrology={proAstrologyAdmitted} />')).toBeGreaterThan(page.indexOf('aria-label="House presence"'));
 });
 
 test('All places page lists places without arrangement buttons', () => {
