@@ -31,6 +31,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { ELEMENT_ICONS, ELEMENT_TONES_ON_LIGHT } from '@/lib/reflections/labels';
 import { apiFetch } from '@/lib/http/apiBase';
 import { ReturnHome } from '@/components/navigation/ReturnHome';
 import Link from 'next/link';
@@ -318,6 +319,64 @@ export default function KeepCapturePage() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// Element mark — the member's own chosen angles, shown at the front of a card.
+//
+// Only lenses the member chose through "Look at this another way" appear here.
+// MAIA never assigns one (lib/psyche/types.ts: "Never inferred by MAIA").
+// A card with none shows a quiet empty circle that opens the same doorway.
+// Icons and colours come from lib/reflections/labels.ts, shared with Reflections.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Same icons and tones as the Reflections room (lib/reflections/labels.ts), so an element
+// reads the same wherever the member meets it.
+const LENS_ICON = ELEMENT_ICONS;
+const LENS_COLOR = ELEMENT_TONES_ON_LIGHT;
+
+function ElementMark({
+  lenses,
+  onLook,
+}: {
+  lenses: ElementalLens[] | undefined;
+  onLook: () => void;
+}) {
+  const chosen = lenses ?? [];
+
+  if (chosen.length === 0) {
+    return (
+      <button
+        type="button"
+        onClick={onLook}
+        aria-label="Look at this another way"
+        title="Look at this another way"
+        // A 44px touch area around the small visible circle; the negative margin keeps the layout.
+        className="group -my-3.5 -ml-3.5 -mr-2.5 py-3.5 pl-3.5 pr-2.5 shrink-0 rounded-full"
+      >
+        <span
+          aria-hidden="true"
+          className="mt-1 block w-4 h-4 rounded-full border border-dashed border-stone-300 group-hover:border-stone-500 transition-colors"
+        />
+      </button>
+    );
+  }
+
+  return (
+    <span className="mt-0.5 flex items-center gap-1 shrink-0" aria-label={chosen.join(', ')}>
+      {chosen.map((l) => {
+        const Icon = LENS_ICON[l];
+        return (
+          <Icon
+            key={l}
+            className="w-4 h-4"
+            style={{ color: LENS_COLOR[l] }}
+            aria-hidden="true"
+          />
+        );
+      })}
+    </span>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // Kept item
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -341,7 +400,10 @@ function KeptItem({
   return (
     <li className="bg-white rounded-lg p-5 border border-stone-200">
       <div className="flex items-start justify-between gap-3">
-        <h3 className="text-stone-800 font-medium leading-snug">{atom.title}</h3>
+        <div className="flex items-start gap-2.5 min-w-0">
+          <ElementMark lenses={atom.elementalLenses} onLook={onLook} />
+          <h3 className="text-stone-800 font-medium leading-snug">{atom.title}</h3>
+        </div>
         {isStillAlive && (
           <span className="text-xs text-amber-600 mt-1 whitespace-nowrap">still alive</span>
         )}
@@ -642,8 +704,18 @@ function LensDialog({
                 <button
                   key={l}
                   onClick={() => setLens(l)}
-                  className="text-left p-3 bg-white border border-stone-200 rounded-lg hover:border-stone-400 transition-colors"
+                  className="text-left p-3 bg-white border border-stone-200 rounded-lg hover:border-stone-400 transition-colors flex items-center"
                 >
+                  {(() => {
+                    const Icon = LENS_ICON[l];
+                    return (
+                      <Icon
+                        className="w-4 h-4 mr-2 shrink-0"
+                        style={{ color: LENS_COLOR[l] }}
+                        aria-hidden="true"
+                      />
+                    );
+                  })()}
                   <span className="text-stone-700 capitalize">{l}:</span>
                   <span className="text-stone-600 ml-2">{ELEMENTAL_LENS_PROMPTS[l]}</span>
                 </button>

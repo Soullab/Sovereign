@@ -633,3 +633,52 @@
     transform: none;
   }
 }
+
+/* ── Ways of looking: Gems · Web (Life Web step 1, contract addendum 2026-11-26) ── */
+.roomViews { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+.roomViews i { color: #7d6e5b; font-style: normal; }
+.roomViews button { padding: 4px 0; border: 0; background: transparent; color: #aa9b86; font: 12px/1.4 Arial, sans-serif; letter-spacing: .14em; text-transform: uppercase; cursor: pointer; }
+.roomViews button[aria-pressed='true'] { color: #ead6b7; border-bottom: 1px solid rgba(234, 214, 183, .6); }
+.roomViews button:focus-visible { outline: 1px solid #dfc397; outline-offset: 4px; }
+
+/* ── The Web: a time river, no narrator ── */
+.web { margin-top: 34px; }
+.webLine { margin: 0 0 18px; color: #a8977f; font: italic 14px/1.5 Georgia, serif; }
+.webRiver { padding: 18px 16px 10px; border: 1px solid rgba(222, 195, 154, .16); border-radius: 12px; background: linear-gradient(155deg, rgba(255, 242, 218, .035), rgba(0, 0, 0, .12)); overflow: hidden; }
+.webRiver[data-orientation='vertical'] { display: flex; justify-content: center; padding: 14px 6px; }
+.webRiver svg { display: block; overflow: visible; }
+.webLane line { stroke: rgba(222, 195, 154, .14); stroke-width: 1; }
+.webLane text { fill: #9f8e78; font: 10px Arial, sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+.webLane .webLaneLabelVertical { font-size: 10px; letter-spacing: .04em; }
+.webThread path { fill: none; stroke: rgba(223, 195, 151, .38); stroke-width: 1.2; }
+.webThread circle { fill: #15110d; stroke: rgba(223, 195, 151, .7); stroke-width: 1.2; }
+.webThread[data-lit='true'] path { stroke: #e9cfa4; stroke-width: 1.6; }
+.webThread[data-lit='true'] circle { stroke: #e9cfa4; }
+/* A global `svg { pointer-events: none }` rule disables SVG input; gems must stay selectable. */
+.webGem { cursor: pointer; outline: none; pointer-events: auto; }
+.webGemHit { fill: transparent; pointer-events: all; }
+.webGemMark { fill: var(--gem-tone); stroke: rgba(21, 17, 13, .9); stroke-width: 1.5; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--gem-tone) 45%, transparent)); transition: stroke .15s ease; }
+/* Ruling B: a dense river drops the glow; colour and selection stroke stay. */
+.webRiver svg[data-dense='true'] .webGemMark { filter: none; transition: none; }
+.webGem:hover .webGemMark, .webGem:focus-visible .webGemMark { stroke: #f3e4cc; }
+.webGem[data-selected='true'] .webGemMark { stroke: #fff2dc; stroke-width: 2.5; }
+
+.webScrub { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px 14px; margin-top: 18px; color: #9f8b70; font: 10px/1.4 Arial, sans-serif; letter-spacing: .2em; text-transform: uppercase; }
+.webScrub input { width: 100%; accent-color: #d2b078; }
+.webScrub output { grid-column: 1 / -1; justify-self: center; color: #c9b9a2; font: italic 13px/1.4 Georgia, serif; letter-spacing: 0; text-transform: none; }
+.webQuiet { margin: 14px 0 0; color: #9f8e78; font: italic 13px/1.5 Georgia, serif; text-align: center; }
+
+.webDetail { margin-top: 24px; padding: 22px 24px; border: 1px solid rgba(222, 195, 154, .2); border-radius: 12px; background: rgba(14, 11, 8, .4); }
+.webDetail h2 { margin: 12px 0 14px; color: #f0e6d8; font: 400 clamp(22px, 2vw, 28px)/1.2 'House Crimson', Georgia, serif; }
+.webReturn { color: #dfc397; font: 12px/1.4 Arial, sans-serif; letter-spacing: .14em; text-transform: uppercase; text-decoration: none; }
+.webReturn:hover { color: #ffe5bb; }
+.webThreads { margin: 18px 0 0; padding: 14px 0 0; border-top: 1px solid rgba(222, 195, 154, .14); list-style: none; display: grid; gap: 10px; }
+.webThreads li { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; color: #b9a991; font: 13px/1.4 Arial, sans-serif; }
+.webThreads a { color: #dfc397; text-decoration: none; font: italic 14px/1.4 Georgia, serif; }
+.webThreads a:hover { color: #ffe5bb; }
+.webThreads em { color: #8e7f6b; font-size: 13px; }
+
+@media (max-width: 700px) {
+  .webDetail { padding: 18px 16px; }
+  .webScrub { gap: 6px 10px; }
+}
