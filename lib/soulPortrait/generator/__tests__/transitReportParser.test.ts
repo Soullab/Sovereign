@@ -14,7 +14,8 @@ import {
   parseTransitReport,
   transitDataText,
 } from '../transitReportParser';
-import { validateCitedTransits } from '../generateYearAhead';
+import { assemble, validateCitedTransits } from '../generateYearAhead';
+import { YEAR_AHEAD_MAX_CITED } from '../yearAheadPrompt';
 import type { YearAheadPhase } from '@/lib/soulPortrait/schema';
 
 // Synthetic report in the Astrograph shape. The prose lines are stand-ins for
@@ -186,5 +187,25 @@ describe('validateCitedTransits (Design Law: no manufactured transits)', () => {
     expect(() => validateCitedTransits([phase(['Uranus opposite your Moon'])], transits)).toThrow(
       /year_ahead_manufactured_transit/,
     );
+  });
+});
+
+describe('assemble: how many transits a phase cites', () => {
+  // 30 synthetic transits; the model cites every one in the earth phase, twice over.
+  const many = Array.from({ length: 30 }, (_, i) => ({
+    id: i + 1, kind: 'aspect' as const, body: 'Mars', aspect: 'conjunction', natalPoint: `Point${i + 1}`, exactDates: [],
+  }));
+  const phases = Object.fromEntries(['earth', 'fire', 'water', 'air', 'aether'].map((el) => [
+    el, { title: el, body: 'x', transitIds: el === 'earth' ? [...many.map((t) => t.id), 1, 2] : [1] },
+  ]));
+
+  it(`keeps at most ${YEAR_AHEAD_MAX_CITED}, in the model's order of significance, without repeats`, () => {
+    const ya = assemble(many as any, { phases, openingTheme: 'o', goldenThread: 'g', questions: ['q'] });
+    const earth = ya.phases.find((p) => p.element === 'earth')!;
+    expect(YEAR_AHEAD_MAX_CITED).toBe(19);
+    expect(earth.transits).toHaveLength(19);
+    expect(earth.transits[0]).toMatch(/Point1$/);
+    expect(earth.transits[18]).toMatch(/Point19$/);
+    expect(new Set(earth.transits).size).toBe(19);
   });
 });

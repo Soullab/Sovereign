@@ -20,7 +20,7 @@ import {
   type ParsedTransit,
 } from './transitReportParser';
 import { parseModelJson } from './parseModelJson';
-import { yearAheadSystemPrompt } from './yearAheadPrompt';
+import { YEAR_AHEAD_MAX_CITED, yearAheadSystemPrompt } from './yearAheadPrompt';
 
 /** The Seasonal Spiral's fixed elemental order (schema: YearAhead docs). */
 const SPIRAL_ORDER: ElementKey[] = ['earth', 'fire', 'water', 'air', 'aether'];
@@ -43,14 +43,16 @@ export function validateCitedTransits(phases: YearAheadPhase[], parsed: ParsedTr
 }
 
 /** Assemble the validated YearAhead from the model's flat JSON + parsed transit data. */
-function assemble(parsed: ParsedTransit[], j: any, timeframe?: string): YearAhead {
+export function assemble(parsed: ParsedTransit[], j: any, timeframe?: string): YearAhead {
   const byId = new Map(parsed.map((t) => [t.id, t]));
 
   const phases: YearAheadPhase[] = SPIRAL_ORDER.map((element) => {
     const p = j.phases?.[element] ?? {};
     const ids: number[] = (Array.isArray(p.transitIds) ? p.transitIds : [])
       .map((n: any) => Number(n))
-      .filter((n: number) => byId.has(n));
+      .filter((n: number, i: number, all: number[]) => byId.has(n) && all.indexOf(n) === i)
+      // Cited most significant first; anything past the cap is dropped.
+      .slice(0, YEAR_AHEAD_MAX_CITED);
     return {
       element,
       title: String(p.title || ''),
