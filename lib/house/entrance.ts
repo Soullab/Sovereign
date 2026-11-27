@@ -20,6 +20,13 @@
  * must come from a verified entitlement source, which does not exist yet — so
  * production callers must pass 'absent' until it does.
  *
+ * Founder ruling (2026-11-27): the founder allowlist (FOUNDER_MEMBER_IDS, read
+ * server-side via lib/founder/founderAuth) is OPERATOR access, not a paid
+ * entitlement, and opens the full workspace now. Every other member keeps the
+ * limited entry until the dedicated provenance-bearing Pro Studio grant exists.
+ * `founderAccess` must come from isFounderMemberId(session.memberId), never a
+ * client claim, tier, practitioner row or studioMode.
+ *
  * ⛔ `members.tier === 'pro'` is NOT that source: it can be set by hand, its
  * expiry is an estimate, and scholarship / Practice Exchange / apprenticeship
  * access has no representation at all. See the design brief §9.
@@ -32,6 +39,8 @@ export interface EntranceFacts {
   signedIn: boolean;
   /** 'verified' ONLY from a verified entitlement source. Never inferred. */
   proStudioEntitlement: 'verified' | 'absent';
+  /** True ONLY when the server-side founder allowlist names this member. */
+  founderAccess?: boolean;
   /** Accepted so tests can prove it confers nothing. */
   hasPractitionerRow?: boolean;
   studioMode?: 'personal' | 'practice' | null;
@@ -39,6 +48,7 @@ export interface EntranceFacts {
 
 export function resolveProStudioEntrance(facts: EntranceFacts): ProStudioEntrance {
   if (!facts.signedIn) return 'signed_out_intro';
+  if (facts.founderAccess === true) return 'full_workspace';
   return facts.proStudioEntitlement === 'verified' ? 'full_workspace' : 'limited_try';
 }
 
