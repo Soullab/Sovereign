@@ -15,7 +15,9 @@
  *    session claim. This module never reads them (static test pins it).
  * ⛔ Workspace only. Holding a grant confers NO client-data, practitioner-relationship
  *    or Co-Lab permission; those surfaces keep their own guards and must not import
- *    this module (static test pins the importer set).
+ *    this module. The static test pins the importer set to exactly two files: the Pro
+ *    Studio door (app/pro-studio/page.tsx) and the Home door list (lib/house/proRooms.ts),
+ *    which uses the reading only to show a link to /pro-studio.
  * ⛔ Read-only. Nothing here writes, issues or revokes a grant. Issuing grants is a
  *    separate, founder-governed act with no surface yet.
  *

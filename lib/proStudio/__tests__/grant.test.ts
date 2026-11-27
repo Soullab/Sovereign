@@ -62,11 +62,12 @@ describe('Pro Studio grant reader (HOUSE-ENTRANCE-01 §9) — fictional members 
     expect(src).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
   });
 
-  test('confers no client-data or Co-Lab permission: only the Pro Studio door imports the reader', () => {
+  test('confers no client-data or Co-Lab permission: only the Pro Studio door and the Home door list import the reader', () => {
     const importers = execFileSync('git', ['grep', '-l', '-E', 'proStudio/grant[\'"]', '--', 'app', 'lib', 'components', 'middleware.ts'], {
       encoding: 'utf8',
     }).trim().split('\n').filter((f) => f && !f.includes('__tests__'));
-    expect(importers).toEqual(['app/pro-studio/page.tsx']);
+    // lib/house/proRooms.ts (founder direction 2026-11-27) reads the grant only to show the member a Home door to /pro-studio.
+    expect(importers).toEqual(['app/pro-studio/page.tsx', 'lib/house/proRooms.ts']);
   });
 
   test('the migration keeps the grant append-only, revocable, self-grant-free and tier-free', () => {
