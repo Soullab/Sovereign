@@ -25,4 +25,11 @@ describe('Pro Astrology door on Home', () => {
     const field = read('components/astrology/CurrentTransitsField.tsx');
     expect(field).toMatch(/variant === 'house' && proAstrology \? \(\s*<Link href="\/astrology\/pro-preview">Open Pro Astrology →<\/Link>/);
   });
+
+  it('sends Pro members from the one-line sky row (phones, iPads, narrow windows) to Pro Astrology', () => {
+    const house = read('app/house/page.tsx');
+    expect(house).toMatch(/<CurrentTransitsField variant="line" proAstrology=\{proAstrologyAdmitted\} \/>/);
+    const field = read('components/astrology/CurrentTransitsField.tsx');
+    expect(field).toMatch(/if \(proAstrology\) \{\s*return <Link href="\/astrology\/pro-preview"/);
+  });
 });
