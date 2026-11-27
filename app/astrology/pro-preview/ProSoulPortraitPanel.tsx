@@ -39,6 +39,9 @@ export function ageOn(birthDate: string, today = new Date()): number | null {
   return age >= 0 && age < 130 ? age : null;
 }
 
+/** Where Part II's transits come from: our ephemeris, a pasted report, or nowhere. */
+type YearAheadSource = 'calculated' | 'pasted' | 'none';
+
 type State =
   | { kind: 'form' }
   | { kind: 'writing' }
@@ -65,6 +68,7 @@ export default function ProSoulPortraitPanel({ source, label, chartLine, birthDa
   const [theme, setTheme] = useState<PortraitThemeKey>(DEFAULT_PORTRAIT_THEME);
   const [age, setAge] = useState(knownAge !== null ? String(knownAge) : '');
   const [minorTicked, setMinorTicked] = useState(false);
+  const [yearAhead, setYearAhead] = useState<YearAheadSource>('calculated');
   const [transitReport, setTransitReport] = useState('');
   const [state, setState] = useState<State>({ kind: 'form' });
 
@@ -72,9 +76,11 @@ export default function ProSoulPortraitPanel({ source, label, chartLine, birthDa
   const ageValid = ageNumber === null || (Number.isInteger(ageNumber) && ageNumber >= 0 && ageNumber < 130);
   const minorByAge = ageNumber !== null && ageValid && ageNumber < 18;
   const isMinor = minorByAge || minorTicked;
-  const transitParse = transitReport.trim() ? parseTransitReport(transitReport) : null;
+  const pasted = yearAhead === 'pasted' ? transitReport.trim() : '';
+  const transitParse = pasted ? parseTransitReport(pasted) : null;
   const transitUnreadable = transitParse !== null && transitParse.transits.length === 0;
-  const ready = name.trim().length > 0 && ageValid && !transitUnreadable;
+  const ready = name.trim().length > 0 && ageValid && !transitUnreadable && !(yearAhead === 'pasted' && !pasted);
+  const withYearAhead = yearAhead === 'calculated' || transitParse !== null;
 
   async function write() {
     setState({ kind: 'writing' });
@@ -84,7 +90,8 @@ export default function ProSoulPortraitPanel({ source, label, chartLine, birthDa
         body: JSON.stringify({
           name: name.trim(), mode, theme, isMinor,
           age: ageNumber ?? undefined,
-          transitReport: transitReport.trim() || undefined,
+          transitReport: pasted || undefined,
+          transitSource: yearAhead === 'calculated' ? 'calculated' : undefined,
           proChartSource: source,
         }),
       });
@@ -151,23 +158,47 @@ export default function ProSoulPortraitPanel({ source, label, chartLine, birthDa
           onChange={(e) => setMinorTicked(e.target.checked)} />
         {' '}Subject is a minor{minorByAge ? ' (under 18 by birth date)' : ''}
       </label>
-      <details className={styles.portraitYear}>
-        <summary>Add the Year Ahead (optional)</summary>
-        <p className={styles.note}>
-          Paste the client&rsquo;s 12-month transit report (Astrograph format). Only the transit data is read; every
-          word of the Year Ahead is written fresh.
-        </p>
-        <textarea value={transitReport} onChange={(e) => setTransitReport(e.target.value)} rows={5} disabled={writing}
-          placeholder={'Transiting Pluto in opposition with natal Jupiter\nMarch 4, 2026 until January 10, 2027'} />
-        {transitParse && transitParse.transits.length > 0 && (
-          <p className={styles.note}>{transitParse.transits.length} transit{transitParse.transits.length === 1 ? '' : 's'} found.</p>
+      <fieldset className={styles.portraitYear} disabled={writing}>
+        <legend>Year Ahead</legend>
+        <label className={styles.portraitCheck}>
+          <input type="radio" name="year-ahead" checked={yearAhead === 'calculated'} onChange={() => setYearAhead('calculated')} />
+          {' '}Calculate from this chart
+        </label>
+        <label className={styles.portraitCheck}>
+          <input type="radio" name="year-ahead" checked={yearAhead === 'pasted'} onChange={() => setYearAhead('pasted')} />
+          {' '}Paste a transit report
+        </label>
+        <label className={styles.portraitCheck}>
+          <input type="radio" name="year-ahead" checked={yearAhead === 'none'} onChange={() => setYearAhead('none')} />
+          {' '}No Year Ahead
+        </label>
+        {yearAhead === 'calculated' && (
+          <p className={styles.note}>
+            Jupiter, Saturn, Uranus, Neptune and Pluto over the next 12 months: their aspects to this chart, exact
+            dates with retrograde passes, and house ingresses, calculated here. Every word of the Year Ahead is
+            written fresh from those dates.
+          </p>
         )}
-        {transitUnreadable && <p role="alert" className={styles.alert}>No transit lines recognised. Clear the field or paste the report text.</p>}
-      </details>
+        {yearAhead === 'pasted' && (
+          <>
+            <p className={styles.note}>
+              Paste the client&rsquo;s 12-month transit report (Astrograph format). Only the transit data is read; every
+              word of the Year Ahead is written fresh.
+            </p>
+            <textarea value={transitReport} onChange={(e) => setTransitReport(e.target.value)} rows={5}
+              aria-label="Transit report"
+              placeholder={'Transiting Pluto in opposition with natal Jupiter\nMarch 4, 2026 until January 10, 2027'} />
+            {transitParse && transitParse.transits.length > 0 && (
+              <p className={styles.note}>{transitParse.transits.length} transit{transitParse.transits.length === 1 ? '' : 's'} found.</p>
+            )}
+            {transitUnreadable && <p role="alert" className={styles.alert}>No transit lines recognised. Clear the field or paste the report text.</p>}
+          </>
+        )}
+      </fieldset>
       {state.kind === 'error' && <p role="alert" className={styles.alert}>{state.message}</p>}
       <div className={styles.portraitActions}>
         <button type="button" onClick={() => void write()} disabled={!ready || writing}>
-          {writing ? `Writing… about ${transitParse ? 2 : 1} min` : 'Write draft'}
+          {writing ? `Writing… about ${withYearAhead ? 2 : 1} min` : 'Write draft'}
         </button>
         <button type="button" onClick={onClose} disabled={writing}>Cancel</button>
       </div>
