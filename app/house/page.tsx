@@ -14,6 +14,7 @@ import { canUseHouseStudioH1 } from '@/lib/access/houseStudioH1Access';
 import { houseWritingHref } from '@/app/writers-studio/h1Arrival';
 import { houseWriterStudioHref } from '@/lib/house/houseCabinContext';
 import { CurrentTransitsField } from '@/components/astrology/CurrentTransitsField';
+import { proMemberAllowed } from '@/lib/astrology/proAccess';
 
 const GROUNDS = [
   { href: '/relationships', label: 'People', line: 'Return to the relationships you are tending' },
@@ -34,6 +35,8 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
     ? cabinHousePreferences(member.id)
     : await readHousePreferences(member.id, query);
   const passingQuote = selectPassingQuote(PASSING_QUOTES, new Date());
+  // Astrology Pro admits by its own grant (lib/astrology/proAccess.ts); a failed check admits no one.
+  const proAstrologyAdmitted = !cabinOffline && await proMemberAllowed(member.id, process.env).catch(() => false);
 
   return (
     <HousePreferencesProvider initial={housePreferences} key={housePreferences.tag.split('-')[1]}>
@@ -74,7 +77,7 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
 
         {/* Founder direction 2026-11-05: MAIA comes before the sky wherever the page stacks
             (phones, tablets, the iPhone app). On wide screens MAIA keeps her own column. */}
-        <div className={styles.wideOnly}><CurrentTransitsField variant="house" /></div>
+        <div className={styles.wideOnly}><CurrentTransitsField variant="house" proAstrology={proAstrologyAdmitted} /></div>
 
         <section className={styles.centerIntro} aria-labelledby="home-spaces-title">
           <p>YOUR SPACES</p>
