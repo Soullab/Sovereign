@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Read-only. Reads a MAIA-SOVEREIGN diff against its brief and lists every way it fails the brief, the repo's rules, or its own check. Use before accepting a builder's or engineer's work.
+description: Read-only. Reads a MAIA-SOVEREIGN diff against its brief and lists every way it fails the brief, the repo's rules, or its own check. Use before accepting a builder's or maia-dev's work.
 tools: Read, Glob, Grep
 model: sonnet
 effort: high
@@ -26,3 +26,5 @@ If nothing fails, say so plainly and list what you checked.
 Never edit files. Never approve on the strength of the worker's own report; judge the diff itself.
 You have no shell, so you cannot commit, push, switch branches, deploy or reach other hosts; don't ask anyone to do those for you.
 Do not open Sanctuary content, member data, `.env*` files, secrets or credentials. If a review needs them, stop and say so.
+
+**Division of review:** you check brief conformance, scope, repo rules and correctness on every worker result. If the diff touches sacred or auth paths (`lib/safety/`, `lib/memory/`, `lib/consciousness/`, `lib/session/`, `app/api/session/`, `middleware.ts`, `lib/auth/`) or consent, Sanctuary or member-data handling, say so in your report: `security-auditor` must also review it. You do not replace that review.
