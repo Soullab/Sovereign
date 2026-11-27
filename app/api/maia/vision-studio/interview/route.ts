@@ -35,6 +35,7 @@ import { inferSpiralogicCell, type Element } from '@/lib/consciousness/spiralogi
 // per the addenda-channel divergence lesson). Read-only, non-fatal, turn-only —
 // this room's ephemeral no-write contract is unchanged.
 import { composeRoomTurnPrompt, cloudRegisterPinned } from '@/lib/maia/roomComposition';
+import { extractPatternOffer, type PatternOffer, type PatternTurnContext } from '@/lib/maia/patternRecognition';
 
 const MAX_TOKENS_TURN = 700;
 const MAX_TOKENS_PROPOSE = 1500;
@@ -338,6 +339,8 @@ export async function POST(request: NextRequest) {
     // provenance labels which. Turn-only; flags off + no field → systemPrompt is
     // exactly the room's own prompt.
     let fieldComposed: Awaited<ReturnType<typeof composeRoomTurnPrompt>>['field'] = null;
+    // 🧩 SCE §6a — the refs MAIA was given this turn (turn mode with presence only).
+    let patternContext: PatternTurnContext | null = null;
     if (mode === 'turn') {
       const lastMemberMessage = [...history].reverse().find((t) => t.role === 'user')?.content ?? '';
       const composed = await composeRoomTurnPrompt({
@@ -346,10 +349,13 @@ export async function POST(request: NextRequest) {
         lastMemberMessage,
         fieldContext: body?.fieldContext,
         roomTag: 'VisionStudio',
+        // 🧩 SCE §6a — lets the server honour the Gentle dial (one offer per conversation).
+        patternOffersThisConversation: body?.patternOffersThisConversation,
         ephemeralSessionId: 'vision-studio-ephemeral',
       });
       systemPrompt = composed.systemPrompt;
       fieldComposed = composed.field;
+      patternContext = composed.patternContext;
     }
 
     let messages = history.map(t => ({ role: t.role, content: t.content }));
@@ -377,7 +383,14 @@ export async function POST(request: NextRequest) {
       maxTokens,
       forceClaude: cloudRegisterPinned(),
     });
-    const raw = (result.text ?? '').trim();
+    // 🧩 SCE §6a — the single point where the model's raw reply is captured: MAIA's
+    // offer line is parsed and stripped HERE, before the reply is returned (and so
+    // before the client speaks it or carries it back as history), then validated
+    // against this turn's refs. 'propose' never receives refs, so any line is dropped.
+    const extraction = extractPatternOffer(result.text ?? '', mode === 'turn' ? patternContext : null);
+    const patternOffer: PatternOffer | null = extraction.offer;
+    if (extraction.refusedReason) console.log('[VisionStudio/interview] pattern offer refused', { reason: extraction.refusedReason });
+    const raw = extraction.visibleText.trim();
 
     if (mode === 'turn') {
       if (!raw) return NextResponse.json({ error: 'Nothing came through. Try once more.' }, { status: 502 });
@@ -393,6 +406,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ok: true,
         reply: raw,
+        // 🧩 SCE §6a — a pattern MAIA offered, for the member to keep, correct or dismiss.
+        ...(patternOffer ? { patternOffer } : {}),
         cellCandidate,
         served: { provider: result.provider, model: result.model },
         field: fieldComposed,

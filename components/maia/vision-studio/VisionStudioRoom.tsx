@@ -36,9 +36,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { apiFetch } from '@/lib/http/apiBase';
 import { RoomHoloflower, type RoomMotionState, type SpiralElement } from './RoomHoloflower';
 import { LivingConstellationPanel } from '@/components/maia/living-constellation/LivingConstellationPanel';
+import { PatternOfferCard } from '@/components/maia/PatternOfferCard';
+import type { PatternOffer } from '@/lib/maia/patternRecognition';
 
 type Role = 'user' | 'assistant';
-interface Turn { role: Role; content: string; }
+// 🧩 SCE §6a — a pattern MAIA offered on this turn; never sent back as history.
+interface Turn { role: Role; content: string; patternOffer?: PatternOffer; }
 interface ProposedThread { title: string; reflection: string; groundedIn: string; }
 type Decision = 'keep' | 'revise' | 'discard' | 'split';
 interface AuthoredThread { title: string; origin: 'maia_proposed' | 'member_authored'; }
@@ -218,9 +221,11 @@ export function VisionStudioRoom({ phase = 'fire_1', fieldContext }: Props) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        history,
+        history: history.map(({ role, content }) => ({ role, content })),
         mode,
         phase,
+        // 🧩 SCE §6a — lets the server honour the Gentle dial (one offer per conversation).
+        patternOffersThisConversation: history.filter((t) => t.patternOffer).length,
         // The same opaque identifier the room already carries lets the server
         // compose the practitioner's field into the turn (downstream of MAIA's own).
         ...(fieldContext ? { fieldContext } : {}),
@@ -249,7 +254,9 @@ export function VisionStudioRoom({ phase = 'fire_1', fieldContext }: Props) {
     setShowElementPicker(false);
     try {
       const json = await callInterview(updated, 'turn');
-      setTurns(prev => [...prev, { role: 'assistant', content: json.reply }]);
+      const patternOffer: PatternOffer | undefined =
+        json?.patternOffer && typeof json.patternOffer === 'object' ? (json.patternOffer as PatternOffer) : undefined;
+      setTurns(prev => [...prev, { role: 'assistant', content: json.reply, ...(patternOffer ? { patternOffer } : {}) }]);
       setRoomMotion('responding');
       speakText(json.reply);
       if (
@@ -760,6 +767,8 @@ export function VisionStudioRoom({ phase = 'fire_1', fieldContext }: Props) {
               className={`text-sm leading-relaxed font-light ${t.role === 'user' ? 'text-stone-200' : 'text-stone-400'}`}
             >
               {t.content}
+              {/* 🧩 SCE §6a — the member decides on a pattern MAIA offered */}
+              {t.role === 'assistant' && t.patternOffer && <PatternOfferCard offer={t.patternOffer} />}
             </motion.div>
           ))}
           {working && (

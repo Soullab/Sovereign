@@ -36,6 +36,7 @@ import { apiFetch } from '@/lib/http/apiBase';
 import { ReturnHome } from '@/components/navigation/ReturnHome';
 import Link from 'next/link';
 import { KEPT_PLACES } from '@/lib/navigation/keptPlaces';
+import { PatternsSection } from '@/components/maia/PatternsSection';
 import { ELEMENTAL_LENS_PROMPTS } from '@/lib/psyche/types';
 import type {
   AtomGesture,
@@ -233,6 +234,9 @@ export default function KeepCapturePage() {
                 </ul>
               </section>
             )}
+
+            {/* 🧩 SCE §6a — the member's patterns and their dial */}
+            <PatternsSection />
 
             {observations.length > 0 && (
               <section className="mb-12">

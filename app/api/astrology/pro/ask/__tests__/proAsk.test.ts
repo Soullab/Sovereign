@@ -10,6 +10,8 @@ import { loadSubjectBirth } from '@/lib/astrology/proSubjectBirth';
 import { PRO_ASK_SAFETY_REPLY } from '@/lib/astrology/proAskMaiaSections';
 import { loadMemberMemoryAtomsForPrompt } from '@/lib/maia/memoryAtomsLoader';
 import { appendExchange, openThread, ownsKeptThread, recallSubjectExchanges } from '@/lib/astrology/proConversationStore';
+import { loadPriorCrossSessionExchanges, loadRecentMarkedEpisodes, loadConversationalRecallPref } from '@/lib/maia/memoryLoaders';
+import { loadPatternTurnInputs } from '@/lib/maia/patternRecognition';
 import { POST } from '../route';
 
 jest.mock('@/lib/astrology/proConversationStore', () => ({
@@ -38,6 +40,21 @@ jest.mock('@/lib/maia/memoryAtomsLoader', () => ({
   loadMemberMemoryAtomsForPrompt: jest.fn(async () => []),
   formatAtomsForPrompt: jest.fn((atoms: Array<{ text: string }>) => atoms.map((a) => `KEPT: ${a.text}`).join('\n')),
 }));
+// The full connection (SCE §6a): MAIA's wider memory layers, mocked hermetically.
+jest.mock('@/lib/maia/memoryLoaders', () => ({
+  loadConversationalRecallPref: jest.fn(async () => true),
+  loadPriorCrossSessionExchanges: jest.fn(async () => []),
+  loadEpisodicRecallPref: jest.fn(async () => true),
+  loadRecentMarkedEpisodes: jest.fn(async () => []),
+}));
+jest.mock('@/lib/consciousness/spiralStatePersistence', () => ({ loadSpiralState: jest.fn(async () => null) }));
+jest.mock('@/lib/maia/patternRecognition', () => {
+  const actual = jest.requireActual('@/lib/maia/patternRecognition');
+  return {
+    ...actual,
+    loadPatternTurnInputs: jest.fn(async () => ({ level: 'full', patterns: [], dismissedKeys: new Set(), confirmedKeys: new Set() })),
+  };
+});
 jest.mock('@/lib/comms/SafetyService', () => ({
   analyzeSafetyCues: (text: string) => ({ severity: /want to die|kill myself/i.test(text) ? 'crisis' : null }),
 }));
@@ -226,7 +243,11 @@ describe('Ask MAIA inside Pro', () => {
   });
 
   describe('as a conversation, and with what MAIA knows of the astrologer', () => {
-    beforeEach(() => jest.mocked(loadMemberMemoryAtomsForPrompt).mockReset().mockResolvedValue([]));
+    beforeEach(() => {
+      jest.mocked(loadMemberMemoryAtomsForPrompt).mockReset().mockResolvedValue([]);
+      jest.mocked(loadPatternTurnInputs).mockClear();
+      jest.mocked(loadPriorCrossSessionExchanges).mockClear();
+    });
 
     it('carries the earlier turns of the visit and asks for depth when wanted', async () => {
       const res = await ask({ section: 'natal', subject: 'first', depth: 'deep', question: 'And the Moon?',
@@ -288,7 +309,66 @@ describe('Ask MAIA inside Pro', () => {
     it('does not read memory at all unless asked', async () => {
       await ask({ section: 'natal', subject: 'own', question: 'What do you see?' });
       expect(loadMemberMemoryAtomsForPrompt).not.toHaveBeenCalled();
+      expect(loadPriorCrossSessionExchanges).not.toHaveBeenCalled();
+      expect(loadPatternTurnInputs).not.toHaveBeenCalled();
       expect(generateSimple.mock.calls[0][0].systemPrompt).not.toContain('CHOSEN TO KEEP');
+    });
+
+    describe('the full connection (SCE §6a; Kelly 2026-11-24 "connecting the full MAIA")', () => {
+      beforeEach(() => {
+        jest.mocked(loadPriorCrossSessionExchanges).mockReset().mockResolvedValue([
+          { session_id: 's1', role: 'user', created_at: new Date(Date.now() - 3 * 86_400_000), content: 'I keep coming back to the move north.' },
+        ] as never);
+        jest.mocked(loadRecentMarkedEpisodes).mockReset().mockResolvedValue([]);
+        jest.mocked(loadConversationalRecallPref).mockReset().mockResolvedValue(true);
+        jest.mocked(loadPatternTurnInputs).mockClear();
+      });
+
+      it('reads her own recent words with MAIA and names every source in the provenance', async () => {
+        jest.mocked(loadMemberMemoryAtomsForPrompt).mockResolvedValue([{ text: 'I am learning to rest.', sourceType: 'idea' }] as never);
+        const res = await ask({ section: 'natal', subject: 'own', personal: true, question: 'What is this season asking of me?' });
+        const body = await res.json();
+        expect(body.memoryUsed).toEqual({ kept: 1, patterns: 0, conversations: 1, moments: 0, field: false });
+        const prompt = generateSimple.mock.calls[0][0].systemPrompt as string;
+        expect(prompt).toContain('THEIR OWN RECENT WORDS WITH YOU');
+        expect(prompt).toContain('I keep coming back to the move north.');
+        expect(prompt).toContain('what you know of them from your wider work together');
+        expect(prompt).toContain('Patterns across these may be offered only under PATTERN RECOGNITION');
+      });
+
+      it('honours her conversational-recall opt-out', async () => {
+        jest.mocked(loadConversationalRecallPref).mockResolvedValue(false);
+        const res = await ask({ section: 'natal', subject: 'own', personal: true, question: 'x?' });
+        expect((await res.json()).memoryUsed.conversations).toBe(0);
+        expect(generateSimple.mock.calls[0][0].systemPrompt).not.toContain('move north');
+      });
+
+      it('strips a pattern-offer line before the answer is shown or stored', async () => {
+        generateSimple.mockResolvedValue({ text: 'I wonder if rest and the move belong together.\n<pattern_offer sources="a1,a9">Rest and the move.</pattern_offer>' });
+        jest.mocked(appendExchange).mockClear();
+        const res = await ask({ section: 'natal', subject: 'own', personal: true, keep: true, subjectKey: 'ask.natal.own.', question: 'x?' });
+        const body = await res.json();
+        expect(body.answer).not.toContain('pattern_offer');
+        expect(body.patternOffer).toBeUndefined(); // a9 was never given to MAIA
+        const stored = jest.mocked(appendExchange).mock.calls[0]?.[3] as string | undefined;
+        if (stored !== undefined) expect(stored).not.toContain('pattern_offer');
+      });
+
+      it('never reaches a client chart, and strips any offer line there too', async () => {
+        generateSimple.mockResolvedValue({ text: 'A reading.\n<pattern_offer sources="a1,a2">x</pattern_offer>' });
+        const res = await ask({ section: 'natal', subject: 'first', question: 'x?' });
+        const body = await res.json();
+        expect(body.answer).toBe('A reading.');
+        expect(body.patternOffer).toBeUndefined();
+        expect(body.memoryUsed).toBeUndefined();
+        expect(loadPriorCrossSessionExchanges).not.toHaveBeenCalled();
+        expect(loadPatternTurnInputs).not.toHaveBeenCalled();
+      });
+
+      it('refuses an offer counter without the personal reading', async () => {
+        const res = await ask({ section: 'natal', subject: 'first', question: 'x?', patternOffersThisConversation: 0 });
+        expect(res.status).toBe(400);
+      });
     });
   });
 

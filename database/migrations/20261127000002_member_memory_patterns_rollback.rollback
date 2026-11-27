@@ -1,0 +1,27 @@
+-- Rollback for 20261127000002_member_memory_patterns.sql.
+--
+-- Refuses if any member has confirmed a pattern or set the dial: those are member acts
+-- and are not discarded by a rollback. Export or dispose of them deliberately first.
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+
+DO $$
+BEGIN
+  IF to_regclass('public.member_memory_patterns') IS NOT NULL
+     AND EXISTS (SELECT 1 FROM member_memory_patterns) THEN
+    RAISE EXCEPTION 'Refusing rollback: member_memory_patterns has rows (member-confirmed patterns).';
+  END IF;
+  IF to_regclass('public.member_pattern_preferences') IS NOT NULL
+     AND EXISTS (SELECT 1 FROM member_pattern_preferences) THEN
+    RAISE EXCEPTION 'Refusing rollback: member_pattern_preferences has rows (member dial settings).';
+  END IF;
+END $$;
+
+DROP TABLE IF EXISTS member_pattern_dismissals;
+DROP TRIGGER IF EXISTS trg_retire_thin_member_memory_patterns ON member_memory_pattern_sources;
+DROP TABLE IF EXISTS member_memory_pattern_sources;
+DROP FUNCTION IF EXISTS retire_thin_member_memory_patterns();
+DROP TABLE IF EXISTS member_memory_patterns;
+DROP TABLE IF EXISTS member_pattern_preferences;
+
+COMMIT;

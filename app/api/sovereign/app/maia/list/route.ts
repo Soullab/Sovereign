@@ -137,6 +137,14 @@ import {
   ATOM_SECTION_SEPARATOR,
   type MemoryAtomSnapshot,
 } from '@/lib/maia/memoryAtomsLoader';
+// 🧩 Pattern recognition across kept memory (SCE §6a, ratified 2026-11-23)
+import {
+  loadPatternTurnInputs,
+  buildPatternTurnContext,
+  validatePatternOffer,
+  type PatternTurnContext,
+  type PatternOffer,
+} from '@/lib/maia/patternRecognition';
 import type { DeclaredPartitions } from '@/lib/maia/canonical-turn/partition';
 import { buildMemoryHealth, summarizeMemoryHealthForLog, isBaseChainDegraded, type MemoryHealth } from '@/lib/maia/memoryHealth';
 import { recordMemoryTransitions } from '@/lib/maia/memoryTransitionRecord';
@@ -1176,6 +1184,8 @@ ${studioCtx?.clientId ? `Client context ID: ${studioCtx.clientId}` : 'No specifi
     let atomsResult: MemoryAtomSnapshot[] = [];
     let atomsError = false;
     let atomsAddendum: string | undefined;
+    // 🧩 SCE §6a — the refs MAIA was given this turn; null = pattern recognition off/absent.
+    let patternTurnContext: PatternTurnContext | null = null;
     // MEMORY-PRODUCER-PARTITION-01: the canonical-side projection of the SAME atom
     // sections. Shadow only — never read by the legacy cognition path.
     let declaredPartitions: DeclaredPartitions = {};
@@ -1302,8 +1312,24 @@ ${studioCtx?.clientId ? `Client context ID: ${studioCtx.clientId}` : 'No specifi
         memoryInfluenceAddendum = memoryPlan.promptBlock || undefined;
 
         // 🧬 Layer 5 — member-placed portfolio atoms (consent-gated, non-synthesized)
-        const loadedAtoms = await loadMemberMemoryAtomsForPrompt(userId);
+        const [loadedAtoms, patternInputs] = await Promise.all([
+          loadMemberMemoryAtomsForPrompt(userId),
+          loadPatternTurnInputs(userId),
+        ]);
         atomsResult = loadedAtoms;
+        // 🧩 SCE §6a — the member's dial, confirmed patterns, refs. Sanctuary → null (absolute);
+        // this block is already gated on allowCrossSessionMemory (recognized, not Sanctuary).
+        patternTurnContext = buildPatternTurnContext({
+          sanctuary: isSanctuary,
+          level: patternInputs.level,
+          atoms: loadedAtoms,
+          patterns: patternInputs.patterns,
+          dismissedKeys: patternInputs.dismissedKeys,
+          confirmedKeys: patternInputs.confirmedKeys,
+          memberMessage: message,
+          offersThisConversation: Math.max(0, Math.floor(Number((meta as any)?.patternOffersThisConversation) || 0)),
+          originSurface: 'maia',
+        });
         // Two projections of ONE rendering (MEMORY-PRODUCER-PARTITION-01):
         //   legacy    → joinAtomSections(...) — byte-identical to the previous
         //               formatAtomsForPrompt(...); this is what cognition receives.
@@ -1312,7 +1338,7 @@ ${studioCtx?.clientId ? `Client context ID: ${studioCtx.clientId}` : 'No specifi
         // their writer starts return_preference at member_pulled unless a later
         // authenticated member gesture confers return; member_response_status is
         // a separate verdict axis the system never manufactures.
-        const atomSections = projectAtomSections(loadedAtoms);
+        const atomSections = projectAtomSections(loadedAtoms, patternTurnContext?.atomPatternRecognition);
         const atomsBlock = joinAtomSections(atomSections);
         if (atomsBlock) {
           atomsAddendum = atomsBlock;
@@ -1368,6 +1394,8 @@ ${studioCtx?.clientId ? `Client context ID: ${studioCtx.clientId}` : 'No specifi
             mode: isSanctuary ? 'Sanctuary' : null,
             currentSessionTurnCount: session.turn_count ?? 0,
             lastPriorSessionMinutesAgo: computeLastPriorSessionMinutesAgo(priorCrossSessionExchanges),
+            // 🧩 SCE §6a — the member's own earlier words are a pattern source when offers are allowed.
+            patternRecognition: patternTurnContext?.offerAllowed === true,
           });
           if (conversationalRecall.block) {
             conversationalRecallAddendum = conversationalRecall.block;
@@ -1394,6 +1422,7 @@ ${studioCtx?.clientId ? `Client context ID: ${studioCtx.clientId}` : 'No specifi
           const episodicRecall = formatMarkedEpisodesForPrompt(markedEpisodes, {
             recallEnabled: episodicRecallEnabled,
             mode: isSanctuary ? 'Sanctuary' : null,
+            patternRecognition: patternTurnContext?.offerAllowed === true,
           });
           if (episodicRecall.block) {
             episodicRecallAddendum = episodicRecall.block;
@@ -1857,6 +1886,23 @@ ${studioCtx?.clientId ? `Client context ID: ${studioCtx.clientId}` : 'No specifi
     // Applied before telemetry so the shape evaluator sees the final anchored text.
     let sovereignText = orchestratorResult.text ?? '';
 
+    // 🧩 SCE §6a — MAIA's pattern offer. The line itself was stripped at the maiaService
+    // choke point (before voice, persistence, return); here it is validated against the
+    // refs and dial of THIS turn. A refused or unanswered offer leaves no trace.
+    let patternOffer: PatternOffer | null = null;
+    {
+      const verdict = validatePatternOffer(
+        (orchestratorResult as any).patternOfferRaw,
+        isSanctuary ? null : patternTurnContext,
+      );
+      patternOffer = verdict.offer;
+      if (verdict.refusedReason) {
+        console.log('[MAIA/sovereign] pattern offer refused', { reason: verdict.refusedReason });
+      } else if (patternOffer) {
+        console.log('[MAIA/sovereign] pattern offer', { sources: patternOffer.sources.length, level: patternTurnContext?.level });
+      }
+    }
+
     // 🆘 SAFETY-CRISIS-01: if this was an AMBIGUOUS turn and MAIA actually asked
     // the member directly about safety, hold the check-in for the next turns.
     if (crisisAssessment.tier === 'ambiguous' && maiaAskedAboutSafety(sovereignText)) {
@@ -2051,6 +2097,8 @@ ${studioCtx?.clientId ? `Client context ID: ${studioCtx.clientId}` : 'No specifi
     // Unified response structure for new three-tier system with voice integration
     const responseData: any = {
       message: sovereignText,  // Uses closing-anchored text for counsel mode turns
+      // 🧩 SCE §6a — a pattern MAIA offered, for the member to keep, correct or dismiss.
+      ...(patternOffer ? { patternOffer } : {}),
       // 🆘 SAFETY-CRISIS-01: deterministic referral on a CLEAR signal; absent otherwise.
       ...(safetyReferral ? { safetyReferral } : {}),
       // 🌀 STATE VECTOR: Consciousness state reading (if check-in detected)

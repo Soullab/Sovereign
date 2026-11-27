@@ -243,8 +243,12 @@ export function proAskSystemPrompt(section: ProAskSection, facts: string,
     mode?: ProAskMode; view?: ProAskView; point?: string; depth?: ProAskDepth;
     /** Earlier turns of this visit are in the conversation. */
     continuing?: boolean;
-    /** The astrologer's own chart, read with what they have kept with MAIA (may be empty). */
-    personal?: { kept: string; field?: string };
+    /**
+     * The astrologer's own chart, read with what MAIA knows of them (SCE §6a §2b roles):
+     * kept items and confirmed patterns (`kept`), their own recent words with MAIA
+     * (`conversations`), moments they marked (`moments`) and the spiral lens (`field`).
+     */
+    personal?: { kept: string; field?: string; conversations?: string; moments?: string };
     /** The (first) chart is the astrologer's own, whether or not `personal` is on (Kelly, phone witness 2026-11-24). */
     ownChart?: boolean;
     /** This conversation is being kept (ASTRO-PRO-KEEP Phase 1), so MAIA must not say nothing is kept. */
@@ -266,7 +270,7 @@ export function proAskSystemPrompt(section: ProAskSection, facts: string,
     : `- Speak to the astrologer as a knowledgeable colleague: you may use astrological terms. Plain text only — no headings, bullet lists or markdown. ${length}`;
   const own = where.personal
     ? `
-- This is the astrologer's own chart, and they have asked you to read it with what they have chosen to keep with you (below). Speak to them as "you". Relate the chart to what they have kept, and to where they are in their wider work with you if that is given, where the two genuinely meet, and say which is which: "your chart shows…" is the chart; "you once kept…" is their own words. Never say or imply the chart caused, predicted or explains anything in their life: it offers a language for it. Offer what you notice, then ask what they recognise; they are the author of the meaning. Do not recite their kept material back at length.${where.personal.kept ? '' : where.personal.field ? '\n- They have kept nothing with you that may be brought here, so say so in one sentence; you may still relate the chart to where they are in their wider work with you.' : '\n- They have kept nothing with you that may be brought here, so say so in one sentence and read the chart on its own.'}`
+- This is the astrologer's own chart, and they have asked you to read it with what you know of them from your wider work together (below): what they have kept with you, patterns they have confirmed, their own recent words with you, moments they marked, and where they are in their wider work with you. Speak to them as "you". Relate the chart to these where they genuinely meet, and say which is which: "your chart shows…" is the chart; "you once kept…", "you said…" and "a pattern you confirmed…" are their own words and recognitions. Never say or imply the chart caused, predicted or explains anything in their life: it offers a language for it. Offer what you notice, then ask what they recognise; they are the author of the meaning. Do not recite their kept material back at length.${where.personal.kept || where.personal.conversations || where.personal.moments ? '' : where.personal.field ? '\n- They have kept nothing with you that may be brought here, so say so in one sentence; you may still relate the chart to where they are in their wider work with you.' : '\n- They have kept nothing with you that may be brought here, so say so in one sentence and read the chart on its own.'}`
     : where.ownChart
       ? `
 - The chart below is the astrologer's own (in a two-chart reading, the first chart is theirs). Speak of it as "your chart" and never ask whose chart it is. You are not given what they have kept with you here: read the chart on its own, and if they want it read with what you know of them, they can turn on "Read this with what you know about me".`
@@ -297,7 +301,13 @@ ${proGuideInstruction()}
 ${facts}${where.personal?.kept ? `
 
 ──────── WHAT THE ASTROLOGER HAS CHOSEN TO KEEP WITH YOU (their own words and marks, not from the chart) ────────
-${where.personal.kept}` : ''}${where.personal?.field ? `
+${where.personal.kept}` : ''}${where.personal?.conversations ? `
+
+──────── THEIR OWN RECENT WORDS WITH YOU (from your conversations; not from the chart) ────────
+${where.personal.conversations}` : ''}${where.personal?.moments ? `
+
+──────── MOMENTS THEY MARKED (their own words; not from the chart) ────────
+${where.personal.moments}` : ''}${where.personal?.field ? `
 
 ──────── WHERE THEY ARE IN THEIR WIDER WORK WITH YOU (MAIA's sense of their movement across your conversations; not from the chart, not a verdict) ────────
 ${where.personal.field}` : ''}${recalled.length > 0 ? `

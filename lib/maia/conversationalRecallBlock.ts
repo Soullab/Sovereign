@@ -41,8 +41,10 @@
  *   governs emission, not the layer's health signal.
  *
  * Drift canaries (per §V of spec):
- *   - Any future addition of cross-exchange synthesis (themes/patterns) violates
- *     the no-synthesis discipline; substrate must refuse such a PR.
+ *   - Cross-exchange synthesis is refused EXCEPT as a Pattern Offer under
+ *     SPIRAL_CONTINUITY_ENGINE §6a (ratified 2026-11-23), and only when the caller
+ *     passes `patternRecognition: true`. Without it the block is byte-identical to
+ *     before. Any other synthesis path must still be refused.
  *   - Any rendering that drops provenance (recency + speaker) silently asserts
  *     authority over the content; do not remove the (Member|MAIA): "..." form.
  *   - Any code path that emits the block while recallEnabled === false is a
@@ -58,6 +60,12 @@ export type SuppressionContext = {
   mode?: string | null;
   /** length of the current session's conversationHistory at this turn */
   currentSessionTurnCount: number;
+  /**
+   * SCE §6a: true only when pattern recognition is active for this turn (the
+   * member's dial allows an offer). Replaces the two no-synthesis sentences with
+   * the Pattern Offer discipline. Absent/false → the original block, byte-for-byte.
+   */
+  patternRecognition?: boolean;
   /**
    * minutes since most-recent prior cross-session turn. Combined with low
    * currentSessionTurnCount this signals session-resumption rather than
@@ -118,8 +126,13 @@ export function formatPriorExchangesForPrompt(
     'These are this member\'s words and your responses from sessions other than the',
     'current one. Recency is the only ordering — there is no relevance score, no',
     'thematic clustering, no system interpretation. Reference these only if directly',
-    'relevant to what the member is bringing now. Do not synthesize across them.',
-    'Do not name patterns that cross sessions unless the member names them first.',
+    'relevant to what the member is bringing now.' + (ctx.patternRecognition ? '' : ' Do not synthesize across them.'),
+    ...(ctx.patternRecognition
+      ? [
+          'Patterns across these may be offered only under PATTERN RECOGNITION: as your',
+          "reading, quoting the member's own words with their date, never as a finding.",
+        ]
+      : ['Do not name patterns that cross sessions unless the member names them first.']),
     '',
     ...lines,
     '',

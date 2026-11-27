@@ -46,6 +46,9 @@ import {
   loadConversationalRecallPref,
 } from '@/lib/maia/memoryLoaders';
 import { loadMemberMemoryAtomsForPrompt, formatAtomsForPrompt } from '@/lib/maia/memoryAtomsLoader';
+// 🧩 Pattern recognition across kept memory (SCE §6a, ratified 2026-11-23)
+import type { PatternTurnContext } from '@/lib/maia/patternRecognition';
+import { preparePatternTurn, offersThisConversationFrom, clientRendersPatternOffers } from '@/lib/maia/patternTurnSurface';
 import {
   formatPriorExchangesForPrompt,
   computeLastPriorSessionMinutesAgo,
@@ -92,6 +95,13 @@ export interface RoomFieldProvenance {
 export interface ComposedRoomPrompt {
   systemPrompt: string;
   field: RoomFieldProvenance | null;
+  /**
+   * 🧩 SCE §6a — the refs MAIA was given this turn, or null when pattern recognition
+   * is absent (presence off, dial off with nothing confirmed, or a failed read). The
+   * route captures the offer line from the raw reply, strips it, and validates it
+   * against THIS context before anything returns to the member.
+   */
+  patternContext: PatternTurnContext | null;
 }
 
 /**
@@ -176,8 +186,11 @@ async function assemblePresenceContext(
   message: string,
   roomTag: string,
   ephemeralSessionId: string,
-): Promise<string> {
+  /** null = this client does not render the offer card: strict block, no refs. */
+  patternOffersThisConversation: number | null,
+): Promise<{ text: string; patternContext: PatternTurnContext | null }> {
   const blocks: AssembledBlock[] = [];
+  let patternContext: PatternTurnContext | null = null;
   try {
     const [developmental, themeSignals] = await Promise.all([
       loadRecentDevelopmentalMemories(memberId, 3),
@@ -195,7 +208,18 @@ async function assemblePresenceContext(
     if (memoryPlan.promptBlock) blocks.push({ key: 'memoryInfluence', text: memoryPlan.promptBlock });
 
     const atoms = await loadMemberMemoryAtomsForPrompt(memberId);
-    const atomsBlock = formatAtomsForPrompt(atoms);
+    // 🧩 SCE §6a: these rooms have no Sanctuary session; presence itself is the gate.
+    patternContext = patternOffersThisConversation === null
+      ? null
+      : await preparePatternTurn({
+          memberId,
+          sanctuary: false,
+          atoms,
+          memberMessage: message,
+          offersThisConversation: patternOffersThisConversation,
+          originSurface: 'room',
+        });
+    const atomsBlock = formatAtomsForPrompt(atoms, patternContext?.atomPatternRecognition);
     if (atomsBlock) blocks.push({ key: 'atoms', text: atomsBlock });
 
     const recallEnabled = await loadConversationalRecallPref(memberId);
@@ -205,6 +229,8 @@ async function assemblePresenceContext(
       mode: null,
       currentSessionTurnCount: 0,
       lastPriorSessionMinutesAgo: computeLastPriorSessionMinutesAgo(prior),
+      // 🧩 SCE §6a — the member's own earlier words are a pattern source when offers are allowed.
+      patternRecognition: patternContext?.offerAllowed === true,
     });
     if (recall.block) blocks.push({ key: 'conversational', text: recall.block });
 
@@ -212,13 +238,16 @@ async function assemblePresenceContext(
       memberRef: memberRef(memberId),
       developmental: developmental.length,
       atoms: atoms.length,
+      patterns: patternContext ? patternContext.level : 'absent',
       priorExchanges: prior.length,
       blockChars: renderAssembledContext(assembledContext(blocks)).length,
     });
   } catch (err) {
     console.warn(`[${roomTag}/presence] assembly failed (non-fatal; degraded to base):`, err);
   }
-  return renderAssembledContext(assembledContext(blocks));
+  // A context is returned only if its block actually reached the prompt.
+  const text = renderAssembledContext(assembledContext(blocks));
+  return { text, patternContext: blocks.some((b) => b.key === 'atoms') ? patternContext : null };
 }
 
 /**
@@ -262,6 +291,8 @@ export async function composeRoomTurnPrompt(opts: {
   roomTag: string;
   /** Ephemeral marker id for cross-session recall (nothing excluded, nothing written). */
   ephemeralSessionId: string;
+  /** Raw request value: offers MAIA already made in this room conversation (Gentle dial). */
+  patternOffersThisConversation?: unknown;
 }): Promise<ComposedRoomPrompt> {
   const { roomPrompt, memberId, lastMemberMessage, fieldContext, program, roomTag, ephemeralSessionId } = opts;
   const presenceEnabled = process.env.NOW_WHAT_MAIA_PRESENCE_ENABLED === '1';
@@ -323,9 +354,18 @@ export async function composeRoomTurnPrompt(opts: {
   // `presenceEnabled` still gates PRESENCE and nothing else. The two were
   // conflated; they are now separate. When presence is off and no field
   // resolves, the composition is [floor, roomPrompt] — never roomPrompt alone.
-  const presence = presenceEnabled
-    ? await assemblePresenceContext(memberId, lastMemberMessage, roomTag, ephemeralSessionId)
-    : '';
+  const presenceResult = presenceEnabled
+    ? await assemblePresenceContext(
+        memberId,
+        lastMemberMessage,
+        roomTag,
+        ephemeralSessionId,
+        clientRendersPatternOffers(opts.patternOffersThisConversation)
+          ? offersThisConversationFrom(opts.patternOffersThisConversation)
+          : null,
+      )
+    : null;
+  const presence = presenceResult?.text ?? '';
   const systemPrompt = [MAIA_RUNTIME_PROMPT, presence, fieldBlock, positionBlock, lessonBlock, roomPrompt]
     .filter(Boolean)
     .join('\n\n');
@@ -333,5 +373,5 @@ export async function composeRoomTurnPrompt(opts: {
     systemPromptChars: systemPrompt.length,
     field: provenance?.slug ?? null,
   });
-  return { systemPrompt, field: provenance ?? null };
+  return { systemPrompt, field: provenance ?? null, patternContext: presenceResult?.patternContext ?? null };
 }
