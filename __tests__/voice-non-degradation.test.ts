@@ -163,6 +163,7 @@ const RATIFIED_CALLS = [
   'pwaVoice.transcriptReceived',
   'recentMessages.map',
   'recentMessages.map(…).join',
+  'recognizeMaiaMusicCommand',
   'recordVoiceTranscript',
   'res.json',
   'rhythmTrackerRef.current.onSpeechEnd',
@@ -178,6 +179,7 @@ const RATIFIED_CALLS = [
   'setListeningMode',
   'setMaiaMode',
   'setMessages',
+  'setMusicCommandFeedback',
   'setScribeSession',
   'setShowCapturePanel',
   'setTranscriptEnabled',
@@ -216,9 +218,26 @@ const RATIFIED_CALLS = [
  * ⛔ Nothing may be inserted before `handleTextMessage` here. What follows it is
  * post-cognition telemetry and is pinned for the same reason: nothing may be
  * appended there either.
+ *
+ * ⭐ RECORDED EXCEPTION — CLASS A, certified only on founder approval of the PR
+ * that adds it (2026-11-26). `recognizeMaiaMusicCommand` and
+ * `setMusicCommandFeedback` entered here (and in RATIFIED_CALLS) with
+ * d3e57ea39 / 94ecfa9f8 (2026-10-27/28) WITHOUT certification, while this gate
+ * was red. Grounds for certifying, by code-read only:
+ *   - `recognizeMaiaMusicCommand` (lib/listening/maiaMusicCommand.ts) is a pure
+ *     classifier: no imports, no fetch, no await, no model. It cannot author a reply.
+ *   - `setMusicCommandFeedback(null)` only clears UI feedback.
+ *   - The transcript `t` reaches `handleTextMessage` unchanged; the classification
+ *     travels as `freshMusicIntent` metadata. No exit is added.
+ *   - The typed path runs the same recognizer and passes the same
+ *     `freshMusicIntent` into the same `handleTextMessage` — convergence holds.
+ * This is not a precedent: any further insertion ahead of cognition needs its
+ * own ruling.
  */
 const RATIFIED_COGNITION_TAIL = [
   'console.log',
+  'recognizeMaiaMusicCommand',
+  'setMusicCommandFeedback',
   'handleTextMessage',
   'Date.now',
   'trackEvent.voiceResult',
