@@ -45,6 +45,12 @@ import { useMaiaPlace } from '@/components/maia/presence/MaiaPresence';
 const ElementIcon = ELEMENT_ICONS;
 const elementColors = ELEMENT_TONES;
 
+/** Return to the view the member came from: arriving from the Web (`?from=web`) goes back to it. */
+function reflectionsHome(): string {
+  if (typeof window === 'undefined') return '/reflections';
+  return new URLSearchParams(window.location.search).get('from') === 'web' ? '/reflections?view=web' : '/reflections';
+}
+
 export interface ReflectionDetailProps {
   /** Capsule id — supplied by the route that mounts this. */
   id: string;
@@ -200,7 +206,7 @@ export default function ReflectionDetail({ id }: ReflectionDetailProps) {
       >
         <div className="max-w-2xl mx-auto px-6 py-12">
           <button
-            onClick={() => router.push('/reflections')}
+            onClick={() => router.push(reflectionsHome())}
             className="flex items-center gap-2 text-stone-400 hover:text-stone-600 transition-colors text-[13px] tracking-wide mb-8"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -210,7 +216,7 @@ export default function ReflectionDetail({ id }: ReflectionDetailProps) {
           <div className="text-center py-20">
             <p className="text-red-500 text-[14px]">{error || 'Reflection not found'}</p>
             <button
-              onClick={() => router.push('/reflections')}
+              onClick={() => router.push(reflectionsHome())}
               className="mt-4 text-[13px] text-stone-500 hover:text-stone-700 underline"
             >
               Return to reflections
@@ -234,7 +240,7 @@ export default function ReflectionDetail({ id }: ReflectionDetailProps) {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <button
-            onClick={() => router.push('/reflections')}
+            onClick={() => router.push(reflectionsHome())}
             className="flex items-center gap-2 text-stone-400 hover:text-stone-600 transition-colors text-[13px] tracking-wide"
           >
             <ArrowLeft className="h-4 w-4" />

@@ -649,13 +649,14 @@
 .webRiver svg { display: block; overflow: visible; }
 .webLane line { stroke: rgba(222, 195, 154, .14); stroke-width: 1; }
 .webLane text { fill: #9f8e78; font: 10px Arial, sans-serif; letter-spacing: .12em; text-transform: uppercase; }
-.webLane .webLaneLabelVertical { font-size: 8px; letter-spacing: .06em; }
+.webLane .webLaneLabelVertical { font-size: 10px; letter-spacing: .04em; }
 .webThread path { fill: none; stroke: rgba(223, 195, 151, .38); stroke-width: 1.2; }
 .webThread circle { fill: #15110d; stroke: rgba(223, 195, 151, .7); stroke-width: 1.2; }
 .webThread[data-lit='true'] path { stroke: #e9cfa4; stroke-width: 1.6; }
 .webThread[data-lit='true'] circle { stroke: #e9cfa4; }
-.webGem { cursor: pointer; outline: none; }
-.webGemHit { fill: transparent; }
+/* A global `svg { pointer-events: none }` rule disables SVG input; gems must stay selectable. */
+.webGem { cursor: pointer; outline: none; pointer-events: auto; }
+.webGemHit { fill: transparent; pointer-events: all; }
 .webGemMark { fill: var(--gem-tone); stroke: rgba(21, 17, 13, .9); stroke-width: 1.5; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--gem-tone) 45%, transparent)); transition: stroke .15s ease; }
 .webGem:hover .webGemMark, .webGem:focus-visible .webGemMark { stroke: #f3e4cc; }
 .webGem[data-selected='true'] .webGemMark { stroke: #fff2dc; stroke-width: 2.5; }

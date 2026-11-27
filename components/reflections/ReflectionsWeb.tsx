@@ -13,7 +13,7 @@
  * no size by importance. Nothing here writes.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/http/apiBase';
 import type { WebNode, WebPayload, WebThread } from '@/lib/reflections/webTypes';
@@ -50,6 +50,12 @@ export default function ReflectionsWeb() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [scrub, setScrub] = useState(1000);
+  const detailRef = useRef<HTMLElement | null>(null);
+
+  // On a phone the detail sits below a tall river; bring it into view when a gem is chosen.
+  useEffect(() => {
+    if (narrow && selectedId) detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [narrow, selectedId]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -113,7 +119,7 @@ export default function ReflectionsWeb() {
 
   // Geometry. Horizontal on wide screens, vertical on phones (design §2.2).
   const laneSize = narrow ? 54 : 58;
-  const gutter = narrow ? 34 : 128;
+  const gutter = narrow ? 48 : 128;
   const pad = 26;
   const length = narrow ? Math.max(560, data.nodes.length * 16) : 1000;
   const breadth = lanes.length * laneSize;
@@ -151,13 +157,14 @@ export default function ReflectionsWeb() {
           style={narrow ? { maxWidth: viewW * 1.6 } : undefined}
         >
           {/* Lanes */}
-          {lanes.map((lane) => {
+          {lanes.map((lane, laneIndex) => {
             const label = lane === CARRIED_LANE ? 'Carried into' : sourceLabel(lane);
             const a = across(lane);
             return narrow ? (
               <g key={lane} className={styles.webLane}>
                 <line x1={a} y1={gutter - 8} x2={a} y2={length - pad + 8} />
-                <text x={a} y={14} textAnchor="middle" className={styles.webLaneLabelVertical}>
+                {/* Alternate rows so neighbouring lane names never run together on a phone. */}
+                <text x={a} y={laneIndex % 2 === 0 ? 12 : 28} textAnchor="middle" className={styles.webLaneLabelVertical}>
                   {label}
                 </text>
               </g>
@@ -208,7 +215,8 @@ export default function ReflectionsWeb() {
                 }}
                 style={{ '--gem-tone': toneFor(node.element) } as React.CSSProperties}
               >
-                <circle cx={p.x} cy={p.y} r={14} className={styles.webGemHit} />
+                {/* On a phone the river is scaled down, so the touch area is larger. */}
+                <circle cx={p.x} cy={p.y} r={narrow ? 22 : 14} className={styles.webGemHit} />
                 <circle cx={p.x} cy={p.y} r={6} className={styles.webGemMark} />
               </g>
             );
@@ -240,7 +248,7 @@ export default function ReflectionsWeb() {
       ) : null}
 
       {selected ? (
-        <aside className={styles.webDetail} aria-live="polite">
+        <aside ref={detailRef} className={styles.webDetail} aria-live="polite">
           <div className={styles.gemProvenance}>
             <span>{sourceLabel(selected.sourceType)}</span>
             <i aria-hidden="true">·</i>
@@ -248,7 +256,7 @@ export default function ReflectionsWeb() {
             {selected.draft ? <span className={styles.draftMark}>Unfinished</span> : null}
           </div>
           <h2>{selected.title}</h2>
-          <Link href={`/reflections/${selected.id}`} className={styles.webReturn}>
+          <Link href={`/reflections/${selected.id}?from=web`} className={styles.webReturn}>
             Return to this reflection <b aria-hidden="true">→</b>
           </Link>
           {selectedThreads.length > 0 ? (
