@@ -1394,6 +1394,8 @@ ${studioCtx?.clientId ? `Client context ID: ${studioCtx.clientId}` : 'No specifi
             mode: isSanctuary ? 'Sanctuary' : null,
             currentSessionTurnCount: session.turn_count ?? 0,
             lastPriorSessionMinutesAgo: computeLastPriorSessionMinutesAgo(priorCrossSessionExchanges),
+            // 🧩 SCE §6a — the member's own earlier words are a pattern source when offers are allowed.
+            patternRecognition: patternTurnContext?.offerAllowed === true,
           });
           if (conversationalRecall.block) {
             conversationalRecallAddendum = conversationalRecall.block;
@@ -1420,6 +1422,7 @@ ${studioCtx?.clientId ? `Client context ID: ${studioCtx.clientId}` : 'No specifi
           const episodicRecall = formatMarkedEpisodesForPrompt(markedEpisodes, {
             recallEnabled: episodicRecallEnabled,
             mode: isSanctuary ? 'Sanctuary' : null,
+            patternRecognition: patternTurnContext?.offerAllowed === true,
           });
           if (episodicRecall.block) {
             episodicRecallAddendum = episodicRecall.block;

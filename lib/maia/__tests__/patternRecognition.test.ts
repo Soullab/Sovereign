@@ -373,3 +373,33 @@ describe('wiring — the offer line never reaches voice, persistence or the memb
     expect(route).toContain('projectAtomSections(loadedAtoms, patternTurnContext?.atomPatternRecognition)');
   });
 });
+
+describe('recall blocks — the member\'s own words and marked moments as pattern sources (§2b)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { formatPriorExchangesForPrompt } = require('../conversationalRecallBlock');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { formatMarkedEpisodesForPrompt } = require('../episodicRecallBlock');
+  const prior = [{ session_id: 's1', role: 'user', created_at: new Date(Date.now() - 2 * 86_400_000), content: 'the move north again' }];
+  const ctxBase = { recallEnabled: true, mode: null, currentSessionTurnCount: 5, lastPriorSessionMinutesAgo: null };
+
+  it('without pattern recognition the conversational block keeps its no-synthesis lines, byte for byte', () => {
+    const a = formatPriorExchangesForPrompt(prior, ctxBase).block;
+    const b = formatPriorExchangesForPrompt(prior, { ...ctxBase, patternRecognition: false }).block;
+    expect(a).toBe(b);
+    expect(a).toContain('relevant to what the member is bringing now. Do not synthesize across them.');
+    expect(a).toContain('Do not name patterns that cross sessions unless the member names them first.');
+  });
+
+  it('with pattern recognition it defers to the Pattern Offer, quoting their own words', () => {
+    const block = formatPriorExchangesForPrompt(prior, { ...ctxBase, patternRecognition: true }).block;
+    expect(block).toContain('only under PATTERN RECOGNITION');
+    expect(block).not.toContain('Do not synthesize across them');
+    expect(block).toContain('the move north again');
+  });
+
+  it('opt-out and Sanctuary still suppress the block entirely, pattern recognition or not', () => {
+    expect(formatPriorExchangesForPrompt(prior, { ...ctxBase, recallEnabled: false, patternRecognition: true }).block).toBe('');
+    expect(formatPriorExchangesForPrompt(prior, { ...ctxBase, mode: 'Sanctuary', patternRecognition: true }).block).toBe('');
+    expect(formatMarkedEpisodesForPrompt([], { recallEnabled: false, patternRecognition: true }).block).toBe('');
+  });
+});

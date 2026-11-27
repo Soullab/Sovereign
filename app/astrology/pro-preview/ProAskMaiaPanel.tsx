@@ -22,6 +22,8 @@
  * the other systems, and — for their OWN chart only, chosen each time — have
  * MAIA read it with what they have chosen to keep with her.
  */
+import { PatternOfferCard } from '@/components/maia/PatternOfferCard';
+import type { PatternOffer } from '@/lib/maia/patternRecognition';
 import { KEPT_PLACES } from '@/lib/navigation/keptPlaces';
 import { useEffect, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
@@ -73,6 +75,30 @@ interface Exchange {
   carried?: boolean;
   /** Earlier kept conversations about this chart that MAIA read for this answer. */
   recalledUsed?: number;
+  /** What of MAIA's wider memory the own-chart reading drew on (SCE §6a, the full connection). */
+  memoryUsed?: MemoryUsed;
+  /** A pattern MAIA offered across what the member keeps, for them to decide on (SCE §6a). */
+  patternOffer?: PatternOffer;
+}
+
+interface MemoryUsed { kept: number; patterns: number; conversations: number; moments: number; field: boolean }
+
+function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** The provenance line under a personal reading: says exactly what MAIA read, by kind. */
+export function readWithLine(used: MemoryUsed | undefined, keptUsed: number): string {
+  const u = used ?? { kept: keptUsed, patterns: 0, conversations: 0, moments: 0, field: false };
+  const parts: string[] = [];
+  if (u.kept > 0) parts.push(`${plural(u.kept, 'thing')} you have kept with her`);
+  if (u.patterns > 0) parts.push(`${plural(u.patterns, 'pattern')} you confirmed`);
+  if (u.conversations > 0) parts.push(`${plural(u.conversations, 'line')} from your recent conversations with her`);
+  if (u.moments > 0) parts.push(`${plural(u.moments, 'moment')} you marked`);
+  if (u.field) parts.push('where you are in your wider work with her');
+  if (parts.length === 0) return 'MAIA has nothing of yours that may be brought here, so this is the chart alone.';
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  return `MAIA read this with ${list}.`;
 }
 
 export function askKey(request: ProAskRequest): string {
@@ -220,7 +246,7 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
           ...(mentor ? { mode: 'mentor' } : {}),
           ...(stage && depth === 'deep' ? { depth: 'deep' } : {}),
           ...(stage && natal && whole ? { include: ['four-pillars', 'progressions', 'maya'] } : {}),
-          ...(withMe ? { personal: true } : {}),
+          ...(withMe ? { personal: true, patternOffersThisConversation: exchanges.filter((e) => e.patternOffer).length } : {}),
           // The earlier turns of this visit, so MAIA builds on them. A safety reply is not a turn.
           ...(stage && exchanges.some((e) => !e.safety)
             ? { history: exchanges.filter((e) => !e.safety).slice(-HISTORY_TURNS).map((e) => ({ q: e.q, a: e.a })) } : {}),
@@ -241,6 +267,8 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
         ...(typeof body.keptUsed === 'number' ? { keptUsed: body.keptUsed } : {}),
         ...(typeof body.turnIndex === 'number' ? { turnIndex: body.turnIndex } : {}),
         ...(typeof body.recalledUsed === 'number' ? { recalledUsed: body.recalledUsed } : {}),
+        ...(body.memoryUsed && typeof body.memoryUsed === 'object' ? { memoryUsed: body.memoryUsed as MemoryUsed } : {}),
+        ...(body.patternOffer && typeof body.patternOffer === 'object' ? { patternOffer: body.patternOffer as PatternOffer } : {}),
       }]);
       if (text === undefined) setQuestion('');
     } catch {
@@ -317,6 +345,7 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
           <div key={i} className={styles.exchange}>
             <p className={styles.q}>{e.mentor ? 'Mentor · ' : ''}{e.q}</p>
             <p className={e.safety ? `${styles.a} ${styles.safety}` : styles.a}>{e.a}</p>
+            {e.patternOffer && <PatternOfferCard offer={e.patternOffer} />}
             {typeof e.recalledUsed === 'number' && e.recalledUsed > 0 && (
               <p className={styles.provenance}>
                 MAIA also read {e.recalledUsed} earlier kept exchange{e.recalledUsed === 1 ? '' : 's'} about this chart.
@@ -334,9 +363,7 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
             )}
             {typeof e.keptUsed === 'number' && (
               <p className={styles.provenance}>
-                {e.keptUsed === 0
-                  ? 'You have kept nothing with MAIA that may be brought here, so this is the chart alone.'
-                  : `MAIA read this with ${e.keptUsed} thing${e.keptUsed === 1 ? '' : 's'} you have kept with her.`}
+                {readWithLine(e.memoryUsed, e.keptUsed)}
               </p>
             )}
           </div>
@@ -385,8 +412,10 @@ export function ProAskMaiaConversation({ request, readsWhose, mode = 'ask', stag
       )}
       {withMe && (
         <p className={styles.personalNote}>
-          MAIA will also read what you have chosen to keep with her across MAIA and allowed to return, and where you
-          are in your wider work with her. It informs this answer only. {keep ? 'This conversation is kept for you to return to' : 'This conversation is not kept'}, and your chart
+          MAIA will also read what she knows of you from your wider work together: what you have kept with her and
+          allowed to return, patterns you have confirmed, your recent words with her, moments you marked, and where you
+          are in that work. As your pattern setting in Keep &amp; Capture allows, she may offer a pattern she sees; you decide
+          whether to keep it. It informs this answer only. {keep ? 'This conversation is kept for you to return to' : 'This conversation is not kept'}, and your chart
           is added to MAIA’s memory only where you press “Keep with MAIA”.
         </p>
       )}

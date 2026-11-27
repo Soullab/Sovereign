@@ -28,6 +28,10 @@ This draft is the wording of that direction. The direction is not canon until Ke
 | C11 | `lib/psyche/__tests__/astroProExchangeKeep.test.ts:99` | asserts `'No cross-atom claims'` | Yes, rewritten to assert the new discipline |
 | C12 | `docs/specs/PSYCHE_ENGAGEMENT_LAYER_SPEC.md` "Synthesize With" (draft spec, never built) | "The system never says *'these connect because…'*" | Superseded on that one line; its ratify/dismiss shape is reused |
 | C13 | `ASTRO-PRO-KEEP_PHASE2_MEMORY_DESIGN_2026-11-23.md` §6(b) and migration `20261123000001` header | "connections as questions, never conclusions (crossing_must_be_false stands)" | §6(b) is superseded by this amendment; the constraint still stands |
+| C14 | `lib/maia/conversationalRecallBlock.ts` (the member's recent words with MAIA) | "Do not synthesize across them. Do not name patterns that cross sessions unless the member names them first." | **Yes** (build, 2026-11-27). Unchanged by default; defers to the Pattern Offer only when the dial allows an offer |
+| C15 | `lib/maia/episodicRecallBlock.ts` (member-marked moments) | "Do not synthesize across them. Do not claim a pattern, arc, or 'you always' statement unless the member names it first." | **Yes**, same treatment; "you always" stays refused |
+
+*Correction (2026-11-27): C14 and C15 were missed in the inventory put to Kelly. They hold the §2b source "the member's own earlier words" (and the member's marked moments), so the ratified §6a already governs them. They were found while designing the Pro consumer and are recorded here, not silently absorbed.*
 
 Related prior work, **not on canonical and not relied on**: `feature/maia-soul-service-03c-pattern-maturity-20260929`,
 `…-03e-pattern-aging-20260930` (unmerged witnesses for pattern maturity, aging and disconfirmation).
@@ -187,3 +191,18 @@ accept, which is where the Direction of Authority already places it. It keeps on
 words did not reach: offers happen only inside a conversation the member started, never through
 notifications or after an absence. Moving that boundary would be a separate reconciliation of the
 initiation boundary.
+
+## 7. Consumers (added 2026-11-27)
+
+Where kept memory meets MAIA, and what each surface reads. Every surface uses the one discipline in §6a. A surface not yet wired keeps the stricter pre-amendment block.
+
+| Surface | Reads (role per §2b) | Pattern offers | Status |
+|---|---|---|---|
+| Central /maia conversation (`app/api/sovereign/app/maia/list`) | kept items + confirmed patterns (source), the member's own recent words and marked moments (source, own consent gates), memory plan / theme / developmental (prompt only, unchanged), conductor element/phase (lens) | yes, by the member's dial | built (PR #2446) |
+| **Pro Astrology, own chart, "Read this with what you know about me"** (`app/api/astrology/pro/ask`) | kept items (pool 40, minus Pro exchanges, which return through per-chart recall, so they are not counted twice; 8 places), confirmed patterns, her own recent words with MAIA (6 lines, `conversational_recall_enabled`), marked moments (`episodic_recall_enabled`) as sources; Bridge D spiral state as lens (from stopgap #2401) | yes, by the member's dial; offer line stripped before the answer is shown or stored in the Pro thread | built (PR #2446) |
+| Pro Astrology, a client's chart, or two charts | nothing of the astrologer's memory (`personal_own_chart_only`); any offer line stripped | no | unchanged |
+| Between, room composition | kept items with the pre-amendment block | not yet: each generation path needs its own strip point | follow-up |
+
+**Pro: why this, and not more.** Kelly asked, after testing on her phone on 2026-11-24: *"I thought we were connecting the full MAIA- I've developed and worked with for years?"* The long arc of that work reaches Pro through what she has **kept** and the patterns she has **confirmed**, which carry no recency limit, plus her most recent words with MAIA. MAIA does **not** search her 477 raw sessions for passages similar to the chart question. Similarity retrieval over raw conversation is a refused recall trigger (`PSYCHE_ENGAGEMENT_LAYER_SPEC.md`, "Refused recall triggers"; LMCG anti-pattern 1). Admitting it would need its own ruling; this amendment did not make that ruling.
+
+**Pro boundaries that hold.** The reading is for her own chart only. A client's chart never sits beside her memory. Memory flows into the answer only. Chart material enters MAIA's memory only through "Keep with MAIA". Her own words quoted in a Pro answer are kept in that Pro thread only when the thread is kept, and they are deleted with it. The provenance line under each answer names every kind it read ("MAIA read this with 6 things you have kept with her, 2 patterns you confirmed, 6 lines from your recent conversations with her and where you are in your wider work with her"). The note under the switch says the same before she asks.

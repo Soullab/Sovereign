@@ -112,8 +112,8 @@ function relative(d: Date | null | undefined): string {
   return `${Math.floor(days / 365)} years ago`;
 }
 
-function oneLine(s: string, max: number): string {
-  const t = s.replace(/\s+/g, ' ').trim();
+function oneLine(s: string | null | undefined, max: number): string {
+  const t = String(s ?? '').replace(/\s+/g, ' ').trim();
   return t.length > max ? t.slice(0, max) + '…' : t;
 }
 

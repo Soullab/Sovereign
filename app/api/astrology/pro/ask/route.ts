@@ -73,6 +73,19 @@ import { PRO_RESPONSE_HEADERS, proError, proOwnerStillCurrent, resolveProOwner }
 import type { SavedChartBirth } from '@/lib/astrology/proSavedCharts';
 import { PRO_SUBJECT_KEY_MAX, appendExchange, isThreadId, openThread, ownsKeptThread, recallSubjectExchanges, type RecalledExchange } from '@/lib/astrology/proConversationStore';
 import { formatAtomsForPrompt, loadMemberMemoryAtomsForPrompt } from '@/lib/maia/memoryAtomsLoader';
+// The full connection (SCE §6a, ratified 2026-11-23; Kelly 2026-11-24 "connecting the full MAIA"):
+// the own-chart reading draws on MAIA's wider memory in the roles §2b gives each layer.
+import { loadConversationalRecallPref, loadEpisodicRecallPref, loadPriorCrossSessionExchanges, loadRecentMarkedEpisodes } from '@/lib/maia/memoryLoaders';
+import { formatPriorExchangesForPrompt } from '@/lib/maia/conversationalRecallBlock';
+import { formatMarkedEpisodesForPrompt } from '@/lib/maia/episodicRecallBlock';
+import {
+  buildPatternTurnContext,
+  loadPatternTurnInputs,
+  parseRawPatternOffer,
+  stripPatternOfferTags,
+  validatePatternOffer,
+  type PatternTurnContext,
+} from '@/lib/maia/patternRecognition';
 import { loadSpiralState } from '@/lib/consciousness/spiralStatePersistence';
 import { spiralFieldLine } from '@/lib/astrology/proAskMaiaSections';
 
@@ -90,7 +103,7 @@ function allowed(memberId: string): boolean {
   return true;
 }
 
-const KEYS = ['section', 'subject', 'other', 'houseSystem', 'at', 'from', 'dayStart', 'direction', 'question', 'include', 'lifeContext', 'mode', 'view', 'point', 'personal', 'history', 'depth', 'ayanamsa', 'subjectKey', 'threadId', 'keep'];
+const KEYS = ['section', 'subject', 'other', 'houseSystem', 'at', 'from', 'dayStart', 'direction', 'question', 'include', 'lifeContext', 'mode', 'view', 'point', 'personal', 'history', 'depth', 'ayanamsa', 'subjectKey', 'threadId', 'keep', 'patternOffersThisConversation'];
 const DEEP_PARTS = ['four-pillars', 'maya', 'progressions'];
 
 export async function POST(request: NextRequest) {
@@ -163,6 +176,11 @@ export async function POST(request: NextRequest) {
   if (input.personal !== undefined && typeof input.personal !== 'boolean') return proError(400, 'personal_unsupported');
   const personal = input.personal === true;
   if (personal && (input.subject !== 'own' || twoCharts || section === 'deep')) return proError(400, 'personal_own_chart_only');
+  // SCE §6a: lets the Gentle dial allow one pattern offer per visit. Only meaningful with `personal`.
+  if (input.patternOffersThisConversation !== undefined &&
+      (!personal || typeof input.patternOffersThisConversation !== 'number' || !Number.isInteger(input.patternOffersThisConversation) || input.patternOffersThisConversation < 0)) {
+    return proError(400, 'unexpected_field');
+  }
   if (twoCharts && input.other === undefined) return proError(400, 'second_chart_required');
   if (!twoCharts && input.other !== undefined) return proError(400, 'unexpected_field');
   // The kept thread's key must name the chart(s) this answer is computed from. The
@@ -274,17 +292,69 @@ export async function POST(request: NextRequest) {
     let kept = '';
     let keptCount = 0;
     let field = '';
+    let conversations = '';
+    let moments = '';
+    let patternCtx: PatternTurnContext | null = null;
+    let memoryUsed: { kept: number; patterns: number; conversations: number; moments: number; field: boolean } | null = null;
     if (personal) {
       // Kelly, 2026-11-24 ("quick fix now"): the eight places go to the member's wider
       // MAIA memory. Their Pro "Keep with MAIA" exchanges are left out here because
       // they already return through the per-chart recall below, and as the newest
       // keeps they otherwise filled nearly every place. The fuller connection
       // (relevance-chosen, across MAIA's layers) belongs to the pattern-matching lane.
-      const atoms = (await loadMemberMemoryAtomsForPrompt(owner.memberId, PERSONAL_ATOM_POOL))
+      const [pool, patternInputs] = await Promise.all([
+        loadMemberMemoryAtomsForPrompt(owner.memberId, PERSONAL_ATOM_POOL),
+        loadPatternTurnInputs(owner.memberId).catch(() => null),
+      ]);
+      const atoms = pool
         .filter((atom) => atom.sourceType !== 'astro_pro_exchange')
         .slice(0, PERSONAL_ATOM_LIMIT);
       keptCount = atoms.length;
-      kept = formatAtomsForPrompt(atoms);
+      // Sources: kept items and confirmed patterns, under the member's dial (SCE §6a).
+      // Pro has no Sanctuary; personal is own-chart-only (checked above), so a client
+      // chart never sits beside this memory.
+      // Pattern recognition never fails the answer: on any error the reading goes ahead without it.
+      try {
+        patternCtx = buildPatternTurnContext({
+        sanctuary: false,
+        level: patternInputs?.level ?? 'off',
+        atoms,
+        patterns: patternInputs?.patterns ?? [],
+        dismissedKeys: patternInputs?.dismissedKeys ?? new Set<string>(),
+        confirmedKeys: patternInputs?.confirmedKeys ?? new Set<string>(),
+        memberMessage: question,
+        offersThisConversation: typeof input.patternOffersThisConversation === 'number' ? input.patternOffersThisConversation : 0,
+        originSurface: 'pro_personal',
+        });
+      } catch {
+        patternCtx = null;
+      }
+      kept = formatAtomsForPrompt(atoms, patternCtx?.atomPatternRecognition);
+      // Sources: the member's own words with MAIA and the moments they marked, under each
+      // layer's own consent gate and with the same formatters as the central conversation.
+      let conversationCount = 0;
+      let momentCount = 0;
+      try {
+        const [recallOn, prior, episodicOn, episodes] = await Promise.all([
+          loadConversationalRecallPref(owner.memberId),
+          loadPriorCrossSessionExchanges(owner.memberId, null, 6),
+          loadEpisodicRecallPref(owner.memberId),
+          loadRecentMarkedEpisodes(owner.memberId, 5),
+        ]);
+        const offers = patternCtx?.offerAllowed === true;
+        const c = formatPriorExchangesForPrompt(prior, {
+          recallEnabled: recallOn, mode: null, currentSessionTurnCount: history.length,
+          lastPriorSessionMinutesAgo: null, patternRecognition: offers,
+        });
+        const m = formatMarkedEpisodesForPrompt(episodes, { recallEnabled: episodicOn, mode: null, patternRecognition: offers });
+        conversations = c.block.trim();
+        moments = m.block.trim();
+        conversationCount = c.emitted ? c.surfacedCount : 0;
+        momentCount = m.emitted ? m.surfacedCount : 0;
+      } catch {
+        conversations = '';
+        moments = '';
+      }
       // Where the member stands in their wider work with MAIA: structural position only, never content.
       try {
         const spiral = await loadSpiralState(owner.memberId);
@@ -292,6 +362,13 @@ export async function POST(request: NextRequest) {
       } catch {
         field = '';
       }
+      memoryUsed = {
+        kept: keptCount,
+        patterns: patternCtx ? patternCtx.refs.patternRefs.size : 0,
+        conversations: conversationCount,
+        moments: momentCount,
+        field: Boolean(field),
+      };
     }
 
     // Earlier kept conversations about this same chart, from its other sections
@@ -310,7 +387,7 @@ export async function POST(request: NextRequest) {
     const deep = section === 'deep';
     const llm = await getLLMProvider().generateSimple({
       tier: deep ? 'deep' : 'core',
-      systemPrompt: deep ? proDeepSystemPrompt(facts, lifeContext || null) : proAskSystemPrompt(section, facts, { mode, view, point, depth, continuing: history.length > 0, personal: personal ? { field, kept } : undefined, ownChart: input.subject === 'own', keeping: Boolean(keep && subjectKey), recalled }),
+      systemPrompt: deep ? proDeepSystemPrompt(facts, lifeContext || null) : proAskSystemPrompt(section, facts, { mode, view, point, depth, continuing: history.length > 0, personal: personal ? { field, kept, conversations, moments } : undefined, ownChart: input.subject === 'own', keeping: Boolean(keep && subjectKey), recalled }),
       messages: [
         ...history.flatMap((turn) => [{ role: 'user' as const, content: turn.q }, { role: 'assistant' as const, content: turn.a }]),
         { role: 'user', content: question },
@@ -325,7 +402,12 @@ export async function POST(request: NextRequest) {
     if (!(await proOwnerStillCurrent(request, owner.memberId))) return proError(401, 'session_changed');
     // Privacy: record only that a question was answered, never its content.
     console.log('[astrology/pro/ask] answered');
-    const answer = plainAnswer(llm.text || '');
+    // SCE §6a: MAIA's pattern-offer line is captured, then stripped before the answer
+    // is shown or stored. It is always stripped, even when no offer was invited.
+    const rawText = llm.text || '';
+    const offerVerdict = validatePatternOffer(personal ? parseRawPatternOffer(rawText) : null, patternCtx);
+    const patternOffer = offerVerdict.offer;
+    const answer = plainAnswer(stripPatternOfferTags(rawText));
     if (!answer) return proError(503, 'no_answer');
     // A life story that mentions risk does not stop the reading; it opens with where to turn.
     const contextConcern = deep && lifeContext && (thirdPersonConcern(lifeContext) ||
@@ -347,7 +429,7 @@ export async function POST(request: NextRequest) {
         keptFields = { kept: false };
       }
     }
-    return NextResponse.json({ answer: finalAnswer, ...keptFields, ...(personal ? { keptUsed: keptCount } : {}), ...(recalled.length ? { recalledUsed: recalled.length } : {}) },
+    return NextResponse.json({ answer: finalAnswer, ...keptFields, ...(personal ? { keptUsed: keptCount, memoryUsed } : {}), ...(patternOffer ? { patternOffer } : {}), ...(recalled.length ? { recalledUsed: recalled.length } : {}) },
       { headers: PRO_RESPONSE_HEADERS });
   } catch {
     // Exception text may contain birth inputs; never log or return it.
