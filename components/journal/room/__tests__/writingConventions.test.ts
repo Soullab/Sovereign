@@ -28,6 +28,19 @@ describe('Journal lived-context conventions', () => {
     expect(writing).toContain('aria-pressed={entryType === t}');
   });
 
+  it('marks a returned Dream on arrival without letting type steer selection', () => {
+    const returnView = fs.readFileSync(
+      path.resolve(process.cwd(), 'components/journal/room/Return.tsx'),
+      'utf8',
+    );
+    const selector = fs.readFileSync(
+      path.resolve(process.cwd(), 'lib/journal/return.ts'),
+      'utf8',
+    );
+    expect(returnView).toContain("piece.entry.entry_type === 'dream' ? <span>DREAM</span> : null");
+    expect(selector).not.toMatch(/entry_?type/i);
+  });
+
   it('allows a member-authored place but never requests device location', () => {
     expect(writing).toContain('Add a place');
     expect(writing).toContain('placeholder="Home, the garden, New Haven…"');
