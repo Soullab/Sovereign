@@ -17,6 +17,7 @@ export interface ProRoomDoor {
   label: string;
   purpose: string;
   href: string;
+  mark: string;
 }
 
 export interface ProRoomChecks {
@@ -25,8 +26,9 @@ export interface ProRoomChecks {
 }
 
 export const PRO_ROOMS: ReadonlyArray<ProRoomDoor & { check: keyof ProRoomChecks }> = [
-  { id: 'pro-astrology', label: 'Pro Astrology', purpose: 'Your full chart, transits and readings', href: '/astrology/pro-preview', check: 'proAstrology' },
-  { id: 'pro-studio', label: 'Pro Studio', purpose: 'Your practice workspace', href: '/pro-studio', check: 'proStudio' },
+  // Founder ruling 2026-11-27: the Pro astrology room is named Astrology Studio.
+  { id: 'pro-astrology', label: 'Astrology Studio', purpose: 'Your full chart, transits and readings', href: '/astrology/pro-preview', mark: '◉', check: 'proAstrology' },
+  { id: 'pro-studio', label: 'Pro Studio', purpose: 'Your practice workspace — people, sessions and continuity', href: '/pro-studio', mark: '◈', check: 'proStudio' },
 ];
 
 export const defaultProRoomChecks: ProRoomChecks = {
@@ -48,5 +50,5 @@ export async function proRoomsForMember(
   checks: ProRoomChecks = defaultProRoomChecks,
 ): Promise<ProRoomDoor[]> {
   const results = await Promise.all(PRO_ROOMS.map((room) => admitted(() => checks[room.check](memberId))));
-  return PRO_ROOMS.filter((_, i) => results[i]).map(({ id, label, purpose, href }) => ({ id, label, purpose, href }));
+  return PRO_ROOMS.filter((_, i) => results[i]).map(({ id, label, purpose, href, mark }) => ({ id, label, purpose, href, mark }));
 }
