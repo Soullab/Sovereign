@@ -16,6 +16,9 @@
  * Marketing Director to confirm.
  */
 
+/** docs/canon/MARKETING_CLAIM_DISCIPLINE.md — Live / Designed / Vision. */
+export type ClaimLayer = 'Live' | 'Designed' | 'Vision';
+
 export type PlanMonth = {
   id: 'dec' | 'jan' | 'feb';
   label: string;
@@ -114,6 +117,35 @@ export const ROADMAP = {
   wavesNote:
     "An initial sequencing recommendation. It must be adjusted to actual product maturity and Heather's audience research. " +
     'Wave 1 falls inside Phase I (Foundation) while activation is planned from March; this overlap is unresolved.',
+
+  /**
+   * Story candidates: product stories marketing may PREPARE, each carrying its claim layer
+   * (docs/canon/MARKETING_CLAIM_DISCIPLINE.md). Only a `Live` story may be promoted publicly;
+   * `Designed` stories may be planned and drafted but not published. Re-tag when standing changes.
+   */
+  stories: [
+    {
+      name: 'Reflections · the Web',
+      wave: 1,
+      studio: 'MAIA',
+      layer: 'Designed' as ClaimLayer,
+      story:
+        'A second way to look at what you kept: your Reflections on a river of time, in the colours you know, ' +
+        'with threads only where you carried something into your life — a Change, a Decision, your Daily Anchor.',
+      centerOfGravity: 'The member sees their own kept moments over time. MAIA draws nothing and names nothing.',
+      standing:
+        'Built on a branch, not merged (Life Web step 1, Soullab/Sovereign#2424, 2026-11-26); ' +
+        'not deployed and not witnessed by a member. ' +
+        'Threads drawn by the member, named gatherings and MAIA offers are later steps and not built.',
+      gate: 'Becomes Live only after a member/device witness on the deployed build is recorded in the Reflections contract.',
+      source: 'docs/programme/REFLECTIONS_LIFE_WEB_DESIGN_2026-11-25.md · docs/design/contracts/reflections-room.md',
+      /** Where the member/device witness is recorded. Required before `layer` may be Live. */
+      witness: null as string | null,
+    },
+  ],
+  storiesNote:
+    'Stories may be prepared ahead of readiness. Only stories marked Live may appear in public promotion; ' +
+    'never describe a Designed story as available.',
 
   launchCycle: [
     ['T−4 wk', 'Prepare', 'Positioning, audiences, commercial offering and readiness'],

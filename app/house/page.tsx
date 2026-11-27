@@ -6,7 +6,7 @@ import styles from './house.module.css';
 import { memberForHouse, livingWorksForHouse, cabinHousePreferences } from './houseData';
 import { MaiaThresholdLink } from './MaiaThresholdLink';
 import { HouseRail } from './HouseRail';
-import { HousePreferencesProvider, HouseMemberControls, HouseCenter, HouseQuickAccess, HouseDirectory, HousePassingThrough, HouseQuickAccessStacked } from './HousePreferences';
+import { HousePreferencesProvider, HouseMemberControls, HouseCenter, HouseQuickAccess, HouseDirectory, HousePassingThrough, HouseQuickAccessStacked, HouseArrangeButton } from './HousePreferences';
 import { selectPassingQuote } from './passingContext';
 import { PASSING_QUOTES } from './passingQuotes';
 import { studioArrivalFromHouse } from '@/app/writers-studio/situatedWork';
@@ -14,6 +14,7 @@ import { canUseHouseStudioH1 } from '@/lib/access/houseStudioH1Access';
 import { houseWritingHref } from '@/app/writers-studio/h1Arrival';
 import { houseWriterStudioHref } from '@/lib/house/houseCabinContext';
 import { CurrentTransitsField } from '@/components/astrology/CurrentTransitsField';
+import { proMemberAllowed } from '@/lib/astrology/proAccess';
 
 const GROUNDS = [
   { href: '/relationships', label: 'People', line: 'Return to the relationships you are tending' },
@@ -34,6 +35,8 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
     ? cabinHousePreferences(member.id)
     : await readHousePreferences(member.id, query);
   const passingQuote = selectPassingQuote(PASSING_QUOTES, new Date());
+  // Astrology Pro admits by its own grant (lib/astrology/proAccess.ts); a failed check admits no one.
+  const proAstrologyAdmitted = !cabinOffline && await proMemberAllowed(member.id, process.env).catch(() => false);
 
   return (
     <HousePreferencesProvider initial={housePreferences} key={housePreferences.tag.split('-')[1]}>
@@ -50,30 +53,31 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
         </div>
         <header className={styles.topline}>
           <span>A SPACE TO REFLECT, CREATE, EXPLORE AND RETURN</span>
-          <HouseMemberControls name={firstName} arrange="wide" />
+          <HouseMemberControls name={firstName} arrange="none" tagline="Explore Your World" />
         </header>
 
         <div className={styles.welcome}>
           <p>THE HOUSE</p>
           <h1>Welcome home,<br />{firstName}.</h1>
-          <h2>Many paths. A deeper you.</h2>
+          <h2>Many facets. One love.</h2>
         </div>
 
         <aside className={styles.presence} aria-label="House presence">
-          <blockquote>Not a place<br />to escape life,<br />but a way to meet it<br />more fully.</blockquote>
+          <blockquote>A place to arrive,<br />to breathe,<br />and meet your life<br />more fully.</blockquote>
           <div className={styles.maiaPresence}>
             <MaiaThresholdLink />
             <p>Always here<br />when you are ready.</p>
             <MaiaThresholdLink variant="invitation" />
           </div>
           <HouseQuickAccess />
+          <HouseArrangeButton />
           <HousePassingThrough quote={passingQuote} />
           <p className={styles.whole}>Different places.<br />A more whole you.</p>
         </aside>
 
         {/* Founder direction 2026-11-05: MAIA comes before the sky wherever the page stacks
             (phones, tablets, the iPhone app). On wide screens MAIA keeps her own column. */}
-        <div className={styles.wideOnly}><CurrentTransitsField variant="house" /></div>
+        <div className={styles.wideOnly}><CurrentTransitsField variant="house" proAstrology={proAstrologyAdmitted} /></div>
 
         <section className={styles.centerIntro} aria-labelledby="home-spaces-title">
           <p>YOUR SPACES</p>

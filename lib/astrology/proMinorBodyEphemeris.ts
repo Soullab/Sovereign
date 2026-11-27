@@ -56,7 +56,16 @@ function heliocentric(t: BodyTable, jdTdb: number): [number, number, number] {
 
 /** Apparent geocentric longitude on the true ecliptic of date, in degrees. */
 export async function minorBodyLongitude(body: MinorBody, date: Date): Promise<number> {
+  return apparentLongitude((await load())[body], date);
+}
+
+/** The same, for many moments at once (one table load). */
+export async function minorBodyLongitudes(body: MinorBody, dates: readonly Date[]): Promise<number[]> {
   const table = (await load())[body];
+  return dates.map((date) => apparentLongitude(table, date));
+}
+
+function apparentLongitude(table: BodyTable, date: Date): number {
   const time = Astronomy.MakeTime(date);
   const earth = Astronomy.HelioState(Astronomy.Body.Earth, time);
   const jd = time.tt + J2000_JD;
