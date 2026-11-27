@@ -10,13 +10,14 @@ import type { RefusalCheck } from './harness';
  */
 
 const RESOLVER = 'lib/auth/getMemberFromRequest.ts';
+const AUTHORITY = 'lib/auth/sessionCredentialAuthority.ts';
 
 export const check: RefusalCheck = {
   id: 'R03',
   refusal: 'Request identity is never trusted from a client-asserted claim (body userId / bare header)',
   grade: 'A',
-  enforcedBy: 'lib/auth/getMemberFromRequest.ts — identity resolved only from auth_sessions token',
-  evidence: 'verifiedMemberId ← memberIdForSessionToken (:39,:46); no-session → null (:51-53); impersonation guard (:63-68)',
+  enforcedBy: 'lib/auth/getMemberFromRequest.ts + lib/auth/sessionCredentialAuthority.ts — identity resolved only from a live auth_sessions token',
+  evidence: 'authority ← resolveSessionCredentialAuthority (live, unrevoked auth_sessions row; conflict refused); !authority.ok → null; claims.some(claim !== authority.memberId) → null. Re-anchored 2026-11-26 after 0f726b4db (2026-10-26) replaced verifiedMemberId.',
   violationAttempted: 'find identity being assigned from a non-session source, a missing no-session/impersonation guard, or a request-body read in the resolver',
   passingAuthorizes: 'the identity resolver derives member id only from a validated session credential',
   passingDoesNotAuthorize: 'that every route USES this resolver — route-level adoption is a separate check; this proves only the resolver never trusts a bare claim',
@@ -24,30 +25,53 @@ export const check: RefusalCheck = {
 
   run(io) {
     const src = io.read(RESOLVER);
+    const authoritySrc = io.read(AUTHORITY);
 
-    // 1. Every assignment to verifiedMemberId comes from the session-token lookup (or null).
-    const assigns = [...src.matchAll(/verifiedMemberId\s*=\s*([^;]+);/g)].map((m) => m[1].trim());
-    const bad = assigns.filter((a) => !/memberIdForSessionToken|null/.test(a));
-    if (assigns.length === 0) {
-      io.fail('No verifiedMemberId assignment found', 'resolver shape changed — re-audit');
-    } else if (bad.length === 0) {
-      io.pass('Identity assigned only from session token / null', `${assigns.length} assignments`);
+    // 0. The session authority itself resolves identity only from a live, unrevoked
+    //    auth_sessions row, and refuses conflicting credentials.
+    const liveSession =
+      /FROM auth_sessions s[\s\S]*?WHERE s\.session_token = \$1[\s\S]*?s\.revoked = FALSE[\s\S]*?s\.expires_at > NOW\(\)/.test(authoritySrc);
+    const conflict = /credential_conflict/.test(authoritySrc);
+    const memberFromRow = /memberId:\s*authority\.member_id/.test(authoritySrc);
+    if (liveSession && conflict && memberFromRow) {
+      io.pass('Session authority reads identity only from a live auth_sessions row', 'unrevoked, unexpired; conflicting credentials refused');
     } else {
-      io.fail('Identity assigned from a non-session source', bad.join(' | '));
+      io.fail('Session authority shape changed — re-audit', `liveSession=${liveSession} conflict=${conflict} memberFromRow=${memberFromRow}`);
+    }
+
+    // 1. Every exit of the resolver returns null or the session authority's member id.
+    //    `authority` is bound only from resolveSessionCredentialAuthority().
+    const returns = [...src.matchAll(/return\s+([^;]+);/g)].map((m) => m[1].trim());
+    const allowedReturn = /^(null|authority\.memberId|authority\.ok \? authority\.memberId : null)$/;
+    const badReturns = returns.filter((r) => !allowedReturn.test(r));
+    const bindings = [...src.matchAll(/\bauthority\s*=\s*([^;(]+)/g)].map((m) => m[1].trim());
+    const badBindings = bindings.filter((b) => !/^await resolveSessionCredentialAuthority$/.test(b));
+    if (returns.length === 0 || bindings.length === 0) {
+      io.fail('No resolver exits or authority binding found', 'resolver shape changed — re-audit');
+    } else if (badReturns.length === 0 && badBindings.length === 0) {
+      io.pass('Identity returned only from the session authority / null', `${returns.length} exits, ${bindings.length} bindings`);
+    } else {
+      io.fail('Identity returned from a non-session source', [...badReturns, ...badBindings].join(' | '));
+    }
+
+    // 1b. Client identity claim headers never reach the credential list.
+    const credentialCalls = [...src.matchAll(/resolveSessionCredentialAuthority\(\[([\s\S]*?)\]\)/g)].map((m) => m[1]);
+    if (credentialCalls.length > 0 && credentialCalls.every((c) => !/member-id|member_id/.test(c))) {
+      io.pass('No identity claim is presented as a credential', 'only maia_session / x-session-token / explicit token');
+    } else {
+      io.fail('An identity claim is presented as a credential', `${credentialCalls.length} credential lists`);
     }
 
     // 2. No verified session → returns null (never falls through to a claim).
-    if (/if\s*\(\s*!verifiedMemberId\s*\)\s*\{[^}]*return\s+null/.test(src)) {
+    if (/if\s*\(\s*!authority\.ok\s*\)\s*return\s+null/.test(src)) {
       io.pass('Returns null when there is no verified session');
     } else {
       io.fail('Missing "no verified session → null" guard');
     }
 
-    // 3. Mismatched identity claim is rejected as impersonation.
-    //    Structural match: the `claimedMemberId !== verifiedMemberId` guard block
-    //    returns null at its first exit. (Non-greedy up to the first `return null`
-    //    inside the block — robust to the console.warn text between them.)
-    if (/claimedMemberId\s*!==\s*verifiedMemberId\s*\)\s*\{[\s\S]*?return\s+null/.test(src)) {
+    // 3. Any identity claim that differs from the verified session is rejected
+    //    as impersonation (the block's first exit is `return null`).
+    if (/claims\.some\(\s*\(claim\)\s*=>\s*claim\s*!==\s*authority\.memberId\s*\)\s*\)\s*\{[\s\S]*?return\s+null/.test(src)) {
       io.pass('Rejects mismatched identity claim (impersonation guard)');
     } else {
       io.fail('Missing impersonation-rejection guard');

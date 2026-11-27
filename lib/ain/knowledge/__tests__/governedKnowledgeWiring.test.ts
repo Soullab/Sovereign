@@ -17,8 +17,12 @@ test('the live /maia/list route retrieves governed knowledge and server-binds it
 
   const callStart = route.indexOf('getMaiaResponse({');
   const call = route.slice(callStart, route.indexOf('SOVEREIGN_TIMEOUT_MS', callStart));
-  expect(call.indexOf('...meta,')).toBeGreaterThanOrEqual(0);
-  expect(call.indexOf('governedKnowledgeAddendum, // 📚')).toBeGreaterThan(call.indexOf('...meta,'));
+  // Since PROMPT-AUTHORITY-02 (b74387f76) client meta is spread only after its
+  // prompt-bearing keys are stripped; the server-bound addendum must still come after it.
+  const SPREAD = '...withoutClientPromptAuthority(meta),';
+  expect(call.indexOf(SPREAD)).toBeGreaterThanOrEqual(0);
+  expect(call).not.toContain('...meta,');
+  expect(call.indexOf('governedKnowledgeAddendum, // 📚')).toBeGreaterThan(call.indexOf(SPREAD));
 });
 
 test('the live route refuses governed retrieval in Sanctuary and treats the rollout flag as enablement, not authority', () => {

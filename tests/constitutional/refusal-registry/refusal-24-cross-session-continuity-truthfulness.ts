@@ -70,15 +70,24 @@ const CORE_ABSENT_RE =
 const DEEP_ABSENT_RE =
   /if\s*\(pairs\.length > 0\)\s*\{[\s\S]*?\}\s*else\s*\{[\s\S]*?Cross-Session Recall DEEP\] ABSENT/;
 
-// ── Limb 4: the summary describes what was injected ──
+// ── Limb 4: the summary is truthful about what it counts ──
+// Re-anchored 2026-11-26. Since AIN-CONTEXT-01 A6 (c8770709c, 2026-09-15) the CORE
+// summary no longer counts injected turns: it states the authoritative depth ON RECORD,
+// derived by deriveSessionContinuity() from durable completed exchanges, and A6 states
+// represented vs absent separately in the prompt. The limb now pins that: the summary
+// interpolates the A6 facts and labels them "on record", and the stale variable that
+// was empty precisely when recall worked stays out.
 const TRUTHFUL_SUMMARY_RE =
-  /summary:\s*`Conversation: \$\{conversationContext\.profile\.dominantElement\} element, \$\{effectiveHistory\.length \+ 1\} turns`/;
+  /summary:\s*`Conversation: \$\{conversationContext\.profile\.dominantElement\} element, \$\{coreContinuity\.depth\} \$\{coreContinuity\.unit\} on record`/;
+const A6_DERIVATION_RE = /const coreContinuity = deriveSessionContinuity\(\{/;
 const STALE_SUMMARY_RE =
   /summary:\s*`Conversation:[^`]*\$\{conversationHistory\.length \+ 1\} turns`/;
 
 // ── Limb 5: pre-existing caps unchanged ──
 const CORE_CAP_RE = /effectiveHistory = pairs\.slice\(-4\)/;
-const DEEP_CAP_RE = /effectiveHistory = pairs\.slice\(-5\)/;
+// DEEP names its aperture since c8770709c; the constant must still be 5.
+const DEEP_CAP_RE = /effectiveHistory = pairs\.slice\(-DEEP_CONSULTATION_APERTURE\)/;
+const DEEP_APERTURE_RE = /const DEEP_CONSULTATION_APERTURE = 5;/;
 
 export const check: RefusalCheck = {
   id: 'R24',
@@ -92,7 +101,7 @@ export const check: RefusalCheck = {
     `${SERVICE}: no \`i += 2\` stride survives anywhere in the module`,
     `${SERVICE}: both recall sites call the shared helper — pairing is not re-implemented per site`,
     `${SERVICE}: CORE and DEEP each emit an ABSENT warning from the else branch`,
-    `${SERVICE}: summary interpolates effectiveHistory.length; caps remain slice(-4)/slice(-5)`,
+    `${SERVICE}: summary interpolates the A6 depth on record (coreContinuity), never conversationHistory.length; caps remain slice(-4)/slice(-DEEP_CONSULTATION_APERTURE = 5)`,
   ].join(' | '),
   violationAttempted: [
     '(1) has a parity stride returned anywhere, so one orphan turn again erases a history?',
@@ -166,30 +175,31 @@ export const check: RefusalCheck = {
     }
 
     // ── 4: truthful summary ──
-    const truthful = TRUTHFUL_SUMMARY_RE.test(src);
+    const truthful = TRUTHFUL_SUMMARY_RE.test(src) && A6_DERIVATION_RE.test(src);
     const stale = STALE_SUMMARY_RE.test(src);
     if (truthful && !stale) {
       io.pass(
-        'the summary counts the history actually injected',
-        'interpolates effectiveHistory.length — not a variable the enclosing branch has established is empty',
+        'the summary states the depth on record, from the A6 continuity facts',
+        'interpolates coreContinuity.depth/unit labelled "on record" — never the stale conversationHistory.length',
       );
     } else {
       io.fail(
         'the summary misreports the injected history',
-        `effectiveHistory=${truthful} staleConversationHistory=${stale} — wrong precisely when recall is working`,
+        `a6OnRecord=${truthful} staleConversationHistory=${stale} — wrong precisely when recall is working`,
       );
     }
 
     // ── 5: caps unchanged ──
-    if (CORE_CAP_RE.test(src) && DEEP_CAP_RE.test(src)) {
+    const deepCap5 = DEEP_CAP_RE.test(src) && DEEP_APERTURE_RE.test(src);
+    if (CORE_CAP_RE.test(src) && deepCap5) {
       io.pass(
         'no additional memory rode in with the repair',
-        'CORE slice(-4) and DEEP slice(-5) unchanged from the shared parent — dropped pairs are recovered, intake is not widened',
+        'CORE slice(-4) and DEEP slice(-DEEP_CONSULTATION_APERTURE = 5) unchanged from the shared parent — dropped pairs are recovered, intake is not widened',
       );
     } else {
       io.fail(
         'a per-tier memory cap changed',
-        `coreCap4=${CORE_CAP_RE.test(src)} deepCap5=${DEEP_CAP_RE.test(src)} — a reliability repair must not become a memory expansion`,
+        `coreCap4=${CORE_CAP_RE.test(src)} deepCap5=${deepCap5} — a reliability repair must not become a memory expansion`,
       );
     }
   },

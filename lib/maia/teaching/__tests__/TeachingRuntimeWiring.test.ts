@@ -15,7 +15,9 @@ describe('T8 live runtime wiring', () => {
     expect(sovereignRoute).toContain('buildTeachingRuntimeBridge({');
     expect(sovereignRoute).toContain('surface: surfaceAuthority.surface');
     expect(sovereignRoute).toContain('route: surfaceAuthority.route');
-    const spread = sovereignRoute.indexOf('...meta,', sovereignRoute.indexOf('getMaiaResponse({'));
+    // Since PROMPT-AUTHORITY-02 (b74387f76) client meta is spread only after its
+    // prompt-bearing keys are stripped; server-authored T8 must still come after it.
+    const spread = sovereignRoute.indexOf('...withoutClientPromptAuthority(meta),', sovereignRoute.indexOf('getMaiaResponse({'));
     const teaching = sovereignRoute.indexOf('teachingIntelligenceAddendum, // 🎓 T8', spread);
     expect(spread).toBeGreaterThan(-1);
     expect(teaching).toBeGreaterThan(spread);

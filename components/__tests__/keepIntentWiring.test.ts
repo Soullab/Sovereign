@@ -120,7 +120,17 @@ describe('Sanctuary suppresses the doorway and the panel', () => {
   });
 
   it('isSanctuary is a dependency of the enclosing callback', () => {
-    expect(SOURCE).toContain('pendingLensConsent, isSanctuary]);');
+    // Structural, not positional: the first dependency array closing the callback
+    // that holds the Keep block must list isSanctuary, wherever it sits in the list
+    // (later deps such as includeStoredBirthData were appended after it).
+    const keepAt = SOURCE.indexOf('const keepIntent = detectKeepIntent(cleanedText);');
+    const handlerAt = SOURCE.lastIndexOf('const handleTextMessage = useCallback(', keepAt);
+    expect(handlerAt).toBeGreaterThan(-1);
+    const close = /\n  \}, \[([^\]]*)\]\);/g;
+    close.lastIndex = keepAt;
+    const deps = close.exec(SOURCE);
+    expect(deps).not.toBeNull();
+    expect(deps![1].split(',').map((d) => d.trim())).toContain('isSanctuary');
   });
 
   it('the source guard in handleCaptureSpirit still backs this up', () => {
