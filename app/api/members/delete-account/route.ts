@@ -147,6 +147,11 @@ const GOVERNED_CONTENT: ReadonlyArray<{ table: string; column: string; label: st
   // living_works.member_id names `members` ON DELETE RESTRICT too, and a Work exists before it has a manuscript (the home Door creates one
   // on its own), so listing member_manuscripts alone left a member with only a Work on the rolled-back 500. Same label: one category.
   { table: 'living_works', column: 'member_id', label: 'your writing' },
+  // pro_studio_grants (20261127000001) names `members` ON DELETE RESTRICT three times and is append-only (its DELETE trigger
+  // refuses every delete). Registered so the preflight names what is held instead of the foreign-key net's empty refusal.
+  // Retention and erasure of grant rows, including the grantor and revoker columns, await a founder ruling
+  // (Pro Studio grants deploy review, finding F1); until then this refusal is the truthful answer.
+  { table: 'pro_studio_grants', column: 'member_id', label: 'your Pro Studio access record' },
 ];
 
 /**

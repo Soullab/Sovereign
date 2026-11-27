@@ -1,6 +1,6 @@
 # Pro Studio grant — design record (HOUSE-ENTRANCE-01 §9)
 
-**Status:** PROPOSED. Migration drafted, **not applied anywhere** except throwaway local scratch databases used to test it. Merging the PR puts the migration on the path to production; the merge is the founder's review of the schema.
+**Status:** MERGED (#2441). The migration is under independent review for production (2026-11-27) and is applied to production only by an admitted review and the full deploy; check the production ledger for whether it has run. Issuing grants still has no surface, and retention and erasure of grant rows await a founder ruling.
 **Governing:** `HOUSE-ENTRANCE-01_LEARN_AND_TRY_PAGE_DESIGN_2026-10-30.md` §9 · founder ruling 2026-10-30 (four canon paths; `tier` is not the entitlement) · founder ruling 2026-11-27 ("founder now, grant next").
 
 ## What it is
@@ -14,7 +14,7 @@
 | revocable | `revoked_at` and `revoked_by_member_id` are set together (CHECK). Every grant can be revoked; the schema allows no other kind. |
 | who granted | `granted_by_member_id` NOT NULL, a foreign key to `members`, and it may not be the grantee (CHECK). |
 | not derived from `members.tier` | Neither the table nor the reader mentions tier, subscription or practitioner fields (static tests). |
-| confers no client-data or Co-Lab permission | The table is referenced by nothing. The reader is imported only by `app/pro-studio/page.tsx` (a static test pins this), and `/studio` keeps its own guards. |
+| confers no client-data or Co-Lab permission | The table is referenced by nothing. The reader is imported only by `app/pro-studio/page.tsx` and, since #2449, by `lib/house/proRooms.ts`, which uses it only to show a Home link to `/pro-studio`. A static test pins exactly those two importers, and `/studio` keeps its own guards. |
 
 **Custody.** Rows are append-only. A DELETE trigger refuses every delete. An UPDATE trigger allows only one change: a single revocation. Granting again means a new row, so the history stays readable. The rollback refuses to run while any row exists.
 
