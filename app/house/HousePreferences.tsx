@@ -8,6 +8,8 @@ import { defaultHousePreferences, parseHouseSnapshot, sameHouseOwner, visibleHou
 import { PassingThrough } from './PassingThrough';
 import { DecisionAccessNotice } from './DecisionAccessNotice';
 import type { PassingQuote } from './passingContext';
+import { arrangeMyStudios } from '@/lib/house/myStudios';
+import type { ProRoomDoor } from '@/lib/house/proRooms';
 import house from './house.module.css';
 import styles from './house-preferences.module.css';
 
@@ -231,8 +233,8 @@ export function HousePreferencesProvider({ initial, children }: { initial: House
         <p className={styles.intro}>Placement changes distance, not permission or contents.</p>
 
         <fieldset disabled={busy} className={styles.choices}>
-          <legend>Center · up to five</legend>
-          <p className={styles.help}>These are the five large thresholds in the opening.</p>
+          <legend>My Studios and Living Spaces · up to five</legend>
+          <p className={styles.help}>Studios show under My Studios and living spaces just below. Studios you hold through Pro appear on their own.</p>
           {centerEligible.map(place => {
             const index = draft.center.indexOf(place.id);
             return <div className={styles.choice} key={place.id}>
@@ -326,17 +328,38 @@ export function HouseArrangeButton() {
   return <button type="button" className={`${styles.arrange} ${styles.arrangeWide} ${styles.arrangeBlock}`} disabled={!active} onClick={() => open()}>Arrange my House</button>;
 }
 
-export function HouseCenter() {
+/** My Studios (founder ruling 2026-11-27, #1875). Held Pro rooms first, admitted on the server by
+ *  their own grant and passed in; then the member's chosen Studios. The member's chosen Living
+ *  Spaces follow in their own row, so nothing they picked is displaced. Phones show five rows,
+ *  then "Show all". Choosing still happens in Arrange my House, at most five places. */
+export function HouseCenter({ proRooms = [] }: { proRooms?: readonly ProRoomDoor[] } = {}) {
   const { active, open } = useHousePreferences();
+  const [showAll, setShowAll] = useState(false);
   if (!active) return null;
-  const places = visibleHouseCenter(active.preferences, active.eligibleIds);
-  return <section className={house.worlds} aria-label="Your center">
-    {places.map(place => <Link href={place.href} className={house.world} key={place.id} data-place={place.id}>
-      <span className={`${house.worldMark} ${styles.placeMark}`} data-tone={place.tone} data-place={place.id} aria-hidden="true">{place.mark}</span>
-      <strong>{place.label}</strong><small>{place.purpose}</small>
-    </Link>)}
-    {places.length < 5 && <button type="button" className={styles.centerEmpty} onClick={() => open()}>+ Choose a place</button>}
-  </section>;
+  const chosen = visibleHouseCenter(active.preferences, active.eligibleIds);
+  const { studios, livingSpaces } = arrangeMyStudios(chosen, proRooms);
+  const folded = studios.length > 5 && !showAll;
+  return <>
+    <section className={house.worlds} aria-label="My Studios" data-folded={folded ? 'true' : undefined}>
+      {studios.map(card => <Link href={card.href} className={house.world} key={card.key} data-place={card.placeId ?? card.key}
+        data-pro={card.pro ? 'true' : undefined}>
+        <span className={`${house.worldMark} ${styles.placeMark}`} data-tone={card.tone ?? 'gold'} data-place={card.placeId ?? card.key} aria-hidden="true">{card.mark}</span>
+        {card.pro && <span className={house.proTag}>Pro</span>}
+        <strong>{card.label}</strong><small>{card.purpose}</small>
+      </Link>)}
+      {chosen.length < 5 && <button type="button" className={styles.centerEmpty} onClick={() => open()}>+ Add a studio</button>}
+    </section>
+    {folded && <button type="button" className={house.showAllStudios} onClick={() => setShowAll(true)}>Show all {studios.length} studios</button>}
+    {livingSpaces.length > 0 && <section className={house.livingSpaces} aria-labelledby="home-living-spaces-title">
+      <p id="home-living-spaces-title">LIVING SPACES</p>
+      <div className={house.worlds}>
+        {livingSpaces.map(place => <Link href={place.href} className={house.world} key={place.id} data-place={place.id}>
+          <span className={`${house.worldMark} ${styles.placeMark}`} data-tone={place.tone} data-place={place.id} aria-hidden="true">{place.mark}</span>
+          <strong>{place.label}</strong><small>{place.purpose}</small>
+        </Link>)}
+      </div>
+    </section>}
+  </>;
 }
 
 /** Phones and iPads (founder direction 2026-11-05): Here · Now sits below the five chosen
@@ -406,7 +429,7 @@ export function HouseDirectory({ variant = 'full' }: { variant?: 'full' | 'list'
     .some(value => value.toLowerCase().includes(q))), [q]);
   return <section className={styles.directory} aria-label="All places">
     <div className={styles.directoryHead}>
-      <div><p className={styles.marker}>ALL PLACES</p>{variant === 'list' ? <h1>Find what you came for.</h1> : <h3>Find what you came for.</h3>}
+      <div><p className={styles.marker}>EXPLORE SOULLAB</p>{variant === 'list' ? <h1>Find what you came for.</h1> : <h3>Find what you came for.</h3>}
         {variant === 'full' && <p>Plain access to the House. The deeper architecture remains underneath.</p>}</div>
       <label className={styles.search}>Find a tool or space
         <input type="search" value={query} onChange={event => setQuery(event.target.value)}

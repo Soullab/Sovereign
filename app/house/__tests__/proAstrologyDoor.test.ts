@@ -25,7 +25,7 @@ describe('Pro Astrology door on Home', () => {
 
   it('shows the Pro door on the House sky card only when admitted', () => {
     const field = read('components/astrology/CurrentTransitsField.tsx');
-    expect(field).toMatch(/variant === 'house' && proAstrology \? \(\s*<Link href="\/astrology\/pro-preview">Open Pro Astrology →<\/Link>/);
+    expect(field).toMatch(/variant === 'house' && proAstrology \? \(\s*<Link href="\/astrology\/pro-preview">Open Astrology Studio →<\/Link>/);
   });
 
   it('sends Pro members from the one-line sky row (phones, iPads, narrow windows) to Pro Astrology', () => {

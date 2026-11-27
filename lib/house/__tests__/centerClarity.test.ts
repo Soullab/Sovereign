@@ -15,10 +15,10 @@ describe('Home center clarity', () => {
     expect(DEFAULT_CENTER_IDS).toContain('studio');
   });
 
-  it('explains the primary spaces before entry', () => {
-    expect(page).toContain('YOUR SPACES');
+  it('explains the primary studios before entry (My Studios, founder ruling 2026-11-27)', () => {
+    expect(page).toContain('MY STUDIOS');
     expect(page).toContain('Choose where you want to work.');
-    expect(page).toContain('Each space holds a different kind of attention.');
+    expect(page).toContain('Each studio holds a different kind of attention.');
   });
 
   it('makes primary spaces visibly behave like doors', () => {
