@@ -100,6 +100,8 @@ The collection may vary in visual height because the member's actual material va
 
 **Element vocabulary and Keep marks (founder ruling 2026-11-26).** Keep, Gems, the Web and the single Reflection share one set of element icons and tones (`lib/reflections/labels.ts`). On Keep, an element mark means *an angle the member chose to look through*: when the member keeps a response in "Look at this another way", that lens is recorded on the item (`createLensPass` in `lib/psyche/portfolio.ts`, the same set-union as the existing `add_lens` gesture). MAIA never assigns one.
 
+**Keep card heads (founder ruling 2026-11-27, from the founder's own walk on production).** Every Keep card shows all five element icons at its head. An element the member has looked through (a kept lens response) shows in its colour; the others are faint. Tapping an icon opens "Look at this another way" through that element. Nothing is assigned: the five are an offer, not a reading of the item.
+
 **Founder rulings B, C, D (2026-11-27), from the engineering walk.**
 - **B. Large rivers.** Above 200 visible gems the per-gem glow is dropped (colour and selection stroke stay), and the river redraws when the scrubber pauses (120 ms) while the slider and its date answer at once.
 - **C. Light surfaces.** Keep's white cards use `ELEMENT_TONES_ON_LIGHT`, the same five elements deepened to at least 4.5:1 against white. The Reflections room keeps `ELEMENT_TONES`.
