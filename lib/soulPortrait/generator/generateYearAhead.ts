@@ -43,7 +43,7 @@ export function validateCitedTransits(phases: YearAheadPhase[], parsed: ParsedTr
 }
 
 /** Assemble the validated YearAhead from the model's flat JSON + parsed transit data. */
-function assemble(parsed: ParsedTransit[], j: any): YearAhead {
+function assemble(parsed: ParsedTransit[], j: any, timeframe?: string): YearAhead {
   const byId = new Map(parsed.map((t) => [t.id, t]));
 
   const phases: YearAheadPhase[] = SPIRAL_ORDER.map((element) => {
@@ -79,7 +79,7 @@ function assemble(parsed: ParsedTransit[], j: any): YearAhead {
   const yearAhead: YearAhead = {
     title: 'The Year Ahead',
     subtitle: j.subtitle ? String(j.subtitle) : undefined,
-    timeframe: deriveTimeframe(parsed),
+    timeframe: timeframe ?? deriveTimeframe(parsed),
     openingHeadline: j.openingHeadline ? String(j.openingHeadline) : undefined,
     openingTheme: String(j.openingTheme || ''),
     phases,
@@ -117,8 +117,19 @@ export async function generateYearAhead(opts: {
   isMinor?: boolean;
   transits: ParsedTransit[];
   natalSummary: string;
+  /**
+   * Where the transit data came from. 'calculated' = our own ephemeris
+   * (transitGenerator.ts); omitted = a pasted report, as before.
+   */
+  source?: 'report' | 'calculated';
+  /** The report window, when known exactly (calculated). Otherwise derived from the dates. */
+  timeframe?: string;
 }): Promise<YearAhead> {
   const { name, age, isMinor, transits, natalSummary } = opts;
+  const timeframe = opts.timeframe ?? deriveTimeframe(transits);
+  const sourceLine = opts.source === 'calculated'
+    ? `calculated from ${name}'s natal chart for the next 12 months`
+    : `extracted from ${name}'s 12-month transit report`;
 
   const llm = await getLLMProvider().generateSimple({
     tier: 'deep',
@@ -131,12 +142,12 @@ export async function generateYearAhead(opts: {
       name,
       age,
       isMinor,
-      timeframe: deriveTimeframe(transits),
+      timeframe,
     }),
     messages: [
       {
         role: 'user',
-        content: `${name}'s natal placements (for grounding):\n${natalSummary}\n\nThe year's transits — DATA extracted from ${name}'s 12-month transit report (cite by ID number):\n${transitDataText(transits)}\n\nWrite ${name}'s Year Ahead as the JSON object specified.`,
+        content: `${name}'s natal placements (for grounding):\n${natalSummary}\n\nThe year's transits — DATA ${sourceLine} (cite by ID number):\n${transitDataText(transits)}\n\nWrite ${name}'s Year Ahead as the JSON object specified.`,
       },
     ],
     temperature: 0.7,
@@ -144,5 +155,5 @@ export async function generateYearAhead(opts: {
   });
 
   const json = parseModelJson(llm.text || '', 'soul-portrait/year-ahead');
-  return assemble(transits, json);
+  return assemble(transits, json, timeframe);
 }

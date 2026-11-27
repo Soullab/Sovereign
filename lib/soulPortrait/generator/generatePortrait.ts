@@ -9,7 +9,10 @@
  */
 
 import { calculateBirthChart, type BirthData } from '@/lib/astrology/ephemerisCalculator';
-import { calculateBirthChart as calculateProBirthChart } from '@/lib/astrology/proEphemerisCalculator';
+import {
+  calculateBirthChart as calculateProBirthChart,
+  type BirthChart as ProBirthChart,
+} from '@/lib/astrology/proEphemerisCalculator';
 import { getLLMProvider } from '@/lib/consciousness/LLMProvider';
 import {
   ARCHETYPE_CATALOG,
@@ -26,6 +29,7 @@ import { parseModelJson } from './parseModelJson';
 import { chartSummaryText, portraitSystemPrompt } from './portraitPrompt';
 import { generateYearAhead } from './generateYearAhead';
 import { parseTransitReport, type ParsedTransit } from './transitReportParser';
+import { generateTransitReport } from './transitGenerator';
 
 export interface GeneratePortraitInput {
   name: string;
@@ -54,6 +58,12 @@ export interface GeneratePortraitInput {
    * the standard calculator, unchanged for every existing caller.
    */
   calculator?: 'standard' | 'pro';
+  /**
+   * Calculate Part II's transits from this same chart (transitGenerator.ts)
+   * instead of reading a pasted report. Pro calculator only. Ignored when a
+   * `transitReport` is given — a pasted report the practitioner chose wins.
+   */
+  calculatedTransits?: { from?: Date; timeZone?: string };
 }
 
 const ELEMENT_KEYS: ElementKey[] = ['fire', 'water', 'earth', 'air', 'aether'];
@@ -187,6 +197,19 @@ export async function generateSoulPortrait(
     }
     parsedTransits = transits;
   }
+  let transitSource: 'report' | 'calculated' = 'report';
+  let transitTimeframe: string | undefined;
+  if (!parsedTransits && input.calculatedTransits) {
+    if (input.calculator !== 'pro') throw new Error('calculated_transits_need_pro_chart');
+    const generated = await generateTransitReport(chart as ProBirthChart, {
+      from: input.calculatedTransits.from,
+      timeZone: input.calculatedTransits.timeZone ?? input.birthData.location?.timezone,
+    });
+    if (generated.transits.length === 0) throw new Error('calculated_transits_empty');
+    parsedTransits = generated.transits;
+    transitSource = 'calculated';
+    transitTimeframe = generated.timeframe;
+  }
 
   const llm = await getLLMProvider().generateSimple({
     tier: 'deep',
@@ -226,6 +249,8 @@ export async function generateSoulPortrait(
       isMinor: input.isMinor,
       transits: parsedTransits,
       natalSummary: summary,
+      source: transitSource,
+      timeframe: transitTimeframe,
     });
   }
   return {

@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ClipboardCopy, Map as MapIcon, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ClipboardCopy, Map as MapIcon, Palette, RefreshCw } from 'lucide-react';
 import { adminFetch } from '@/lib/admin/adminFetch';
 import type { StrategicRoadmap } from '@/lib/marketing/strategicRoadmap2027';
 
@@ -212,14 +212,24 @@ export default function MarketingRoadmapAdminPage() {
               <p className="mt-0.5 text-xs text-white/40">December 2026 – November 2027 · proposal for review</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-white/60 transition hover:bg-white/5 hover:text-white"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.push('/admin/creative-field')}
+              className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-white/60 transition hover:bg-white/5 hover:text-white"
+            >
+              <Palette className="h-3.5 w-3.5" />
+              Creative Field
+            </button>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-white/60 transition hover:bg-white/5 hover:text-white"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </button>
+          </div>
         </div>
       </header>
 
