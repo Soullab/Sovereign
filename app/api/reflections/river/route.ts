@@ -53,12 +53,16 @@ export async function GET() {
          FROM reflection_capsules
         WHERE user_id = $1
           AND archived = false
-        ORDER BY created_at ASC
+        ORDER BY created_at DESC
         LIMIT $2`,
-      [memberId, MAX_NODES],
+      // The most recent MAX_NODES, so what was just kept always reaches "Now";
+      // one extra row tells us honestly whether anything older was left out.
+      [memberId, MAX_NODES + 1],
     );
 
-    const nodeIds = new Set(nodes.rows.map((row) => row.id));
+    const truncated = nodes.rows.length > MAX_NODES;
+    const kept = nodes.rows.slice(0, MAX_NODES).reverse();
+    const nodeIds = new Set(kept.map((row) => row.id));
 
     const crossings = await query<{
       id: string;
@@ -78,33 +82,41 @@ export async function GET() {
       [memberId],
     );
 
-    const threads: WebThread[] = [];
-    for (const row of crossings.rows) {
-      const out = row.source_facet === 'reflections';
-      const reflectionId = out ? row.source_ref_id : row.target_ref_id;
-      if (!nodeIds.has(reflectionId)) continue;
-
-      let other: WebThread['other'] = null;
-      if (out && TARGET_FACETS.has(row.target_facet)) {
-        const end = await resolveFacetTarget(memberId, row.target_facet as RelationTargetFacet, row.target_ref_id);
-        if (end) other = { facet: end.facet, label: end.label, href: end.href };
-      } else if (!out && SOURCE_FACETS.has(row.source_facet)) {
-        const end = await resolveFacetFlowSource(memberId, row.source_facet as RelationSourceFacet, row.source_ref_id);
-        if (end) other = { facet: end.facet, label: end.label, href: end.href };
+    // A crossing can touch two Reflections (reflections → reflections); each end gets its own thread.
+    const ends = crossings.rows.flatMap((row) => {
+      const list: Array<{ row: typeof row; out: boolean; reflectionId: string }> = [];
+      if (row.source_facet === 'reflections' && nodeIds.has(row.source_ref_id)) {
+        list.push({ row, out: true, reflectionId: row.source_ref_id });
       }
+      if (row.target_facet === 'reflections' && nodeIds.has(row.target_ref_id)) {
+        list.push({ row, out: false, reflectionId: row.target_ref_id });
+      }
+      return list;
+    });
 
-      threads.push({
-        id: row.id,
-        reflectionId,
-        direction: out ? 'out' : 'in',
-        gesture: GESTURES.get(row.crossing_id) ?? null,
-        createdAt: iso(row.created_at),
-        other,
-      });
-    }
+    const threads: WebThread[] = await Promise.all(
+      ends.map(async ({ row, out, reflectionId }) => {
+        let other: WebThread['other'] = null;
+        if (out && TARGET_FACETS.has(row.target_facet)) {
+          const end = await resolveFacetTarget(memberId, row.target_facet as RelationTargetFacet, row.target_ref_id);
+          if (end) other = { facet: end.facet, label: end.label, href: end.href };
+        } else if (!out && SOURCE_FACETS.has(row.source_facet)) {
+          const end = await resolveFacetFlowSource(memberId, row.source_facet as RelationSourceFacet, row.source_ref_id);
+          if (end) other = { facet: end.facet, label: end.label, href: end.href };
+        }
+        return {
+          id: `${row.id}:${out ? 'out' : 'in'}`,
+          reflectionId,
+          direction: out ? ('out' as const) : ('in' as const),
+          gesture: GESTURES.get(row.crossing_id) ?? null,
+          createdAt: iso(row.created_at),
+          other,
+        };
+      }),
+    );
 
     const body: WebPayload = {
-      nodes: nodes.rows.map((row) => ({
+      nodes: kept.map((row) => ({
         id: row.id,
         title: row.title,
         createdAt: iso(row.created_at),
@@ -113,7 +125,7 @@ export async function GET() {
         draft: row.draft,
       })),
       threads,
-      truncated: nodes.rows.length === MAX_NODES,
+      truncated,
     };
     return NextResponse.json(body);
   } catch (error) {

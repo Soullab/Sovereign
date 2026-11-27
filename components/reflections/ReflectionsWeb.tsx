@@ -119,8 +119,7 @@ export default function ReflectionsWeb() {
   const breadth = lanes.length * laneSize;
   const viewW = narrow ? breadth + 24 : length;
   const viewH = narrow ? length : breadth + gutter / 4 + 34;
-  const along = (ms: number) =>
-    narrow ? gutter + frac(ms) * (length - gutter - pad) : gutter + frac(ms) * (length - gutter - pad);
+  const along = (ms: number) => gutter + frac(ms) * (length - gutter - pad);
   const across = (lane: string) => lanes.indexOf(lane) * laneSize + laneSize / 2 + (narrow ? 12 : 8);
   const point = (ms: number, lane: string) =>
     narrow ? { x: across(lane), y: along(ms) } : { x: along(ms), y: across(lane) };
@@ -128,9 +127,13 @@ export default function ReflectionsWeb() {
   const nodeById = new Map(data.nodes.map((n) => [n.id, n]));
   const visibleNodes = data.nodes.filter((n) => Date.parse(n.createdAt) <= cutoff);
   const visibleOut = outThreads.filter((t) => Date.parse(t.createdAt) <= cutoff && nodeById.has(t.reflectionId));
-  const selected: WebNode | undefined = selectedId ? nodeById.get(selectedId) : undefined;
+  // The detail follows the scrubber: a Reflection not yet kept at the shown moment is not shown,
+  // and only crossings made by then are listed.
+  const candidate = selectedId ? nodeById.get(selectedId) : undefined;
+  const selected: WebNode | undefined =
+    candidate && Date.parse(candidate.createdAt) <= cutoff ? candidate : undefined;
   const selectedThreads: WebThread[] = selected
-    ? data.threads.filter((t) => t.reflectionId === selected.id)
+    ? data.threads.filter((t) => t.reflectionId === selected.id && Date.parse(t.createdAt) <= cutoff)
     : [];
 
   const select = (id: string) => setSelectedId((current) => (current === id ? null : id));
@@ -233,7 +236,7 @@ export default function ReflectionsWeb() {
       ) : null}
 
       {data.truncated ? (
-        <p className={styles.webQuiet}>The river shows your earliest thousand kept reflections.</p>
+        <p className={styles.webQuiet}>The river shows your most recent thousand kept reflections.</p>
       ) : null}
 
       {selected ? (

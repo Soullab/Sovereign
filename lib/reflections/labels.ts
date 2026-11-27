@@ -1,6 +1,17 @@
 /** Shared display vocabulary for the Reflections room (Gems and Web views). */
 
+import { Droplets, Flame, Mountain, Star, Wind } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { Element } from '@/lib/capsules/types';
+
+/** One icon per element, shared by Keep and Reflections so an element reads the same in every room. */
+export const ELEMENT_ICONS: Record<Element, LucideIcon> = {
+  fire: Flame,
+  water: Droplets,
+  earth: Mountain,
+  air: Wind,
+  aether: Star,
+};
 
 /** Quiet provenance cue, never a score (reflections-room contract, composition law). */
 export const ELEMENT_TONES: Record<Element, string> = {
@@ -14,7 +25,9 @@ export const ELEMENT_TONES: Record<Element, string> = {
 export const KEPT_TONE = '#d2b078';
 
 export function toneFor(element: string | null | undefined): string {
-  return element && element in ELEMENT_TONES ? ELEMENT_TONES[element as Element] : KEPT_TONE;
+  return element && Object.prototype.hasOwnProperty.call(ELEMENT_TONES, element)
+    ? ELEMENT_TONES[element as Element]
+    : KEPT_TONE;
 }
 
 export function sourceLabel(source: string) {

@@ -31,8 +31,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Flame, Droplets, Mountain, Wind, Star } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { ELEMENT_ICONS, ELEMENT_TONES } from '@/lib/reflections/labels';
 import { apiFetch } from '@/lib/http/apiBase';
 import { ReturnHome } from '@/components/navigation/ReturnHome';
 import Link from 'next/link';
@@ -325,24 +324,13 @@ export default function KeepCapturePage() {
 // Only lenses the member chose through "Look at this another way" appear here.
 // MAIA never assigns one (lib/psyche/types.ts: "Never inferred by MAIA").
 // A card with none shows a quiet empty circle that opens the same doorway.
-// Icons and colours match components/reflections/ReflectionDetail.tsx.
+// Icons and colours come from lib/reflections/labels.ts, shared with Reflections.
 // ════════════════════════════════════════════════════════════════════════════
 
-const LENS_ICON: Record<ElementalLens, LucideIcon> = {
-  fire: Flame,
-  water: Droplets,
-  earth: Mountain,
-  air: Wind,
-  aether: Star,
-};
-
-const LENS_COLOR: Record<ElementalLens, string> = {
-  fire: '#e85d4c',
-  water: '#5a7a9f',
-  earth: '#7a6f5a',
-  air: '#5a7a6f',
-  aether: '#8b7aa0',
-};
+// Same icons and tones as the Reflections room (lib/reflections/labels.ts), so an element
+// reads the same wherever the member meets it.
+const LENS_ICON = ELEMENT_ICONS;
+const LENS_COLOR = ELEMENT_TONES;
 
 function ElementMark({
   lenses,
@@ -356,11 +344,18 @@ function ElementMark({
   if (chosen.length === 0) {
     return (
       <button
+        type="button"
         onClick={onLook}
         aria-label="Look at this another way"
         title="Look at this another way"
-        className="mt-1 w-4 h-4 shrink-0 rounded-full border border-dashed border-stone-300 hover:border-stone-500 transition-colors"
-      />
+        // A 44px touch area around the small visible circle; the negative margin keeps the layout.
+        className="group -my-3.5 -ml-3.5 -mr-2.5 py-3.5 pl-3.5 pr-2.5 shrink-0 rounded-full"
+      >
+        <span
+          aria-hidden="true"
+          className="mt-1 block w-4 h-4 rounded-full border border-dashed border-stone-300 group-hover:border-stone-500 transition-colors"
+        />
+      </button>
     );
   }
 

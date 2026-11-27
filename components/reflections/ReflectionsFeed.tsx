@@ -167,8 +167,10 @@ export default function ReflectionsFeed() {
   }, [searchQuery, activeFilter, router]);
 
   useEffect(() => {
+    // The Web loads its own lean data; the full collection is fetched only for Gems.
+    if (view !== 'gems') return;
     void fetchCapsules();
-  }, [fetchCapsules]);
+  }, [fetchCapsules, view]);
 
   const handlePin = async (id: string, pinned: boolean) => {
     try {
