@@ -29,6 +29,26 @@ const TARGET_FACETS = new Set<string>(['changes', 'decisions', 'journal', 'ancho
 
 const iso = (value: Date | string) => new Date(value).toISOString();
 
+/**
+ * At most this many other-end lookups run at once. The shared pool holds 20 connections and a
+ * waiting query gives up after 2s (lib/db/postgres.ts), so one member's river must never take
+ * the whole pool from everyone else's requests.
+ */
+const LOOKUP_CONCURRENCY = 4;
+
+async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 const GESTURES = new Map<string, string>(FACET_CROSSINGS.map((c) => [c.id, c.gesture]));
 
 export async function GET() {
@@ -94,8 +114,8 @@ export async function GET() {
       return list;
     });
 
-    const threads: WebThread[] = await Promise.all(
-      ends.map(async ({ row, out, reflectionId }) => {
+    const threads: WebThread[] = await mapBounded(ends, LOOKUP_CONCURRENCY,
+      async ({ row, out, reflectionId }) => {
         let other: WebThread['other'] = null;
         if (out && TARGET_FACETS.has(row.target_facet)) {
           const end = await resolveFacetTarget(memberId, row.target_facet as RelationTargetFacet, row.target_ref_id);
@@ -112,7 +132,7 @@ export async function GET() {
           createdAt: iso(row.created_at),
           other,
         };
-      }),
+      },
     );
 
     const body: WebPayload = {

@@ -33,37 +33,17 @@ import {
   Target,
   Compass,
   Eye,
-  Flame,
-  Droplets,
-  Mountain,
-  Wind,
-  Star,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import type { CapsuleDTO, Element } from '@/lib/capsules/types';
+import type { CapsuleDTO } from '@/lib/capsules/types';
+import { ELEMENT_ICONS, ELEMENT_TONES, KEPT_TONE } from '@/lib/reflections/labels';
 import DiscussWithMaia from './DiscussWithMaia';
 import { FacetOriginTrail } from '@/components/house/FacetOriginTrail';
 import { useMaiaPlace } from '@/components/maia/presence/MaiaPresence';
 
-// Element icons mapping.
-// Typed as LucideIcon rather than React.FC<{ className?: string }> — the call
-// site passes `style` for the element colour, which the narrower type rejected.
-const ElementIcon: Record<Element, LucideIcon> = {
-  fire: Flame,
-  water: Droplets,
-  earth: Mountain,
-  air: Wind,
-  aether: Star,
-};
-
-// Element colors
-const elementColors: Record<Element, string> = {
-  fire: '#e85d4c',
-  water: '#5a7a9f',
-  earth: '#7a6f5a',
-  air: '#5a7a6f',
-  aether: '#8b7aa0',
-};
+// Element icons and tones are the Reflections room's shared vocabulary (lib/reflections/labels.ts),
+// the same as Gems, the Web and Keep, so an element reads the same in every room.
+const ElementIcon = ELEMENT_ICONS;
+const elementColors = ELEMENT_TONES;
 
 export interface ReflectionDetailProps {
   /** Capsule id — supplied by the route that mounts this. */
@@ -243,7 +223,7 @@ export default function ReflectionDetail({ id }: ReflectionDetailProps) {
 
   const element = capsule.signals?.element;
   const ElementIconComponent = element ? ElementIcon[element] : null;
-  const elementColor = element ? elementColors[element] : '#5a7a6f';
+  const elementColor = element ? elementColors[element] : KEPT_TONE;
 
   return (
     <div
