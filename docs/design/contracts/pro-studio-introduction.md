@@ -55,6 +55,11 @@ Where am I (an introduction to Pro Studio) · what is this for (understanding it
 | Primary (signed out) | "Sign in to talk with MAIA" | Honest about the one precondition |
 | Secondary (signed in) | "Already have a Pro Studio? Open it." | Navigation only; `/studio` keeps its own guards |
 | Return | "Return to Soullab" | Always a way back |
+| Founder (2026-11-27 ruling) | sent straight to `/studio`; with `?view=intro`, a top band "You are viewing the introduction other members see. Go to your studio →" | Founder allowlist is operator access, not a paid entitlement; other members wait on the dedicated Pro Studio grant |
+
+## Layout (2026-11-27 revision)
+
+The one action now sits beside the arrival sentence (stacked below it on mobile), so it is reachable without scrolling. The studio's parts are grouped cards with label over description, in two masonry columns on desktop. Screenshots above predate this revision and are owed again from the live app.
 
 ## Forbidden here
 

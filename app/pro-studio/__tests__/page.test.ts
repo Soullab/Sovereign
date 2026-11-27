@@ -5,6 +5,12 @@ import { getCurrentSession } from '@/lib/auth/serverSessions';
 import ProStudioIntroduction from '../page';
 
 jest.mock('@/lib/auth/serverSessions', () => ({ getCurrentSession: jest.fn() }));
+jest.mock('@/lib/founder/founderAuth', () => ({
+  isFounderMemberId: (id: string) => id === 'fiction-only-founder',
+}));
+jest.mock('next/navigation', () => ({
+  redirect: jest.fn((to: string) => { throw new Error(`REDIRECT:${to}`); }),
+}));
 jest.mock('next/link', () => ({
   __esModule: true,
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) =>
@@ -45,6 +51,25 @@ describe('Pro Studio introduction (Stage 1) — fictional sessions only', () => 
     expect(out).toContain('What the full studio holds');
     expect(out).toContain('They are not open from this page.');
     expect(out).toContain('has not been set yet');
+  });
+
+  test('the founder (allowlist, server-side) goes straight into the full studio', async () => {
+    (getCurrentSession as jest.Mock).mockResolvedValue({ memberId: 'fiction-only-founder' });
+    await expect(ProStudioIntroduction()).rejects.toThrow('REDIRECT:/studio');
+  });
+
+  test('the founder can still look at the introduction with ?view=intro, with a way on', async () => {
+    (getCurrentSession as jest.Mock).mockResolvedValue({ memberId: 'fiction-only-founder' });
+    const out = renderToStaticMarkup(await ProStudioIntroduction({ searchParams: Promise.resolve({ view: 'intro' }) }));
+    expect(out).toContain('You are viewing the introduction other members see.');
+    expect(out).toContain('href="/studio"');
+  });
+
+  test('?view=intro does nothing for a non-founder, and nobody else is sent on', async () => {
+    (getCurrentSession as jest.Mock).mockResolvedValue({ memberId: 'fiction-only-member', tier: 'pro', isPractitioner: true });
+    const out = renderToStaticMarkup(await ProStudioIntroduction({ searchParams: Promise.resolve({ view: 'intro' }) }));
+    expect(out).not.toContain('You are viewing the introduction other members see.');
+    expect(out).toContain('What the full studio holds');
   });
 
   test('makes no promise about tiers, prices, Reflect or unbuilt previews', async () => {
