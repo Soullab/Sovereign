@@ -92,7 +92,7 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
             Wide screens keep the full sky panel and the What's alive row below. */}
         <section className={`${styles.today} ${styles.narrowOnly}`} aria-label="Today">
           <p>TODAY</p>
-          <CurrentTransitsField variant="line" />
+          <CurrentTransitsField variant="line" proAstrology={proAstrologyAdmitted} />
           <Link className={styles.todayLine} href={cabinOffline
             ? (livingWorks[0] ? houseWriterStudioHref(livingWorks[0].id) : '/writers-studio?from=house')
             : houseWritingHref(houseStudioH1Admitted, livingWorks[0]?.id ?? null, studioArrivalFromHouse)}>
