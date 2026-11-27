@@ -7,7 +7,7 @@ export default function SynastryHeldPage() {
       <div className="mx-auto max-w-3xl space-y-8 pt-8">
         <Link href="/astrology" className="inline-flex items-center gap-2 text-white/60 hover:text-white transition-colors">
           <ArrowLeft className="h-4 w-4" />
-          Back to Free Astrology
+          Back to Basic Astrology
         </Link>
         <section className="rounded-2xl border border-white/10 bg-black/25 p-8">
           <div className="flex items-center gap-3 text-violet-200">
