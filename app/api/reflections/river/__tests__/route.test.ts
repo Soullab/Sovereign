@@ -8,13 +8,14 @@
 import { GET } from '../route';
 import { requireMemberId } from '@/lib/auth/session';
 import { query } from '@/lib/db/postgres';
-import { resolveFacetFlowSource, resolveFacetTarget } from '@/lib/house/facetCrossing.server';
+import { resolveFacetCarrySource, resolveFacetFlowSource, resolveFacetTarget } from '@/lib/house/facetCrossing.server';
 
 jest.mock('@/lib/auth/session', () => ({ requireMemberId: jest.fn() }));
 jest.mock('@/lib/db/postgres', () => ({ query: jest.fn() }));
 jest.mock('@/lib/house/facetCrossing.server', () => ({
   resolveFacetTarget: jest.fn(),
   resolveFacetFlowSource: jest.fn(),
+  resolveFacetCarrySource: jest.fn(),
 }));
 
 const MEMBER = '00000000-0000-4000-8000-0000000000aa';
@@ -22,6 +23,7 @@ const auth = requireMemberId as jest.Mock;
 const db = query as jest.Mock;
 const target = resolveFacetTarget as jest.Mock;
 const source = resolveFacetFlowSource as jest.Mock;
+const carry = resolveFacetCarrySource as jest.Mock;
 
 function node(i: number) {
   return {
@@ -138,5 +140,25 @@ describe('GET /api/reflections/river', () => {
     expect(target).toHaveBeenCalledTimes(50);
     expect(body.threads).toHaveLength(50);
     expect(peak).toBeLessThanOrEqual(4);
+  });
+
+  it('names Journal and Dream ends by kind and date, never by their first line', async () => {
+    db.mockResolvedValueOnce({ rows: [node(1), node(2)] }).mockResolvedValueOnce({
+      rows: [
+        { ...crossing(1, 'r1'), target_facet: 'journal', target_ref_id: 'j1' },
+        { ...crossing(2, 'x'), source_facet: 'dream', source_ref_id: 'd1', target_facet: 'reflections', target_ref_id: 'r2' },
+      ],
+    });
+    carry.mockImplementation(async (_m: string, facet: string, id: string) => ({
+      facet, refId: id, label: 'MY PRIVATE FIRST LINE', excerpt: 'MY PRIVATE FIRST LINE',
+      createdAt: '2026-11-12 09:30:00+00', returnHref: `/${facet}?id=${id}`,
+    }));
+    const body = await (await GET()).json();
+    expect(carry).toHaveBeenCalledWith(MEMBER, 'journal', 'j1');
+    expect(carry).toHaveBeenCalledWith(MEMBER, 'dream', 'd1');
+    expect(target).not.toHaveBeenCalled();
+    expect(body.threads.map((t: { other: { label: string } }) => t.other.label)).toEqual(['Journal entry', 'Dream']);
+    expect(body.threads[0].other.at).toBe('2026-11-12T09:30:00.000Z');
+    expect(JSON.stringify(body)).not.toContain('MY PRIVATE FIRST LINE');
   });
 });

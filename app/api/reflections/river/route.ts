@@ -15,6 +15,7 @@ import { requireMemberId } from '@/lib/auth/session';
 import { query } from '@/lib/db/postgres';
 import { FACET_CROSSINGS } from '@/lib/house/livingOrientation';
 import {
+  resolveFacetCarrySource,
   resolveFacetFlowSource,
   resolveFacetTarget,
   type RelationSourceFacet,
@@ -47,6 +48,19 @@ async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Prom
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
+}
+
+/**
+ * Journal and Dream ends are the member's own writing, so the Web names them by kind and date
+ * ("Journal entry", "Dream") rather than by their first line — founder ruling D, 2026-11-27:
+ * "labels and return links, never copied prose". Other rooms' labels are titles, not prose.
+ */
+const ENTRY_KINDS: Record<string, string> = { journal: 'Journal entry', dream: 'Dream' };
+
+async function resolveEntry(memberId: string, facet: 'journal' | 'dream', refId: string): Promise<WebThread['other']> {
+  const end = await resolveFacetCarrySource(memberId, facet, refId);
+  if (!end) return null;
+  return { facet, label: ENTRY_KINDS[facet], href: end.returnHref, at: end.createdAt ? iso(end.createdAt) : null };
 }
 
 const GESTURES = new Map<string, string>(FACET_CROSSINGS.map((c) => [c.id, c.gesture]));
@@ -117,7 +131,11 @@ export async function GET() {
     const threads: WebThread[] = await mapBounded(ends, LOOKUP_CONCURRENCY,
       async ({ row, out, reflectionId }) => {
         let other: WebThread['other'] = null;
-        if (out && TARGET_FACETS.has(row.target_facet)) {
+        const otherFacet = out ? row.target_facet : row.source_facet;
+        const otherRef = out ? row.target_ref_id : row.source_ref_id;
+        if (otherFacet === 'journal' || otherFacet === 'dream') {
+          other = await resolveEntry(memberId, otherFacet, otherRef);
+        } else if (out && TARGET_FACETS.has(row.target_facet)) {
           const end = await resolveFacetTarget(memberId, row.target_facet as RelationTargetFacet, row.target_ref_id);
           if (end) other = { facet: end.facet, label: end.label, href: end.href };
         } else if (!out && SOURCE_FACETS.has(row.source_facet)) {

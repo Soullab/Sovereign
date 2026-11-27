@@ -23,6 +23,10 @@ import styles from '@/app/reflections/reflections-room.module.css';
 const DAY = 24 * 60 * 60 * 1000;
 const CARRIED_LANE = '__carried';
 
+/** Above this many gems the per-gem glow is dropped; the filter is what made large rivers slow. */
+const DENSE_GEMS = 200;
+const RIVER_SETTLE_MS = 120;
+
 function dateFor(ms: number) {
   return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
@@ -50,6 +54,14 @@ export default function ReflectionsWeb() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [scrub, setScrub] = useState(1000);
+  // The slider and its date answer at once; the river redraws when the hand pauses
+  // (founder ruling B, 2026-11-27), so a large collection does not stall every step.
+  const [riverScrub, setRiverScrub] = useState(1000);
+  useEffect(() => {
+    if (riverScrub === scrub) return;
+    const timer = setTimeout(() => setRiverScrub(scrub), RIVER_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [scrub, riverScrub]);
   const detailRef = useRef<HTMLElement | null>(null);
 
   // On a phone the detail sits below a tall river; bring it into view when a gem is chosen.
@@ -114,7 +126,8 @@ export default function ReflectionsWeb() {
   }
 
   const { start, span, now, lanes, outThreads } = model;
-  const cutoff = start + (span * scrub) / 1000;
+  const shownMoment = start + (span * scrub) / 1000;
+  const cutoff = start + (span * riverScrub) / 1000;
   const frac = (ms: number) => Math.min(Math.max((ms - start) / span, 0), 1);
 
   // Geometry. Horizontal on wide screens, vertical on phones (design §2.2).
@@ -154,6 +167,7 @@ export default function ReflectionsWeb() {
           width="100%"
           role="group"
           aria-label="Time river"
+          data-dense={visibleNodes.length > DENSE_GEMS ? 'true' : undefined}
           style={narrow ? { maxWidth: viewW * 1.6 } : undefined}
         >
           {/* Lanes */}
@@ -233,10 +247,10 @@ export default function ReflectionsWeb() {
           value={scrub}
           onChange={(event) => setScrub(Number(event.target.value))}
           aria-label="Move through time"
-          aria-valuetext={scrub === 1000 ? 'Now' : dateFor(cutoff)}
+          aria-valuetext={scrub === 1000 ? 'Now' : dateFor(shownMoment)}
         />
         <span>Now</span>
-        <output>{scrub === 1000 ? `Now · from ${dateFor(start)}` : `As it stood on ${dateFor(cutoff)}`}</output>
+        <output>{scrub === 1000 ? `Now · from ${dateFor(start)}` : `As it stood on ${dateFor(shownMoment)}`}</output>
       </label>
 
       {outThreads.length === 0 ? (
@@ -270,7 +284,8 @@ export default function ReflectionsWeb() {
                   </span>
                   {thread.other ? (
                     <Link href={thread.other.href}>
-                      Return to {thread.other.label} <b aria-hidden="true">→</b>
+                      Return to {thread.other.label}
+                      {thread.other.at ? ` · ${dateFor(Date.parse(thread.other.at))}` : ''} <b aria-hidden="true">→</b>
                     </Link>
                   ) : (
                     <em>The other end is no longer available.</em>

@@ -22,6 +22,19 @@ export const ELEMENT_TONES: Record<Element, string> = {
   aether: '#9d7fb0',
 };
 
+/**
+ * The same five elements, deepened for light surfaces such as Keep's white cards (founder
+ * ruling C, 2026-11-27). Each holds at least 4.5:1 against white; the
+ * Reflections room keeps ELEMENT_TONES.
+ */
+export const ELEMENT_TONES_ON_LIGHT: Record<Element, string> = {
+  fire: '#a65b0c',
+  water: '#3d6896',
+  earth: '#5c6d30',
+  air: '#7a663a',
+  aether: '#6c4d86',
+};
+
 export const KEPT_TONE = '#d2b078';
 
 export function toneFor(element: string | null | undefined): string {

@@ -16,7 +16,8 @@ export interface WebThread {
   direction: 'out' | 'in';
   gesture: string | null;
   createdAt: string;
-  other: { facet: string; label: string; href: string } | null;
+  /** `at` is set only for Journal and Dream ends, which are named by kind and date, never by their words. */
+  other: { facet: string; label: string; href: string; at?: string | null } | null;
 }
 
 export interface WebPayload {

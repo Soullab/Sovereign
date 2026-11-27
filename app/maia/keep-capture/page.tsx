@@ -31,7 +31,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ELEMENT_ICONS, ELEMENT_TONES } from '@/lib/reflections/labels';
+import { ELEMENT_ICONS, ELEMENT_TONES_ON_LIGHT } from '@/lib/reflections/labels';
 import { apiFetch } from '@/lib/http/apiBase';
 import { ReturnHome } from '@/components/navigation/ReturnHome';
 import Link from 'next/link';
@@ -330,7 +330,7 @@ export default function KeepCapturePage() {
 // Same icons and tones as the Reflections room (lib/reflections/labels.ts), so an element
 // reads the same wherever the member meets it.
 const LENS_ICON = ELEMENT_ICONS;
-const LENS_COLOR = ELEMENT_TONES;
+const LENS_COLOR = ELEMENT_TONES_ON_LIGHT;
 
 function ElementMark({
   lenses,

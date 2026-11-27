@@ -658,6 +658,8 @@
 .webGem { cursor: pointer; outline: none; pointer-events: auto; }
 .webGemHit { fill: transparent; pointer-events: all; }
 .webGemMark { fill: var(--gem-tone); stroke: rgba(21, 17, 13, .9); stroke-width: 1.5; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--gem-tone) 45%, transparent)); transition: stroke .15s ease; }
+/* Ruling B: a dense river drops the glow; colour and selection stroke stay. */
+.webRiver svg[data-dense='true'] .webGemMark { filter: none; transition: none; }
 .webGem:hover .webGemMark, .webGem:focus-visible .webGemMark { stroke: #f3e4cc; }
 .webGem[data-selected='true'] .webGemMark { stroke: #fff2dc; stroke-width: 2.5; }
 
