@@ -39,6 +39,11 @@ export interface ReturnableRow {
   content: string;
   created_at: string;
   createdAt: string;
+  /**
+   * The member's own Day / Dream choice, shown as provenance only. The
+   * selector never reads it: return stays date-derived.
+   */
+  entry_type?: string;
 }
 
 /** What the view receives: the chosen entry plus the reason it was chosen. */
@@ -55,7 +60,12 @@ export function Return({
 
   return (
     <section aria-label="Something earlier">
-      <p className={`${type.meta} ${color.muted}`}>{piece.why}</p>
+      <p className={`${type.meta} ${color.muted} flex flex-wrap items-baseline gap-x-4`}>
+        <span>{piece.why}</span>
+        {/* Same quiet convention as EntryReader: Dream is marked, Day is the
+            unmarked default. */}
+        {piece.entry.entry_type === 'dream' ? <span>DREAM</span> : null}
+      </p>
 
       <button
         type="button"
