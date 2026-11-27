@@ -163,6 +163,7 @@ const RATIFIED_CALLS = [
   'pwaVoice.transcriptReceived',
   'recentMessages.map',
   'recentMessages.map(…).join',
+  'recognizeMaiaMusicCommand',
   'recordVoiceTranscript',
   'res.json',
   'rhythmTrackerRef.current.onSpeechEnd',
@@ -178,6 +179,7 @@ const RATIFIED_CALLS = [
   'setListeningMode',
   'setMaiaMode',
   'setMessages',
+  'setMusicCommandFeedback',
   'setScribeSession',
   'setShowCapturePanel',
   'setTranscriptEnabled',
@@ -216,20 +218,50 @@ const RATIFIED_CALLS = [
  * ⛔ Nothing may be inserted before `handleTextMessage` here. What follows it is
  * post-cognition telemetry and is pinned for the same reason: nothing may be
  * appended there either.
+ *
+ * ⭐ RECORDED EXCEPTION — CLASS A, certified only on founder approval of the PR
+ * that adds it (2026-11-26). `recognizeMaiaMusicCommand` and
+ * `setMusicCommandFeedback` entered here (and in RATIFIED_CALLS) with
+ * d3e57ea39 / 94ecfa9f8 (2026-10-27/28) WITHOUT certification, while this gate
+ * was red. Grounds for certifying, by code-read only:
+ *   - `recognizeMaiaMusicCommand` (lib/listening/maiaMusicCommand.ts) is a pure
+ *     classifier: no imports, no fetch, no await, no model. It cannot author a reply.
+ *   - `setMusicCommandFeedback(null)` only clears UI feedback.
+ *   - The transcript `t` reaches `handleTextMessage` unchanged; the classification
+ *     travels as `freshMusicIntent` metadata. No exit is added.
+ *   - The typed path runs the same recognizer and passes the same
+ *     `freshMusicIntent` into the same `handleTextMessage` — convergence holds.
+ * This is not a precedent: any further insertion ahead of cognition needs its
+ * own ruling.
  */
 const RATIFIED_COGNITION_TAIL = [
   'console.log',
+  'recognizeMaiaMusicCommand',
+  'setMusicCommandFeedback',
   'handleTextMessage',
   'Date.now',
   'trackEvent.voiceResult',
   'console.log',
 ];
 
+// ⚠️ PROBE ANCHOR. Every probe below mutates ORACLE by replacing this exact text,
+// and each asserts `probed !== ORACLE` first, so a stale anchor fails loudly
+// rather than letting a probe test the unmutated source. Re-synced 2026-11-26:
+// d3e57ea39 / 94ecfa9f8 (2026-10-27/28) added `freshMusicIntent` to the call and
+// left the probes unable to mutate for a month.
 const CANONICAL_VOICE_CALL = `await handleTextMessage(t, undefined, undefined, {
         parseResult: voiceMaiaResult,
         commandsAlreadyApplied: voiceMaiaResult.disposition === 'EXECUTE',
         confirmationHandled: voiceMaiaResult.disposition === 'EXECUTE',
+        freshMusicIntent: musicDecision.status === 'recognized'
+          ? { command: musicDecision.command, epoch: musicCommandEpoch.current,
+              instance: currentMusicBoundary.current.transport?.listeningInstance ?? null }
+          : undefined,
       });`;
+
+it('⚠️ the probe anchor still matches the source exactly once', () => {
+  expect(ORACLE.split(CANONICAL_VOICE_CALL)).toHaveLength(2);
+});
 
 /**
  * ⭐ THE RATIFIED ADMISSION PHASE — every explicit return, keyed by its own log
@@ -465,7 +497,8 @@ describe('PROBES — the gate must catch what nobody listed', () => {
     expect(handlerCalls(probed)).not.toEqual(RATIFIED_CALLS);
     expect(handlerCalls(probed)).toContain('totallyNewResponder');
     expect(cognitionTail(probed)).not.toEqual(RATIFIED_COGNITION_TAIL);
-    expect(cognitionTail(probed)[1]).toBe('totallyNewResponder'); // ahead of cognition
+    const tail = cognitionTail(probed);
+    expect(tail[tail.indexOf('handleTextMessage') - 1]).toBe('totallyNewResponder'); // immediately ahead of cognition
   });
 
   it('⛔ a KNOWN call moved to sit immediately ahead of cognition fails', () => {
@@ -522,6 +555,7 @@ describe('PROBES — the gate must catch what nobody listed', () => {
       CANONICAL_VOICE_CALL,
       `await sendStreamingMessage(t); return;\n      ${CANONICAL_VOICE_CALL}`,
     );
+    expect(probed).not.toBe(ORACLE);
     expect(enumerateExits(probed)).not.toEqual([...RATIFIED_EXITS]);
     expect(handlerCalls(probed)).toContain('sendStreamingMessage');
   });
