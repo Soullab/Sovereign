@@ -17,7 +17,9 @@ describe('Pro Astrology door on Home', () => {
 
   it('decides Pro admission on the server with the Pro room\'s own check, failing closed', () => {
     const house = read('app/house/page.tsx');
-    expect(house).toMatch(/proMemberAllowed\(member\.id, process\.env\)\.catch\(\(\) => false\)/);
+    expect(house).toMatch(/await proRoomsForMember\(member\.id\)/);
+    expect(house).toMatch(/proAstrologyAdmitted = proRooms\.some\(\(room\) => room\.id === 'pro-astrology'\)/);
+    expect(read('lib/house/proRooms.ts')).toMatch(/proAstrology: \(memberId\) => proMemberAllowed\(memberId, process\.env\)/);
     expect(house).toMatch(/proAstrology=\{proAstrologyAdmitted\}/);
   });
 
