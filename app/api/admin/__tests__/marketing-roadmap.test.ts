@@ -60,3 +60,15 @@ describe('roadmap content standing', () => {
     expect(ROADMAP.plan.filter((m) => m.id !== 'dec').every((m) => m.draft)).toBe(true);
   });
 });
+
+describe('story candidates carry their claim layer', () => {
+  it('marks every story with a layer and a gate, and none as Live without a witness', () => {
+    expect(ROADMAP.stories.length).toBeGreaterThan(0);
+    for (const st of ROADMAP.stories) {
+      expect(['Live', 'Designed', 'Vision']).toContain(st.layer);
+      expect(st.gate.length).toBeGreaterThan(0);
+    }
+    const web = ROADMAP.stories.find((st) => st.name === 'Reflections · the Web');
+    expect(web?.layer).toBe('Designed');
+  });
+});
