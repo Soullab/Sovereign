@@ -40,7 +40,21 @@ The main session plans, writes a brief for each job, and checks the result itsel
 - *Instructed only:* staying inside the brief, not touching Sanctuary content or member data held in files, reporting adjacent problems instead of fixing them.
 - *Limits:* the guard matches command text, so code that builds a command at runtime can still get past it; it is a floor, not a sandbox. Project-agent frontmatter hooks run only in a workspace you have trusted, and not in `claude -p` runs — there the workers are back to prose rules. Leave `CLAUDE_CODE_SUBAGENT_MODEL` unset so each keeps its own model, and leave `CLAUDE_CODE_EFFORT_LEVEL` unset: it overrides every agent's `effort:` field (Claude Code subagent docs).
 
-**The guard is error prevention, not a security boundary** (JARVIS-WORKERS-ACCEPT-01 §5): it does not stop a worker that edits `.claude/`, reads credentials outside its pattern, or builds a command at runtime. Enforceable isolation is the separate JARVIS-AIO-01 P3-d proposal.
+**The guard is error prevention, not a security boundary** (JARVIS-WORKERS-ACCEPT-01 §5): it does not stop a worker that edits `.claude/`, reads credentials outside its pattern, or builds a command at runtime.
+
+**Isolation profile — `.claude/settings.isolated.json`** (JARVIS-AIO-01 P3-d). Not loaded by default: your normal sessions keep ssh, gh and docker. Use it for benchmark and unattended worker runs, and inside the separate credential-free account:
+
+```bash
+claude --settings .claude/settings.isolated.json -p "<task>"
+```
+
+It sandboxes every Bash command at the OS level (no unsandboxed escape), blocks shell and file-tool reads of gh, aws, ssh, docker and `~/.claude.json` credentials and of real `.env` files, blocks file-tool edits to `.claude/`, denies push, commit, ssh, gh, docker, psql and web tools, and limits sandboxed network to the npm registry and the Anthropic API. `--settings` overrides the same keys in project and user settings; managed settings still win.
+
+What has and has not been witnessed:
+- *Witnessed* (JARVIS-AIO-01 P5 Phase 1, same user): the sandbox keys and the `~/` credential `denyRead` paths, which gave an OS `PermissionError` even through python.
+- *Not yet witnessed:* the network allowlist (whether unlisted domains are blocked or only prompt), the `Edit(.claude/**)` deny, and the `.env` read denies.
+- *Known gap:* the sandbox `denyRead` lists only home-directory credential paths, so a sandboxed shell can still `cat` a `.env` file in the working tree. Run the profile in a worktree, which has no `.env` (gitignored), or in the separate account, which has no real secrets at all.
+- A same-user sandbox is **not** the separate execution identity. Paid Phase 2 runs still wait for that account (`docs/programme/JARVIS-AIO-01_P5_ISOLATED_EXECUTION_IDENTITY_SETUP_2026-11-26.md`).
 
 ---
 
