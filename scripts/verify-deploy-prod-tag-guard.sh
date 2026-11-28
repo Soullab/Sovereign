@@ -88,5 +88,50 @@ for fn in cmd_deploy cmd_update; do
   fi
 done
 
+echo "7. end to end: the real 'deploy-production.sh deploy <SHA>' refused at REVIEW-CUSTODY restores :prod"
+# 2026-11-27: a full deploy refused at custody on minisforum left :prod on the
+# candidate. The orchestration script that ran came from the shared checkout
+# (HEAD 56d0cd679, 2026-10-01), which predates this guard; the guard on main
+# was never executed. This case pins that main's own entry point restores :prod
+# on that exact path, rather than only the sourced pieces (cases 1-5).
+E="$ROOT/e2e"; mkdir -p "$E/bin" "$E/proj" "$E/src" "$E/tags"
+cp -R "$HERE" "$E/proj/scripts"
+printf '#!/bin/sh\nexit 0\n' > "$E/proj/scripts/pre-deploy-gate.sh"   # disk gate: not under test
+echo "X=1" > "$E/proj/.env.production"
+(
+  cd "$E/src" && git init -q && git config user.email t@t && git config user.name t
+  cp "$HERE/../docker-compose.production.yml" . && touch Dockerfile package-lock.json
+  echo '{"version":"1.0.0"}' > package.json
+  mkdir scripts && echo 'process.exit(0)' > scripts/deploy-audit-gate.mjs
+  git add -A && git commit -qm running && echo next > next && git add next && git commit -qm target
+) >/dev/null 2>&1
+E_RUNNING="$(git -C "$E/src" rev-parse HEAD~1)"; E_TARGET="$(git -C "$E/src" rev-parse HEAD)"
+E_SHORT="$(git -C "$E/src" rev-parse --short "$E_TARGET")"
+cat > "$E/bin/docker" <<EOF
+#!/usr/bin/env bash
+T="$E/tags"
+case "\$*" in
+  "exec maia-sovereign printenv GIT_COMMIT") echo "$E_RUNNING"; exit 0 ;;
+  *" build"*) echo sha256:candidate > "\$T/prod"; exit 0 ;;                 # compose build moves :prod
+  *"run --rm -T migrate"*) echo database/migrations/20990101000000_x.sql; exit 0 ;;  # one pending
+  "image inspect "*"{{.Id}}"*) f="\$T/\${3##*:}"; [ -f "\$f" ] || exit 1; cat "\$f"; exit 0 ;;
+  "image inspect "*|"inspect "*) echo "GIT_COMMIT=$E_SHORT"; exit 0 ;;
+  "tag "*) case "\$2" in sha256:*) v="\$2" ;; *) v="\$(cat "\$T/\${2##*:}")" || exit 1 ;; esac
+           echo "\$v" > "\$T/\${3##*:}"; exit 0 ;;
+esac
+exit 0
+EOF
+printf '#!/bin/sh\nexit 0\n' > "$E/bin/npm"; chmod +x "$E/bin/docker" "$E/bin/npm"
+echo "sha256:live" > "$E/tags/prod"
+out="$(env -u REVIEW_CUSTODY_RECORD -u REVIEW_CUSTODY_REVIEW -u REVIEW_CUSTODY_TRACE -u SOULLAB_BETA_MIGRATION_POLICY \
+  PATH="$E/bin:$PATH" DEPLOY_SOURCE_REPO="$E/src" DEPLOY_CONTEXT_DIR="$E" \
+  bash "$E/proj/scripts/deploy-production.sh" deploy "$E_TARGET" 2>&1)"; rc=$?
+T7() { cat "$E/tags/$1" 2>/dev/null || echo "<none>"; }
+printf '%s\n' "$out" | grep -q "MIGRATION REVIEW REQUIRED" && ok "refused at REVIEW-CUSTODY (the 2026-11-27 path)" \
+  || { bad "did not reach the custody refusal"; printf '%s\n' "$out" | tail -8 | sed 's/^/      /'; }
+[ "$rc" -ne 0 ] && ok "refused deploy exits non-zero ($rc)" || bad "refused deploy exited 0"
+[ "$(T7 prod)" = "sha256:live" ] && ok ":prod restored to the pre-build image" || bad ":prod is $(T7 prod)"
+[ "$(T7 "refused-$E_SHORT")" = "sha256:candidate" ] && ok "candidate kept as :refused-$E_SHORT" || bad "refused tag is $(T7 "refused-$E_SHORT")"
+
 echo "Result: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
