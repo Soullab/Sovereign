@@ -82,27 +82,14 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
         <div className={styles.wideOnly}><CurrentTransitsField variant="house" proAstrology={proAstrologyAdmitted} /></div>
 
         <section className={styles.centerIntro} aria-labelledby="home-spaces-title">
-          <p>YOUR SPACES</p>
+          <p>MY STUDIOS</p>
           <h3 id="home-spaces-title">Choose where you want to work.</h3>
-          <span>Each space holds a different kind of attention. Open one to enter it.</span>
+          <span>Each studio holds a different kind of attention. Open one to enter it.</span>
         </section>
 
-        <HouseCenter />
+        {/* Founder ruling 2026-11-27 (#1875): held Pro rooms lead My Studios; chosen Living Spaces follow. */}
+        <HouseCenter proRooms={proRooms} />
         <HouseQuickAccessStacked />
-
-        {/* Founder direction 2026-11-27: Pro rooms the member holds appear here automatically. */}
-        {proRooms.length > 0 ? (
-          <section className={styles.proRooms} aria-labelledby="home-pro-rooms-title">
-            <p id="home-pro-rooms-title">YOUR PRO ROOMS</p>
-            {proRooms.map((room) => (
-              <Link key={room.id} className={styles.proRoom} href={room.href}>
-                <span className={styles.proRoomLabel}>{room.label}</span>
-                <span className={styles.proRoomPurpose}>{room.purpose}</span>
-                <span aria-hidden="true">→</span>
-              </Link>
-            ))}
-          </section>
-        ) : null}
 
         {/* HOUSE-MOBILE-01 (phones and iPads): the sky and what's alive as one line each.
             Wide screens keep the full sky panel and the What's alive row below. */}
@@ -145,7 +132,7 @@ export async function HouseExperience({ current = 'house' }: { current?: 'home' 
 
         <div className={styles.wideOnly}><HouseDirectory /></div>
         <Link href="/house/places" className={`${styles.placesDoor} ${styles.narrowOnly}`}>
-          <span><strong>All places</strong><small>Find any room or tool in the House</small></span>
+          <span><strong>Explore Soullab</strong><small>Every studio and living space in the House</small></span>
           <span className={styles.todayChevron} aria-hidden="true">›</span>
         </Link>
 

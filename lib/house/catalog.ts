@@ -14,7 +14,7 @@ export interface HousePlace {
 }
 
 export const HOUSE_PLACES = [
-  { id:'writing', label:'Writing', purpose:'Write, revise, and develop a living work.', href:'/writers-studio?from=house', mark:'✎', tone:'amber', group:'create', aliases:['writer','work','manuscript'], centerEligible:true },
+  { id:'writing', label:"Writer's Studio", purpose:'Write, revise, and develop a living work.', href:'/writers-studio?from=house', mark:'✎', tone:'amber', group:'create', aliases:['writing','writer','work','manuscript'], centerEligible:true },
   { id:'relationships', label:'Relationships', purpose:'Explore the relationships and patterns shaping your life.', href:'/relationships?from=house', mark:'◎', tone:'rose', group:'practice', aliases:['people','connection','relating'], centerEligible:true },
   { id:'practices', label:'Practices', purpose:'Return to body, breath, attention, and daily practice.', href:'/practices', mark:'◌', tone:'green', group:'practice', aliases:['practice','meditate','breath','body'], centerEligible:true },
   { id:'community', label:'Community', purpose:'Find shared spaces, circles, and people you are connected with.', href:'/commons?from=house', mark:'◉', tone:'blue', group:'practice', aliases:['commons','circles','gatherings','network'], centerEligible:true },
@@ -28,7 +28,7 @@ export const HOUSE_PLACES = [
   { id:'changes', label:'Changes', purpose:'Name and walk a change', href:'/changes', mark:'↻', tone:'green', group:'reflect', aliases:['change','transition','evolve'], centerEligible:true },
   { id:'wisdom', label:'Wisdom', purpose:'Teachings, sources and living knowledge', href:'/wisdom-keepers/wisdom?from=house', mark:'✦', tone:'violet', group:'reflect', aliases:['study','teachings','knowledge'], centerEligible:true },
   { id:'library', label:'Library', purpose:'Return to what has been gathered', href:'/library?from=house', mark:'▤', tone:'slate', group:'create', aliases:['sources','books','archive'], centerEligible:true },
-  { id:'divination', label:'Divination', purpose:'Meet a question through symbolic practice', href:'/oracle', mark:'✧', tone:'violet', group:'reflect', aliases:['oracle','cards','symbols'], centerEligible:true },
+  { id:'divination', label:'Divination Studio', purpose:'Meet a question through symbolic practice', href:'/oracle', mark:'✧', tone:'violet', group:'reflect', aliases:['divination','oracle','cards','symbols'], centerEligible:true },
   { id:'living-field', label:'Living Field', purpose:'See the larger whole and its relationships', href:'/maia/living-field?from=house', mark:'∞', tone:'blue', group:'reflect', aliases:['field','whole','patterns'], centerEligible:true },
   { id:'co-lab', label:'Co-lab', purpose:'Shared work and conversation', href:'/team/for-you', mark:'◎', tone:'blue', group:'practice', aliases:['collaboration','team','network'], centerEligible:true },
   { id:'pro-studio', label:'Pro Studio', purpose:'Your practice workspace — people, sessions and continuity', href:'/pro-studio', mark:'◈', tone:'gold', group:'practice', aliases:['practice','practitioner','studio','practice portal','clients','sessions'], centerEligible:true },
@@ -43,6 +43,22 @@ export const HOUSE_GROUPS: { id: HousePlaceGroup; label: string; line: string }[
   { id:'create', label:'Create & learn', line:'Imagine, make, study and steward.' },
   { id:'practice', label:'Practice & connect', line:'Embody, relate, gather and return.' },
 ];
+
+/**
+ * Founder ruling 2026-11-27 (My Studios, recorded on #1875): a Studio is a place of intentional
+ * cultivation; a Living Space is part of the ongoing fabric of everyday life. Neither ranks above
+ * the other. This is an organizing aid only: it changes where a chosen place shows on Home, never
+ * whether a member may choose it, and never ids, routes or saved preferences. Every place not
+ * listed here is a Living Space. Astrology Studio (the Pro room) is a Studio by its own grant
+ * (lib/house/proRooms.ts); Basic Astrology is a Living Space.
+ */
+export const STUDIO_PLACE_IDS: readonly HousePlaceId[] = ['writing', 'pro-studio', 'studio', 'divination', 'ideas'];
+
+export type HousePlaceKind = 'studio' | 'space';
+
+export function placeKind(id: string): HousePlaceKind {
+  return (STUDIO_PLACE_IDS as readonly string[]).includes(id) ? 'studio' : 'space';
+}
 
 export function placeById(id: string) {
   return HOUSE_PLACES.find(place => place.id === id);

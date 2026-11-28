@@ -189,25 +189,26 @@ export function WritingSurface({
           </p>
           <span className={`${type.meta} ${color.muted} italic`}>{period}</span>
 
-          {variant === 'writing' && (
-            <div className="flex items-center gap-1" role="group" aria-label="Journal entry type">
-              {(['day', 'dream'] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setEntryType(t)}
-                  aria-pressed={entryType === t}
-                  className={`${type.marker} ${focus} ${hitTight} ${quiet} px-1 ${
-                    entryType === t
-                      ? color.accent
-                      : `${color.muted} opacity-55`
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-1" role="group" aria-label="Journal entry type">
+            {(['day', 'dream'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setEntryType(t)}
+                aria-pressed={entryType === t}
+                className={`${type.marker} ${focus} ${hitTight} ${quiet} px-1 ${
+                  /* Both options stay fully legible (the unchosen one was
+                     dimmed to 55% and read as absent). The choice is shown
+                     by ember colour AND an underline, not colour alone. */
+                  entryType === t
+                    ? `${color.accent} border-b ${color.accentBorder}`
+                    : `${color.muted} border-b border-transparent`
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
 
           {!showPlace && !place ? (
             <button
