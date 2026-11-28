@@ -344,8 +344,7 @@ export function HouseCenter({ proRooms = [] }: { proRooms?: readonly ProRoomDoor
       {studios.map(card => <Link href={card.href} className={house.world} key={card.key} data-place={card.placeId ?? card.key}
         data-pro={card.pro ? 'true' : undefined}>
         <span className={`${house.worldMark} ${styles.placeMark}`} data-tone={card.tone ?? 'gold'} data-place={card.placeId ?? card.key} aria-hidden="true">{card.mark}</span>
-        {card.pro && <span className={house.proTag}>Pro</span>}
-        <strong>{card.label}</strong><small>{card.purpose}</small>
+        <strong>{card.label}{card.pro && <span className={house.proTag}>Pro</span>}</strong><small>{card.purpose}</small>
       </Link>)}
       {chosen.length < 5 && <button type="button" className={styles.centerEmpty} onClick={() => open()}>+ Add a studio</button>}
     </section>
