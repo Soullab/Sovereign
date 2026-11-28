@@ -41,9 +41,10 @@ describe('proRoomsForMember', () => {
     expect(src).not.toMatch(/housePreferences|writeHousePreferences|INSERT|UPDATE/);
   });
 
-  it('Home renders the section only when the member holds a room', () => {
+  it('Home passes the held rooms to My Studios (founder ruling 2026-11-27)', () => {
     const page = readFileSync(join(process.cwd(), 'app/house/page.tsx'), 'utf8');
-    expect(page).toMatch(/proRooms\.length > 0 \? \(\s*<section className=\{styles\.proRooms\}/);
+    expect(page).toMatch(/<HouseCenter proRooms=\{proRooms\} \/>/);
+    expect(page).not.toMatch(/YOUR PRO ROOMS/);
     expect(page).toMatch(/cabinOffline \? \[\] : await proRoomsForMember\(member\.id\)/);
   });
 });

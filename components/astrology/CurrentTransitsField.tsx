@@ -108,9 +108,9 @@ export function CurrentTransitsField({
         {canOpenAstrology || proAstrology ? <span className={styles.lineChevron} aria-hidden="true">›</span> : null}
       </>
     );
-    // Pro members are taken to Pro Astrology; Basic Astrology stays in the Here · Now list.
+    // Pro members are taken to Astrology Studio (founder ruling 2026-11-27); Basic Astrology stays a Living Space.
     if (proAstrology) {
-      return <Link href="/astrology/pro-preview" className={styles.line} aria-label={`The sky now: ${summary}. Open Pro Astrology`}>{body}</Link>;
+      return <Link href="/astrology/pro-preview" className={styles.line} aria-label={`The sky now: ${summary}. Open Astrology Studio`}>{body}</Link>;
     }
     return canOpenAstrology
       ? <Link href="/astrology" className={styles.line} aria-label={`The sky now: ${summary}. Open Astrology`}>{body}</Link>
@@ -177,7 +177,7 @@ export function CurrentTransitsField({
             ) : null}
             {/* Astrology Pro admits by its own grant, independent of the Basic tester flag. */}
             {variant === 'house' && proAstrology ? (
-              <Link href="/astrology/pro-preview">Open Pro Astrology →</Link>
+              <Link href="/astrology/pro-preview">Open Astrology Studio →</Link>
             ) : null}
           </div>
         </>

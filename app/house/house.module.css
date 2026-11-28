@@ -441,11 +441,17 @@
   .goLive.goLiveNarrow a { flex: 0 0 auto; white-space: nowrap; font-size: 22px; }
 }
 
-/* Founder direction 2026-11-27: Pro rooms the member holds, on every width. */
-.proRooms { position: relative; z-index: 1; margin-top: 28px; border-top: 1px solid rgba(225, 193, 147, .2); }
-.proRooms > p { margin: 16px 4px 4px; color: #cdbda5; font: 10px/1.6 Arial, sans-serif; letter-spacing: .32em; }
-.proRoom { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 4px; border-bottom: 1px solid rgba(225, 193, 147, .14); color: #efe6d6; text-decoration: none; }
-.proRoom:hover, .proRoom:focus-visible { color: #e8be78; }
-.proRoomLabel { font: 18px/1.2 Georgia, serif; white-space: nowrap; }
-.proRoomPurpose { flex: 1 1 auto; min-width: 0; color: #b9aa93; font: 13px/1.4 Arial, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 480px) { .proRoomPurpose { display: none; } .proRoom { justify-content: space-between; } }
+/* My Studios (founder ruling 2026-11-27, #1875): held Pro rooms carry a subtle gold edge that
+   marks professional access without making free studios feel lesser. */
+.world[data-pro='true'] { border-color: rgba(216, 179, 111, .5); }
+.proTag { position: absolute; top: 16px; right: 16px; padding: 2px 8px; border: 1px solid rgba(216, 179, 111, .45); border-radius: 999px; color: #e2c48c; font: 10px/1.4 Arial, sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+.livingSpaces { position: relative; z-index: 1; margin-top: 28px; }
+.livingSpaces > p { margin: 0; color: #d6bf9b; font: 8px/1.4 Arial, sans-serif; letter-spacing: .3em; }
+.livingSpaces .worlds { margin-top: 12px; }
+.showAllStudios { display: none; }
+@media (max-width: 900px) {
+  .proTag { position: static; grid-column: 2; justify-self: start; margin-bottom: 2px; }
+  .worlds[data-folded='true'] > .world:nth-of-type(n+6) { display: none; }
+  .showAllStudios { position: relative; z-index: 1; display: block; margin: 10px 0 0; padding: 10px 4px; border: 0; background: none; color: #e8be78; font: 15px/1.2 Georgia, serif; cursor: pointer; }
+  .livingSpaces { margin-top: 20px; }
+}
