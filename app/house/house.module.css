@@ -450,7 +450,7 @@
 .livingSpaces .worlds { margin-top: 12px; }
 .showAllStudios { display: none; }
 @media (max-width: 900px) {
-  .proTag { position: static; grid-column: 2; justify-self: start; margin-bottom: 2px; }
+  .proTag { position: static; display: inline-block; margin-left: 8px; padding: 1px 6px; font-size: 9px; vertical-align: middle; }
   .worlds[data-folded='true'] > .world:nth-of-type(n+6) { display: none; }
   .showAllStudios { position: relative; z-index: 1; display: block; margin: 10px 0 0; padding: 10px 4px; border: 0; background: none; color: #e8be78; font: 15px/1.2 Georgia, serif; cursor: pointer; }
   .livingSpaces { margin-top: 20px; }
